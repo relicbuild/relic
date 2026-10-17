@@ -305,6 +305,10 @@ func TestDownloadBlocking(t *testing.T) {
 	if check(vulnerable, "a-1.jar") {
 		t.Error("blocked despite an ignore rule on its package")
 	}
+
+	if hits, _, err := admin.Preview(ctx, preview, nil, 10); err != nil || len(hits) != 0 {
+		t.Errorf("preview despite an ignore rule on the package = %+v, %v", hits, err)
+	}
 }
 
 func TestLicenseBlocking(t *testing.T) {
