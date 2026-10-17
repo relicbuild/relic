@@ -980,6 +980,7 @@ func newRouter(
 	ah.SetLDAP(ldapSvc)
 	ah.SetSecurity(sec)
 	ah.SetWorkloads(workloads)
+	ah.SetProjects(projects)
 	authn.SetExternal(ldapSvc)
 	ah.Register(rt)
 

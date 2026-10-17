@@ -13,6 +13,7 @@ import (
 	"relic/api/adapters/artifactory/wire"
 	"relic/internal/access/auth"
 	"relic/internal/access/ldap"
+	"relic/internal/access/project"
 	"relic/internal/access/security"
 	"relic/internal/access/workload"
 	"relic/internal/platform/httpserver"
@@ -25,8 +26,12 @@ type Handler struct {
 	ldap      *ldap.Service
 	security  *security.Service
 	workloads *workload.Service
+	projects  *project.Service
 	log       *slog.Logger
 }
+
+// SetProjects makes token requests name a project the caller can see.
+func (h *Handler) SetProjects(p *project.Service) { h.projects = p }
 
 // New returns a Handler.
 func New(tokens *auth.Tokens, logins *auth.WebLogins, log *slog.Logger) *Handler {
@@ -148,6 +153,10 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) {
 		expiry = time.Duration(*req.ExpiresIn) * time.Second
 	}
 
+	if req.ProjectKey != "" && !h.projectVisible(w, r, caller, req.ProjectKey) {
+		return
+	}
+
 	tok, err := h.tokens.Issue(ctx, caller.LimitIssue(auth.IssueParams{
 		Username:    username,
 		Scope:       scope,
@@ -216,4 +225,27 @@ func (h *Handler) loginToken(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	h.log.ErrorContext(r.Context(), "request failed", "request_id", httpserver.RequestID(r.Context()), "error", err)
 	wire.WriteError(w, http.StatusInternalServerError, "internal server error")
+}
+
+func (h *Handler) projectVisible(w http.ResponseWriter, r *http.Request, caller auth.Principal, key string) bool {
+	if h.projects == nil {
+		return true
+	}
+
+	p, err := h.projects.Get(r.Context(), key)
+	if err == nil && !caller.Admin && !caller.Viewer && p.Role(caller) == "" {
+		err = project.ErrNotFound
+	}
+
+	if errors.Is(err, project.ErrNotFound) {
+		wire.WriteError(w, http.StatusNotFound, "project "+key+" not found")
+		return false
+	}
+
+	if err != nil {
+		h.fail(w, r, err)
+		return false
+	}
+
+	return true
 }

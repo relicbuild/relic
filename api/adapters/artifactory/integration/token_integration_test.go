@@ -346,3 +346,19 @@ func TestAccessTokensIncludeAReferenceTokenOnRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestAccessTokensNameAnExistingProject(t *testing.T) {
+	t.Parallel()
+
+	srv := server(t)
+
+	status, _ := accessTokenFor(t, srv, "admin:password", `{"expires_in":300,"project_key":"nosuchproject"}`)
+	if status != http.StatusNotFound {
+		t.Errorf("token for a missing project = %d, want 404", status)
+	}
+
+	status, token := accessTokenFor(t, srv, "admin:password", `{"expires_in":300}`)
+	if status != http.StatusOK || token == "" {
+		t.Errorf("token without a project = %d, want 200", status)
+	}
+}
