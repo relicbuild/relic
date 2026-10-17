@@ -526,7 +526,7 @@ func (s *Service) DeleteManifest(ctx context.Context, repoKey, image, ref string
 			return err
 		}
 
-		return s.repos.Delete(ctx, repoKey, image+"/"+ref)
+		return s.deleteTagFolder(ctx, repoKey, image+"/"+ref)
 	}
 
 	h, _ := ParseDigest(ref)
@@ -542,7 +542,12 @@ func (s *Service) DeleteManifest(ctx context.Context, repoKey, image, ref string
 		if it.Name == ManifestFile || it.Name == ListFile {
 			found = true
 
-			if err := s.repos.Delete(ctx, repoKey, it.Parent); err != nil && !errors.Is(err, repository.ErrNotFound) {
+			if err := s.deleteTagFolder(
+				ctx,
+				repoKey,
+				it.Parent,
+			); err != nil &&
+				!errors.Is(err, repository.ErrNotFound) {
 				return err
 			}
 		}
@@ -553,6 +558,81 @@ func (s *Service) DeleteManifest(ctx context.Context, repoKey, image, ref string
 	}
 
 	return nil
+}
+
+// deleteTagFolder deletes the manifest and blobs of a tag folder, which is
+// also the folder of the image named after the tag.
+func (s *Service) deleteTagFolder(ctx context.Context, repoKey, folder string) error {
+	dir, err := s.repos.Stat(ctx, repoKey, folder)
+	if err != nil {
+		return err
+	}
+
+	children, err := s.repos.Children(ctx, dir)
+	if err != nil {
+		return err
+	}
+
+	if !slices.ContainsFunc(children, repository.Item.IsFolder) {
+		return s.repos.Delete(ctx, repoKey, folder)
+	}
+
+	for _, c := range children {
+		if c.IsFolder() {
+			continue
+		}
+
+		if err := s.repos.Delete(ctx, repoKey, c.Path()); err != nil && !errors.Is(err, repository.ErrNotFound) {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// tagFolderCopies copies or moves a tag folder without the images nested
+// in it.
+func (s *Service) tagFolderCopies(
+	ctx context.Context,
+	src repository.Item,
+	destinationRepository, destinationPath string,
+	move bool,
+	user string,
+) ([]repository.CopyInput, error) {
+	children, err := s.repos.Children(ctx, src)
+	if err != nil {
+		return nil, err
+	}
+
+	if !slices.ContainsFunc(children, repository.Item.IsFolder) {
+		return []repository.CopyInput{
+			{
+				Source:                src,
+				DestinationRepository: destinationRepository,
+				DestinationPath:       destinationPath,
+				Move:                  move,
+				User:                  user,
+			},
+		}, nil
+	}
+
+	var copies []repository.CopyInput
+
+	for _, c := range children {
+		if c.IsFolder() {
+			continue
+		}
+
+		copies = append(copies, repository.CopyInput{
+			Source:                c,
+			DestinationRepository: destinationRepository,
+			DestinationPath:       destinationPath + "/" + c.Name,
+			Move:                  move,
+			User:                  user,
+		})
+	}
+
+	return copies, nil
 }
 
 // Blob finds a stored blob by hex digest, preferring copies under image.
@@ -902,10 +982,14 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) error {
 			}
 		}
 
-		copies := make([]repository.CopyInput, 0, len(folders))
-		for _, f := range folders {
+		var (
+			copies       []repository.CopyInput
+			childTargets []string
+		)
+
+		for i, f := range folders {
 			src, err := s.repos.Stat(ctx, in.SourceRepository, f[0])
-			if errors.Is(err, repository.ErrNotFound) && f[0] != folders[0][0] {
+			if errors.Is(err, repository.ErrNotFound) && i > 0 {
 				continue
 			}
 
@@ -913,16 +997,16 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) error {
 				return err
 			}
 
-			copies = append(
-				copies,
-				repository.CopyInput{
-					Source:                src,
-					DestinationRepository: in.TargetRepository,
-					DestinationPath:       f[1],
-					Move:                  !in.Copy,
-					User:                  in.User,
-				},
-			)
+			if i > 0 {
+				childTargets = append(childTargets, f[1])
+			}
+
+			folderCopies, err := s.tagFolderCopies(ctx, src, in.TargetRepository, f[1], !in.Copy, in.User)
+			if err != nil {
+				return err
+			}
+
+			copies = append(copies, folderCopies...)
 		}
 
 		if err := s.repos.CopyAll(ctx, copies); err != nil {
@@ -946,8 +1030,8 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) error {
 			return err
 		}
 
-		for _, c := range copies[1:] {
-			child, err := s.repos.Stat(ctx, in.TargetRepository, c.DestinationPath+"/"+ManifestFile)
+		for _, target := range childTargets {
+			child, err := s.repos.Stat(ctx, in.TargetRepository, target+"/"+ManifestFile)
 			if errors.Is(err, repository.ErrNotFound) {
 				continue
 			}
