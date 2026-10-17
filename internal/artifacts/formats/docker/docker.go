@@ -767,6 +767,39 @@ func uploadKey(id string, i int) string {
 	return fmt.Sprintf("%sdocker-uploads/%s/%d", objectstore.TemporaryKeyPrefix, id, i)
 }
 
+func uploadStartKey(id string) string {
+	return fmt.Sprintf("%sdocker-uploads/%s/started", objectstore.TemporaryKeyPrefix, id)
+}
+
+// StartUpload opens upload session id.
+func (s *Service) StartUpload(ctx context.Context, id string) error {
+	if err := s.blobs.Put(ctx, uploadStartKey(id), strings.NewReader(""), 0); err != nil {
+		return fmt.Errorf("start upload: %w", err)
+	}
+
+	return nil
+}
+
+// FindUpload returns ErrUploadUnknown unless upload session id was started
+// and is neither finished nor cancelled.
+func (s *Service) FindUpload(ctx context.Context, id string) error {
+	for _, key := range []string{
+		uploadKey(id, 0),
+		uploadStartKey(id),
+	} {
+		_, err := s.blobs.Head(ctx, key)
+		if err == nil {
+			return nil
+		}
+
+		if !errors.Is(err, objectstore.ErrNotFound) {
+			return fmt.Errorf("find upload: %w", err)
+		}
+	}
+
+	return ErrUploadUnknown
+}
+
 // AppendChunk stages chunk i of upload session id, of size bytes (-1 when
 // unknown), and returns its size.
 func (s *Service) AppendChunk(ctx context.Context, id string, i int, r io.Reader, size int64) (int64, error) {
@@ -804,10 +837,17 @@ func (s *Service) UploadState(ctx context.Context, id string, chunks int, offset
 // MaxUploadChunks bounds an upload session's chunks.
 const MaxUploadChunks = 10000
 
-// CancelUpload discards the staged chunks of an upload session.
+// CancelUpload closes an upload session and discards its staged chunks.
 func (s *Service) CancelUpload(ctx context.Context, id string, chunks int) {
+	keys := make([]string, 0, chunks+1)
+
+	keys = append(keys, uploadStartKey(id))
 	for i := range chunks {
-		if err := s.blobs.Delete(ctx, uploadKey(id, i)); err != nil && !errors.Is(err, objectstore.ErrNotFound) {
+		keys = append(keys, uploadKey(id, i))
+	}
+
+	for _, key := range keys {
+		if err := s.blobs.Delete(ctx, key); err != nil && !errors.Is(err, objectstore.ErrNotFound) {
 			s.log.WarnContext(ctx, "delete upload chunk", "upload", id, "error", err)
 		}
 	}

@@ -553,7 +553,12 @@ func (h *Handler) dockerUpload(w http.ResponseWriter, r *http.Request, req docke
 		return
 	}
 
-	if r.Method == http.MethodGet || r.Method == http.MethodPatch {
+	if err := h.docker.FindUpload(r.Context(), id.String()); err != nil {
+		h.dockerFail(w, r, err)
+		return
+	}
+
+	if r.Method != http.MethodPut {
 		if chunks, offset, err = h.docker.UploadState(r.Context(), id.String(), chunks, offset); err != nil {
 			h.dockerFail(w, r, err)
 			return
@@ -694,6 +699,11 @@ func (h *Handler) dockerStartUpload(w http.ResponseWriter, r *http.Request, req 
 
 		writeBlobCreated(w, req, digest)
 
+		return
+	}
+
+	if err := h.docker.StartUpload(r.Context(), id); err != nil {
+		h.dockerFail(w, r, err)
 		return
 	}
 
