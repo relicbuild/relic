@@ -796,10 +796,17 @@ func (m *machineSetup) printNext() {
 		logs = "journalctl -u relic -f"
 	}
 
-	_, _ = fmt.Fprintf(m.out, "Done. The server listens on %s (%s, %s).\n", m.listenSetting(), status, logs)
+	listen := m.listenSetting()
+
+	address, ok := loopbackURL(listen)
+	if !ok {
+		address = "https://" + listen
+	}
+
+	_, _ = fmt.Fprintf(m.out, "Done. The server listens on %s (%s, %s).\n", listen, status, logs)
 	_, _ = fmt.Fprintf(m.out,
-		"Sign in with relic auth login https://%s --user admin; the first password is RELIC_ADMIN_PASSWORD in %s.\n",
-		m.listenSetting(),
+		"Sign in with relic auth login %s --user admin; the first password is RELIC_ADMIN_PASSWORD in %s.\n",
+		address,
 		m.tilde(settings),
 	)
 }

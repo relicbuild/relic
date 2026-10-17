@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -46,6 +47,13 @@ type machineStatus struct {
 	DiskSizeBytes   uint64         `json:"diskSizeBytes,omitempty"`
 	Completion      []string       `json:"completion,omitempty"`
 	Healthy         bool           `json:"healthy"`
+}
+
+var remoteStorageKinds = []string{
+	"postgresql",
+	"s3",
+	"azure",
+	"gcs",
 }
 
 type storageStatus struct {
@@ -132,7 +140,12 @@ func (m *machineSetup) machineStatus(ctx context.Context) *machineStatus {
 	env := keyValues(string(settings), "=")
 	s.EncryptionKey = new(env["RELIC_ENCRYPTION_KEY"] != "")
 	s.Address = cmp.Or(env["RELIC_HTTP_LISTEN_ADDRESS"], defaultListenAddress)
-	s.Metrics = env["RELIC_METRICS_LISTEN_ADDRESS"]
+	s.Metrics = cmp.Or(env["RELIC_METRICS_LISTEN_ADDRESS"], defaultMetricsListenAddress)
+
+	if s.Metrics == "off" {
+		s.Metrics = ""
+	}
+
 	s.Database = databaseStatus(env["RELIC_DATABASE_URL"])
 	s.Storage = objectStorageStatus(env)
 
@@ -209,18 +222,19 @@ func databaseStatus(dsn string) storageStatus {
 }
 
 func objectStorageStatus(env map[string]string) storageStatus {
-	if env["RELIC_OBJECT_STORAGE_TYPE"] == "filesystem" {
-		return dirStatus("filesystem", env["RELIC_OBJECT_STORAGE_PATH"])
+	kind := cmp.Or(env["RELIC_OBJECT_STORAGE_TYPE"], "s3")
+	if kind == "filesystem" {
+		return dirStatus(kind, env["RELIC_OBJECT_STORAGE_PATH"])
 	}
 
-	bucket := env["RELIC_OBJECT_STORAGE_ARTIFACTS_BUCKET"]
-	if bucket == "" {
-		bucket = "artifacts"
+	location := cmp.Or(env["RELIC_OBJECT_STORAGE_ARTIFACTS_BUCKET"], "artifacts")
+	if endpoint := strings.TrimRight(env["RELIC_OBJECT_STORAGE_ENDPOINT"], "/"); endpoint != "" {
+		location = endpoint + "/" + location
 	}
 
 	return storageStatus{
-		Kind:     "s3",
-		Location: strings.TrimRight(env["RELIC_OBJECT_STORAGE_ENDPOINT"], "/") + "/" + bucket,
+		Kind:     kind,
+		Location: location,
 	}
 }
 
@@ -324,17 +338,27 @@ func (m *machineSetup) machineRows(s *machineStatus) []panelRow {
 	}
 
 	if s.Address != "" {
+		address, ok := loopbackURL(s.Address)
+		if !ok {
+			address = "https://" + s.Address
+		}
+
 		rows = append(rows, panelRow{
 			label: "address",
-			value: styleValue.Render("https://"+s.Address) + "  " +
+			value: styleValue.Render(address) + "  " +
 				check(*s.Reachable, "Relic "+s.ServerVersion, "does not answer"),
 		})
 	}
 
 	if s.Metrics != "" {
+		address, ok := loopbackAddress(s.Metrics)
+		if !ok {
+			address = s.Metrics
+		}
+
 		rows = append(rows, panelRow{
 			label: "metrics",
-			value: styleValue.Render("http://" + s.Metrics + "/metrics"),
+			value: styleValue.Render("http://" + address + "/metrics"),
 		})
 	}
 
@@ -414,7 +438,7 @@ func (m *machineSetup) storageLine(st storageStatus, files bool) string {
 		return line + "  " + styleBad.Render(st.Error)
 	case st.Missing:
 		return line + "  " + styleMuted.Render("not created yet")
-	case st.Kind == "postgresql" || st.Kind == "s3":
+	case slices.Contains(remoteStorageKinds, st.Kind):
 		return line
 	case files:
 		return line + "  " + styleGood.Render(

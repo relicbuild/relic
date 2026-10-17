@@ -33,7 +33,10 @@ type cliContext struct {
 	CertificateAuthority string `yaml:"certificateAuthority,omitempty"`
 }
 
-const defaultListenAddress = ":8090"
+const (
+	defaultListenAddress        = ":8090"
+	defaultMetricsListenAddress = ":8091"
+)
 
 func (g *globals) configPath() (string, error) {
 	if g.config != "" {
@@ -314,6 +317,17 @@ func (l localSettings) certificateAuthority(settings map[string]string) string {
 }
 
 func loopbackURL(listenAddress string) (string, bool) {
+	address, ok := loopbackAddress(listenAddress)
+	if !ok {
+		return "", false
+	}
+
+	return "https://" + address, true
+}
+
+// loopbackAddress is the host:port that reaches a listen address from this
+// machine: a listener on every address answers on 127.0.0.1.
+func loopbackAddress(listenAddress string) (string, bool) {
 	host, port, err := net.SplitHostPort(listenAddress)
 	if err != nil {
 		return "", false
@@ -323,7 +337,7 @@ func loopbackURL(listenAddress string) (string, bool) {
 		host = "127.0.0.1"
 	}
 
-	return "https://" + net.JoinHostPort(host, port), true
+	return net.JoinHostPort(host, port), true
 }
 
 func contextCmd(g *globals) *cobra.Command {
