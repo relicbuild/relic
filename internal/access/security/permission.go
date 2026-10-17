@@ -268,6 +268,49 @@ func (s *Service) ListPermissions(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
+func removeGrants(ctx context.Context, q database.Querier, principal Grant) error {
+	rows, err := q.ListPermissions(ctx)
+	if err != nil {
+		return fmt.Errorf("load permissions: %w", err)
+	}
+
+	for _, row := range rows {
+		p, err := decodePermission(row.Name, row.Config)
+		if err != nil {
+			return err
+		}
+
+		removed := false
+
+		for i := range p.Rules {
+			r := &p.Rules[i]
+			kept := slices.DeleteFunc(r.Grants, func(g Grant) bool {
+				return g.User == principal.User && g.Group == principal.Group
+			})
+			removed = removed || len(kept) != len(r.Grants)
+			r.Grants = kept
+		}
+
+		if !removed {
+			continue
+		}
+
+		cfg, err := json.Marshal(p)
+		if err != nil {
+			return err
+		}
+
+		if _, err := q.UpdatePermission(ctx, database.UpdatePermissionParams{
+			Name:   p.Name,
+			Config: cfg,
+		}); err != nil {
+			return fmt.Errorf("update permission %q: %w", p.Name, err)
+		}
+	}
+
+	return nil
+}
+
 // DeletePermission removes a permission.
 func (s *Service) DeletePermission(ctx context.Context, name string) error {
 	n, err := s.db.DeletePermission(ctx, name)

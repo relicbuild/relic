@@ -273,7 +273,7 @@ func (s *Service) ListUserRealms(ctx context.Context) ([]UserRealm, error) {
 
 const administratorsLock = "security:administrators"
 
-// DeleteUser removes a user.
+// DeleteUser removes a user and their grants.
 func (s *Service) DeleteUser(ctx context.Context, name string) error {
 	u, err := s.db.GetUserByUsername(ctx, name)
 	if errors.Is(database.NotFound(err), database.ErrNotFound) {
@@ -290,9 +290,13 @@ func (s *Service) DeleteUser(ctx context.Context, name string) error {
 				return fmt.Errorf("revoke the access tokens of %q: %w", name, err)
 			}
 
-			_, err := q.DeleteUser(ctx, name)
+			if _, err := q.DeleteUser(ctx, name); err != nil {
+				return err
+			}
 
-			return err
+			return removeGrants(ctx, q, Grant{
+				User: name,
+			})
 		})
 	}
 
@@ -497,15 +501,24 @@ func (s *Service) ListGroups(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
-// DeleteGroup removes a group.
+// DeleteGroup removes a group and its grants.
 func (s *Service) DeleteGroup(ctx context.Context, name string) error {
-	n, err := s.db.DeleteGroup(ctx, name)
+	err := s.db.WithTx(ctx, func(q database.Querier) error {
+		n, err := q.DeleteGroup(ctx, name)
+		if err != nil {
+			return err
+		}
+
+		if n == 0 {
+			return fmt.Errorf("%w: group %q", ErrNotFound, name)
+		}
+
+		return removeGrants(ctx, q, Grant{
+			Group: name,
+		})
+	})
 	if err != nil {
 		return err
-	}
-
-	if n == 0 {
-		return fmt.Errorf("%w: group %q", ErrNotFound, name)
 	}
 
 	s.invalidate()
