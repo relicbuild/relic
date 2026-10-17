@@ -17,7 +17,7 @@ import (
 func vexCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "vex",
-		Short: "Exchange ignore rules as OpenVEX or CycloneDX VEX documents (administrators)",
+		Short: "Exchange ignore rules as OpenVEX or CycloneDX VEX documents",
 		Long: "VEX says which vulnerabilities do not affect which packages. relic security vex export writes Relic's " +
 			"ignore rules as such a document, in OpenVEX or CycloneDX, for scanners and consumers downstream; relic " +
 			"security vex import turns a supplier's or another team's document, in either format, into ignore rules.",
@@ -38,7 +38,7 @@ func vexExportCmd(g *globals) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "export",
-		Short: "Write the ignore rules as an OpenVEX or CycloneDX document",
+		Short: "Write the ignore rules as an OpenVEX or CycloneDX document (viewers and administrators)",
 		Example: "  relic security vex export > relic.vex.json\n" +
 			"  relic security vex export --format cyclonedx --unreachable --file relic.cdx.json",
 		Args: cobra.NoArgs,
@@ -108,8 +108,9 @@ func vexImportCmd(g *globals) *cobra.Command {
 	var output string
 
 	cmd := &cobra.Command{
-		Use:   "import <document>",
-		Short: "Create ignore rules from an OpenVEX or CycloneDX document's not_affected and fixed (resolved) statements",
+		Use: "import <document>",
+		Short: "Create ignore rules from an OpenVEX or CycloneDX document's not_affected and fixed (resolved) " +
+			"statements (administrators)",
 		Long: "Each rule ignores the statement's vulnerability in the packages it names, and its notes name the " +
 			"document and its author. - reads standard input.",
 		Example: "  relic security vex import vendor.vex.json",

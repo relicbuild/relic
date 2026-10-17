@@ -100,7 +100,7 @@ func vulnerabilityDatabaseStatusCmd(g *globals) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Show when the vulnerability database scans use was built (administrators)",
+		Short: "Show when the vulnerability database scans use was built (viewers and administrators)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c, err := g.dial()
