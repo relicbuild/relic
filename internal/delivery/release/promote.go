@@ -103,7 +103,7 @@ func (s *Service) Promote(
 			return Promotion{}, fmt.Errorf("%w: cannot write %s/%s", ErrForbidden, target, a.Path)
 		}
 
-		if err := s.promoteArtifact(ctx, b, a, target, user); err != nil {
+		if err := s.promoteArtifact(ctx, b, a, target, user, access); err != nil {
 			return Promotion{}, err
 		}
 	}
@@ -244,7 +244,13 @@ func (s *Service) pickTarget(
 	return "", false
 }
 
-func (s *Service) promoteArtifact(ctx context.Context, b Release, a Artifact, target, user string) error {
+func (s *Service) promoteArtifact(
+	ctx context.Context,
+	b Release,
+	a Artifact,
+	target, user string,
+	access Access,
+) error {
 	if cur, err := s.repos.Stat(ctx, target, a.Path); err == nil && cur.Checksums.SHA256 == a.SHA256 {
 		return nil
 	}
@@ -261,6 +267,18 @@ func (s *Service) promoteArtifact(ctx context.Context, b Release, a Artifact, ta
 			DestinationRepository: target,
 			DestinationPath:       a.Path,
 			User:                  user,
+			RefuseOverwrite: func(_ context.Context, existing repository.Item) error {
+				if access.canDelete(existing.Repository, existing.Path()) {
+					return nil
+				}
+
+				return fmt.Errorf(
+					"%w: overwriting %s/%s needs delete permission",
+					ErrForbidden,
+					existing.Repository,
+					existing.Path(),
+				)
+			},
 		},
 	); err != nil {
 		return fmt.Errorf("promote %s to %s: %w", a.Path, target, err)

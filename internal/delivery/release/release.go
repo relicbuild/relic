@@ -214,8 +214,9 @@ type Ref struct {
 // Access limits what a caller may read into a bundle and write when
 // promoting one.
 type Access struct {
-	CanRead  func(repository, path string) bool
-	CanWrite func(repository, path string) bool
+	CanRead   func(repository, path string) bool
+	CanWrite  func(repository, path string) bool
+	CanDelete func(repository, path string) bool
 }
 
 func (a Access) canRead(repository, path string) bool {
@@ -224,6 +225,10 @@ func (a Access) canRead(repository, path string) bool {
 
 func (a Access) canWrite(repository, path string) bool {
 	return a.CanWrite == nil || a.CanWrite(repository, path)
+}
+
+func (a Access) canDelete(repository, path string) bool {
+	return a.CanDelete == nil || a.CanDelete(repository, path)
 }
 
 // Create resolves the request's sources and stores the new bundle version.

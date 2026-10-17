@@ -163,6 +163,9 @@ func (h *Handler) access(r *http.Request) (rb.Access, error) {
 		CanWrite: func(repository, path string) bool {
 			return perms.CanInRepository(p.Subject(), class(repository), path, auth.ActionWrite)
 		},
+		CanDelete: func(repository, path string) bool {
+			return perms.CanInRepository(p.Subject(), class(repository), path, auth.ActionDelete)
+		},
 	}, nil
 }
 

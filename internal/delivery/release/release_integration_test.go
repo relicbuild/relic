@@ -3,6 +3,8 @@
 package release
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"log/slog"
 	"strings"
@@ -269,5 +271,80 @@ func TestFailedUpdateRemovesTheFilesItCopied(t *testing.T) {
 	})
 	if _, err := f.repos.Stat(t.Context(), b.Repository, copied); !errors.Is(err, repository.ErrNotFound) {
 		t.Errorf("Stat of %s after the failed update = %v; want ErrNotFound", copied, err)
+	}
+}
+
+func TestPromoteOverwritesOnlyWithDeletePermission(t *testing.T) {
+	t.Parallel()
+
+	writeOnly := Access{
+		CanWrite: func(string, string) bool {
+			return true
+		},
+		CanDelete: func(string, string) bool {
+			return false
+		},
+	}
+
+	tests := []struct {
+		name     string
+		existing string
+		access   Access
+		wantErr  error
+		want     string
+	}{
+		{
+			name:     "write only over other content",
+			existing: "deployed by hand",
+			access:   writeOnly,
+			wantErr:  ErrForbidden,
+			want:     "deployed by hand",
+		},
+		{
+			name:     "write only over the same content",
+			existing: "application",
+			access:   writeOnly,
+			want:     "application",
+		},
+		{
+			name:   "write only to a free path",
+			access: writeOnly,
+			want:   "application",
+		},
+		{
+			name:     "delete over other content",
+			existing: "deployed by hand",
+			access:   Access{},
+			want:     "application",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newReleaseFixture(t)
+			f.create(t, "1.0", false, artifactSource("libs/app.bin"))
+
+			if tt.existing != "" {
+				f.deploy(t, "prod", "app.bin", tt.existing)
+			}
+
+			_, err := f.releases.Promote(t.Context(), "", "app", "1.0", PromotionSpec{
+				Environment: "PROD",
+			}, "dev", tt.access)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Promote = %v; want %v", err, tt.wantErr)
+			}
+
+			got, err := f.repos.Stat(t.Context(), "prod", "app.bin")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			want := sha256.Sum256([]byte(tt.want))
+			if got.Checksums.SHA256 != hex.EncodeToString(want[:]) {
+				t.Errorf("prod/app.bin holds other content than %q", tt.want)
+			}
+		})
 	}
 }
