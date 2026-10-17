@@ -27,6 +27,12 @@ func splitTarget(s string) (repo, p string, err error) {
 		return "", "", fmt.Errorf("%q is not <repository>/<path>", s)
 	}
 
+	for segment := range strings.SplitSeq(p, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return "", "", fmt.Errorf("invalid path %q: it has an empty, \".\" or \"..\" segment", s)
+		}
+	}
+
 	return repo, p, nil
 }
 
