@@ -95,7 +95,8 @@ func tokenCreateCmd(g *globals) *cobra.Command {
 		Int32Var(&expiresDays, "expires-days", 0, "lifetime in days, at most 3650 (0: never expires for administrators; other users' tokens expire within 365)")
 	cmd.Flags().StringVar(&scope, "scope", "user", "what the token acts as: user, groups or admin")
 	cmd.Flags().StringSliceVar(&groups, "group", nil, "group the token acts with (implies --scope groups; repeatable)")
-	cmd.Flags().StringVar(&project, "project", "", "project the token is for")
+	cmd.Flags().
+		StringVar(&project, "project", "", "a project to label the token with; it does not limit what the token can do")
 	_ = cmd.RegisterFlagCompletionFunc(
 		"scope",
 		cobra.FixedCompletions(

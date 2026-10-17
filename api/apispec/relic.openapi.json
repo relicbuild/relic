@@ -1216,7 +1216,7 @@
           "project": {
             "type": "string",
             "title": "project",
-            "description": "project is the project the token is for."
+            "description": "project is a label recorded on the token: a project the caller can see.\n It does not limit what the token can do; the scope does."
           }
         },
         "title": "CreateTokenRequest",

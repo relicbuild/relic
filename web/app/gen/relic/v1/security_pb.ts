@@ -707,7 +707,8 @@ export type CreateTokenRequest = Message<"relic.v1.CreateTokenRequest"> & {
   scope?: TokenScope | undefined;
 
   /**
-   * project is the project the token is for.
+   * project is a label recorded on the token: a project the caller can see.
+   * It does not limit what the token can do; the scope does.
    *
    * @generated from field: string project = 4;
    */

@@ -1126,6 +1126,43 @@ func TestRelicAPISecurity(t *testing.T) {
 		}
 	}
 
+	if _, err := relicv1connect.NewProjectServiceClient(relicHTTP("admin", "password"), srv.URL+"/api").PutProject(
+		ctx,
+		connect.NewRequest(&relicv1.PutProjectRequest{
+			Project: &relicv1.Project{
+				Key:  "tokens",
+				Name: "Tokens",
+			},
+		}),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, key := range map[string]string{
+		"an unknown project":                    "nosuchproject",
+		"a project the user is not a member of": "tokens",
+	} {
+		if _, err := ann.CreateToken(
+			ctx,
+			connect.NewRequest(&relicv1.CreateTokenRequest{
+				ExpiresDays: 1,
+				Project:     key,
+			}),
+		); code(err) != connect.CodeNotFound {
+			t.Errorf("token labelled with %s = %v, want NotFound", name, err)
+		}
+	}
+
+	if _, err := sec.CreateToken(
+		ctx,
+		connect.NewRequest(&relicv1.CreateTokenRequest{
+			ExpiresDays: 1,
+			Project:     "tokens",
+		}),
+	); err != nil {
+		t.Errorf("token labelled with a project an administrator sees = %v", err)
+	}
+
 	forever, err := ann.CreateToken(ctx, connect.NewRequest(&relicv1.CreateTokenRequest{
 		Description: "forever",
 	}))
