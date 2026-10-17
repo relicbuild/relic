@@ -319,11 +319,11 @@ func page(r *http.Request, bundles []rb.Release, key func(rb.Release) string) ([
 		})
 	} else {
 		slices.SortStableFunc(bundles, func(a, b rb.Release) int {
-			return b.Created.Compare(a.Created)
+			return a.Created.Compare(b.Created)
 		})
 	}
 
-	if q.Get("order_asc") == "true" {
+	if q.Get("order_asc") != "true" {
 		slices.Reverse(bundles)
 	}
 
