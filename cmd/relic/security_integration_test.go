@@ -61,8 +61,22 @@ echo '{"artifacts":[{"purl":"pkg:npm/lodash@4.17.15"},{"purl":"pkg:npm/left-pad@
 		"--syft",
 		filepath.Join(dir, "missing"),
 	); err == nil ||
-		!strings.Contains(err.Error(), "not installed") {
-		t.Errorf("scan without syft: %v", err)
+		!strings.Contains(err.Error(), "not installed") || !strings.Contains(err.Error(), "--sbom") {
+		t.Errorf("scan without syft: %v, want the --sbom alternative offered", err)
+	}
+
+	if _, err := relic(
+		t,
+		config,
+		"",
+		"security",
+		"audit",
+		dir,
+		"--syft",
+		filepath.Join(dir, "missing"),
+	); err == nil ||
+		!strings.Contains(err.Error(), "not installed") || strings.Contains(err.Error(), "--sbom") {
+		t.Errorf("audit without syft: %v, want no flag audit lacks offered", err)
 	}
 
 	sboms := map[string]struct {

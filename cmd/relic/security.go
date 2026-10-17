@@ -41,6 +41,16 @@ func (f *scanFlags) register(cmd *cobra.Command) {
 	outputFlag(cmd, &f.output)
 }
 
+// syftMissingError reports that the Syft binary was not found.
+type syftMissingError struct {
+	path string
+}
+
+func (e syftMissingError) Error() string {
+	return e.path + " is not installed: relic catalogs packages with Syft (https://github.com/anchore/syft); " +
+		"install it or point --syft at it"
+}
+
 func syftPURLs(ctx context.Context, syft, target string) ([]string, error) {
 	var stderr bytes.Buffer
 
@@ -50,11 +60,9 @@ func syftPURLs(ctx context.Context, syft, target string) ([]string, error) {
 
 	out, err := cmd.Output()
 	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf(
-			"%s is not installed: relic catalogs packages with Syft (https://github.com/anchore/syft); "+
-				"install it, point --syft at it, or pass an SBOM with --sbom",
-			syft,
-		)
+		return nil, syftMissingError{
+			path: syft,
+		}
 	}
 
 	if err != nil {
@@ -315,6 +323,9 @@ func scanCmd(g *globals) *cobra.Command {
 					}
 				} else {
 					found, err = syftPURLs(cmd.Context(), f.syft, t)
+					if errors.As(err, &syftMissingError{}) {
+						err = fmt.Errorf("%w, or pass an SBOM with --sbom", err)
+					}
 				}
 
 				if err != nil {
