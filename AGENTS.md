@@ -80,7 +80,7 @@ helm/relic/             the Helm chart; PostgreSQL (cnpg/cluster with the bundle
                         operator, CRDs in crds/), SeaweedFS and the optional monitoring stack
                         (monitoringStack.enabled) come from their official charts via Chart.lock
 test/                   tier.sh (runs one test tier on its own stack), database-packages.sh (the SQLite pass)
-  compose/              the plain-HTTP overrides of the Compose stacks the tests start
+  compose/              the plain-HTTP overrides of the Compose stacks the tests start, and checks of their settings
   helm/                 chart render tests (no cluster)
   install/              tests of install.sh
   k8s/                  the k8s tier: one kind cluster for everything Kubernetes-specific
