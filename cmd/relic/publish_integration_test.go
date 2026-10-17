@@ -50,6 +50,11 @@ apiVersion: relic.build/v1
 kind: Repository
 metadata: {name: hf-local}
 spec: {class: local, format: huggingface}
+---
+apiVersion: relic.build/v1
+kind: Repository
+metadata: {name: npm-local}
+spec: {class: local, format: npm}
 `, "apply", "-f", "-"); err != nil {
 		t.Fatal(err)
 	}
@@ -299,6 +304,43 @@ spec: {class: local, format: huggingface}
 		}, args...)
 		if _, err := relic(t, config, "", upload...); err == nil {
 			t.Errorf("upload %v succeeded, though the Hub API cannot read it back", args)
+		}
+	}
+
+	for _, args := range [][]string{
+		{
+			"publish",
+			"go",
+			"npm-local",
+			"v1.3.0",
+			"--dir",
+			mod,
+		},
+		{
+			"publish",
+			"terraform",
+			"npm-local",
+			"1.0.0",
+			"--namespace",
+			"acme",
+			"--provider",
+			"aws",
+			"--dir",
+			filepath.Join(tf, "network"),
+		},
+		{
+			"hf",
+			"upload",
+			v1,
+			"npm-local",
+			"acme/tiny",
+		},
+	} {
+		_, err := relic(t, config, "", append([]string{
+			"package",
+		}, args...)...)
+		if err == nil || !strings.Contains(err.Error(), "npm-local is a npm repository") {
+			t.Errorf("%s %s into an npm repository: %v", args[0], args[1], err)
 		}
 	}
 }

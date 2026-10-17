@@ -186,6 +186,10 @@ func goPublishCmd(g *globals) *cobra.Command {
 				return err
 			}
 
+			if err := c.requireFormat(cmd.Context(), repo, relicv1.Format_FORMAT_GOMOD); err != nil {
+				return fmt.Errorf("go publish: %w", err)
+			}
+
 			base := modPath + "/@v/" + version
 
 			props, err := pf.properties(g)
@@ -274,6 +278,10 @@ func terraformPublishCmd(g *globals) *cobra.Command {
 			c, err := g.dial()
 			if err != nil {
 				return err
+			}
+
+			if err := c.requireFormat(cmd.Context(), repo, relicv1.Format_FORMAT_TERRAFORM); err != nil {
+				return fmt.Errorf("terraform publish: %w", err)
 			}
 
 			p := namespace + "/" + name + "/" + provider + "/v" + version + ".zip"
@@ -541,6 +549,10 @@ func huggingFaceUploadCmd(g *globals) *cobra.Command {
 			c, err := g.dial()
 			if err != nil {
 				return err
+			}
+
+			if err := c.requireFormat(ctx, repo, relicv1.Format_FORMAT_HUGGINGFACE); err != nil {
+				return fmt.Errorf("huggingface upload: %w", err)
 			}
 
 			base := hfKind(dataset) + "/" + id
