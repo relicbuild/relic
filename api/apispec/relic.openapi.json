@@ -2807,7 +2807,8 @@
               "string"
             ],
             "title": "builds",
-            "format": "int64"
+            "format": "int64",
+            "description": "builds counts the readable builds outside projects."
           },
           "scans": {
             "type": "object",
@@ -2817,7 +2818,7 @@
               "title": "value",
               "format": "int32"
             },
-            "description": "scans counts scanned contents by status."
+            "description": "scans counts scanned contents by status; only administrators and viewers,\n who may list every finding, get it."
           },
           "findings": {
             "type": "object",
@@ -2827,7 +2828,7 @@
               "title": "value",
               "format": "int32"
             },
-            "description": "findings counts findings by severity."
+            "description": "findings counts findings by severity; only administrators and viewers get\n it."
           },
           "vulnerabilityDatabaseBuilt": {
             "title": "vulnerability_database_built",

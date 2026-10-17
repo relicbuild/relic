@@ -3,9 +3,13 @@
 package app
 
 import (
+	"encoding/json"
 	"net/http"
+	"reflect"
+	"relic/internal/platform/database"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestStorageRepositoryNamesAreReservedForTheirProject(t *testing.T) {
@@ -93,5 +97,103 @@ func TestStorageRepositoryNamesAreReservedForTheirProject(t *testing.T) {
 		http.StatusOK,
 	); !strings.Contains(got, `"project":"beta"`) {
 		t.Errorf("beta's build-info repository = %s", got)
+	}
+}
+
+func TestDashboardSummaryCountsWhatTheCallerMayRead(t *testing.T) {
+	t.Parallel()
+	srv, db := serverDB(t)
+	send := func(c call) (reply, string) {
+		return do(t, srv, c)
+	}
+	admin := rest{
+		t:   t,
+		srv: send,
+	}
+	nobody := rest{
+		t:    t,
+		srv:  send,
+		user: "nobody:Nobody-pass-12345",
+	}
+
+	createRepository(t, srv, "dash-local", "LOCAL", "GENERIC", "")
+	upload(t, srv, "dash-local", "app.bin", "binary")
+	admin.call(
+		http.MethodPost,
+		"/api/v1/builds/app/runs",
+		`{"run":{"name":"app","number":"1","started":"2026-09-25T10:00:00Z"}}`,
+		http.StatusOK,
+	)
+	admin.call(
+		http.MethodPut,
+		"/api/v1/users/nobody",
+		`{"name":"nobody","email":"nobody@example.com","password":"Nobody-pass-12345"}`,
+		http.StatusOK,
+	)
+
+	now := time.Now()
+	if _, err := db.ClaimUnscanned(t.Context(), database.ClaimUnscannedParams{
+		Now:         now,
+		NamePattern: ".*",
+		RetryBefore: now,
+		MaxRows:     10,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.InsertFinding(t.Context(), database.InsertFindingParams{
+		Sha256:   sha256Hex("binary"),
+		VulnID:   "CVE-2026-0001",
+		Severity: "high",
+		Cvss:     []byte("{}"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	type summary struct {
+		Builds   string           `json:"builds"`
+		Scans    map[string]int64 `json:"scans"`
+		Findings map[string]int64 `json:"findings"`
+	}
+
+	tests := []struct {
+		name   string
+		caller rest
+		want   summary
+	}{
+		{
+			name:   "administrator",
+			caller: admin,
+			want: summary{
+				Builds: "1",
+				Scans: map[string]int64{
+					"queued": 2,
+				},
+				Findings: map[string]int64{
+					"high": 1,
+				},
+			},
+		},
+		{
+			name:   "user without permissions",
+			caller: nobody,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.caller.t = t
+
+			var got summary
+			if err := json.Unmarshal(
+				[]byte(tt.caller.call(http.MethodGet, "/api/v1/dashboard-summary", "", http.StatusOK)),
+				&got,
+			); err != nil {
+				t.Fatal(err)
+			}
+
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("summary = %+v, want %+v", got, tt.want)
+			}
+		})
 	}
 }
