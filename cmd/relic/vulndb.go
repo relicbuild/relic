@@ -95,6 +95,12 @@ func vulnerabilityDatabaseImportCmd(g *globals) *cobra.Command {
 	}
 }
 
+// databaseBuiltLine says when the vulnerability database was built, in loc
+// like the other security commands' times.
+func databaseBuiltLine(built, now time.Time, loc *time.Location) string {
+	return fmt.Sprintf("built %s (%s ago)", built.In(loc).Format(time.DateTime), now.Sub(built).Round(time.Hour))
+}
+
 func vulnerabilityDatabaseStatusCmd(g *globals) *cobra.Command {
 	var output string
 
@@ -122,12 +128,9 @@ func vulnerabilityDatabaseStatusCmd(g *globals) *cobra.Command {
 					return err
 				}
 
-				built := s.GetVulnerabilityDatabaseBuilt().AsTime()
-				_, err := fmt.Fprintf(
+				_, err := fmt.Fprintln(
 					w,
-					"built %s (%s ago)\n",
-					built.Format(time.DateTime),
-					time.Since(built).Round(time.Hour),
+					databaseBuiltLine(s.GetVulnerabilityDatabaseBuilt().AsTime(), time.Now(), time.Local),
 				)
 
 				return err
