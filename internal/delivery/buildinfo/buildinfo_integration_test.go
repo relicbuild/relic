@@ -621,3 +621,97 @@ func TestPublishKeepsBuildsOutOfAnotherProjectsRepository(t *testing.T) {
 		})
 	}
 }
+
+func TestPromoteNeedsDeletePermissionToOverwrite(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	builds, repos, _ := newService(t)
+
+	for _, name := range []string{
+		"libs",
+		"prod",
+	} {
+		if err := repos.CreateRepository(ctx, repository.Repository{
+			Name:   name,
+			Class:  repository.ClassLocal,
+			Format: repository.FormatGeneric,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	deploy := func(repo, body string) repository.Item {
+		item, err := repos.Deploy(ctx, repository.DeployInput{
+			Repository: repo,
+			Path:       "app.bin",
+			Body:       strings.NewReader(body),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return item
+	}
+	built := deploy("libs", "built")
+	original := deploy("prod", "original")
+
+	doc := run("1", time.Now())
+
+	doc.Modules[0].Artifacts = []buildinfo.Artifact{
+		{
+			Name: "app.bin",
+			SHA1: built.Checksums.SHA1,
+		},
+	}
+	if err := builds.PublishDocument(ctx, "", doc, "admin"); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name      string
+		canDelete bool
+		wantError bool
+		wantSHA   string
+	}{
+		{
+			name:      "without delete permission",
+			wantError: true,
+			wantSHA:   original.Checksums.SHA256,
+		},
+		{
+			name:      "with delete permission",
+			canDelete: true,
+			wantSHA:   built.Checksums.SHA256,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msgs, err := builds.Promote(ctx, "", "app", "1", buildinfo.Promotion{
+				TargetRepository: "prod",
+				Copy:             true,
+			}, "dev", func(_ repository.Item, a auth.Action) bool {
+				return a != auth.ActionDelete || tt.canDelete
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			failed := slices.ContainsFunc(msgs, func(m buildinfo.Message) bool {
+				return m.Level == buildinfo.LevelError && strings.HasPrefix(m.Text, "failed to promote libs/app.bin")
+			})
+			if failed != tt.wantError {
+				t.Errorf("Promote reported %+v; want a failure %t", msgs, tt.wantError)
+			}
+
+			got, err := repos.Stat(ctx, "prod", "app.bin")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if got.Checksums.SHA256 != tt.wantSHA {
+				t.Errorf("prod/app.bin has SHA-256 %s; want %s", got.Checksums.SHA256, tt.wantSHA)
+			}
+		})
+	}
+}
