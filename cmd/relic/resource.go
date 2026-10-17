@@ -52,25 +52,26 @@ func (s *specYAML) UnmarshalYAML(n *yaml.Node) error {
 }
 
 func plainValue(n *yaml.Node) (any, error) {
+	return plainNode(n, map[*yaml.Node]bool{})
+}
+
+func plainNode(n *yaml.Node, expanding map[*yaml.Node]bool) (any, error) {
 	switch n.Kind {
 	case yaml.AliasNode:
-		return plainValue(n.Alias)
-	case yaml.MappingNode:
-		out := make(map[string]any, len(n.Content)/2)
-		for i := 0; i+1 < len(n.Content); i += 2 {
-			v, err := plainValue(n.Content[i+1])
-			if err != nil {
-				return nil, err
-			}
-
-			out[n.Content[i].Value] = v
+		if expanding[n.Alias] {
+			return nil, fmt.Errorf("line %d: anchor %q contains itself", n.Line, n.Value)
 		}
 
-		return out, nil
+		expanding[n.Alias] = true
+		defer delete(expanding, n.Alias)
+
+		return plainNode(n.Alias, expanding)
+	case yaml.MappingNode:
+		return plainMapping(n, expanding)
 	case yaml.SequenceNode:
 		out := make([]any, 0, len(n.Content))
 		for _, c := range n.Content {
-			v, err := plainValue(c)
+			v, err := plainNode(c, expanding)
 			if err != nil {
 				return nil, err
 			}
@@ -92,6 +93,79 @@ func plainValue(n *yaml.Node) (any, error) {
 	}
 
 	return v, nil
+}
+
+func plainMapping(n *yaml.Node, expanding map[*yaml.Node]bool) (map[string]any, error) {
+	out := make(map[string]any, len(n.Content)/2)
+	lines := make(map[string]int, len(n.Content)/2)
+
+	var merged []*yaml.Node
+
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		key, value := n.Content[i], n.Content[i+1]
+		if key.Kind == yaml.ScalarNode && key.ShortTag() == "!!merge" {
+			merged = append(merged, value)
+
+			continue
+		}
+
+		if line, ok := lines[key.Value]; ok {
+			return nil, fmt.Errorf("line %d: mapping key %q already defined at line %d", key.Line, key.Value, line)
+		}
+
+		lines[key.Value] = key.Line
+
+		v, err := plainNode(value, expanding)
+		if err != nil {
+			return nil, err
+		}
+
+		out[key.Value] = v
+	}
+
+	for _, m := range merged {
+		if err := mergeMappings(out, m, expanding); err != nil {
+			return nil, err
+		}
+	}
+
+	return out, nil
+}
+
+func mergeMappings(out map[string]any, n *yaml.Node, expanding map[*yaml.Node]bool) error {
+	sources := []*yaml.Node{
+		n,
+	}
+	if target := aliasTarget(n); target.Kind == yaml.SequenceNode {
+		sources = target.Content
+	}
+
+	for _, source := range sources {
+		if aliasTarget(source).Kind != yaml.MappingNode {
+			return fmt.Errorf("line %d: a merge key takes a mapping or a list of mappings", source.Line)
+		}
+
+		v, err := plainNode(source, expanding)
+		if err != nil {
+			return err
+		}
+
+		for key, value := range v.(map[string]any) {
+			if _, set := out[key]; !set {
+				out[key] = value
+			}
+		}
+	}
+
+	return nil
+}
+
+func aliasTarget(n *yaml.Node) *yaml.Node {
+	for n.Kind == yaml.AliasNode {
+		n = n.Alias
+	}
+
+	return n
 }
 
 type metadataYAML struct {

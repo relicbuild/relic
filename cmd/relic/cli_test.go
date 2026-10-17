@@ -108,6 +108,50 @@ spec:
 			},
 		},
 		{
+			name: "merge keys, overridden by the keys set beside them",
+			in: `apiVersion: relic.build/v1
+kind: Repository
+metadata: {name: libs}
+spec:
+  description: libraries
+  <<: {class: local, format: maven, description: shared}
+---
+apiVersion: relic.build/v1
+kind: Permission
+metadata: {name: devs}
+spec:
+  rules:
+    - &libs {resource: repository, selector: {repositories: [libs]}, grants: [{group: devs, actions: [read]}]}
+    - <<: [*libs, {include: ["**"]}]
+      resource: build
+`,
+			check: func(t *testing.T, docs []document) {
+				t.Helper()
+
+				r := docs[0].msg.(*relicv1.Repository)
+				if r.GetDescription() != "libraries" || r.GetFormat() != relicv1.Format_FORMAT_MAVEN ||
+					r.GetClass() != relicv1.RepositoryClass_REPOSITORY_CLASS_LOCAL {
+					t.Errorf("repository = %v", r)
+				}
+
+				rules := docs[1].msg.(*relicv1.Permission).GetRules()
+				if len(rules) != 2 || rules[1].GetResource() != relicv1.ResourceKind_RESOURCE_KIND_BUILD ||
+					rules[1].GetGrants()[0].GetGroup() != "devs" || len(rules[1].GetInclude()) != 1 {
+					t.Errorf("rules = %v", rules)
+				}
+			},
+		},
+		{
+			name:    "a key set twice",
+			in:      "apiVersion: relic.build/v1\nkind: Group\nmetadata: {name: g}\nspec: {description: a, description: b}\n",
+			wantErr: "already defined",
+		},
+		{
+			name:    "an anchor that contains itself",
+			in:      "apiVersion: relic.build/v1\nkind: Group\nmetadata: {name: g}\nspec: &spec {members: [*spec]}\n",
+			wantErr: "contains itself",
+		},
+		{
 			name:    "wrong apiVersion",
 			in:      "apiVersion: v1\nkind: Group\nmetadata: {name: g}\n",
 			wantErr: "apiVersion",
