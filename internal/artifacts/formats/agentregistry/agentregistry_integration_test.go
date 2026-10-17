@@ -84,3 +84,88 @@ func TestApprovalCoversOnlyTheApprovedContent(t *testing.T) {
 		t.Error("the approval of a deleted entry approved the same content deployed again")
 	}
 }
+
+func TestFilesTheRegistryCannotIndexAreNotServed(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db := databasetest.NewDB(t)
+	repos := repository.NewService(db, objectstoretest.NewMemory(), slog.New(slog.DiscardHandler))
+	registry := agentregistry.New(db, repos)
+
+	for name, format := range map[string]repository.Format{
+		"mcp-local":     repository.FormatMCP,
+		"skills-local":  repository.FormatSkills,
+		"generic-local": repository.FormatGeneric,
+	} {
+		if err := repos.CreateRepository(ctx, repository.Repository{
+			Name:   name,
+			Class:  repository.ClassLocal,
+			Format: format,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tests := []struct {
+		name           string
+		repository     string
+		path           string
+		body           string
+		wantUnapproved bool
+	}{
+		{
+			name:           "a server.json with no name",
+			repository:     "mcp-local",
+			path:           "weather/1.2.0/server.json",
+			body:           `{"version": "1.2.0"}`,
+			wantUnapproved: true,
+		},
+		{
+			name:           "a server.json that is not JSON",
+			repository:     "mcp-local",
+			path:           "evil/9/server.json",
+			body:           `{"name": "io.example/evil"`,
+			wantUnapproved: true,
+		},
+		{
+			name:           "a skill bundle that is not a zip",
+			repository:     "skills-local",
+			path:           "broken/1.0.0/broken.zip",
+			body:           "not a zip",
+			wantUnapproved: true,
+		},
+		{
+			name:       "a file that is not a registry entry",
+			repository: "mcp-local",
+			path:       "weather/README.md",
+			body:       "# Weather",
+		},
+		{
+			name:       "a JSON file in another format",
+			repository: "generic-local",
+			path:       "config/server.json",
+			body:       `{"version": "1.2.0"}`,
+		},
+	}
+	for _, tt := range tests {
+		item, err := repos.Deploy(ctx, repository.DeployInput{
+			Repository: tt.repository,
+			Path:       tt.path,
+			Body:       strings.NewReader(tt.body),
+			User:       "admin",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		got, err := registry.Unapproved(ctx, tt.repository, tt.path, item.Checksums.SHA256)
+		if err != nil {
+			t.Fatalf("%s: %v", tt.name, err)
+		}
+
+		if got != tt.wantUnapproved {
+			t.Errorf("%s: unapproved = %v, want %v", tt.name, got, tt.wantUnapproved)
+		}
+	}
+}
