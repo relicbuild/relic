@@ -1400,7 +1400,7 @@
         "tags": [
           "Artifactory: repositories"
         ],
-        "x-relic-access": "admin"
+        "x-relic-access": "authenticated"
       },
       "post": {
         "operationId": "postArtifactoryApiRepositoriesKey",

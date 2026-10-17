@@ -104,6 +104,12 @@ func (h *Handler) getRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	p := auth.FromContext(r.Context())
+	if !p.Admin {
+		h.writePartialRepository(w, r, p, rp)
+		return
+	}
+
 	doc, err := repoconfig.ToArtifactory(rp)
 	if err != nil {
 		h.writeError(w, r, err)
@@ -113,6 +119,43 @@ func (h *Handler) getRepository(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	_, _ = w.Write(doc) //nolint:gosec // G705: admin-only JSON with nosniff
+}
+
+type partialRepository struct {
+	Key         string `json:"key"`
+	Rclass      string `json:"rclass"`
+	PackageType string `json:"packageType"`
+	Description string `json:"description"`
+}
+
+// writePartialRepository answers a non-administrator with the fields any reader of the repository may see,
+// and as if the repository did not exist when they may not read it.
+func (h *Handler) writePartialRepository(
+	w http.ResponseWriter,
+	r *http.Request,
+	p auth.Principal,
+	rp repository.Repository,
+) {
+	perms, err := h.security.Permissions(r.Context())
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+
+	if !perms.CanReadRepository(p.Subject(), auth.Repository{
+		Name:  rp.Name,
+		Class: string(rp.Class),
+	}) {
+		wire.WriteError(w, http.StatusBadRequest, "Bad Request")
+		return
+	}
+
+	wire.WriteJSON(w, http.StatusOK, partialRepository{
+		Key:         rp.Name,
+		Rclass:      string(rp.Class),
+		PackageType: repoconfig.WirePackageType(rp),
+		Description: rp.Config.Description,
+	})
 }
 
 func (h *Handler) createRepository(w http.ResponseWriter, r *http.Request) {

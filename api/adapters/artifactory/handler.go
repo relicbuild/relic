@@ -113,8 +113,7 @@ func (h *Handler) Register(rt *httpserver.Router) {
 
 	rt.HandleFunc("GET /artifactory/api/repositories", auth.Authenticated, h.listRepositories)
 	rt.HandleFunc("GET /artifactory/api/repositories/{$}", auth.Authenticated, h.listRepositories)
-	// Admin only: remote repository configs carry upstream credentials.
-	rt.HandleFunc("GET /artifactory/api/repositories/{key}", auth.Admin, h.getRepository)
+	rt.HandleFunc("GET /artifactory/api/repositories/{key}", auth.Authenticated, h.getRepository)
 	rt.HandleFunc("PUT /artifactory/api/repositories/{key}", auth.Admin, h.createRepository)
 	rt.HandleFunc("POST /artifactory/api/repositories/{key}", auth.Admin, h.updateRepository)
 	rt.HandleFunc("DELETE /artifactory/api/repositories/{key}", auth.Admin, h.deleteRepository)
