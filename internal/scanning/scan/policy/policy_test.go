@@ -684,6 +684,20 @@ func TestEvaluateAnalyzerIssues(t *testing.T) {
 			},
 			want: "vuln-low",
 		},
+		"a malicious model": {
+			issue: Issue{
+				Analyzer: scan.AnalyzerModel,
+				Severity: scan.SeverityCritical,
+				Rule:     "pickle-unsafe-import",
+			},
+			want: "vuln-low",
+		},
+		"a model issue of no known severity": {
+			issue: Issue{
+				Analyzer: scan.AnalyzerModel,
+				Severity: scan.SeverityUnknown,
+			},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -1033,6 +1047,7 @@ func TestPolicyLoads(t *testing.T) {
 			},
 			want: previewLoads{
 				findings: true,
+				issues:   true,
 			},
 		},
 		"severity of reachable code": {
@@ -1048,6 +1063,7 @@ func TestPolicyLoads(t *testing.T) {
 			want: previewLoads{
 				findings:     true,
 				reachability: true,
+				issues:       true,
 			},
 		},
 		"secrets and end of life": {

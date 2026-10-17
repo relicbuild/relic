@@ -182,9 +182,11 @@ func policyLoads(p Policy) previewLoads {
 		analyzerRule := r.Secrets || r.LiveSecrets || r.Misconfigurations
 		riskRule := r.EndOfLife || r.Unmaintained
 
-		loads.issues = loads.issues || analyzerRule || conditional
-		loads.risks = loads.risks || riskRule || conditional
 		findingRule := !analyzerRule && !riskRule
+		modelRule := findingRule && r.MinSeverity != ""
+
+		loads.issues = loads.issues || analyzerRule || modelRule || conditional
+		loads.risks = loads.risks || riskRule || conditional
 
 		loads.findings = loads.findings || findingRule
 		loads.reachability = loads.reachability || (findingRule && (r.IgnoreUnreachable || conditional))

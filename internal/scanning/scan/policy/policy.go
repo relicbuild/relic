@@ -209,7 +209,7 @@ func (w Watch) Covers(kind ScopeKind, name string) bool {
 
 // Issue is a finding to evaluate: a vulnerability (Severity, CVSS; a
 // malicious package is one with Malicious set), an analyzer's issue
-// (Analyzer: secrets or misconfiguration, with Severity), an operational
+// (Analyzer: secrets, misconfiguration or model, with Severity), an operational
 // risk (Risk, with Severity) or a license (License).
 type Issue struct {
 	Analyzer string
@@ -312,7 +312,7 @@ func matches(kind Kind, r Rule, is Issue) bool {
 			return is.Risk == RiskDeprecated || is.Risk == RiskUnmaintained
 		case r.MinSeverity == "" && r.CVSS == nil && !r.Malicious && r.Condition != "":
 			return true
-		case is.Analyzer != "" || is.Risk != "":
+		case (is.Analyzer != "" && is.Analyzer != scan.AnalyzerModel) || is.Risk != "":
 			return false
 		case r.Malicious:
 			return is.Malicious
