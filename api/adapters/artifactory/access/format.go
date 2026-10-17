@@ -126,6 +126,9 @@ type TokenResponse struct {
 	TokenType    string `json:"token_type"`
 	Refreshable  bool   `json:"refreshable"`
 	RefreshToken string `json:"refresh_token,omitempty"`
+	// ReferenceToken is the access token itself, which works wherever a
+	// reference token does.
+	ReferenceToken string `json:"reference_token,omitempty"`
 }
 
 // Response renders an issued token.

@@ -294,3 +294,55 @@ func TestTokensForUnknownUsersAreRefused(t *testing.T) {
 		t.Errorf("tokens issued before the user existed: %v", tokens)
 	}
 }
+
+func TestAccessTokensIncludeAReferenceTokenOnRequest(t *testing.T) {
+	t.Parallel()
+
+	srv := server(t)
+
+	for _, tt := range []struct {
+		name    string
+		request string
+		want    bool
+	}{
+		{
+			name:    "asked for",
+			request: `{"expires_in":300,"include_reference_token":true}`,
+			want:    true,
+		},
+		{
+			name:    "not asked for",
+			request: `{"expires_in":300}`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resp, body := do(t, srv, call{
+				method:  "POST",
+				path:    "/access/api/v1/tokens",
+				body:    tt.request,
+				noAuth:  true,
+				headers: basicHeaders("admin:password"),
+			})
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("create token = %d %s", resp.StatusCode, body)
+			}
+
+			var tok struct {
+				ReferenceToken string `json:"reference_token"`
+			}
+			if err := json.Unmarshal([]byte(body), &tok); err != nil {
+				t.Fatal(err)
+			}
+
+			if (tok.ReferenceToken != "") != tt.want {
+				t.Fatalf("reference_token present = %t, want %t", tok.ReferenceToken != "", tt.want)
+			}
+
+			if tt.want && signsInAs(t, srv, tok.ReferenceToken) != "admin" {
+				t.Error("the reference token does not sign in as admin")
+			}
+		})
+	}
+}

@@ -166,7 +166,12 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wire.WriteJSON(w, http.StatusOK, Response(tok, RenderScope))
+	resp := Response(tok, RenderScope)
+	if req.IncludeReferenceToken {
+		resp.ReferenceToken = tok.AccessToken
+	}
+
+	wire.WriteJSON(w, http.StatusOK, resp)
 }
 
 type loginRequest struct {
