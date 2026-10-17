@@ -404,6 +404,55 @@ func TestEvaluate(t *testing.T) {
 	}
 }
 
+func TestValidateCVSSRange(t *testing.T) {
+	t.Parallel()
+
+	for name, tt := range map[string]struct {
+		from, to float64
+		valid    bool
+	}{
+		"the whole scale": {
+			from:  0,
+			to:    10,
+			valid: true,
+		},
+		"one score": {
+			from:  7,
+			to:    7,
+			valid: true,
+		},
+		"from above to": {
+			from: 9,
+			to:   2,
+		},
+		"below zero": {
+			from: -5,
+			to:   5,
+		},
+		"above ten": {
+			from: 5,
+			to:   50,
+		},
+	} {
+		err := Policy{
+			Name: "x",
+			Kind: KindSecurity,
+			Rules: []Rule{
+				{
+					Name: "r",
+					CVSS: &CVSSRange{
+						From: tt.from,
+						To:   tt.to,
+					},
+				},
+			},
+		}.Validate()
+		if (err == nil) != tt.valid || (err != nil && !errors.Is(err, ErrInvalid)) {
+			t.Errorf("%s: Validate = %v, want valid %v", name, err, tt.valid)
+		}
+	}
+}
+
 func TestValidate(t *testing.T) {
 	t.Parallel()
 

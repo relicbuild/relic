@@ -159,6 +159,16 @@ func (p Policy) Validate() error {
 			if r.MinSeverity != "" && !r.MinSeverity.Known() {
 				return fmt.Errorf("%w: rule %s: unknown severity %q", ErrInvalid, r.Name, r.MinSeverity)
 			}
+
+			if c := r.CVSS; c != nil && (c.From < 0 || c.To > 10 || c.From > c.To) {
+				return fmt.Errorf(
+					"%w: rule %s: the CVSS range %g to %g must lie within 0 to 10, its start not above its end",
+					ErrInvalid,
+					r.Name,
+					c.From,
+					c.To,
+				)
+			}
 		case KindLicense:
 			if (len(r.AllowedLicenses) == 0) == (len(r.BannedLicenses) == 0) {
 				return fmt.Errorf("%w: rule %s needs exactly one of allowed and banned licenses", ErrInvalid, r.Name)
