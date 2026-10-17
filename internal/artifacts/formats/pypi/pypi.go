@@ -87,6 +87,37 @@ func ParseFilename(file string) (name, version string, ok bool) {
 	return "", "", false
 }
 
+// filenameMatches reports whether a distribution's file name starts with
+// the project name and version it is uploaded as, as the index requires.
+func filenameMatches(file, name, version string) bool {
+	if base, ok := strings.CutSuffix(file, ".whl"); ok {
+		parts := strings.Split(base, "-")
+		return len(parts) >= 5 && Normalize(parts[0]) == Normalize(name) && sameVersion(parts[1], version)
+	}
+
+	base := withoutArchiveExtension(file)
+	for i, c := range base {
+		if c != '-' || Normalize(base[:i]) != Normalize(name) {
+			continue
+		}
+
+		rest := base[i+1:]
+		if sameVersion(rest, version) || strings.HasSuffix(file, ".egg") && strings.HasPrefix(rest, version+"-py") {
+			return true
+		}
+	}
+
+	return false
+}
+
+// sameVersion compares versions as file names spell them: wheels escape
+// a dash as an underscore.
+func sameVersion(a, b string) bool {
+	escaped := strings.NewReplacer("_", "-")
+
+	return strings.EqualFold(escaped.Replace(a), escaped.Replace(b))
+}
+
 // Service implements the index on top of repo.Service.
 type Service struct {
 	repos *repository.Service
@@ -161,6 +192,11 @@ func (s *Service) Store(ctx context.Context, u Upload) (repository.Item, error) 
 		}
 
 		u.Name, u.Version = cmp.Or(u.Name, name), cmp.Or(u.Version, version)
+	}
+
+	if !filenameMatches(u.File, u.Name, u.Version) {
+		return repository.Item{}, fmt.Errorf("%w: file name %q is not one of %s %s", ErrInvalid, u.File, u.Name,
+			u.Version)
 	}
 
 	if !ValidName(u.Name) || !versionRe.MatchString(u.Version) {
