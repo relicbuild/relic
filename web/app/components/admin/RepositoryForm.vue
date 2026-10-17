@@ -80,8 +80,8 @@ const state = reactive<Partial<Schema>>({
   cooldownDays: r?.remote?.cooldownDays ?? 0,
   quarantine: r?.remote?.quarantine ?? false,
   timeoutMilliseconds: Number(r?.remote?.timeoutMilliseconds ?? 0),
-  maxUploadSizeMiB: Number((r?.maxUploadSize ?? 0n) / MiB),
-  maxStorageGiB: Number((r?.maxStorage ?? 0n) / GiB),
+  maxUploadSizeMiB: sizeInUnits(r?.maxUploadSize ?? 0n, MiB),
+  maxStorageGiB: sizeInUnits(r?.maxStorage ?? 0n, GiB),
   immutable: r?.immutable ?? false,
   repositories: [...(r?.virtual?.members ?? [])],
   localOnlyPatterns: [...(r?.virtual?.localOnlyPatterns ?? [])],
@@ -112,8 +112,6 @@ watch(locals, (names) => {
     state.defaultDeploymentRepo = ''
   }
 })
-const quotaBytes = (value: number, unit: bigint, original = 0n) => value === Number(original / unit) ? original : BigInt(value) * unit
-
 const saving = ref(false)
 async function onSubmit(event: FormSubmitEvent<Schema>) {
   saving.value = true
@@ -130,8 +128,8 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
         })
       : undefined
     const virtual = d.class === 'virtual' ? create(VirtualRepositorySettingsSchema, { members: d.repositories, deployTo: d.defaultDeploymentRepo ?? '', localOnlyPatterns: d.localOnlyPatterns }) : undefined
-    const maxUploadSize = d.class === 'local' ? quotaBytes(d.maxUploadSizeMiB, MiB, r?.maxUploadSize) : 0n
-    const maxStorage = d.class === 'local' ? quotaBytes(d.maxStorageGiB, GiB, r?.maxStorage) : 0n
+    const maxUploadSize = d.class === 'local' ? sizeInBytes(d.maxUploadSizeMiB, MiB, r?.maxUploadSize) : 0n
+    const maxStorage = d.class === 'local' ? sizeInBytes(d.maxStorageGiB, GiB, r?.maxStorage) : 0n
     const immutable = d.class === 'local' && d.immutable
     const indexes = {
       signingKey: defaultSigningKey[d.format] && d.class !== 'remote' ? d.signingKey ?? '' : '',

@@ -18,7 +18,7 @@ const roles = [
   { label: 'Developer', value: ProjectRole.DEVELOPER },
   { label: 'Viewer', value: ProjectRole.VIEWER }
 ]
-const mib = 1024 * 1024
+const MiB = 1048576n
 const maxQuotaMiB = 8796093022207
 
 const memberSchema = z.object({
@@ -41,7 +41,7 @@ const state = reactive<Schema>({
   key: p?.key ?? '',
   name: p?.name ?? '',
   description: p?.description ?? '',
-  quotaMiB: p ? Math.round(toNumber(p.storageQuotaBytes) / mib) : 0,
+  quotaMiB: sizeInUnits(p?.storageQuotaBytes ?? 0n, MiB),
   members: p?.members.map(m => ({ name: m.name, group: m.group, role: m.role })) ?? []
 })
 const saving = ref(false)
@@ -79,7 +79,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
           key: d.key,
           name: d.name,
           description: d.description,
-          storageQuotaBytes: BigInt(d.quotaMiB) * BigInt(mib),
+          storageQuotaBytes: sizeInBytes(d.quotaMiB, MiB, props.project?.storageQuotaBytes),
           members: d.members
         }
       })
