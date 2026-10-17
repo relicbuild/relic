@@ -301,3 +301,53 @@ func TestGoSumDBEndpoint(t *testing.T) {
 		t.Errorf("anonymous supported = %d, want 401", resp.StatusCode)
 	}
 }
+
+func TestGoModuleUploadedAtItsCaseEncodedPath(t *testing.T) {
+	t.Parallel()
+
+	srv := server(t)
+	do(
+		t,
+		srv,
+		call{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/go-local",
+			body:   `{"rclass":"local","packageType":"go"}`,
+		},
+	)
+
+	for _, prefix := range []string{
+		"/go/go-local",
+		"/artifactory/api/go/go-local",
+	} {
+		t.Run(prefix, func(t *testing.T) {
+			module := prefix + "/example.com/!raw!mod" + strings.ReplaceAll(prefix, "/", "-")
+			for ext, body := range map[string]string{
+				".mod": "module example.com/RawMod\n",
+				".zip": "zip",
+			} {
+				if resp, reply := do(t, srv, call{
+					method: "PUT",
+					path:   module + "/@v/v1.0.0" + ext,
+					body:   body,
+				}); resp.StatusCode != http.StatusCreated {
+					t.Fatalf("upload %s = %d %s", ext, resp.StatusCode, reply)
+				}
+			}
+
+			if resp, body := do(t, srv, call{
+				method: "GET",
+				path:   module + "/@v/list",
+			}); resp.StatusCode != http.StatusOK || body != "v1.0.0\n" {
+				t.Errorf("list = %d %q, want v1.0.0", resp.StatusCode, body)
+			}
+
+			if resp, body := do(t, srv, call{
+				method: "GET",
+				path:   module + "/@v/v1.0.0.mod",
+			}); resp.StatusCode != http.StatusOK || body != "module example.com/RawMod\n" {
+				t.Errorf("go.mod = %d %q", resp.StatusCode, body)
+			}
+		})
+	}
+}

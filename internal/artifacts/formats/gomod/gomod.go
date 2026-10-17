@@ -56,8 +56,15 @@ func NewService(repos *repository.Service, log *slog.Logger) *Service {
 
 // ValidModule reports whether escaped is a case-encoded module path.
 func ValidModule(escaped string) bool {
+	_, ok := ModulePath(escaped)
+	return ok
+}
+
+// ModulePath returns the module path the case-encoded path escaped stands
+// for, and whether it is one.
+func ModulePath(escaped string) (string, bool) {
 	p, err := module.UnescapePath(escaped)
-	return err == nil && module.CheckPath(p) == nil
+	return p, err == nil && module.CheckPath(p) == nil
 }
 
 // ValidVersion reports whether v is a canonical module version.

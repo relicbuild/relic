@@ -3,6 +3,7 @@ package packages
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -15,7 +16,7 @@ import (
 
 func (h *Handler) goAPI(w http.ResponseWriter, r *http.Request, m Mount) {
 	if r.Method == http.MethodPut {
-		m.Files(w, r, strings.TrimPrefix(r.URL.EscapedPath(), m.Prefix))
+		m.Files(w, r, goUploadPath(strings.TrimPrefix(r.URL.EscapedPath(), m.Prefix)))
 
 		return
 	}
@@ -124,6 +125,30 @@ func (h *Handler) goAPI(w http.ResponseWriter, r *http.Request, m Mount) {
 			h.dockerStream(w, r, item)
 		})
 	}
+}
+
+// goUploadPath is where an upload to the proxy's escaped path <repo>/<module>/@v/<file>
+// is stored: under the module path its case encoding stands for, where the
+// proxy reads it.
+func goUploadPath(escaped string) string {
+	repoKey, rest, _ := strings.Cut(escaped, "/")
+
+	mod, tail, ok := splitGoPath(rest)
+	if !ok {
+		return escaped
+	}
+
+	encoded, err := url.PathUnescape(mod)
+	if err != nil {
+		return escaped
+	}
+
+	modulePath, ok := gomod.ModulePath(encoded)
+	if !ok {
+		return escaped
+	}
+
+	return repoKey + "/" + modulePath + "/" + tail
 }
 
 func splitGoPath(rest string) (mod, tail string, ok bool) {
