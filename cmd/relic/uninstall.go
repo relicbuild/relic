@@ -28,8 +28,8 @@ func uninstallCmd(g *globals) *cobra.Command {
 		},
 		Short: "Remove what relic server setup installed on this machine, keeping the server's data",
 		Long: "Stops and removes the systemd service, the shell completion and the relic binary that relic server setup " +
-			"installed. The server's data, its settings (which hold the encryption key) and the client config stay, " +
-			"unless --purge.",
+			"installed. The server's data, its settings (which hold the encryption key), its certificate authority and " +
+			"the client config stay, unless --purge, whose question defaults to no.",
 		Example: "  relic server uninstall\n" +
 			"  sudo relic server uninstall --system\n" +
 			"  relic server uninstall --purge --yes",
@@ -50,7 +50,8 @@ func uninstallCmd(g *globals) *cobra.Command {
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask before removing anything")
 	cmd.Flags().
 		BoolVar(&system, "system", false, "as root: remove the system service relic server setup --system installed")
-	cmd.Flags().BoolVar(&purge, "purge", false, "also delete the server's data, its settings and the client config")
+	cmd.Flags().
+		BoolVar(&purge, "purge", false, "also delete the server's data, its settings, its certificates and the client config")
 
 	return cmd
 }
@@ -76,7 +77,12 @@ func (m *machineSetup) runUninstall(ctx context.Context, purge bool) error {
 	m.printPlan("relic server uninstall will:", remove)
 
 	if !m.yes {
-		ok, err := m.ask("Proceed? [Y/n] ", true)
+		question, answer := "Proceed? [Y/n] ", true
+		if purge {
+			question, answer = "Proceed and delete the server's data? [y/N] ", false
+		}
+
+		ok, err := m.ask(question, answer)
 		if err != nil {
 			return err
 		}
@@ -158,6 +164,7 @@ func (m *machineSetup) uninstallPlan() (remove, keep []machineAction) {
 	return actions, existing(
 		removal("client config: contexts and tokens", m.configPath),
 		removal("server settings, with the encryption key", filepath.Join(m.configDir(), "server.env")),
+		removal("the server's certificate authority and certificate", filepath.Join(m.configDir(), "tls")),
 		removal("the server's database and files", m.dataDir()),
 	)
 }
@@ -196,6 +203,7 @@ func (m *machineSetup) systemUninstallPlan() (remove, keep []machineAction) {
 
 	keep = existing(
 		removal("server settings, with the encryption key", filepath.Join(m.root, systemSettings)),
+		removal("the server's certificate authority and certificate", filepath.Join(m.root, systemTLSDir)),
 		removal("the server's database and files", filepath.Join(m.root, systemDataDir)),
 	)
 
