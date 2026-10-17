@@ -18,7 +18,7 @@ fails_with() {
 }
 
 step "jf release-bundle-distribute"
-fails_with "not implemented|501|distribution" release-bundle-distribute relic-scenario-bundle 1.0 --site '*' --create-repo --sync=false
+fails_with "does not distribute" release-bundle-distribute relic-scenario-bundle 1.0 --site '*' --create-repo --sync=false
 
 step "jf malicious-scan"
 mkdir -p proj && printf '{"name":"p","version":"1.0.0"}\n' >proj/package.json

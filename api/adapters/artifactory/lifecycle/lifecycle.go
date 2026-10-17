@@ -657,7 +657,7 @@ func (h *Handler) deletePromotion(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) distribute(w http.ResponseWriter, _ *http.Request) {
 	wire.WriteError(
 		w,
-		http.StatusNotImplemented,
+		http.StatusNotFound,
 		"Relic does not distribute release bundles: there are no distribution targets",
 	)
 }
