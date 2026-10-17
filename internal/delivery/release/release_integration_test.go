@@ -3,9 +3,11 @@
 package release
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
@@ -452,5 +454,48 @@ func TestPromoteCopiesNothingWhenATargetIsRefused(t *testing.T) {
 				t.Errorf("Stat of prod/app.bin after the refused promotion = %v; want ErrNotFound", err)
 			}
 		})
+	}
+}
+
+func TestBlockedFilesStayOutOfReleases(t *testing.T) {
+	t.Parallel()
+
+	f := newReleaseFixture(t)
+	f.create(t, "1.0", false, artifactSource("libs/app.bin"))
+
+	blocked := map[string]bool{}
+
+	f.releases.SetDownloadBlocker(func(_ context.Context, file repository.Item) error {
+		if blocked[file.Name] {
+			return fmt.Errorf("%w: %s is blocked", repository.ErrForbidden, file.Name)
+		}
+
+		return nil
+	})
+
+	blocked["other.bin"] = true
+
+	if _, err := f.releases.Create(t.Context(), "", Spec{
+		Name:    "app",
+		Version: "2.0",
+		Sources: artifactSource("libs/other.bin"),
+	}, "admin", Access{}); !errors.Is(err, repository.ErrForbidden) {
+		t.Errorf("Create with a blocked file = %v; want ErrForbidden", err)
+	}
+
+	blocked["app.bin"] = true
+
+	if _, err := f.releases.Export(t.Context(), "", "app", "1.0", "admin"); !errors.Is(err, repository.ErrForbidden) {
+		t.Errorf("Export of a release holding a blocked file = %v; want ErrForbidden", err)
+	}
+
+	if _, err := f.releases.Promote(t.Context(), "", "app", "1.0", PromotionSpec{
+		Environment: "PROD",
+	}, "admin", Access{}); !errors.Is(err, repository.ErrForbidden) {
+		t.Errorf("Promote of a release holding a blocked file = %v; want ErrForbidden", err)
+	}
+
+	if _, err := f.repos.Stat(t.Context(), "prod", "app.bin"); !errors.Is(err, repository.ErrNotFound) {
+		t.Errorf("the blocked file was promoted: %v", err)
 	}
 }

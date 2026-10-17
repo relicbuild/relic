@@ -158,6 +158,12 @@ func (s *Service) writeArchive(ctx context.Context, w io.Writer, b Release) erro
 	}
 
 	for _, f := range files {
+		if s.refuseFile != nil {
+			if err := s.refuseFile(ctx, f.item); err != nil {
+				return fmt.Errorf("export %s: %w", f.entry, err)
+			}
+		}
+
 		rc, err := s.repos.Open(ctx, f.item, nil)
 		if err != nil {
 			return fmt.Errorf("export %s: %w", f.entry, err)

@@ -297,6 +297,7 @@ func (s *Service) artifactCopy(
 		DestinationRepository: target,
 		DestinationPath:       a.Path,
 		User:                  user,
+		RefuseFile:            s.refuseFile,
 		RefuseOverwrite: func(_ context.Context, existing repository.Item) error {
 			if access.canDelete(existing.Repository, existing.Path()) {
 				return nil

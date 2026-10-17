@@ -781,7 +781,7 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, rb.ErrNotFound), errors.Is(err, repository.ErrNotFound):
 		wire.WriteError(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, rb.ErrForbidden):
+	case errors.Is(err, rb.ErrForbidden), errors.Is(err, repository.ErrForbidden):
 		wire.WriteError(w, http.StatusForbidden, err.Error())
 	case errors.Is(err, rb.ErrExists), errors.Is(err, repository.ErrConflict), errors.Is(err, rb.ErrRefused):
 		wire.WriteError(w, http.StatusConflict, err.Error())

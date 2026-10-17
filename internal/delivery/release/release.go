@@ -167,6 +167,8 @@ type Service struct {
 	events    events.Publisher
 	// projects checks that a release's project exists; nil checks nothing.
 	projects *project.Service
+	// refuseFile refuses a file whose download is blocked; nil refuses none.
+	refuseFile func(ctx context.Context, file repository.Item) error
 }
 
 // SetProjects makes releases refuse projects that do not exist.
@@ -174,6 +176,12 @@ func (s *Service) SetProjects(p *project.Service) { s.projects = p }
 
 // SetEvents publishes promotions to p.
 func (s *Service) SetEvents(p events.Publisher) { s.events = p }
+
+// SetDownloadBlocker keeps files out of releases, promotions and exports
+// when refuse returns an error for them, as it does for a blocked download.
+func (s *Service) SetDownloadBlocker(refuse func(ctx context.Context, file repository.Item) error) {
+	s.refuseFile = refuse
+}
 
 // New returns a Service.
 func New(
@@ -461,6 +469,7 @@ func (s *Service) materialize(ctx context.Context, b *Release, entries []entry, 
 				DestinationRepository: b.Repository,
 				DestinationPath:       b.artifactPath(e.art),
 				User:                  user,
+				RefuseFile:            s.refuseFile,
 			},
 		)
 		if err != nil {
