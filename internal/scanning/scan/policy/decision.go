@@ -261,7 +261,7 @@ func (a *Admin) Preview(ctx context.Context, p Policy, repositories []string, li
 			}
 
 			hits = append(hits, found...)
-			if len(hits) >= limit {
+			if len(hits) > limit {
 				return hits[:limit], true, nil
 			}
 		}

@@ -282,6 +282,10 @@ func TestDownloadBlocking(t *testing.T) {
 		t.Errorf("preview = %+v, %v, %v", hits, truncated, err)
 	}
 
+	if hits, truncated, err := admin.Preview(ctx, preview, nil, 1); err != nil || truncated || len(hits) != 1 {
+		t.Errorf("preview limited to its one hit = %+v, truncated %v, %v; want not truncated", hits, truncated, err)
+	}
+
 	if hits, _, err := admin.Preview(ctx, preview, []string{
 		"other",
 	}, 10); err != nil || len(hits) != 0 {

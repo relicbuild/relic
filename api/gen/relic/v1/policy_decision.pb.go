@@ -301,7 +301,7 @@ type PreviewPolicyRequest struct {
 	Policy *Policy                `protobuf:"bytes,1,opt,name=policy,proto3" json:"policy,omitempty"`
 	// repositories limits the preview; empty covers every repository.
 	Repositories []string `protobuf:"bytes,2,rep,name=repositories,proto3" json:"repositories,omitempty"`
-	// limit defaults to 1000.
+	// limit is the most hits to list; it defaults to 1000.
 	Limit         int32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -455,8 +455,8 @@ func (x *PolicyPreviewHit) GetBlockDownload() bool {
 type PreviewPolicyResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Hits  []*PolicyPreviewHit    `protobuf:"bytes,1,rep,name=hits,proto3" json:"hits,omitempty"`
-	// truncated is set when the limit, or the number of files a preview
-	// reads, was reached.
+	// truncated is set when there are more hits than the limit lets the
+	// response list, or when the preview stopped at the most files it reads.
 	Truncated     bool `protobuf:"varint,2,opt,name=truncated,proto3" json:"truncated,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

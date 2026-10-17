@@ -6824,7 +6824,7 @@
             "type": "integer",
             "title": "limit",
             "format": "int32",
-            "description": "limit defaults to 1000."
+            "description": "limit is the most hits to list; it defaults to 1000."
           }
         },
         "title": "PreviewPolicyRequest",
@@ -6843,7 +6843,7 @@
           "truncated": {
             "type": "boolean",
             "title": "truncated",
-            "description": "truncated is set when the limit, or the number of files a preview\n reads, was reached."
+            "description": "truncated is set when there are more hits than the limit lets the\n response list, or when the preview stopped at the most files it reads."
           }
         },
         "title": "PreviewPolicyResponse",
