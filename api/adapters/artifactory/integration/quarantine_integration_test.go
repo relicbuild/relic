@@ -214,6 +214,29 @@ func TestQuarantine(t *testing.T) {
 	}
 
 	for p, want := range map[string]int{
+		"g/a/1.0/a-1.0.jar": http.StatusCreated,
+		"g/b/1.0/b-1.0.jar": http.StatusForbidden,
+		"g/c/1.0/c-1.0.jar": http.StatusForbidden,
+	} {
+		if resp, body := do(t, srv, call{
+			method: http.MethodPut,
+			path:   "/artifactory/copies-local/by-checksum/" + p,
+			headers: map[string]string{
+				"X-Checksum-Deploy": "true",
+				"X-Checksum-Sha256": sha[p],
+			},
+		}); resp.StatusCode != want {
+			t.Errorf(
+				"a checksum deploy of the content of held-remote/%s = %d %s, want %d",
+				p,
+				resp.StatusCode,
+				body,
+				want,
+			)
+		}
+	}
+
+	for p, want := range map[string]int{
 		"g/a/1.0/a-1.0.jar": http.StatusOK,
 		"g/b/1.0/b-1.0.jar": http.StatusNotFound,
 		"g/c/1.0/c-1.0.jar": http.StatusNotFound,

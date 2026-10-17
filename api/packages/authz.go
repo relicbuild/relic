@@ -219,27 +219,50 @@ func Forbidden(w http.ResponseWriter, r *http.Request, action, target string) {
 	httperror.Write(w, r, http.StatusForbidden, "Forbidden: missing '"+action+"' permission on "+target)
 }
 
-// CanReadContent reports whether the caller may read some stored file with
-// the given content.
+// CanReadContent reports whether the caller may read and download some
+// stored file with the given content. Content whose every readable copy is
+// download-blocked is refused with repository.ErrForbidden.
 func (h *Handler) CanReadContent(r *http.Request, sums repository.Checksums) (bool, error) {
-	if auth.FromContext(r.Context()).Admin {
-		return true, nil
-	}
+	ctx := r.Context()
 
-	items, err := h.repos.FilesWithContent(r.Context(), sums)
+	items, err := h.repos.FilesWithContent(ctx, sums)
 	if err != nil {
 		return false, err
 	}
 
+	var blocked []repository.Item
+
 	for _, it := range items {
-		ok, err := h.CanRepo(r, it.Repository, it.Path(), auth.ActionRead)
+		ok := auth.FromContext(ctx).Admin
+		if !ok {
+			ok, err = h.CanRepo(r, it.Repository, it.Path(), auth.ActionRead)
+			if err != nil {
+				return false, err
+			}
+		}
+
+		if !ok {
+			continue
+		}
+
+		if h.blocker == nil {
+			return true, nil
+		}
+
+		d, err := h.blocker.Explain(ctx, it.Repository, it.Path(), it.Checksums.SHA256)
 		if err != nil {
 			return false, err
 		}
 
-		if ok {
+		if !d.Blocked {
 			return true, nil
 		}
+
+		blocked = append(blocked, it)
+	}
+
+	if len(blocked) > 0 {
+		return false, h.RefuseCopy(ctx, blocked[0])
 	}
 
 	return false, nil
