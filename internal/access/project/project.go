@@ -59,6 +59,12 @@ var keyPattern = regexp.MustCompile(`^[a-z][a-z0-9]{1,31}$`)
 // ValidKey reports whether key has the form of a project key.
 func ValidKey(key string) bool { return keyPattern.MatchString(key) }
 
+// DefaultKey stands for no project where a project key is expected.
+const DefaultKey = "default"
+
+// IsDefault reports whether key stands for no project: empty or DefaultKey.
+func IsDefault(key string) bool { return key == "" || key == DefaultKey }
+
 // Member is a user, or a group, in a role.
 type Member struct {
 	Name  string `json:"name"`

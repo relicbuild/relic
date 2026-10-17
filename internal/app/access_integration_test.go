@@ -4,6 +4,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"reflect"
 	"relic/internal/platform/database"
@@ -71,6 +72,40 @@ func TestStorageRepositoryNamesAreReservedForTheirProject(t *testing.T) {
 				`{"name":"`+tt.repository+`","class":"REPOSITORY_CLASS_LOCAL","format":"FORMAT_`+tt.format+
 					`","project":"alpha"}`,
 				http.StatusBadRequest,
+			)
+		})
+	}
+
+	defaultStorage := []struct {
+		name       string
+		repository string
+		format     string
+	}{
+		{
+			name:       "build info in the default project",
+			repository: "artifactory-build-info",
+			format:     "BUILD",
+		},
+		{
+			name:       "releases in the default project",
+			repository: "release-bundles-v2",
+			format:     "RELEASE",
+		},
+	}
+	for _, tt := range defaultStorage {
+		t.Run(tt.name, func(t *testing.T) {
+			admin := rest{
+				t:   t,
+				srv: send,
+			}
+			body := `{"name":"` + tt.repository + `","class":"REPOSITORY_CLASS_LOCAL","format":"FORMAT_` + tt.format +
+				`","project":"default","description":"%s"}`
+			admin.call(http.MethodPost, "/api/v1/repositories", fmt.Sprintf(body, "created"), http.StatusOK)
+			admin.call(
+				http.MethodPut,
+				"/api/v1/repositories/"+tt.repository,
+				fmt.Sprintf(body, "updated"),
+				http.StatusOK,
 			)
 		})
 	}

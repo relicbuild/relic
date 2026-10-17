@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"relic/internal/access/project"
 	"relic/internal/artifacts/signingkey"
 	"relic/internal/platform/database"
 )
@@ -34,13 +35,13 @@ func (s *Service) ReserveStorage(owner StorageOwner) {
 }
 
 func (s *Service) checkStorageName(r Repository) error {
-	for _, owner := range s.storageOwners {
-		format, project, ok := owner(r.Name)
-		if !ok || r.Format == format && r.Project == project {
+	for _, storageOwner := range s.storageOwners {
+		format, owner, ok := storageOwner(r.Name)
+		if !ok || r.Format == format && storageProject(r.Project) == owner {
 			continue
 		}
 
-		if project == "" {
+		if owner == "" {
 			return fmt.Errorf(
 				"%w: %s is reserved for %s storage outside projects",
 				ErrInvalidRepository,
@@ -53,12 +54,20 @@ func (s *Service) checkStorageName(r Repository) error {
 			"%w: %s is reserved for project %s's %s storage",
 			ErrInvalidRepository,
 			r.Name,
-			project,
+			owner,
 			format,
 		)
 	}
 
 	return nil
+}
+
+func storageProject(key string) string {
+	if project.IsDefault(key) {
+		return ""
+	}
+
+	return key
 }
 
 // CreateRepository stores a new repository.

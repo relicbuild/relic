@@ -141,7 +141,7 @@ func (l Layout) Repository(project string) string {
 	return project + l.ProjectSuffix
 }
 
-func isDefaultProject(key string) bool { return key == "" || key == "default" }
+func isDefaultProject(key string) bool { return project.IsDefault(key) }
 
 func ownerProject(key string) string {
 	if isDefaultProject(key) {

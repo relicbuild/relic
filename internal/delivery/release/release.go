@@ -52,7 +52,7 @@ var namePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$`)
 
 // DefaultProject is the project of releases outside any project; "" means
 // the same.
-const DefaultProject = "default"
+const DefaultProject = project.DefaultKey
 
 // Layout names where release versions are stored: the storing repository
 // per project and the manifest file in each version folder.
@@ -81,7 +81,7 @@ func (l Layout) Repository(project string) string {
 	return project + l.ProjectSuffix
 }
 
-func isDefaultProject(key string) bool { return key == "" || key == DefaultProject }
+func isDefaultProject(key string) bool { return project.IsDefault(key) }
 
 func ownerProject(key string) string {
 	if isDefaultProject(key) {
