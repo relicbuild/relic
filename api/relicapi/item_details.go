@@ -297,6 +297,7 @@ func (s *artifactServer) addBuildLinks(ctx context.Context, out *relicv1.GetItem
 					Number:  l.Number,
 					Started: timestamppb.New(l.Started),
 					Module:  l.Module,
+					Project: l.Project,
 				},
 			)
 		}
@@ -316,6 +317,7 @@ func (s *artifactServer) addBuildLinks(ctx context.Context, out *relicv1.GetItem
 					Number:  l.Number,
 					Started: timestamppb.New(l.Started),
 					Module:  l.Module,
+					Project: l.Project,
 					Scopes:  l.Scopes,
 				},
 			)

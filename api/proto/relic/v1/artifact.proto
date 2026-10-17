@@ -211,6 +211,8 @@ message BuildLink {
   string module = 4;
   // scopes says how a dependency was used; empty for artifacts.
   string scopes = 5;
+  // project is the key of the build's project; empty outside projects.
+  string project = 6;
 }
 
 // DownloadStats are an item's recorded downloads.

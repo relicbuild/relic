@@ -645,6 +645,11 @@
             "type": "string",
             "title": "scopes",
             "description": "scopes says how a dependency was used; empty for artifacts."
+          },
+          "project": {
+            "type": "string",
+            "title": "project",
+            "description": "project is the key of the build's project; empty outside projects."
           }
         },
         "title": "BuildLink",

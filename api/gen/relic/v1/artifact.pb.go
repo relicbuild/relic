@@ -921,7 +921,9 @@ type BuildLink struct {
 	Started *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=started,proto3" json:"started,omitempty"`
 	Module  string                 `protobuf:"bytes,4,opt,name=module,proto3" json:"module,omitempty"`
 	// scopes says how a dependency was used; empty for artifacts.
-	Scopes        string `protobuf:"bytes,5,opt,name=scopes,proto3" json:"scopes,omitempty"`
+	Scopes string `protobuf:"bytes,5,opt,name=scopes,proto3" json:"scopes,omitempty"`
+	// project is the key of the build's project; empty outside projects.
+	Project       string `protobuf:"bytes,6,opt,name=project,proto3" json:"project,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -987,6 +989,13 @@ func (x *BuildLink) GetModule() string {
 func (x *BuildLink) GetScopes() string {
 	if x != nil {
 		return x.Scopes
+	}
+	return ""
+}
+
+func (x *BuildLink) GetProject() string {
+	if x != nil {
+		return x.Project
 	}
 	return ""
 }
@@ -1924,13 +1933,14 @@ const file_relic_v1_artifact_proto_rawDesc = "" +
 	"\n" +
 	"repository\x18\x01 \x01(\tR\n" +
 	"repository\x12\x12\n" +
-	"\x04path\x18\x02 \x01(\tR\x04path\"\x9d\x01\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\"\xb7\x01\n" +
 	"\tBuildLink\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06number\x18\x02 \x01(\tR\x06number\x124\n" +
 	"\astarted\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\astarted\x12\x16\n" +
 	"\x06module\x18\x04 \x01(\tR\x06module\x12\x16\n" +
-	"\x06scopes\x18\x05 \x01(\tR\x06scopes\"\x9d\x01\n" +
+	"\x06scopes\x18\x05 \x01(\tR\x06scopes\x12\x18\n" +
+	"\aproject\x18\x06 \x01(\tR\aproject\"\x9d\x01\n" +
 	"\rDownloadStats\x12\x14\n" +
 	"\x05count\x18\x01 \x01(\x03R\x05count\x12H\n" +
 	"\x12last_downloaded_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x10lastDownloadedAt\x12,\n" +

@@ -6,11 +6,12 @@ definePageMeta({ layout: 'dashboard' })
 const route = useRoute()
 const name = computed(() => String(route.params.name))
 const number = computed(() => String(route.params.number))
+const project = computed(() => typeof route.query.project === 'string' ? route.query.project : '')
 const relic = useRelic()
 const { data: build, status, error, refresh } = await useAsyncData(
-  () => `build:${name.value}/${number.value}`,
-  async () => buildInfo(await relic.builds.getBuildRun({ name: name.value, number: number.value })),
-  { watch: [name, number] }
+  () => `build:${project.value}/${name.value}/${number.value}`,
+  async () => buildInfo(await relic.builds.getBuildRun({ project: project.value, name: name.value, number: number.value })),
+  { watch: [project, name, number] }
 )
 
 const artifacts = computed(() => (build.value?.modules ?? []).flatMap(m =>
@@ -35,7 +36,7 @@ const tabs = computed<TabsItem[]>(() => [
             icon="i-lucide-arrow-left"
             color="neutral"
             variant="ghost"
-            :to="`/builds/${encodeURIComponent(name)}`"
+            :to="buildRunsLink(name, project)"
             aria-label="All runs"
           />
         </template>
