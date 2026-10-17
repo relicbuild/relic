@@ -2,6 +2,10 @@
 # covers: rt upload, rt download
 # tier: platform (the OpenTelemetry Collector of the Compose stack)
 source "$(dirname "$0")/lib.sh"
+if [[ ${SCENARIO_REMOTE_SERVER:-} == true ]]; then
+  echo "skipped: a remote server's metrics port and traces are not reachable" >&2
+  exit 0
+fi
 : "${SCENARIO_METRICS_URL:?the metrics port, e.g. http://relic-server:8091}"
 : "${SCENARIO_TRACES_FILE:?the file the collector writes}"
 repo=relic-scenario-telemetry

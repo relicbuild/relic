@@ -19,6 +19,15 @@ BUILD=relic-scenario-build${SCENARIO_SUFFIX:-}
 
 jf() { "$JF" "$@"; }
 
+# The flags registry clients need for SCENARIO_REGISTRY: none when it serves
+# HTTPS (SCENARIO_REGISTRY_TLS=true), plain HTTP otherwise.
+# shellcheck disable=SC2034
+if [[ ${SCENARIO_REGISTRY_TLS:-} == true ]]; then
+  REGISTRY_INSECURE=() REGISTRY_PLAIN_HTTP=()
+else
+  REGISTRY_INSECURE=(--insecure) REGISTRY_PLAIN_HTTP=(--plain-http)
+fi
+
 step() { printf '\n==> [%ss] %s\n' "$SECONDS" "$*" >&2; }
 
 create_generic_repo() {

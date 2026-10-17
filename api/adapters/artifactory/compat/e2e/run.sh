@@ -15,6 +15,15 @@ results="${RELIC_E2E_RESULTS:-$root/api/adapters/artifactory/compat/e2e/results}
 tls="$project-e2e-tls" otel="$project-e2e-otel"
 scenario_dir="$root/api/adapters/artifactory/compat/fixtures/scenarios"
 tier="${RELIC_E2E_TIER:-all}"
+# RELIC_E2E_URL runs the scenarios against a server already running there,
+# over HTTPS with a publicly trusted certificate, as RELIC_USER (an
+# administrator) instead of starting the Compose stack.
+remote="${RELIC_E2E_URL:-}"
+remote="${remote%/}"
+if [[ -n "$remote" && $remote != https://* ]]; then
+  echo "RELIC_E2E_URL is $remote: an https:// address" >&2
+  exit 2
+fi
 case "$tier" in
 all | core | platform) ;;
 *) echo "RELIC_E2E_TIER is $tier: all, core or platform" >&2; exit 2 ;;
@@ -88,15 +97,20 @@ fi
 
 export RELIC_OTLP_ENDPOINT="${RELIC_OTLP_ENDPOINT:-http://relic-e2e-otel:4318}"
 export RELIC_FAILED_SIGN_INS_BEFORE_BACKOFF="${RELIC_FAILED_SIGN_INS_BEFORE_BACKOFF:-1000}"
-if [[ "${RELIC_E2E_SINGLE_NODE:-false}" == true ]]; then
+if [[ -z "$remote" && "${RELIC_E2E_SINGLE_NODE:-false}" == true ]]; then
   "${compose[@]}" rm -sf relic-worker >/dev/null 2>&1 || true
 fi
 phase "server image"
 # Two images built at once from one Dockerfile can collide on a locked layer:
-# BuildKit then fails one build instead of waiting.
-"${compose[@]}" build "${services[@]}" || "${compose[@]}" build "${services[@]}"
-phase "stack up"
-"${compose[@]}" up -d --wait --remove-orphans "${services[@]}"
+# BuildKit then fails one build instead of waiting. A remote run needs the
+# image only for the relic CLI the client image copies.
+if [[ -n "$remote" ]]; then
+  "${compose[@]}" build relic-server
+else
+  "${compose[@]}" build "${services[@]}" || "${compose[@]}" build "${services[@]}"
+  phase "stack up"
+  "${compose[@]}" up -d --wait --remove-orphans "${services[@]}"
+fi
 phase "client image"
 docker build -q -t "$project-e2e" --build-arg RELIC_IMAGE="$image" -f "$root/api/adapters/artifactory/compat/e2e/Dockerfile" "$root" >/dev/null
 
@@ -104,8 +118,10 @@ docker build -q -t "$project-e2e" --build-arg RELIC_IMAGE="$image" -f "$root/api
 # send credentials to a plain-HTTP GOPROXY.
 docker rm -f "$tls" >/dev/null 2>&1 || true
 # The name has a dot: terraform refuses registry hostnames without one.
-docker run -d --rm --name "$tls" --network "$network" --network-alias tls.relic.test caddy:2 \
-  caddy reverse-proxy --from https://tls.relic.test --to relic-server:8090 --internal-certs >/dev/null
+if [[ -z "$remote" ]]; then
+  docker run -d --rm --name "$tls" --network "$network" --network-alias tls.relic.test caddy:2 \
+    caddy reverse-proxy --from https://tls.relic.test --to relic-server:8090 --internal-certs >/dev/null
+fi
 for p in "${prepared[@]}"; do wait "$p"; done
 
 phase "daemons ready"
@@ -115,12 +131,24 @@ docker rm -f "$otel" >/dev/null 2>&1 || true
 docker run -d --rm --name "$otel" --user "$(id -u):$(id -g)" --network "$network" --network-alias relic-e2e-otel \
   -v "$root/api/adapters/artifactory/compat/e2e/otel-collector.yaml:/etc/otelcol/config.yaml:ro" -v "$results/otel:/out" \
   otel/opentelemetry-collector-contrib:0.161.0 --config=/etc/otelcol/config.yaml >/dev/null
+if [[ -n "$remote" ]]; then
+  docker run --rm caddy:2 cat /etc/ssl/certs/ca-certificates.crt >"$results/tls-ca.crt"
+fi
 for _ in $(seq 30); do
+  [[ -f "$results/tls-ca.crt" ]] && break
   docker cp "$tls":/data/caddy/pki/authorities/local/root.crt "$results/tls-ca.crt" >/dev/null 2>&1 && break
   sleep 1
 done
 [[ -f "$results/tls-ca.crt" ]] || { echo "Caddy's CA certificate not available after 30 s" >&2; exit 1; }
 phase "scenarios"
+server_env=(-e RELIC_URL=http://relic-server:8090 -e SCENARIO_REGISTRY=relic-server:8090 -e SCENARIO_TLS_URL=https://tls.relic.test
+  -e SCENARIO_METRICS_URL=http://relic-server:8091 -e SCENARIO_TRACES_FILE=/results/otel/traces.json)
+sdk_url="http://127.0.0.1:${RELIC_PORT:-8090}" sdk_container_url=http://relic-server:8090
+if [[ -n "$remote" ]]; then
+  server_env=(-e RELIC_URL="$remote" -e SCENARIO_REGISTRY="${remote#https://}" -e SCENARIO_REGISTRY_TLS=true
+    -e SCENARIO_TLS_URL="$remote" -e SCENARIO_REMOTE_SERVER=true)
+  sdk_url=$remote sdk_container_url=$remote
+fi
 sdk=0 scenarios=()
 for s in "${selected[@]}"; do
   if [[ "$s" == sdk-artifactory-rest ]]; then sdk=1; else scenarios+=("$s"); fi
@@ -129,10 +157,10 @@ sdk_pid=
 if [[ $sdk -eq 1 ]]; then
   mkdir -p "$results/logs"
   if command -v go >/dev/null; then
-    sdk_test=(env -C "$root/api/adapters/artifactory/compat/sdk" RELIC_SDK_URL="http://127.0.0.1:${RELIC_PORT:-8090}" go test -tags=e2e -count=1 -v ./...)
+    sdk_test=(env -C "$root/api/adapters/artifactory/compat/sdk" RELIC_SDK_URL="$sdk_url" go test -tags=e2e -count=1 -v ./...)
   else
     sdk_test=(docker run --rm --network "$network" -v "$root:/src:ro" -w /src/api/adapters/artifactory/compat/sdk -e GOFLAGS=-buildvcs=false
-      -e GOCACHE=/tmp/go-cache -e GOMODCACHE=/tmp/go-mod -e RELIC_SDK_URL=http://relic-server:8090 -e RELIC_USER -e RELIC_PASSWORD
+      -e GOCACHE=/tmp/go-cache -e GOMODCACHE=/tmp/go-mod -e RELIC_SDK_URL="$sdk_container_url" -e RELIC_USER -e RELIC_PASSWORD
       golang:1.27.1-alpine go test -tags=e2e -count=1 -v ./...)
   fi
   ( if "${sdk_test[@]}" >"$results/logs/sdk-artifactory-rest.log" 2>&1; then echo pass; else echo fail; fi >"$results/sdk.result" ) &
@@ -141,11 +169,9 @@ fi
 if [[ ${#scenarios[@]} -gt 0 ]]; then
   docker run --rm --network "$network" -v "$results:/results" \
     -v "$root/api/adapters/artifactory/compat/fixtures/scenarios:/scenarios:ro" -v "$bin:/e2e:ro" -e E2E_PARALLEL \
-    -e RELIC_URL=http://relic-server:8090 -e RELIC_TOKEN -e RELIC_USER -e RELIC_PASSWORD \
+    "${server_env[@]}" -e RELIC_TOKEN -e RELIC_USER -e RELIC_PASSWORD \
     -e DOCKER_HOST=tcp://relic-e2e-dind:2375 -e SCENARIO_DOCKER_HOSTNAME=relic-e2e-dind -e E2E_OWN_DAEMON="${own_daemon[*]}" \
-    -e SCENARIO_REGISTRY=relic-server:8090 \
-    -e SCENARIO_TLS_URL=https://tls.relic.test -e TLS_CA=/results/tls-ca.crt \
-    -e SCENARIO_METRICS_URL=http://relic-server:8091 -e SCENARIO_TRACES_FILE=/results/otel/traces.json \
+    -e TLS_CA=/results/tls-ca.crt \
     -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
     "$project-e2e" "${scenarios[@]}"
 fi
