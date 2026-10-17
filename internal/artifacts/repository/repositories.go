@@ -296,12 +296,34 @@ func (s *Service) checkMembers(ctx context.Context, r Repository) error {
 			return err
 		}
 
+		if !aggregates(r.Format, member.Format) {
+			return fmt.Errorf(
+				"%w: member %s of %s is a %s repository, not %s",
+				ErrInvalidRepository,
+				key,
+				r.Name,
+				member.Format,
+				r.Format,
+			)
+		}
+
 		if key == r.Config.Virtual.DeployTo && member.Class != ClassLocal {
 			return fmt.Errorf("%w: deployTo %s is not a local repository", ErrInvalidRepository, key)
 		}
 	}
 
 	return nil
+}
+
+var mavenFamily = []Format{
+	FormatMaven,
+	FormatGradle,
+	FormatIvy,
+	FormatSbt,
+}
+
+func aggregates(virtual, member Format) bool {
+	return virtual == member || slices.Contains(mavenFamily, virtual) && slices.Contains(mavenFamily, member)
 }
 
 func removeMember(ctx context.Context, q database.Querier, key string) error {

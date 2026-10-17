@@ -471,6 +471,7 @@ func TestVirtualRepositoryMembersMustExist(t *testing.T) {
 
 	tests := []struct {
 		name    string
+		format  Format
 		virtual VirtualConfig
 		wantErr bool
 	}{
@@ -525,6 +526,28 @@ func TestVirtualRepositoryMembersMustExist(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name:   "a member of another format",
+			format: FormatPyPI,
+			virtual: VirtualConfig{
+				Members: []string{
+					"pypi-local",
+					"npm-local",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name:   "a gradle member of a maven repository",
+			format: FormatMaven,
+			virtual: VirtualConfig{
+				Members: []string{
+					"maven-local",
+					"gradle-local",
+				},
+				DeployTo: "gradle-local",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -546,10 +569,30 @@ func TestVirtualRepositoryMembersMustExist(t *testing.T) {
 				t.Fatal(err)
 			}
 
+			for _, format := range []Format{
+				FormatPyPI,
+				FormatNpm,
+				FormatMaven,
+				FormatGradle,
+			} {
+				if err := s.CreateRepository(ctx, Repository{
+					Name:   string(format) + "-local",
+					Class:  ClassLocal,
+					Format: format,
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			format := tt.format
+			if format == "" {
+				format = FormatGeneric
+			}
+
 			virtual := Repository{
 				Name:   "generic",
 				Class:  ClassVirtual,
-				Format: FormatGeneric,
+				Format: format,
 				Config: Config{
 					Virtual: &tt.virtual,
 				},

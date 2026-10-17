@@ -145,25 +145,20 @@ func TestNixBinaryCache(t *testing.T) {
 		t.Errorf("staged NAR still at nar/ = %d", resp.StatusCode)
 	}
 
-	for _, repo := range []string{
-		`{"key":"nix-generic","rclass":"local","packageType":"generic"}`,
-		`{"key":"nix-misdirected","rclass":"virtual","packageType":"nix","repositories":["nix-local","nix-generic"],"defaultDeploymentRepo":"nix-generic"}`,
-	} {
-		key := strings.Split(strings.Split(repo, `"key":"`)[1], `"`)[0]
-		if resp, body := do(t, srv, call{
-			method: "PUT",
-			path:   "/artifactory/api/repositories/" + key,
-			body:   repo,
-		}); resp.StatusCode >= 300 {
-			t.Fatalf("create %s = %d %s", key, resp.StatusCode, body)
-		}
+	if resp, body := do(t, srv, call{
+		method: "PUT",
+		path:   "/artifactory/api/repositories/nix-generic",
+		body:   `{"key":"nix-generic","rclass":"local","packageType":"generic"}`,
+	}); resp.StatusCode >= 300 {
+		t.Fatalf("create nix-generic = %d %s", resp.StatusCode, body)
 	}
 
 	if resp, body := do(t, srv, call{
 		method: "PUT",
-		path:   api + "nix-misdirected/nix-cache-info",
-		body:   "StoreDir: /nix/store\n",
-	}); resp.StatusCode != 400 {
-		t.Errorf("nix copy into a generic deployment repository = %d %s, want 400", resp.StatusCode, body)
+		path:   "/artifactory/api/repositories/nix-misdirected",
+		body: `{"key":"nix-misdirected","rclass":"virtual","packageType":"nix",` +
+			`"repositories":["nix-local","nix-generic"],"defaultDeploymentRepo":"nix-generic"}`,
+	}); resp.StatusCode != 400 || !strings.Contains(body, "generic repository") {
+		t.Errorf("a nix virtual repository deploying to a generic one = %d %s, want 400", resp.StatusCode, body)
 	}
 }
