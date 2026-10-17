@@ -1,6 +1,7 @@
 package artifactory
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -144,11 +145,7 @@ func (h *Handler) deploy(w http.ResponseWriter, r *http.Request, t packages.Targ
 		Size:       r.ContentLength,
 		Props:      t.Props,
 		User:       user,
-		Expected: repository.Checksums{
-			SHA1:   r.Header.Get("X-Checksum-Sha1"),
-			MD5:    r.Header.Get("X-Checksum-Md5"),
-			SHA256: firstNonEmpty(r.Header.Get("X-Checksum-Sha256"), r.Header.Get("X-Checksum")),
-		},
+		Expected:   parseChecksumHeaders(r.Header),
 	}
 
 	var (
@@ -232,14 +229,26 @@ func (h *Handler) deploy(w http.ResponseWriter, r *http.Request, t packages.Targ
 	_ = json.NewEncoder(w).Encode(info)
 }
 
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
+// X-Checksum holds any of the three; its length says which.
+func parseChecksumHeaders(h http.Header) repository.Checksums {
+	sums := repository.Checksums{
+		SHA1:   h.Get("X-Checksum-Sha1"),
+		MD5:    h.Get("X-Checksum-Md5"),
+		SHA256: h.Get("X-Checksum-Sha256"),
 	}
 
-	return ""
+	generic := h.Get("X-Checksum")
+	switch len(generic) {
+	case 0:
+	case 32:
+		sums.MD5 = cmp.Or(sums.MD5, generic)
+	case 40:
+		sums.SHA1 = cmp.Or(sums.SHA1, generic)
+	default:
+		sums.SHA256 = cmp.Or(sums.SHA256, generic)
+	}
+
+	return sums
 }
 
 func (h *Handler) remove(w http.ResponseWriter, r *http.Request, t packages.Target) {
