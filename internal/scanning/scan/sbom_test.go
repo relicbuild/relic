@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -344,6 +345,64 @@ func TestSPDXExportOfNoComponentsHasEmptyRelationships(t *testing.T) {
 
 	if got.Packages == nil || got.Relationships == nil {
 		t.Errorf("SPDX export of no components = %s, want empty packages and relationships arrays", doc)
+	}
+}
+
+func TestSyftExportLeavesOutWorkerPaths(t *testing.T) {
+	t.Parallel()
+
+	stored, err := gzipBytes([]byte(`{
+  "schema": {"version": "16.0.0"},
+  "artifacts": [
+    {"name": "log4j-core", "version": "2.14.1", "type": "java-archive",
+     "purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1",
+     "locations": [{"path": "/tmp/relic-scan-604771369/in/log4j-core-2.14.1.jar"}]}
+  ],
+  "source": {"type": "file", "name": "log4j-core-2.14.1.jar",
+             "metadata": {"path": "/tmp/relic-scan-604771369/in/log4j-core-2.14.1.jar"}},
+  "descriptor": {"name": "syft", "version": "1.52.0",
+                 "configuration": {"java": {"maven-local-repository-dir": "/tmp/.m2/repository"},
+                                   "golang": {"local-mod-cache-dir": "/tmp/go/pkg/mod"}}}
+}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	doc, err := ExportSBOM(stored, SyftJSON, "libs/log4j-core-2.14.1.jar", time.Unix(1_800_000_000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, leaked := range []string{
+		"relic-scan-",
+		"/tmp/",
+	} {
+		if strings.Contains(string(doc), leaked) {
+			t.Errorf("Syft export contains %q: %s", leaked, doc)
+		}
+	}
+
+	var got struct {
+		Source struct {
+			Metadata struct {
+				Path string `json:"path"`
+			} `json:"metadata"`
+		} `json:"source"`
+		Descriptor struct {
+			Name string `json:"name"`
+		} `json:"descriptor"`
+	}
+	if err := json.Unmarshal(doc, &got); err != nil {
+		t.Fatal(err)
+	}
+
+	if got.Source.Metadata.Path != "log4j-core-2.14.1.jar" || got.Descriptor.Name != "syft" {
+		t.Errorf("Syft export = %s, want the source named by its file name and the descriptor kept", doc)
+	}
+
+	comps, err := sbomComponents(doc)
+	if err != nil || len(comps) != 1 || comps[0].Name != "log4j-core" {
+		t.Errorf("components of the Syft export = %v, %v", comps, err)
 	}
 }
 

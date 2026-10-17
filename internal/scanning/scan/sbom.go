@@ -1,10 +1,12 @@
 package scan
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 	"uuid"
@@ -86,6 +88,49 @@ type cdxComponent struct {
 	PURL       string         `json:"purl,omitempty"`
 	Licenses   []cdxLicense   `json:"licenses,omitempty"`
 	Components []cdxComponent `json:"components,omitempty"`
+}
+
+var scanDirectory = regexp.MustCompile(`[^\s"]*[/\\]relic-scan-[0-9]+(?:[/\\](?:in|src|oci))?(?:[/\\]|$)`)
+
+// withoutWorkerPaths is a Syft document Relic Scan made without the
+// worker's directories: paths into the scan's directory become relative to
+// it, and the scanner's configuration is left out. Other documents are
+// returned as they are.
+func withoutWorkerPaths(raw []byte) ([]byte, error) {
+	if !scanDirectory.Match(raw) {
+		return raw, nil
+	}
+
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+
+	var doc map[string]any
+	if err := dec.Decode(&doc); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrSBOM, err)
+	}
+
+	if descriptor, ok := doc["descriptor"].(map[string]any); ok {
+		delete(descriptor, "configuration")
+	}
+
+	return json.Marshal(relativeToScanDirectory(doc))
+}
+
+func relativeToScanDirectory(v any) any {
+	switch v := v.(type) {
+	case string:
+		return scanDirectory.ReplaceAllString(v, "")
+	case map[string]any:
+		for k, e := range v {
+			v[k] = relativeToScanDirectory(e)
+		}
+	case []any:
+		for i, e := range v {
+			v[i] = relativeToScanDirectory(e)
+		}
+	}
+
+	return v
 }
 
 func cycloneDXComponents(raw []byte) ([]Component, error) {
@@ -180,7 +225,8 @@ func spdxComponents(raw []byte) ([]Component, error) {
 
 // ExportSBOM writes a stored (gzipped) SBOM in format, for subject (what the
 // SBOM describes, such as repository/path). A document already in format is
-// returned as stored; Syft JSON is only available for SBOMs Relic made.
+// returned as stored, without the worker's paths for Syft JSON; Syft JSON is
+// only available for SBOMs Relic made.
 func ExportSBOM(stored []byte, format SBOMFormat, subject string, now time.Time) ([]byte, error) {
 	raw, err := gunzip(stored)
 	if err != nil {
@@ -190,6 +236,10 @@ func ExportSBOM(stored []byte, format SBOMFormat, subject string, now time.Time)
 	have, err := DetectSBOM(raw)
 	if err != nil {
 		return nil, err
+	}
+
+	if have == format && format == SyftJSON {
+		return withoutWorkerPaths(raw)
 	}
 
 	if have == format {
