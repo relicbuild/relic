@@ -66,6 +66,46 @@ func TestRunRejectsUnknownCommands(t *testing.T) {
 	}
 }
 
+func TestRunListsEveryConfigurationError(t *testing.T) {
+	t.Parallel()
+
+	for _, command := range []string{
+		"server",
+		"worker",
+	} {
+		t.Run(command, func(t *testing.T) {
+			t.Parallel()
+
+			env := map[string]string{
+				"RELIC_LOG_LEVEL":              "verbose",
+				"RELIC_MAX_UPLOAD_SIZE":        "10GB",
+				"RELIC_DATABASE_URL":           "sqlite:///var/lib/relic/relic.db",
+				"RELIC_TRASH_RETENTION":        "bogus",
+				"RELIC_METRICS_LISTEN_ADDRESS": "off",
+			}
+
+			err := Run(t.Context(), []string{
+				command,
+			}, func(k string) string {
+				return env[k]
+			}, io.Discard)
+			if err == nil {
+				t.Fatal("Run went ahead with wrong settings")
+			}
+
+			for _, want := range []string{
+				"RELIC_LOG_LEVEL",
+				"RELIC_MAX_UPLOAD_SIZE",
+				"RELIC_TRASH_RETENTION",
+			} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error = %v, want it to name %s", err, want)
+				}
+			}
+		})
+	}
+}
+
 func TestRoutes(t *testing.T) {
 	t.Parallel()
 

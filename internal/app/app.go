@@ -128,6 +128,10 @@ func Run(ctx context.Context, args []string, getenv func(string) string, stderr 
 		}
 	}
 
+	if err := CheckSettings(getenv, args[0]); err != nil {
+		return err
+	}
+
 	version, revision := relicVersion()
 
 	tel, err := telemetry.Setup(
@@ -174,6 +178,24 @@ func Run(ctx context.Context, args []string, getenv func(string) string, stderr 
 	default:
 		return migrate(ctx, getenv)
 	}
+}
+
+// CheckSettings returns every error in the settings command ("server",
+// "worker" or "migrate") reads from getenv, or nil.
+func CheckSettings(getenv func(string) string, command string) error {
+	var errs []error
+
+	if _, err := telemetry.LoadConfig(getenv, command); err != nil {
+		errs = append(errs, fmt.Errorf("telemetry: %w", err))
+	}
+
+	if command != "migrate" {
+		if _, err := config.Load(getenv); err != nil {
+			errs = append(errs, fmt.Errorf("config: %w", err))
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 func migrate(ctx context.Context, getenv func(string) string) error {
