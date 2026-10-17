@@ -10,9 +10,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"relic/internal/app"
 )
 
 const maskedValue = "********"
@@ -150,11 +153,57 @@ func settingArgument(arg string, valueStdin bool, in io.Reader) (string, string,
 		value, ok = strings.TrimRight(line, "\r\n"), true
 	}
 
-	if !ok || !strings.HasPrefix(key, "RELIC_") {
-		return "", "", errors.New("expected RELIC_<NAME>=<value>, or RELIC_<NAME> with --value-stdin")
+	if !ok || (!strings.HasPrefix(key, "RELIC_") && !strings.HasPrefix(key, "OTEL_")) {
+		return "", "", errors.New(
+			"expected RELIC_<NAME>=<value> or OTEL_<NAME>=<value>, or the name alone with --value-stdin",
+		)
+	}
+
+	if strings.HasPrefix(key, "RELIC_") && !slices.Contains(app.SettingNames, key) {
+		return "", "", fmt.Errorf("%s is not a server setting; the configuration reference lists them", key)
 	}
 
 	return key, value, nil
+}
+
+// newSettingsErrors returns the errors the server would start with after
+// the settings change from before to after, leaving out the ones it already had.
+func newSettingsErrors(before, after string) error {
+	had := map[string]bool{}
+	for _, line := range settingsErrors(before) {
+		had[line] = true
+	}
+
+	var errs []error
+
+	for _, line := range settingsErrors(after) {
+		if !had[line] {
+			errs = append(errs, errors.New(line))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+func settingsErrors(settings string) []string {
+	env := keyValues(settings, "=")
+
+	err := app.CheckSettings(func(key string) string {
+		return env[key]
+	}, "server")
+	if err == nil {
+		return nil
+	}
+
+	var lines []string
+
+	for line := range strings.Lines(err.Error()) {
+		line = strings.TrimSuffix(line, "\n")
+		line = strings.TrimPrefix(line, "telemetry: ")
+		lines = append(lines, strings.TrimPrefix(line, "config: "))
+	}
+
+	return lines
 }
 
 func (m *machineSetup) setServiceSetting(ctx context.Context, w io.Writer, path, key, value string) error {
@@ -178,7 +227,12 @@ func (m *machineSetup) setServiceSetting(ctx context.Context, w io.Writer, path,
 		return err
 	}
 
-	a := m.file("server settings", path, []byte(withSetting(string(b), key, value, true)), fi.Mode().Perm())
+	settings := withSetting(string(b), key, value, true)
+	if err := newSettingsErrors(string(b), settings); err != nil {
+		return fmt.Errorf("the server would not start with this %s; nothing was changed:\n%w", key, err)
+	}
+
+	a := m.file("server settings", path, []byte(settings), fi.Mode().Perm())
 
 	done := "Set " + key + " and restarted the service."
 	if a.state == "unchanged" {

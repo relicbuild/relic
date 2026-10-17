@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"os"
 	"os/exec"
 	"os/user"
@@ -79,6 +80,10 @@ func (m *machineSetup) runSetup(ctx context.Context) error {
 
 	if m.system && m.euid != 0 {
 		return errors.New("setup: --system creates a user and writes /etc: run it with sudo")
+	}
+
+	if _, _, err := net.SplitHostPort(m.listen); m.listenSet && err != nil {
+		return fmt.Errorf("setup: --listen %q must be host:port or :port", m.listen)
 	}
 
 	if strings.Contains(m.executable, "go-build") {

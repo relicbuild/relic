@@ -543,6 +543,17 @@ func TestSettingArgument(t *testing.T) {
 			arg:     "HOME=/root",
 			wantErr: true,
 		},
+		{
+			name:    "a misspelt Relic setting",
+			arg:     "RELIC_LOG_LEVL=debug",
+			wantErr: true,
+		},
+		{
+			name:      "an OpenTelemetry setting",
+			arg:       "OTEL_EXPORTER_OTLP_ENDPOINT=http://collector.example.com:4318",
+			wantKey:   "OTEL_EXPORTER_OTLP_ENDPOINT",
+			wantValue: "http://collector.example.com:4318",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -752,5 +763,76 @@ func TestServerConfigSetWithoutSystemdChangesNothing(t *testing.T) {
 
 	if got := readFile(t, path); got != before {
 		t.Errorf("settings changed:\n%s", got)
+	}
+}
+
+func TestServerConfigSetRefusesASettingTheServerRejects(t *testing.T) {
+	t.Parallel()
+
+	m, ran, _ := testMachineSetup(t, "")
+	m.yes = true
+
+	if err := m.runSetup(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	*ran = nil
+	path := filepath.Join(m.configDir(), "server.env")
+	before := readFile(t, path)
+
+	for key, value := range map[string]string{
+		"RELIC_HTTP_LISTEN_ADDRESS": "8090",
+		"RELIC_LOG_LEVEL":           "loud",
+		"OTEL_TRACES_SAMPLER":       "sometimes",
+	} {
+		err := m.setServiceSetting(t.Context(), &bytes.Buffer{}, path, key, value)
+		if err == nil || !strings.Contains(err.Error(), key) {
+			t.Errorf("set %s=%s = %v, want an error that names it", key, value, err)
+		}
+	}
+
+	if got := readFile(t, path); got != before {
+		t.Errorf("settings changed:\n%s", got)
+	}
+
+	if len(*ran) > 0 {
+		t.Errorf("ran %v", *ran)
+	}
+}
+
+func TestServerConfigSetFixesOneOfSeveralWrongSettings(t *testing.T) {
+	t.Parallel()
+
+	m, _, _ := testMachineSetup(t, "")
+	m.yes = true
+
+	if err := m.runSetup(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(m.configDir(), "server.env")
+	broken := readFile(t, path) + "RELIC_LOG_LEVEL=loud\nRELIC_MAX_UPLOAD_SIZE=10GB\n"
+
+	if err := os.WriteFile(path, []byte(broken), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.setServiceSetting(t.Context(), &bytes.Buffer{}, path, "RELIC_LOG_LEVEL", "debug"); err != nil {
+		t.Fatalf("fixing one wrong setting while another stays wrong = %v", err)
+	}
+}
+
+func TestMachineSetupRefusesAListenAddressWithoutAPort(t *testing.T) {
+	t.Parallel()
+
+	m, ran, _ := testMachineSetup(t, "")
+	m.yes, m.listen, m.listenSet = true, "garbage", true
+
+	if err := m.runSetup(t.Context()); err == nil || !strings.Contains(err.Error(), "--listen") {
+		t.Fatalf("err = %v, want one about --listen", err)
+	}
+
+	if entries, _ := os.ReadDir(m.home); len(entries) > 0 || len(*ran) > 0 {
+		t.Errorf("setup went ahead: wrote %v, ran %v", entries, *ran)
 	}
 }
