@@ -232,6 +232,28 @@ spec:
 	}
 }
 
+func TestRestrictLeavesOutOutputOnlyFields(t *testing.T) {
+	t.Parallel()
+
+	docs, err := decodeDocuments(strings.NewReader(
+		"apiVersion: relic.build/v1\nkind: User\nmetadata: {name: alice}\nspec: {email: a@example.com, realm: ldap}\n",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	d := docs[0]
+	live := &relicv1.User{
+		Name:  "alice",
+		Email: "a@example.com",
+		Realm: relicv1.Realm_REALM_INTERNAL,
+	}
+
+	if !proto.Equal(restrict(live, d.owned, d.kind), restrict(d.msg, d.owned, d.kind)) {
+		t.Error("a user whose file names another realm compares different")
+	}
+}
+
 func TestRestrictComparesSetsWithoutOrderOrRepeats(t *testing.T) {
 	t.Parallel()
 

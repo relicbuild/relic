@@ -125,6 +125,7 @@ var kinds = []*kind{
 		},
 		ignored: []string{
 			"password",
+			"realm",
 		},
 		sets: []string{
 			"groups",
