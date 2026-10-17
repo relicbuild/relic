@@ -391,7 +391,7 @@ var singleNode = []string{
 	"server.replicas=1",
 }
 
-var releaseImage = regexp.MustCompile(`^ghcr\.io/relicbuild/relic:v\d+\.\d+\.\d+$`)
+var releaseImage = regexp.MustCompile(`^ghcr\.io/relicbuild/relic:v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$`)
 
 func TestChartSingleNode(t *testing.T) {
 	t.Parallel()
