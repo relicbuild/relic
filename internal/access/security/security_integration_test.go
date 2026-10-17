@@ -11,6 +11,7 @@ import (
 	"uuid"
 
 	"relic/internal/access/auth"
+	"relic/internal/access/project"
 	"relic/internal/access/security"
 	"relic/internal/platform/database"
 	"relic/internal/platform/database/databasetest"
@@ -125,10 +126,11 @@ func TestDeletingAPrincipalRemovesItsGrants(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		remove     func(context.Context, *security.Service) error
-		wantUsers  []string
-		wantGroups []string
+		name        string
+		remove      func(context.Context, *security.Service) error
+		wantUsers   []string
+		wantGroups  []string
+		wantMembers []project.Member
 	}{
 		{
 			name: "user",
@@ -141,6 +143,22 @@ func TestDeletingAPrincipalRemovesItsGrants(t *testing.T) {
 			wantGroups: []string{
 				"temp",
 				"developers",
+			},
+			wantMembers: []project.Member{
+				{
+					Name: "kept",
+					Role: project.RoleViewer,
+				},
+				{
+					Name:  "temp",
+					Group: true,
+					Role:  project.RoleAdmin,
+				},
+				{
+					Name:  "developers",
+					Group: true,
+					Role:  project.RoleDeveloper,
+				},
 			},
 		},
 		{
@@ -155,6 +173,21 @@ func TestDeletingAPrincipalRemovesItsGrants(t *testing.T) {
 			wantGroups: []string{
 				"developers",
 			},
+			wantMembers: []project.Member{
+				{
+					Name: "temp",
+					Role: project.RoleAdmin,
+				},
+				{
+					Name: "kept",
+					Role: project.RoleViewer,
+				},
+				{
+					Name:  "developers",
+					Group: true,
+					Role:  project.RoleDeveloper,
+				},
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -164,6 +197,8 @@ func TestDeletingAPrincipalRemovesItsGrants(t *testing.T) {
 			ctx := t.Context()
 			db := databasetest.NewDB(t)
 			s := security.NewService(db, slog.New(slog.DiscardHandler))
+			projects := project.New(db)
+			s.RegisterPrincipalRemovalHook(projects.RemoveMemberships)
 
 			for _, name := range []string{
 				"temp",
@@ -231,8 +266,43 @@ func TestDeletingAPrincipalRemovesItsGrants(t *testing.T) {
 				t.Fatal(err)
 			}
 
+			if _, err := projects.Put(ctx, project.Project{
+				Key: "apps",
+				Members: []project.Member{
+					{
+						Name: "temp",
+						Role: project.RoleAdmin,
+					},
+					{
+						Name: "kept",
+						Role: project.RoleViewer,
+					},
+					{
+						Name:  "temp",
+						Group: true,
+						Role:  project.RoleAdmin,
+					},
+					{
+						Name:  "developers",
+						Group: true,
+						Role:  project.RoleDeveloper,
+					},
+				},
+			}); err != nil {
+				t.Fatal(err)
+			}
+
 			if err := tt.remove(ctx, s); err != nil {
 				t.Fatal(err)
+			}
+
+			apps, err := projects.Get(ctx, "apps")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if !slices.Equal(apps.Members, tt.wantMembers) {
+				t.Errorf("project members %v; want %v", apps.Members, tt.wantMembers)
 			}
 
 			p, err := s.GetPermission(ctx, "libs")

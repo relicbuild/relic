@@ -35,6 +35,7 @@ type Service struct {
 	adminOnly []string
 	// projectPermissions adds the projects' roles to the stored permissions.
 	projectPermissions func(context.Context) ([]auth.Permission, error)
+	removalHooks       []PrincipalRemovalHook
 
 	mu       sync.Mutex
 	perms    auth.Permissions
@@ -273,7 +274,7 @@ func (s *Service) ListUserRealms(ctx context.Context) ([]UserRealm, error) {
 
 const administratorsLock = "security:administrators"
 
-// DeleteUser removes a user and their grants.
+// DeleteUser removes a user, their grants and what the removal hooks drop.
 func (s *Service) DeleteUser(ctx context.Context, name string) error {
 	u, err := s.db.GetUserByUsername(ctx, name)
 	if errors.Is(database.NotFound(err), database.ErrNotFound) {
@@ -294,9 +295,7 @@ func (s *Service) DeleteUser(ctx context.Context, name string) error {
 				return err
 			}
 
-			return removeGrants(ctx, q, Grant{
-				User: name,
-			})
+			return s.removePrincipal(ctx, q, name, false)
 		})
 	}
 
@@ -501,7 +500,7 @@ func (s *Service) ListGroups(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
-// DeleteGroup removes a group and its grants.
+// DeleteGroup removes a group, its grants and what the removal hooks drop.
 func (s *Service) DeleteGroup(ctx context.Context, name string) error {
 	err := s.db.WithTx(ctx, func(q database.Querier) error {
 		n, err := q.DeleteGroup(ctx, name)
@@ -513,9 +512,7 @@ func (s *Service) DeleteGroup(ctx context.Context, name string) error {
 			return fmt.Errorf("%w: group %q", ErrNotFound, name)
 		}
 
-		return removeGrants(ctx, q, Grant{
-			Group: name,
-		})
+		return s.removePrincipal(ctx, q, name, true)
 	})
 	if err != nil {
 		return err
@@ -573,6 +570,39 @@ func (s *Service) Permissions(ctx context.Context) (auth.Permissions, error) {
 // roles, to the stored ones.
 func (s *Service) SetProjectPermissions(fn func(context.Context) ([]auth.Permission, error)) {
 	s.projectPermissions = fn
+}
+
+// PrincipalRemovalHook drops what refers to a user, or a group, by name, in
+// the transaction that deletes it.
+type PrincipalRemovalHook func(ctx context.Context, q database.Querier, name string, group bool) error
+
+// RegisterPrincipalRemovalHook runs hook whenever a user or a group is
+// deleted.
+func (s *Service) RegisterPrincipalRemovalHook(hook PrincipalRemovalHook) {
+	s.removalHooks = append(s.removalHooks, hook)
+}
+
+func (s *Service) removePrincipal(ctx context.Context, q database.Querier, name string, group bool) error {
+	principal := Grant{
+		User: name,
+	}
+	if group {
+		principal = Grant{
+			Group: name,
+		}
+	}
+
+	if err := removeGrants(ctx, q, principal); err != nil {
+		return err
+	}
+
+	for _, hook := range s.removalHooks {
+		if err := hook(ctx, q, name, group); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Invalidate makes the next Permissions call reload them.

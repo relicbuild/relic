@@ -237,6 +237,46 @@ func (s *Service) RemoveMember(ctx context.Context, key, name string, group bool
 	})
 }
 
+// RemoveMemberships removes the user, or the group, name from the members of
+// every project, with q.
+func (s *Service) RemoveMemberships(ctx context.Context, q database.Querier, name string, group bool) error {
+	rows, err := q.ListProjects(ctx)
+	if err != nil {
+		return fmt.Errorf("list projects: %w", err)
+	}
+
+	for _, r := range rows {
+		p, err := domainProject(r)
+		if err != nil {
+			return err
+		}
+
+		kept := slices.DeleteFunc(slices.Clone(p.Members), func(m Member) bool {
+			return m.Name == name && m.Group == group
+		})
+		if len(kept) == len(p.Members) {
+			continue
+		}
+
+		p.Members = kept
+
+		doc, err := json.Marshal(p)
+		if err != nil {
+			return err
+		}
+
+		if err := q.UpsertProject(ctx, database.UpsertProjectParams{
+			Key:    p.Key,
+			Config: doc,
+			Now:    s.now(),
+		}); err != nil {
+			return fmt.Errorf("put project %s: %w", p.Key, err)
+		}
+	}
+
+	return nil
+}
+
 func (s *Service) changeMembers(
 	ctx context.Context,
 	key string,

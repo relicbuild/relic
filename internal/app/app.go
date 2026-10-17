@@ -844,6 +844,7 @@ func newRouter(
 	projects.SetRepositoryProjects(repos.Projects)
 	projects.SetChanged(sec.Invalidate)
 	sec.SetProjectPermissions(projects.Permissions)
+	sec.RegisterPrincipalRemovalHook(projects.RemoveMemberships)
 	repos.SetProjectQuota(projects.Quota)
 
 	authn := auth.NewAuthenticator(db, sec, tokens, log)
