@@ -198,6 +198,31 @@ func TestRawQuery(t *testing.T) {
 	}
 }
 
+func TestParsePropsRefusesInvalidKeys(t *testing.T) {
+	t.Parallel()
+
+	for _, pair := range []string{
+		"k%20sp=v",
+		"p%7Cq=1",
+		"a%2Cb=c",
+		"a%3Bb=c",
+		strings.Repeat("k", 256) + "=v",
+	} {
+		if props, err := parseProps([]string{
+			pair,
+		}); err == nil {
+			t.Errorf("parseProps(%q) = %v, want an error", pair, props)
+		}
+	}
+
+	if _, err := parseProps([]string{
+		"build.name=app",
+		"docker.manifest-digest=sha256:1",
+	}); err != nil {
+		t.Errorf("parseProps of valid keys = %v", err)
+	}
+}
+
 func TestPropertyPairs(t *testing.T) {
 	t.Parallel()
 

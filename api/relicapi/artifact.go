@@ -3,7 +3,6 @@ package relicapi
 import (
 	"context"
 	"errors"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -352,8 +351,6 @@ func (s *artifactServer) DeleteProperties(
 	return connect.NewResponse(&relicv1.DeletePropertiesResponse{}), nil
 }
 
-var propertyKey = regexp.MustCompile(`^[^\s=;,|]{1,255}$`)
-
 const (
 	maxPropertyValues = 100
 	maxPropertyValue  = 4096
@@ -361,11 +358,8 @@ const (
 
 func validProperty(k string, values []string) error {
 	switch {
-	case !propertyKey.MatchString(k):
-		return connect.NewError(
-			connect.CodeInvalidArgument,
-			errors.New("a property key is 1 to 255 characters without spaces, '=', ';', ',' or '|'"),
-		)
+	case !repository.ValidPropertyKey(k):
+		return connect.NewError(connect.CodeInvalidArgument, errors.New(repository.PropertyKeyRule))
 	case len(values) == 0 || len(values) > maxPropertyValues:
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("give 1 to 100 values"))
 	}

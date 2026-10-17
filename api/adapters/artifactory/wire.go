@@ -199,6 +199,10 @@ func parseProps(pairs []string) (repository.Properties, error) {
 			return nil, fmt.Errorf("invalid property %q", pair)
 		}
 
+		if !repository.ValidPropertyKey(k) {
+			return nil, fmt.Errorf("invalid property key %q: %s", k, repository.PropertyKeyRule)
+		}
+
 		v, err := url.QueryUnescape(rawV)
 		if err != nil {
 			return nil, fmt.Errorf("invalid property %q", pair)
