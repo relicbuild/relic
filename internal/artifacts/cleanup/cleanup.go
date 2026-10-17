@@ -123,8 +123,8 @@ func (s *Service) validate(ctx context.Context, p Policy) error {
 	switch {
 	case !namePattern.MatchString(p.Name):
 		return fmt.Errorf("%w: name %q: letters, digits, dot, dash and underscore, up to 64", ErrInvalid, p.Name)
-	case len(p.Repositories) == 0:
-		return fmt.Errorf("%w: name at least one repository", ErrInvalid)
+	case len(p.Repositories) == 0 && p.Enabled:
+		return fmt.Errorf("%w: an enabled policy names at least one repository", ErrInvalid)
 	case p.OlderThanDays < 0 || p.NotDownloadedDays < 0 || p.KeepLatest < 0:
 		return fmt.Errorf("%w: days and counts cannot be negative", ErrInvalid)
 	case p.OlderThanDays == 0 && p.NotDownloadedDays == 0 && p.KeepLatest == 0:

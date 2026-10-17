@@ -272,6 +272,20 @@ func TestDeletingARepositoryRemovesItFromPolicies(t *testing.T) {
 		t.Errorf("policy apps-only = %v, enabled %v; want none, disabled", appsOnly.Repositories, appsOnly.Enabled)
 	}
 
+	if err := s.Put(ctx, appsOnly); err != nil {
+		t.Errorf("putting the policy back as it is: %v", err)
+	}
+
+	appsOnly.OlderThanDays = 10
+	if err := s.Put(ctx, appsOnly); err != nil {
+		t.Errorf("changing the disabled policy: %v", err)
+	}
+
+	appsOnly.Enabled = true
+	if err := s.Put(ctx, appsOnly); !errors.Is(err, ErrInvalid) {
+		t.Errorf("enabling a policy without repositories = %v; want %v", err, ErrInvalid)
+	}
+
 	if err := repos.CreateRepository(ctx, repository.Repository{
 		Name:   "apps",
 		Class:  repository.ClassLocal,
