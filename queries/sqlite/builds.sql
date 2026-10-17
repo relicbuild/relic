@@ -72,7 +72,10 @@ SELECT * FROM build_promotions WHERE build_id = @build_id ORDER BY created;
 -- name: FindItemsBySHA1 :many
 SELECT i.*,
        EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id AND p.key = 'build.name' AND p.value = @build_name) AS has_build_name,
-       EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id AND p.key = 'build.number' AND p.value = @build_number) AS has_build_number
+       EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id AND p.key = 'build.number' AND p.value = @build_number) AS has_build_number,
+       EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id
+               AND ((p.key = 'build.name' AND p.value <> @build_name)
+                 OR (p.key = 'build.number' AND p.value <> @build_number))) AS has_other_build
 FROM items i
 WHERE i.type = 'file' AND i.sha1 IN (SELECT value FROM json_each(@sha1s))
   AND (@source_repo = '' OR i.repo_key = @source_repo)

@@ -466,7 +466,10 @@ ORDER BY path, name;`
 const sqliteFindItemsBySHA1 = `-- name: FindItemsBySHA1 :many
 SELECT i.*,
        EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id AND p.key = 'build.name' AND p.value = @build_name) AS has_build_name,
-       EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id AND p.key = 'build.number' AND p.value = @build_number) AS has_build_number
+       EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id AND p.key = 'build.number' AND p.value = @build_number) AS has_build_number,
+       EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id
+               AND ((p.key = 'build.name' AND p.value <> @build_name)
+                 OR (p.key = 'build.number' AND p.value <> @build_number))) AS has_other_build
 FROM items i
 WHERE i.type = 'file' AND i.sha1 IN (SELECT value FROM json_each(@sha1s))
   AND (@source_repo = '' OR i.repo_key = @source_repo)
@@ -2967,7 +2970,7 @@ func (q *sqliteQueries) FindFilesNamed(ctx context.Context, arg FindFilesNamedPa
 }
 
 func (q *sqliteQueries) FindItemsBySHA1(ctx context.Context, arg FindItemsBySHA1Params) ([]FindItemsBySHA1Row, error) {
-	rows, err := q.query(ctx, "FindItemsBySHA1", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated", "hasbuildname", "hasbuildnumber"}, sqliteFindItemsBySHA1, sql.Named("build_name", arg.BuildName), sql.Named("build_number", arg.BuildNumber), sql.Named("sha1s", sqliteJSON(arg.Sha1s)), sql.Named("source_repo", arg.SourceRepo))
+	rows, err := q.query(ctx, "FindItemsBySHA1", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated", "hasbuildname", "hasbuildnumber", "hasotherbuild"}, sqliteFindItemsBySHA1, sql.Named("build_name", arg.BuildName), sql.Named("build_number", arg.BuildNumber), sql.Named("sha1s", sqliteJSON(arg.Sha1s)), sql.Named("source_repo", arg.SourceRepo))
 	if err != nil {
 		return nil, err
 	}
@@ -2978,7 +2981,7 @@ func (q *sqliteQueries) FindItemsBySHA1(ctx context.Context, arg FindItemsBySHA1
 
 	for rows.Next() {
 		var i FindItemsBySHA1Row
-		if err := rows.Scan(sqliteUUIDScanner{&i.Item.ID}, &i.Item.RepoKey, &i.Item.Path, &i.Item.Name, &i.Item.Type, &i.Item.Size, &i.Item.Sha1, &i.Item.Sha256, &i.Item.Md5, sqliteTimeScanner{&i.Item.Created}, &i.Item.CreatedBy, sqliteTimeScanner{&i.Item.Modified}, &i.Item.ModifiedBy, sqliteTimeScanner{&i.Item.Updated}, &i.HasBuildName, &i.HasBuildNumber); err != nil {
+		if err := rows.Scan(sqliteUUIDScanner{&i.Item.ID}, &i.Item.RepoKey, &i.Item.Path, &i.Item.Name, &i.Item.Type, &i.Item.Size, &i.Item.Sha1, &i.Item.Sha256, &i.Item.Md5, sqliteTimeScanner{&i.Item.Created}, &i.Item.CreatedBy, sqliteTimeScanner{&i.Item.Modified}, &i.Item.ModifiedBy, sqliteTimeScanner{&i.Item.Updated}, &i.HasBuildName, &i.HasBuildNumber, &i.HasOtherBuild); err != nil {
 			return nil, err
 		}
 

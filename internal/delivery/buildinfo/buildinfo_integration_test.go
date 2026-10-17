@@ -157,6 +157,17 @@ func TestDeleteRemovesTheRunsItEmptiedBeforeAHeldOne(t *testing.T) {
 func deployFile(t *testing.T, repos *repository.Service, repo, path, content string) repository.Item {
 	t.Helper()
 
+	return deployTagged(t, repos, repo, path, content, nil)
+}
+
+func deployTagged(
+	t *testing.T,
+	repos *repository.Service,
+	repo, path, content string,
+	props repository.Properties,
+) repository.Item {
+	t.Helper()
+
 	if _, err := repos.GetRepository(t.Context(), repo); errors.Is(err, repository.ErrRepositoryNotFound) {
 		err := repos.CreateRepository(t.Context(), repository.Repository{
 			Name:   repo,
@@ -172,6 +183,7 @@ func deployFile(t *testing.T, repos *repository.Service, repo, path, content str
 		Repository: repo,
 		Path:       path,
 		Body:       strings.NewReader(content),
+		Props:      props,
 		User:       "admin",
 	})
 	if err != nil {
@@ -465,6 +477,90 @@ func TestDiscardDeletesOnlyTheRecordedArtifacts(t *testing.T) {
 
 			if _, err := repos.Stat(ctx, "z-src", "del/y.bin"); err != nil {
 				t.Errorf("artifact of the kept run: %v", err)
+			}
+		})
+	}
+}
+
+func TestDiscardKeepsFilesOfAnotherRun(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		path  string
+		props repository.Properties
+	}{
+		{
+			name: "same build, another number, elsewhere",
+			path: "del/x2.bin",
+			props: repository.Properties{
+				"build.name": {
+					"app",
+				},
+				"build.number": {
+					"2",
+				},
+			},
+		},
+		{
+			name: "same build, another number, at the recorded path",
+			path: "del/x.bin",
+			props: repository.Properties{
+				"build.name": {
+					"app",
+				},
+				"build.number": {
+					"2",
+				},
+			},
+		},
+		{
+			name: "another build at the recorded path",
+			path: "del/x.bin",
+			props: repository.Properties{
+				"build.name": {
+					"other",
+				},
+				"build.number": {
+					"1",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			builds, repos, _ := newService(t)
+			now := time.Now()
+
+			gone := deployFile(t, repos, "z-src", "del/x.bin", "shared content")
+			if err := repos.Delete(ctx, "z-src", "del/x.bin"); err != nil {
+				t.Fatal(err)
+			}
+
+			kept := deployTagged(t, repos, "z-src", tt.path, "shared content", tt.props)
+
+			for _, doc := range []buildinfo.Document{
+				producing("1", now.Add(-time.Hour), "z-src/del/x.bin", gone),
+				producing("2", now, "z-src/"+tt.path, kept),
+			} {
+				if err := builds.PublishDocument(ctx, "", doc, "admin"); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			err := builds.Discard(ctx, "", "app", buildinfo.Retention{
+				MaxRuns:         1,
+				DeleteArtifacts: true,
+			}, buildinfo.AllowAll)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := repos.Stat(ctx, "z-src", tt.path); err != nil {
+				t.Errorf("file of another run: %v, want it kept", err)
 			}
 		})
 	}

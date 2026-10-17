@@ -240,7 +240,8 @@ type itemQuery struct {
 	sourceRepository string
 	// dependencies adds the run's dependencies to its artifacts.
 	dependencies bool
-	// recordedOnly leaves out files that only share a recorded file's content.
+	// recordedOnly keeps only files carrying the run's build properties or
+	// stored at a recorded path, and none tagged with another run.
 	recordedOnly bool
 }
 
@@ -353,7 +354,7 @@ func (s *Service) recordedItems(
 			m = matchBuildName
 		}
 
-		if query.recordedOnly && m == matchContent {
+		if query.recordedOnly && (m < matchPath || r.HasOtherBuild) {
 			continue
 		}
 

@@ -139,7 +139,10 @@ func (q *Queries) FindBuildNames(ctx context.Context, arg FindBuildNamesParams) 
 const findItemsBySHA1 = `-- name: FindItemsBySHA1 :many
 SELECT i.id, i.repo_key, i.path, i.name, i.type, i.size, i.sha1, i.sha256, i.md5, i.created, i.created_by, i.modified, i.modified_by, i.updated,
        EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id AND p.key = 'build.name' AND p.value = $1::text) AS has_build_name,
-       EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id AND p.key = 'build.number' AND p.value = $2::text) AS has_build_number
+       EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id AND p.key = 'build.number' AND p.value = $2::text) AS has_build_number,
+       EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id
+               AND ((p.key = 'build.name' AND p.value <> $1::text)
+                 OR (p.key = 'build.number' AND p.value <> $2::text))) AS has_other_build
 FROM items i
 WHERE i.type = 'file' AND i.sha1 = ANY($3::text[])
   AND ($4::text = '' OR i.repo_key = $4::text)
@@ -157,6 +160,7 @@ type FindItemsBySHA1Row struct {
 	Item           Item
 	HasBuildName   bool
 	HasBuildNumber bool
+	HasOtherBuild  bool
 }
 
 func (q *Queries) FindItemsBySHA1(ctx context.Context, arg FindItemsBySHA1Params) ([]FindItemsBySHA1Row, error) {
@@ -190,6 +194,7 @@ func (q *Queries) FindItemsBySHA1(ctx context.Context, arg FindItemsBySHA1Params
 			&i.Item.Updated,
 			&i.HasBuildName,
 			&i.HasBuildNumber,
+			&i.HasOtherBuild,
 		); err != nil {
 			return nil, err
 		}

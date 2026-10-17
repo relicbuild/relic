@@ -54,7 +54,10 @@ SELECT * FROM build_promotions WHERE build_id = @build_id ORDER BY created;
 -- name: FindItemsBySHA1 :many
 SELECT sqlc.embed(i),
        EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id AND p.key = 'build.name' AND p.value = @build_name::text) AS has_build_name,
-       EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id AND p.key = 'build.number' AND p.value = @build_number::text) AS has_build_number
+       EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id AND p.key = 'build.number' AND p.value = @build_number::text) AS has_build_number,
+       EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id
+               AND ((p.key = 'build.name' AND p.value <> @build_name::text)
+                 OR (p.key = 'build.number' AND p.value <> @build_number::text))) AS has_other_build
 FROM items i
 WHERE i.type = 'file' AND i.sha1 = ANY(@sha1s::text[])
   AND (@source_repo::text = '' OR i.repo_key = @source_repo::text)
