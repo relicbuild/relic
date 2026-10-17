@@ -26,6 +26,33 @@ const (
 // ErrDecided reports a waiver that was already approved or rejected.
 var ErrDecided = errors.New("the waiver was already decided")
 
+// ErrInvalidWaiver reports a waiver request or approval Relic refuses.
+var ErrInvalidWaiver = errors.New("invalid waiver")
+
+// waiverError is an error of kind whose message is its detail alone.
+type waiverError struct {
+	kind   error
+	detail string
+}
+
+func (e waiverError) Error() string { return e.detail }
+
+func (e waiverError) Is(target error) bool { return target == e.kind }
+
+func invalidWaiver(format string, args ...any) error {
+	return waiverError{
+		kind:   ErrInvalidWaiver,
+		detail: fmt.Sprintf(format, args...),
+	}
+}
+
+func waiverNotFound(format string, args ...any) error {
+	return waiverError{
+		kind:   ErrNotFound,
+		detail: fmt.Sprintf(format, args...),
+	}
+}
+
 // maxWaiverDays bounds how long an approved waiver lasts.
 const maxWaiverDays = 365
 
@@ -69,16 +96,16 @@ func domainWaiver(row database.Waiver) (Waiver, error) {
 // filters.
 func (a *Admin) RequestWaiver(ctx context.Context, rule IgnoreRule, reason, user string) (Waiver, error) {
 	if strings.TrimSpace(reason) == "" {
-		return Waiver{}, fmt.Errorf("%w: a waiver needs a reason", ErrInvalid)
+		return Waiver{}, invalidWaiver("a waiver needs a reason")
 	}
 
 	rule.ID, rule.Expires, rule.Notes = "", nil, ""
 	if rule.Empty() {
-		return Waiver{}, fmt.Errorf("%w: a waiver needs at least one filter", ErrInvalid)
+		return Waiver{}, invalidWaiver("a waiver needs at least one filter")
 	}
 
 	if p, found := firstInvalidPackage(rule.Packages); found {
-		return Waiver{}, fmt.Errorf("%w: %q is not a package URL", ErrInvalid, p)
+		return Waiver{}, invalidWaiver("%q is not a package URL", p)
 	}
 
 	doc, err := json.Marshal(rule)
@@ -104,12 +131,12 @@ func (a *Admin) RequestWaiver(ctx context.Context, rule IgnoreRule, reason, user
 func (a *Admin) Waiver(ctx context.Context, id string) (Waiver, error) {
 	parsed, err := uuid.Parse(id)
 	if err != nil {
-		return Waiver{}, fmt.Errorf("%w: waiver %s", ErrNotFound, id)
+		return Waiver{}, waiverNotFound("waiver %s not found", id)
 	}
 
 	row, err := a.DB.GetWaiver(ctx, parsed)
 	if errors.Is(database.NotFound(err), database.ErrNotFound) {
-		return Waiver{}, fmt.Errorf("%w: waiver %s", ErrNotFound, id)
+		return Waiver{}, waiverNotFound("waiver %s not found", id)
 	}
 
 	if err != nil {
@@ -166,7 +193,7 @@ func (a *Admin) Waivers(ctx context.Context, q WaiverQuery) ([]Waiver, int64, er
 // days (at most a year).
 func (a *Admin) ApproveWaiver(ctx context.Context, id string, days int, note, user string) (Waiver, error) {
 	if days < 1 || days > maxWaiverDays {
-		return Waiver{}, fmt.Errorf("%w: a waiver lasts 1 to %d days", ErrInvalid, maxWaiverDays)
+		return Waiver{}, invalidWaiver("a waiver lasts 1 to %d days", maxWaiverDays)
 	}
 
 	w, err := a.Waiver(ctx, id)
@@ -249,7 +276,7 @@ func decideWaiver(
 func (a *Admin) WithdrawWaiver(ctx context.Context, id, user string) error {
 	parsed, err := uuid.Parse(id)
 	if err != nil {
-		return fmt.Errorf("%w: waiver %s", ErrNotFound, id)
+		return waiverNotFound("waiver %s not found", id)
 	}
 
 	n, err := a.DB.DeleteWaiver(ctx, database.DeleteWaiverParams{
@@ -261,7 +288,7 @@ func (a *Admin) WithdrawWaiver(ctx context.Context, id, user string) error {
 	}
 
 	if n == 0 {
-		return fmt.Errorf("%w: no pending waiver %s of yours", ErrNotFound, id)
+		return waiverNotFound("no pending waiver %s of yours", id)
 	}
 
 	return nil

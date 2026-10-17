@@ -4,7 +4,6 @@ package integration
 
 import (
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
@@ -64,7 +63,8 @@ func TestWaivers(t *testing.T) {
 		t.Errorf("a waiver without a reason: %v", err)
 	}
 
-	if _, err := request(wanda, "not reachable", &relicv1.IgnoreRule{}); code(err) != connect.CodeInvalidArgument {
+	if _, err := request(wanda, "not reachable", &relicv1.IgnoreRule{}); code(err) != connect.CodeInvalidArgument ||
+		connectMessage(err) != "a waiver needs at least one filter" {
 		t.Errorf("a waiver without filters: %v", err)
 	}
 
@@ -72,7 +72,7 @@ func TestWaivers(t *testing.T) {
 		Packages: []string{
 			"notapurl",
 		},
-	}); code(err) != connect.CodeInvalidArgument || !strings.HasSuffix(connectMessage(err), `"notapurl" is not a package URL`) {
+	}); code(err) != connect.CodeInvalidArgument || connectMessage(err) != `"notapurl" is not a package URL` {
 		t.Errorf("a waiver on something that is not a package URL: %v", err)
 	}
 
@@ -128,7 +128,7 @@ func TestWaivers(t *testing.T) {
 
 	if _, err := wanda.WithdrawWaiver(ctx, connect.NewRequest(&relicv1.WithdrawWaiverRequest{
 		Id: withdrawn.GetId(),
-	})); code(err) != connect.CodeNotFound {
+	})); code(err) != connect.CodeNotFound || connectMessage(err) != "no pending waiver "+withdrawn.GetId()+" of yours" {
 		t.Errorf("withdrawing another user's waiver: %v", err)
 	}
 
@@ -141,7 +141,7 @@ func TestWaivers(t *testing.T) {
 	if _, err := admin.ApproveWaiver(ctx, connect.NewRequest(&relicv1.ApproveWaiverRequest{
 		Id:   approved.GetId(),
 		Days: 400,
-	})); code(err) != connect.CodeInvalidArgument {
+	})); code(err) != connect.CodeInvalidArgument || connectMessage(err) != "a waiver lasts 1 to 365 days" {
 		t.Errorf("approving for 400 days: %v", err)
 	}
 

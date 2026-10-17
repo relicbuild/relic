@@ -165,6 +165,7 @@ func codeOf(err error) *connect.Error {
 		errors.Is(err, security.ErrInvalid),
 		errors.Is(err, ldap.ErrInvalid),
 		errors.Is(err, policy.ErrInvalid),
+		errors.Is(err, policy.ErrInvalidWaiver),
 		errors.Is(err, replication.ErrInvalid),
 		errors.Is(err, cleanup.ErrInvalid),
 		errors.Is(err, audit.ErrInvalid),
