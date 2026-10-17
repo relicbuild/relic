@@ -62,13 +62,20 @@ func uploadCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "upload <file> <repository>/<path>",
 		Short: "Upload a file",
-		Long: "Uploads a file and prints its <repository>/<path> and SHA-256. With --build it is also " +
+		Long: "Uploads a file and prints its <repository>/<path> and SHA-256. A destination ending in / is " +
+			"a folder the file keeps its name in. With --build it is also " +
 			"recorded as an artifact of that build run in progress (see relic build).",
 		Example: "  relic artifact upload app-1.0.jar libs-local/org/app/1.0/app-1.0.jar\n" +
+			"  relic artifact upload dist/app.tar.gz libs-local/app/\n" +
 			"  relic artifact upload target/app.jar libs-local/org/app/1.0/app.jar --build app/42",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			repo, p, err := splitTarget(args[1])
+			target := args[1]
+			if strings.HasSuffix(target, "/") {
+				target += filepath.Base(args[0])
+			}
+
+			repo, p, err := splitTarget(target)
 			if err != nil {
 				return err
 			}
