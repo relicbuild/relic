@@ -194,6 +194,56 @@ func TestPromotionsInOneMillisecondAreBothRecorded(t *testing.T) {
 	}
 }
 
+func TestGateErrorsNameTheGate(t *testing.T) {
+	t.Parallel()
+
+	f := newReleaseFixture(t)
+	ctx := t.Context()
+
+	_, getErr := f.releases.Gate(ctx, "nonexistent")
+	deleteErr := f.releases.DeleteGate(ctx, "nonexistent")
+	_, noEnvironment := f.releases.PutGate(ctx, Gate{
+		Name:      "gate",
+		Condition: "true",
+	})
+	_, badCondition := f.releases.PutGate(ctx, Gate{
+		Name:        "gate",
+		Environment: "PROD",
+		Condition:   "release.name",
+	})
+
+	for _, tt := range []struct {
+		name string
+		err  error
+		want error
+	}{
+		{
+			name: "get",
+			err:  getErr,
+			want: ErrGateNotFound,
+		},
+		{
+			name: "delete",
+			err:  deleteErr,
+			want: ErrGateNotFound,
+		},
+		{
+			name: "no environment",
+			err:  noEnvironment,
+			want: ErrInvalidGate,
+		},
+		{
+			name: "bad condition",
+			err:  badCondition,
+			want: ErrInvalidGate,
+		},
+	} {
+		if !errors.Is(tt.err, tt.want) || strings.Contains(tt.err.Error(), "release") {
+			t.Errorf("%s: err = %v, want %v without calling the gate a release", tt.name, tt.err, tt.want)
+		}
+	}
+}
+
 func TestGateReportsAnUnreadableManifest(t *testing.T) {
 	t.Parallel()
 

@@ -32,6 +32,9 @@ var (
 	ErrExists   = errors.New("release version already exists")
 	ErrInvalid  = errors.New("invalid release request")
 	ErrNotDraft = errors.New("release version is not a draft")
+	// ErrGateNotFound and ErrInvalidGate are the promotion gates' own.
+	ErrGateNotFound = errors.New("promotion gate not found")
+	ErrInvalidGate  = errors.New("invalid promotion gate")
 	// ErrForbidden is content the caller may not read, or a promotion
 	// target they may not write.
 	ErrForbidden = errors.New("not permitted")

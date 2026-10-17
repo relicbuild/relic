@@ -84,9 +84,8 @@ const (
 
 // Errors.
 var (
-	// ErrNotConfigured is returned for repositories without a push
-	// replication.
-	ErrNotConfigured = errors.New("no push replication configured")
+	// ErrNotConfigured is returned for repositories without a replication.
+	ErrNotConfigured = errors.New("no replication configured")
 	// ErrInvalid is a replication Relic cannot run.
 	ErrInvalid = errors.New("invalid replication")
 )

@@ -87,16 +87,16 @@ func compileGate(expr string) (cel.Program, error) {
 
 	ast, iss := env.Compile(expr)
 	if iss.Err() != nil {
-		return nil, fmt.Errorf("%w: condition: %w", ErrInvalid, iss.Err())
+		return nil, fmt.Errorf("%w: condition: %w", ErrInvalidGate, iss.Err())
 	}
 
 	if ast.OutputType() != cel.BoolType {
-		return nil, fmt.Errorf("%w: condition must be true or false, not %s", ErrInvalid, ast.OutputType())
+		return nil, fmt.Errorf("%w: condition must be true or false, not %s", ErrInvalidGate, ast.OutputType())
 	}
 
 	prg, err := env.Program(ast, cel.CostLimit(gateCost))
 	if err != nil {
-		return nil, fmt.Errorf("%w: condition: %w", ErrInvalid, err)
+		return nil, fmt.Errorf("%w: condition: %w", ErrInvalidGate, err)
 	}
 
 	return prg, nil
@@ -138,7 +138,7 @@ func (s *Service) Gates(ctx context.Context) ([]Gate, error) {
 func (s *Service) Gate(ctx context.Context, name string) (Gate, error) {
 	r, err := s.db.GetPromotionGate(ctx, name)
 	if errors.Is(database.NotFound(err), database.ErrNotFound) {
-		return Gate{}, fmt.Errorf("%w: promotion gate %s", ErrNotFound, name)
+		return Gate{}, fmt.Errorf("%w: %s", ErrGateNotFound, name)
 	}
 
 	if err != nil {
@@ -151,11 +151,11 @@ func (s *Service) Gate(ctx context.Context, name string) (Gate, error) {
 // PutGate creates or replaces a promotion gate.
 func (s *Service) PutGate(ctx context.Context, g Gate) (Gate, error) {
 	if !namePattern.MatchString(g.Name) {
-		return Gate{}, fmt.Errorf("%w: gate name %q", ErrInvalid, g.Name)
+		return Gate{}, fmt.Errorf("%w: name %q", ErrInvalidGate, g.Name)
 	}
 
 	if strings.TrimSpace(g.Environment) == "" {
-		return Gate{}, fmt.Errorf("%w: a gate needs an environment", ErrInvalid)
+		return Gate{}, fmt.Errorf("%w: a gate needs an environment", ErrInvalidGate)
 	}
 
 	if _, err := compileGate(g.Condition); err != nil {
@@ -183,7 +183,7 @@ func (s *Service) DeleteGate(ctx context.Context, name string) error {
 	}
 
 	if n == 0 {
-		return fmt.Errorf("%w: promotion gate %s", ErrNotFound, name)
+		return fmt.Errorf("%w: %s", ErrGateNotFound, name)
 	}
 
 	return nil

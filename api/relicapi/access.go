@@ -128,6 +128,7 @@ var notFound = []error{
 	cvecatalog.ErrUnknown,
 	buildinfo.ErrNotFound,
 	release.ErrNotFound,
+	release.ErrGateNotFound,
 	evidence.ErrKeyNotFound,
 	signingkey.ErrNotFound,
 	auth.ErrTokenNotFound,
@@ -176,6 +177,7 @@ func codeOf(err error) *connect.Error {
 		errors.Is(err, project.ErrInvalid),
 		errors.Is(err, agentregistry.ErrInvalid),
 		errors.Is(err, release.ErrInvalid),
+		errors.Is(err, release.ErrInvalidGate),
 		errors.Is(err, evidence.ErrInvalid),
 		errors.Is(err, buildinfo.ErrInvalid):
 		return connect.NewError(connect.CodeInvalidArgument, err)

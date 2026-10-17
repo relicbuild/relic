@@ -10,6 +10,7 @@ import (
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/internal/access/auth"
 	"relic/internal/artifacts/repository"
+	"relic/internal/delivery/release"
 	"relic/internal/delivery/replication"
 )
 
@@ -141,6 +142,14 @@ func TestCodeOf(t *testing.T) {
 		if c := codeOf(err).Code(); c != connect.CodeInvalidArgument {
 			t.Errorf("%v = %v, want InvalidArgument", err, c)
 		}
+	}
+
+	if c := codeOf(fmt.Errorf("%w: gate", release.ErrGateNotFound)).Code(); c != connect.CodeNotFound {
+		t.Errorf("promotion gate not found = %v", c)
+	}
+
+	if c := codeOf(fmt.Errorf("%w: no environment", release.ErrInvalidGate)).Code(); c != connect.CodeInvalidArgument {
+		t.Errorf("invalid promotion gate = %v", c)
 	}
 
 	internal := codeOf(errors.New("password=hunter2 leaked in a driver error"))
