@@ -23,6 +23,7 @@ const (
 	hfMaxCommit          = 512 << 20
 	hfLFSUploadTTL       = time.Hour
 	hfLFSBatchMaxObjects = 1000
+	hfDefaultRevision    = "main"
 )
 
 func (h *Handler) hfAPI(w http.ResponseWriter, r *http.Request, m Mount) {
@@ -51,10 +52,16 @@ func (h *Handler) hfAPI(w http.ResponseWriter, r *http.Request, m Mount) {
 		})
 	case rest == "api/repos/create" && r.Method == http.MethodPost:
 		h.hfCreateRepo(w, r, m, rp)
-	case len(parts) >= 4 && parts[0] == "api":
+	case len(parts) >= 3 && parts[0] == "api":
 		kind, ok := hf.ParseKind(parts[1])
 
 		id, op, arg, found := hfSplit(parts[2:], "revision", "tree", "preupload", "commit")
+		if bare := strings.Join(parts[2:], "/"); !found && len(parts) <= 4 && hf.ValidID(bare) {
+			id, op, arg, found = bare, "revision", []string{
+				hfDefaultRevision,
+			}, true
+		}
+
 		if !ok || !found {
 			hfError(w, http.StatusNotFound, "EntryNotFound", "not found")
 			return
