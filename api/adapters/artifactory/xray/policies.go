@@ -48,6 +48,13 @@ func (h *Handler) putPolicy(w http.ResponseWriter, r *http.Request) {
 
 	create := r.Method == http.MethodPost
 
+	if !create {
+		stored, err := h.admin.Policy(r.Context(), p.Name)
+		if err == nil {
+			p = xraypolicy.KeepRelicCriteria(p, stored)
+		}
+	}
+
 	if err := h.admin.SavePolicy(r.Context(), p, create); err != nil {
 		h.adminError(w, r, err)
 		return

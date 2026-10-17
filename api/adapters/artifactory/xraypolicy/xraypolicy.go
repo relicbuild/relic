@@ -177,6 +177,37 @@ func PolicyFromXray(p Policy) policy.Policy {
 	return out
 }
 
+// KeepRelicCriteria copies onto updated's rules the criteria a policy
+// document cannot carry (conditions, malicious packages, secrets,
+// misconfigurations, operational risks, reachability) from the stored
+// rules of the same name, so that updating a policy through a document
+// read from GET leaves them as they were.
+func KeepRelicCriteria(updated, stored policy.Policy) policy.Policy {
+	byName := make(map[string]policy.Rule, len(stored.Rules))
+	for _, r := range stored.Rules {
+		byName[r.Name] = r
+	}
+
+	for i, r := range updated.Rules {
+		s, ok := byName[r.Name]
+		if !ok {
+			continue
+		}
+
+		r.Condition = s.Condition
+		r.Malicious = s.Malicious
+		r.Secrets = s.Secrets
+		r.LiveSecrets = s.LiveSecrets
+		r.Misconfigurations = s.Misconfigurations
+		r.EndOfLife = s.EndOfLife
+		r.Unmaintained = s.Unmaintained
+		r.IgnoreUnreachable = s.IgnoreUnreachable
+		updated.Rules[i] = r
+	}
+
+	return updated
+}
+
 // PolicyToXray renders a policy as a policy document.
 func PolicyToXray(p policy.Policy) Policy {
 	out := Policy{
