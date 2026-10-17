@@ -332,7 +332,7 @@ func (s *Service) RestoreFromTrash(ctx context.Context, trashPath, toRepo, toPat
 		return err
 	}
 
-	return s.DeleteProperties(ctx, restored, s.trashLayout.keys(), false)
+	return s.DeleteProperties(ctx, restored, s.trashLayout.keys(), true)
 }
 
 // EmptyTrash deletes everything in the trash can.

@@ -109,3 +109,47 @@ func TestPurgeTrashKeepsNewerEntriesBelowAnExpiredOne(t *testing.T) {
 		t.Errorf("trash after the purge = %+v, %v; want the newer entry alone", entries, err)
 	}
 }
+
+func TestRestoreDropsTrashPropertiesOfNestedEntries(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	s, _, _ := newTestService(t)
+	deploy(t, s, "t/x/f2.txt", "folder entry")
+
+	if err := s.DeleteToTrash(ctx, "generic-local", "t/x", "alice"); err != nil {
+		t.Fatal(err)
+	}
+
+	deploy(t, s, "t/x/f3.txt", "nested entry")
+
+	if err := s.DeleteToTrash(ctx, "generic-local", "t/x/f3.txt", "alice"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.RestoreFromTrash(ctx, "generic-local/t/x", "", "", "alice"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{
+		"t/x",
+		"t/x/f2.txt",
+		"t/x/f3.txt",
+	} {
+		it, err := s.Stat(ctx, "generic-local", path)
+		if err != nil {
+			t.Fatalf("%s after the restore: %v", path, err)
+		}
+
+		props, err := s.Properties(ctx, it)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for _, key := range s.trashLayout.keys() {
+			if values, ok := props[key]; ok {
+				t.Errorf("%s keeps %s=%v after the restore", path, key, values)
+			}
+		}
+	}
+}
