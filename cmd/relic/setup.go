@@ -49,6 +49,8 @@ type setupStep struct {
 	stdin        string
 	env          []string
 	argumentFile []string
+	// undo removes what an earlier setup made, so it may find nothing to remove.
+	undo bool
 }
 
 type setupClient struct {
@@ -310,6 +312,16 @@ var setupClients = map[string]setupClient{
 		short: "dotnet nuget add source, with credentials",
 		steps: func(e setupEnv) ([]setupStep, error) {
 			return []setupStep{
+				{
+					command: []string{
+						"dotnet",
+						"nuget",
+						"remove",
+						"source",
+						e.repo,
+					},
+					undo: true,
+				},
 				{
 					command: []string{
 						"dotnet",
@@ -1048,6 +1060,10 @@ func printSetupStep(w io.Writer, e setupEnv, client setupClient, s setupStep) {
 			cmdline = "echo " + strings.TrimSuffix(s.stdin, "\n") + " | " + cmdline
 		}
 
+		if s.undo {
+			cmdline += "   # when an earlier setup added it"
+		}
+
 		_, _ = fmt.Fprintf(w, "$ %s\n", cmdline)
 
 		return
@@ -1114,7 +1130,16 @@ func applySetupStep(cmd *cobra.Command, e setupEnv, client setupClient, s setupS
 		c.Env = append(os.Environ(), s.env...)
 		c.Stdout, c.Stderr = cmd.ErrOrStderr(), cmd.ErrOrStderr()
 
-		if err := c.Run(); err != nil {
+		if s.undo {
+			c.Stdout, c.Stderr = io.Discard, io.Discard
+		}
+
+		err := c.Run()
+
+		switch {
+		case s.undo:
+			return nil
+		case err != nil:
 			return fmt.Errorf("setup: %s: %w", s.command[0], err)
 		}
 
