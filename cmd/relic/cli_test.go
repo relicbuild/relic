@@ -120,6 +120,32 @@ spec:
 			wantErr: "differs",
 		},
 		{
+			name:    "misspelled spec key",
+			in:      "apiVersion: relic.build/v1\nkind: Group\nmetadata: {name: g}\nsepc: {description: x}\n",
+			wantErr: "sepc",
+		},
+		{
+			name:    "unknown metadata field",
+			in:      "apiVersion: relic.build/v1\nkind: Group\nmetadata: {name: g, labels: {a: b}}\n",
+			wantErr: "labels",
+		},
+		{
+			name:    "metadata alone",
+			in:      "metadata: {name: g}\n",
+			wantErr: "apiVersion",
+		},
+		{
+			name: "empty documents are skipped",
+			in:   "---\n# nothing\n---\napiVersion: relic.build/v1\nkind: Group\nmetadata: {name: g}\n---\n",
+			check: func(t *testing.T, docs []document) {
+				t.Helper()
+
+				if len(docs) != 1 {
+					t.Errorf("docs = %d, want 1", len(docs))
+				}
+			},
+		},
+		{
 			name:    "unknown spec field",
 			in:      "apiVersion: relic.build/v1\nkind: Group\nmetadata: {name: g}\nspec: {descripton: x}\n",
 			wantErr: "descripton",

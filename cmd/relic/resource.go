@@ -68,6 +68,7 @@ func readDocuments(files []string, stdin io.Reader) ([]document, error) {
 
 func decodeDocuments(r io.Reader) ([]document, error) {
 	dec := yaml.NewDecoder(r)
+	dec.KnownFields(true)
 
 	var out []document
 
@@ -83,7 +84,7 @@ func decodeDocuments(r io.Reader) ([]document, error) {
 			return nil, fmt.Errorf("document %d: %w", i, err)
 		}
 
-		if y.APIVersion == "" && y.Kind == "" && y.Spec == nil {
+		if y.APIVersion == "" && y.Kind == "" && y.Metadata.Name == "" && y.Spec == nil {
 			continue
 		}
 
