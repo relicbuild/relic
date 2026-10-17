@@ -207,6 +207,17 @@ func Load(getenv func(string) string) (Config, error) {
 
 		return def
 	}
+
+	var errs []error
+
+	switchOn := func(key string, def bool) bool {
+		on, err := parseSwitch(getenv(key), def)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s %q must be true or false", key, getenv(key)))
+		}
+
+		return on
+	}
 	cfg := Config{
 		HTTPListenAddress: env("RELIC_HTTP_LISTEN_ADDRESS", ":8090"),
 		DatabaseURL:       getenv("RELIC_DATABASE_URL"),
@@ -228,10 +239,10 @@ func Load(getenv func(string) string) (Config, error) {
 		},
 		AdminUsername:         env("RELIC_ADMIN_USERNAME", "admin"),
 		AdminPassword:         getenv("RELIC_ADMIN_PASSWORD"),
-		AllowPrivateUpstreams: getenv("RELIC_UPSTREAM_ALLOW_PRIVATE_ADDRESSES") == "true",
-		AllowPrivateWebhooks:  getenv("RELIC_WEBHOOK_ALLOW_PRIVATE_ADDRESSES") == "true",
+		AllowPrivateUpstreams: switchOn("RELIC_UPSTREAM_ALLOW_PRIVATE_ADDRESSES", false),
+		AllowPrivateWebhooks:  switchOn("RELIC_WEBHOOK_ALLOW_PRIVATE_ADDRESSES", false),
 		Trash: Trash{
-			Enabled: getenv("RELIC_TRASH_ENABLED") != "false",
+			Enabled: switchOn("RELIC_TRASH_ENABLED", true),
 		},
 		Scan: Scan{
 			SyftPath:                 env("RELIC_SCAN_SYFT_PATH", "syft"),
@@ -260,7 +271,7 @@ func Load(getenv func(string) string) (Config, error) {
 				"https://osv-vulnerabilities.storage.googleapis.com",
 			),
 			EndOfLifeURL:     feed(getenv, "RELIC_END_OF_LIFE_URL", "https://endoflife.date/api/v1/products/full"),
-			SecretValidation: getenv("RELIC_SECRET_VALIDATION_ENABLED") == "true",
+			SecretValidation: switchOn("RELIC_SECRET_VALIDATION_ENABLED", false),
 			GovulncheckPath:  env("RELIC_SCAN_GOVULNCHECK_PATH", "govulncheck"),
 			GoVulnerabilityDatabaseURL: feed(
 				getenv,
@@ -271,7 +282,48 @@ func Load(getenv func(string) string) (Config, error) {
 		},
 	}
 
-	var errs []error
+	for _, f := range []struct {
+		key string
+		url string
+	}{
+		{
+			"RELIC_SCAN_VULNERABILITY_DATABASE_URL",
+			cfg.Scan.VulnerabilityDatabaseURL,
+		},
+		{
+			"RELIC_SCAN_GO_VULNERABILITY_DATABASE_URL",
+			cfg.Scan.GoVulnerabilityDatabaseURL,
+		},
+		{
+			"RELIC_CVE_EPSS_URL",
+			cfg.Scan.EPSSFeedURL,
+		},
+		{
+			"RELIC_CVE_KEV_URL",
+			cfg.Scan.KEVFeedURL,
+		},
+		{
+			"RELIC_CVE_RECORDS_URL",
+			cfg.Scan.CVERecordsURL,
+		},
+		{
+			"RELIC_MALICIOUS_PACKAGES_URL",
+			cfg.Scan.MaliciousPackagesURL,
+		},
+		{
+			"RELIC_END_OF_LIFE_URL",
+			cfg.Scan.EndOfLifeURL,
+		},
+		{
+			"RELIC_DEPS_DEV_URL",
+			cfg.Scan.DepsDevURL,
+		},
+	} {
+		if u, err := url.Parse(f.url); f.url != "" &&
+			(err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "") {
+			errs = append(errs, fmt.Errorf("%s %q must be an http or https URL, or off", f.key, f.url))
+		}
+	}
 
 	for _, d := range []struct {
 		key  string
@@ -541,6 +593,19 @@ func (o ObjectStorage) validate() []error {
 	}
 
 	return errs
+}
+
+func parseSwitch(v string, def bool) (bool, error) {
+	if v = strings.TrimSpace(v); v == "" {
+		return def, nil
+	}
+
+	on, err := strconv.ParseBool(v)
+	if err != nil {
+		return def, err
+	}
+
+	return on, nil
 }
 
 func feed(getenv func(string) string, key, def string) string {

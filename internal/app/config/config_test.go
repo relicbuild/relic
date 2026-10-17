@@ -632,6 +632,58 @@ func TestLoad(t *testing.T) {
 			}),
 			wantErr: "RELIC_OBJECT_STORAGE_CHECKSUM",
 		},
+		{
+			name: "switches in any spelling of true and false",
+			env: with(map[string]string{
+				"RELIC_TRASH_ENABLED":                    "FALSE",
+				"RELIC_UPSTREAM_ALLOW_PRIVATE_ADDRESSES": "1",
+				"RELIC_WEBHOOK_ALLOW_PRIVATE_ADDRESSES":  "True",
+				"RELIC_SECRET_VALIDATION_ENABLED":        "true ",
+			}),
+			check: func(t *testing.T, c Config) {
+				t.Helper()
+
+				if c.Trash.Enabled || !c.AllowPrivateUpstreams || !c.AllowPrivateWebhooks || !c.Scan.SecretValidation {
+					t.Errorf("trash %v, upstreams %v, webhooks %v, secret validation %v",
+						c.Trash.Enabled, c.AllowPrivateUpstreams, c.AllowPrivateWebhooks, c.Scan.SecretValidation)
+				}
+			},
+		},
+		{
+			name: "a switch that is neither true nor false",
+			env: with(map[string]string{
+				"RELIC_TRASH_ENABLED": "no",
+			}),
+			wantErr: "RELIC_TRASH_ENABLED",
+		},
+		{
+			name: "a private address switch that is neither true nor false",
+			env: with(map[string]string{
+				"RELIC_UPSTREAM_ALLOW_PRIVATE_ADDRESSES": "yes",
+			}),
+			wantErr: "RELIC_UPSTREAM_ALLOW_PRIVATE_ADDRESSES",
+		},
+		{
+			name: "a feed that is not a URL",
+			env: with(map[string]string{
+				"RELIC_CVE_KEV_URL": "not-a-url",
+			}),
+			wantErr: "RELIC_CVE_KEV_URL",
+		},
+		{
+			name: "a feed turned off in capitals",
+			env: with(map[string]string{
+				"RELIC_CVE_EPSS_URL": "OFF",
+			}),
+			wantErr: "RELIC_CVE_EPSS_URL",
+		},
+		{
+			name: "a vulnerability database listing that is not a URL",
+			env: with(map[string]string{
+				"RELIC_SCAN_VULNERABILITY_DATABASE_URL": "/srv/grype/latest.json",
+			}),
+			wantErr: "RELIC_SCAN_VULNERABILITY_DATABASE_URL",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
