@@ -1,0 +1,25 @@
+NAME:
+   jf - command line client
+
+USAGE:
+   jf [global options] command [command options] [arguments...]
+
+VERSION:
+   0.0.0
+
+COMMANDS:
+     setup    Configures a package manager to use a repository.
+     help, h  Shows a list of commands or help for one command
+
+   Command Namespaces:
+     config, c  Server configuration commands
+     rt         Repository commands
+
+   Lifecycle:
+     release-bundle-create, rbc           Creates a release bundle.
+     release-bundle-delete-local, rbdell  Deletes a release bundle
+                                          when it is no longer needed.
+
+GLOBAL OPTIONS:
+   --help, -h     show help
+   --version, -v  print the version

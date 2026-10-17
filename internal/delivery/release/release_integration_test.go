@@ -1,0 +1,273 @@
+//go:build integration
+
+package release
+
+import (
+	"errors"
+	"log/slog"
+	"strings"
+	"testing"
+	"time"
+	"uuid"
+
+	"relic/internal/artifacts/repository"
+	"relic/internal/artifacts/signingkey"
+	"relic/internal/platform/database"
+	"relic/internal/platform/database/databasetest"
+	"relic/internal/platform/objectstore"
+	"relic/internal/platform/objectstore/objectstoretest"
+)
+
+type releaseFixture struct {
+	releases *Service
+	repos    *repository.Service
+	blobs    *objectstoretest.Memory
+	db       *database.DB
+}
+
+func newReleaseFixture(t *testing.T) releaseFixture {
+	t.Helper()
+
+	ctx := t.Context()
+	db := databasetest.NewDB(t)
+	log := slog.New(slog.DiscardHandler)
+	blobs := objectstoretest.NewMemory()
+	repos := repository.NewService(db, blobs, log)
+
+	for _, r := range []repository.Repository{
+		{
+			Name:   "libs",
+			Class:  repository.ClassLocal,
+			Format: "generic",
+		},
+		{
+			Name:   "prod",
+			Class:  repository.ClassLocal,
+			Format: "generic",
+			Config: repository.Config{
+				Environments: []string{
+					"PROD",
+				},
+			},
+		},
+	} {
+		if err := repos.CreateRepository(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	f := releaseFixture{
+		releases: New(db, repos, nil, signingkey.New(db, nil), log),
+		repos:    repos,
+		blobs:    blobs,
+		db:       db,
+	}
+	f.deploy(t, "libs", "app.bin", "application")
+	f.deploy(t, "libs", "other.bin", "other")
+
+	return f
+}
+
+func (f releaseFixture) deploy(t *testing.T, repo, path, body string) repository.Item {
+	t.Helper()
+
+	item, err := f.repos.Deploy(t.Context(), repository.DeployInput{
+		Repository: repo,
+		Path:       path,
+		Body:       strings.NewReader(body),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return item
+}
+
+func artifactSource(paths ...string) []Source {
+	refs := make([]ArtifactRef, 0, len(paths))
+	for _, p := range paths {
+		refs = append(refs, ArtifactRef{
+			Path: p,
+		})
+	}
+
+	return []Source{
+		{
+			Kind:      SourceArtifacts,
+			Artifacts: refs,
+		},
+	}
+}
+
+func (f releaseFixture) create(t *testing.T, version string, draft bool, sources []Source) Release {
+	t.Helper()
+
+	b, err := f.releases.Create(t.Context(), "", Spec{
+		Name:    "app",
+		Version: version,
+		Draft:   draft,
+		Sources: sources,
+	}, "admin", Access{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return b
+}
+
+func TestPromoteRefusesAReleaseStillProcessing(t *testing.T) {
+	t.Parallel()
+
+	f := newReleaseFixture(t)
+	if err := f.releases.insert(t.Context(), Release{
+		ID:         uuid.NewV7(),
+		Repository: f.releases.layout.Repository(""),
+		Name:       "app",
+		Version:    "1.0",
+		Status:     StatusProcessing,
+		CreatedBy:  "admin",
+		Created:    time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := f.releases.Promote(t.Context(), "", "app", "1.0", PromotionSpec{
+		Environment: "PROD",
+	}, "admin", Access{})
+	if !errors.Is(err, ErrInvalid) {
+		t.Errorf("Promote of a processing release = %v; want ErrInvalid", err)
+	}
+}
+
+func TestPromoteSaysWhenItsFiltersLeaveNoRepository(t *testing.T) {
+	t.Parallel()
+
+	f := newReleaseFixture(t)
+	f.create(t, "1.0", false, artifactSource("libs/app.bin"))
+
+	_, err := f.releases.Promote(t.Context(), "", "app", "1.0", PromotionSpec{
+		Environment: "PROD",
+		Exclude: []string{
+			"prod",
+		},
+	}, "admin", Access{})
+	if !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), "include and exclude") {
+		t.Errorf("Promote with every PROD repository excluded = %v; want the filters named", err)
+	}
+}
+
+func TestPromotionsInOneMillisecondAreBothRecorded(t *testing.T) {
+	t.Parallel()
+
+	f := newReleaseFixture(t)
+	f.create(t, "1.0", false, artifactSource("libs/app.bin"))
+
+	now := time.Now()
+	f.releases.now = func() time.Time {
+		return now
+	}
+
+	for range 2 {
+		if _, err := f.releases.Promote(t.Context(), "", "app", "1.0", PromotionSpec{
+			Environment: "PROD",
+		}, "admin", Access{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	b, err := f.releases.Get(t.Context(), "", "app", "1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	promotions, err := f.db.ListReleasePromotions(t.Context(), b.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(promotions) != 2 {
+		t.Errorf("promotions = %d; want 2", len(promotions))
+	}
+}
+
+func TestGateReportsAnUnreadableManifest(t *testing.T) {
+	t.Parallel()
+
+	f := newReleaseFixture(t)
+	b := f.create(t, "1.0", false, artifactSource("libs/app.bin"))
+
+	if _, err := f.releases.PutGate(t.Context(), Gate{
+		Name:        "signed",
+		Environment: "PROD",
+		Condition:   "signed",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	manifest, err := f.repos.Stat(t.Context(), b.Repository, f.releases.ManifestPath(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.blobs.Delete(t.Context(), objectstore.Key(manifest.Checksums.SHA256)); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = f.releases.Promote(t.Context(), "", "app", "1.0", PromotionSpec{
+		Environment: "PROD",
+	}, "admin", Access{})
+	if err == nil || errors.Is(err, ErrRefused) {
+		t.Errorf("Promote with an unreadable manifest = %v; want an error other than ErrRefused", err)
+	}
+}
+
+func TestReleaseSourcedFromAReleaseChecksItsFiles(t *testing.T) {
+	t.Parallel()
+
+	f := newReleaseFixture(t)
+	b := f.create(t, "1.0", false, artifactSource("libs/app.bin"))
+	f.deploy(t, b.Repository, b.artifactPath(b.Artifacts[0]), "replaced")
+
+	_, err := f.releases.Create(t.Context(), "", Spec{
+		Name:    "app",
+		Version: "2.0",
+		Sources: []Source{
+			{
+				Kind: SourceReleases,
+				Releases: []Ref{
+					{
+						Name:    "app",
+						Version: "1.0",
+					},
+				},
+			},
+		},
+	}, "admin", Access{})
+	if !errors.Is(err, ErrInvalid) {
+		t.Errorf("Create from a release whose file changed = %v; want ErrInvalid", err)
+	}
+}
+
+func TestFailedUpdateRemovesTheFilesItCopied(t *testing.T) {
+	t.Parallel()
+
+	f := newReleaseFixture(t)
+	b := f.create(t, "1.0", true, artifactSource("libs/app.bin"))
+	f.deploy(t, "libs", "app.bin", "changed")
+
+	_, err := f.releases.Update(t.Context(), "", Spec{
+		Name:    "app",
+		Version: "1.0",
+		Sources: artifactSource("libs/other.bin", "libs/app.bin"),
+	}, "admin", Access{})
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("Update with a changed artifact = %v; want ErrInvalid", err)
+	}
+
+	copied := b.artifactPath(Artifact{
+		Path: "other.bin",
+	})
+	if _, err := f.repos.Stat(t.Context(), b.Repository, copied); !errors.Is(err, repository.ErrNotFound) {
+		t.Errorf("Stat of %s after the failed update = %v; want ErrNotFound", copied, err)
+	}
+}

@@ -1,0 +1,355 @@
+package repository
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+	"time"
+
+	"relic/internal/platform/database"
+)
+
+// ErrSelfCopy is returned when a copy or move targets its own source, a path
+// inside it, or a folder above it.
+var ErrSelfCopy = errors.New("destination is the source, inside it or above it")
+
+// CopyInput describes a copy or move of an item (and, for folders, its
+// contents) to DestPath in DestRepo.
+type CopyInput struct {
+	Source                Item
+	DestinationRepository string
+	DestinationPath       string
+	Move                  bool
+	DryRun                bool
+	User                  string
+	// RefuseFile, when set, refuses the copy when it returns an error for a
+	// file under Source.
+	RefuseFile func(ctx context.Context, file Item) error
+
+	// replace deletes what is at the destination first, and then runs in
+	// the same transaction after the copy.
+	replace bool
+	then    func(q database.Querier) error
+}
+
+// Copy copies or moves an item.
+func (s *Service) Copy(ctx context.Context, in CopyInput) error {
+	return s.CopyAll(
+		ctx,
+		[]CopyInput{
+			in,
+		},
+	)
+}
+
+type copyPlan struct {
+	in           CopyInput
+	destination  Repository
+	path         string
+	projectQuota int64
+	files        []string
+}
+
+// CopyAll copies or moves several items in one transaction: all of them or none.
+func (s *Service) CopyAll(ctx context.Context, inputs []CopyInput) error {
+	plans := make([]copyPlan, 0, len(inputs))
+	for _, in := range inputs {
+		plan, err := s.planCopy(ctx, in)
+		if err != nil {
+			return err
+		}
+
+		plans = append(plans, plan)
+	}
+
+	now := s.now()
+	dryRun := slices.ContainsFunc(inputs, func(in CopyInput) bool {
+		return in.DryRun
+	})
+
+	err := s.db.WithTx(ctx, func(q database.Querier) error {
+		for i := range plans {
+			if err := copyInTx(ctx, q, &plans[i], now); err != nil {
+				return err
+			}
+		}
+
+		if dryRun {
+			return errDryRun
+		}
+
+		return nil
+	})
+	if errors.Is(err, errDryRun) {
+		return nil
+	}
+
+	if err != nil {
+		return err
+	}
+
+	for _, plan := range plans {
+		for _, f := range plan.files {
+			it, err := s.Stat(ctx, plan.destination.Name, f)
+			if errors.Is(err, ErrNotFound) {
+				continue
+			}
+
+			if err != nil {
+				s.log.WarnContext(
+					ctx,
+					"skipping the hook of a copied file",
+					"repo",
+					plan.destination.Name,
+					"path",
+					f,
+					"error",
+					err,
+				)
+
+				continue
+			}
+
+			s.runHook(ctx, it)
+		}
+
+		if plan.in.Move {
+			s.runHookOf(ctx, s.deleteHooks, plan.in.Source)
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) planCopy(ctx context.Context, in CopyInput) (copyPlan, error) {
+	dest := DeployInput{
+		Repository: in.DestinationRepository,
+		Path:       in.DestinationPath,
+	}
+	if _, err := s.checkDeployTarget(ctx, &dest); err != nil {
+		return copyPlan{}, err
+	}
+
+	src := in.Source
+	if src.Name == RootPath {
+		return copyPlan{}, fmt.Errorf("%w: cannot copy a repository root", ErrInvalidPath)
+	}
+
+	if src.Repository == dest.Repository && (dest.Path == src.Path() ||
+		strings.HasPrefix(dest.Path, src.Path()+"/") ||
+		strings.HasPrefix(src.Path(), dest.Path+"/")) {
+		return copyPlan{}, ErrSelfCopy
+	}
+
+	destination, err := s.GetRepository(ctx, dest.Repository)
+	if err != nil {
+		return copyPlan{}, err
+	}
+
+	if in.RefuseFile != nil {
+		items, err := subtree(ctx, s.db, src)
+		if err != nil {
+			return copyPlan{}, err
+		}
+
+		for _, it := range items {
+			if it.IsFolder() {
+				continue
+			}
+
+			if err := in.RefuseFile(ctx, it); err != nil {
+				return copyPlan{}, err
+			}
+		}
+	}
+
+	projectQuota, err := s.quotaOfProject(ctx, destination.Project)
+	if err != nil {
+		return copyPlan{}, err
+	}
+
+	return copyPlan{
+		in:           in,
+		destination:  destination,
+		path:         dest.Path,
+		projectQuota: projectQuota,
+	}, nil
+}
+
+func copyInTx(ctx context.Context, q database.Querier, plan *copyPlan, now time.Time) error {
+	in, src, destination := plan.in, plan.in.Source, plan.destination
+	plan.files = plan.files[:0]
+
+	items, err := subtree(ctx, q, src)
+	if err != nil {
+		return err
+	}
+
+	if len(items) == 0 {
+		return fmt.Errorf("%w: %s/%s", ErrNotFound, src.Repository, src.Path())
+	}
+
+	if in.RefuseFile != nil {
+		for _, it := range items {
+			if it.IsFolder() {
+				continue
+			}
+
+			if err := in.RefuseFile(ctx, it); err != nil {
+				return err
+			}
+		}
+	}
+
+	if in.replace {
+		parent, name := SplitPath(plan.path)
+		if _, err := deleteItem(ctx, q, Item{
+			Repository: destination.Name,
+			Parent:     parent,
+			Name:       name,
+		}); err != nil {
+			return err
+		}
+	}
+
+	for _, it := range items {
+		target := plan.path
+		if it.Path() != src.Path() {
+			target += "/" + strings.TrimPrefix(it.Path(), src.Path()+"/")
+		}
+
+		if err := copyItem(
+			ctx,
+			q,
+			it,
+			destination.Name,
+			target,
+			in.User,
+			now,
+			destination.Config.Immutable,
+		); err != nil {
+			return err
+		}
+
+		if !it.IsFolder() {
+			plan.files = append(plan.files, target)
+		}
+	}
+
+	if in.Move {
+		deleted, err := deleteItem(ctx, q, src)
+		if err != nil {
+			return err
+		}
+
+		if deleted != len(items) {
+			return fmt.Errorf("%w: %s/%s changed during the move", ErrConflict, src.Repository, src.Path())
+		}
+
+		if err := checkHolds(ctx, q, src.Repository, src.Path()); err != nil {
+			return err
+		}
+	}
+
+	if err := checkQuota(ctx, q, destination.Name, destination.Config.MaxStorage); err != nil {
+		return err
+	}
+
+	if err := checkProjectQuota(ctx, q, destination.Project, plan.projectQuota); err != nil {
+		return err
+	}
+
+	if in.then != nil && !in.DryRun {
+		return in.then(q)
+	}
+
+	return nil
+}
+
+var errDryRun = errors.New("dry run")
+
+func copyItem(
+	ctx context.Context,
+	q database.Querier,
+	it Item,
+	repoKey, target, user string,
+	now time.Time,
+	immutable bool,
+) error {
+	parent, name := SplitPath(target)
+	if it.IsFolder() {
+		if err := ensureFolders(ctx, q, repoKey, target, user, now); err != nil {
+			return err
+		}
+	} else {
+		b := database.Blob{
+			Sha256: it.Checksums.SHA256,
+			Sha1:   it.Checksums.SHA1,
+			Md5:    it.Checksums.MD5,
+			Size:   it.Size,
+		}
+		if _, err := upsertFile(ctx, q, repoKey, parent, name, b, user, now, immutable); err != nil {
+			return err
+		}
+	}
+
+	id, err := q.GetItem(ctx, database.GetItemParams{
+		RepoKey: repoKey,
+		Path:    parent,
+		Name:    name,
+	})
+	if err != nil {
+		return fmt.Errorf("get %s/%s: %w", repoKey, target, err)
+	}
+
+	srcRow, err := q.GetItem(ctx, database.GetItemParams{
+		RepoKey: it.Repository,
+		Path:    it.Parent,
+		Name:    it.Name,
+	})
+	if err != nil {
+		return fmt.Errorf("get %s/%s: %w", it.Repository, it.Path(), err)
+	}
+
+	rows, err := q.GetItemProperties(ctx, srcRow.ID)
+	if err != nil {
+		return fmt.Errorf("get properties of %s/%s: %w", it.Repository, it.Path(), err)
+	}
+
+	props := Properties{}
+	for _, r := range rows {
+		props[r.Key] = append(props[r.Key], r.Value)
+	}
+
+	return replaceProperties(ctx, q, id.ID, props)
+}
+
+func deleteItem(ctx context.Context, q database.Querier, item Item) (int, error) {
+	var (
+		shas []*string
+		err  error
+	)
+	if item.Name == RootPath {
+		shas, err = q.DeleteRepositoryItems(ctx, item.Repository)
+	} else {
+		full := item.Path()
+		shas, err = q.DeleteSubtree(
+			ctx,
+			database.DeleteSubtreeParams{
+				RepoKey:  item.Repository,
+				Path:     item.Parent,
+				Name:     item.Name,
+				FullPath: full,
+				Prefix:   likePrefix(full),
+			},
+		)
+	}
+
+	if err != nil {
+		return 0, fmt.Errorf("delete %s/%s: %w", item.Repository, item.Path(), err)
+	}
+
+	return len(shas), releaseAll(ctx, q, shas)
+}

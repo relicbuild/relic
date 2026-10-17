@@ -1,0 +1,15 @@
+{
+  "comment": "example promotion",
+  "sourceRepo": "example-generic-local",
+  "targetRepo": "example-generic-target",
+  "status": "released",
+  "dependencies": false,
+  "copy": true,
+  "failFast": true,
+  "dryRun": false,
+  "properties": {
+    "release": [
+      "1.0"
+    ]
+  }
+}

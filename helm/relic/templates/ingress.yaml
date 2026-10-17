@@ -1,0 +1,33 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "relic.fullname" . }}
+  labels: {{- include "relic.labels" . | nindent 4 }}
+  {{- $annotations := .Values.ingress.annotations | default dict }}
+  {{- if .Values.tls.enabled }}
+  {{- $annotations = merge (dict) $annotations (dict "nginx.ingress.kubernetes.io/backend-protocol" "HTTPS") }}
+  {{- end }}
+  {{- with $annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls: {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "relic.fullname" $ }}
+                port: {name: {{ include "relic.serverPortName" $ }}}
+    {{- end }}
+{{- end }}

@@ -1,0 +1,158 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/options.proto";
+
+// ProjectService manages projects. A repository belongs to the project its
+// project field names; the project's members get their role's actions on
+// it: admins and developers read, deploy, annotate and delete, viewers read.
+// Project admins also manage the members and the project's repositories.
+service ProjectService {
+  // ListProjects lists the projects the caller is a member of; administrators
+  // and viewers see all.
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/projects"
+    };
+  }
+  rpc GetProject(GetProjectRequest) returns (GetProjectResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/projects/{key}"
+    };
+  }
+  rpc PutProject(PutProjectRequest) returns (PutProjectResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      put: "/api/v1/projects/{project.key}"
+      body: "project"
+    };
+  }
+  // DeleteProject removes a project; its repositories keep naming it, with no
+  // members.
+  rpc DeleteProject(DeleteProjectRequest) returns (DeleteProjectResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      delete: "/api/v1/projects/{key}"
+    };
+  }
+  // SetProjectMembers replaces the members; administrators and the project's
+  // admins may.
+  rpc SetProjectMembers(SetProjectMembersRequest) returns (SetProjectMembersResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      put: "/api/v1/projects/{key}/members"
+      body: "*"
+    };
+  }
+  // AddProjectMember adds a member, or changes a member's role, leaving the
+  // other members as they are; administrators and the project's admins may.
+  rpc AddProjectMember(AddProjectMemberRequest) returns (AddProjectMemberResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      post: "/api/v1/projects/{key}/members"
+      body: "member"
+    };
+  }
+  // RemoveProjectMember removes a member, leaving the other members as they
+  // are; administrators and the project's admins may.
+  rpc RemoveProjectMember(RemoveProjectMemberRequest) returns (RemoveProjectMemberResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      delete: "/api/v1/projects/{key}/members/{name}"
+    };
+  }
+}
+
+enum ProjectRole {
+  PROJECT_ROLE_UNSPECIFIED = 0;
+  PROJECT_ROLE_ADMIN = 1;
+  PROJECT_ROLE_DEVELOPER = 2;
+  PROJECT_ROLE_VIEWER = 3;
+}
+
+// ProjectMember is a user, or a group, in a role.
+message ProjectMember {
+  string name = 1;
+  bool group = 2;
+  ProjectRole role = 3;
+}
+
+// Project is a project.
+message Project {
+  // key is 2 to 32 lower-case letters and digits, starting with a letter.
+  string key = 1;
+  string name = 2;
+  string description = 3;
+  // storage_quota_bytes bounds the files of the project's repositories; 0 is
+  // no quota.
+  int64 storage_quota_bytes = 4;
+  repeated ProjectMember members = 5;
+  // used_bytes is what the project's repositories hold.
+  int64 used_bytes = 6;
+  // repositories name the project.
+  repeated string repositories = 7;
+  google.protobuf.Timestamp created = 8;
+  google.protobuf.Timestamp updated = 9;
+}
+
+message ListProjectsRequest {}
+
+message ListProjectsResponse {
+  repeated Project projects = 1;
+}
+
+message GetProjectRequest {
+  string key = 1;
+}
+
+message GetProjectResponse {
+  Project project = 1;
+}
+
+message PutProjectRequest {
+  Project project = 1;
+}
+
+message PutProjectResponse {
+  Project project = 1;
+}
+
+message DeleteProjectRequest {
+  string key = 1;
+}
+
+message DeleteProjectResponse {}
+
+message SetProjectMembersRequest {
+  string key = 1;
+  repeated ProjectMember members = 2;
+}
+
+message SetProjectMembersResponse {
+  Project project = 1;
+}
+
+message AddProjectMemberRequest {
+  string key = 1;
+  ProjectMember member = 2;
+}
+
+message AddProjectMemberResponse {
+  Project project = 1;
+}
+
+message RemoveProjectMemberRequest {
+  string key = 1;
+  string name = 2;
+  // group says the member is a group.
+  bool group = 3;
+}
+
+message RemoveProjectMemberResponse {
+  Project project = 1;
+}

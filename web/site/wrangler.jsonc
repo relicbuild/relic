@@ -1,0 +1,14 @@
+{
+  "name": "relic-site",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": ".output/public",
+    "not_found_handling": "404-page"
+  },
+  "routes": [
+    {
+      "pattern": "relic.build",
+      "custom_domain": true
+    }
+  ]
+}

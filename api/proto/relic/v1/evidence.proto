@@ -1,0 +1,142 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/options.proto";
+
+// EvidenceService stores signed evidence (in-toto statements in DSSE
+// envelopes) about files, and the public keys evidence is verified with.
+service EvidenceService {
+  // ListEvidence returns the evidence about a file the caller may read.
+  rpc ListEvidence(ListEvidenceRequest) returns (ListEvidenceResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/repositories/{repository}/evidence/{path=**}"
+    };
+  }
+  // CreateEvidence stores a DSSE envelope as evidence about a file; it needs
+  // annotate permission on the file. An envelope whose key ID names no
+  // trusted key is refused.
+  rpc CreateEvidence(CreateEvidenceRequest) returns (CreateEvidenceResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      post: "/api/v1/repositories/{repository}/evidence/{path=**}"
+      body: "*"
+    };
+  }
+  // ListTrustedKeys returns the public keys evidence is verified with.
+  rpc ListTrustedKeys(ListTrustedKeysRequest) returns (ListTrustedKeysResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/trusted-keys"
+    };
+  }
+  // AddTrustedKey adds a public key (PEM) under an alias.
+  rpc AddTrustedKey(AddTrustedKeyRequest) returns (AddTrustedKeyResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      post: "/api/v1/trusted-keys"
+      body: "*"
+    };
+  }
+  // DeleteTrustedKey removes a trusted key; evidence it signed stays but no
+  // longer verifies.
+  rpc DeleteTrustedKey(DeleteTrustedKeyRequest) returns (DeleteTrustedKeyResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      delete: "/api/v1/trusted-keys/{kid}"
+    };
+  }
+}
+
+// EvidenceAttachment is a file an evidence statement refers to.
+message EvidenceAttachment {
+  string name = 1;
+  string sha256 = 2;
+  string type = 3;
+  string repository = 4;
+  string path = 5;
+}
+
+// Evidence is one stored evidence file about a subject file.
+message Evidence {
+  string id = 1;
+  // repository and path name the subject file.
+  string repository = 2;
+  string path = 3;
+  string subject_sha256 = 4;
+  string predicate_type = 5;
+  string predicate_slug = 6;
+  string predicate_category = 7;
+  // predicate is the statement's predicate as JSON.
+  string predicate = 8;
+  string provider = 9;
+  string key_alias = 10;
+  // verified says whether the signature verified against a trusted key and
+  // the subject still has the digest the statement names.
+  bool verified = 11;
+  repeated EvidenceAttachment attachments = 12;
+  // stored_path is where the evidence file is kept in the repository.
+  string stored_path = 13;
+  string created_by = 14;
+  google.protobuf.Timestamp created = 15;
+}
+
+// TrustedKey is a public key evidence is verified with.
+message TrustedKey {
+  string kid = 1;
+  string alias = 2;
+  string type = 3;
+  string public_key = 4;
+  string fingerprint = 5;
+  string issued_by = 6;
+  google.protobuf.Timestamp issued = 7;
+}
+
+message ListEvidenceRequest {
+  string repository = 1;
+  string path = 2;
+}
+
+message ListEvidenceResponse {
+  repeated Evidence evidence = 1;
+}
+
+message CreateEvidenceRequest {
+  string repository = 1;
+  string path = 2;
+  // envelope is the DSSE envelope as JSON, stored as it is sent.
+  string envelope = 3;
+  // attachments say where the statement's attachments are stored.
+  repeated EvidenceAttachment attachments = 4;
+  // provider names what produced the evidence.
+  string provider = 5;
+}
+
+message CreateEvidenceResponse {
+  Evidence evidence = 1;
+}
+
+message ListTrustedKeysRequest {}
+
+message ListTrustedKeysResponse {
+  repeated TrustedKey keys = 1;
+}
+
+message AddTrustedKeyRequest {
+  string alias = 1;
+  // public_key is the key in PEM.
+  string public_key = 2;
+}
+
+message AddTrustedKeyResponse {
+  TrustedKey key = 1;
+}
+
+message DeleteTrustedKeyRequest {
+  string kid = 1;
+}
+
+message DeleteTrustedKeyResponse {}

@@ -1,0 +1,71 @@
+version: 2
+
+project_name: relic
+
+before:
+  hooks:
+    - sh -c "cd web && pnpm install --frozen-lockfile && pnpm generate"
+    - sh -c "find internal/app/ui/dist -mindepth 1 ! -name .gitkeep -delete && cp -r web/.output/public/. internal/app/ui/dist/"
+    - sh -c "mkdir -p bin && cd web && node scripts/third-party-notices.ts > ../bin/web-notices.txt"
+    - go run ./tools/thirdpartynotices -output bin/THIRD_PARTY_NOTICES -platforms linux/amd64,linux/arm64,darwin/amd64,darwin/arm64,windows/amd64 -include bin/web-notices.txt ./cmd/relic
+
+builds:
+  - id: relic
+    main: ./cmd/relic
+    binary: relic
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Tag }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: relic
+    ids:
+      - relic
+    name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}"
+    wrap_in_directory: true
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - LICENSE
+      - README.md
+      - src: bin/THIRD_PARTY_NOTICES
+        strip_parent: true
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Tag }}_checksums.txt"
+
+sboms:
+  - artifacts: archive
+
+signs:
+  - cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args:
+      - sign-blob
+      - --bundle=${signature}
+      - ${artifact}
+      - --yes
+    artifacts: checksum
+
+changelog:
+  use: github-native
+
+release:
+  prerelease: auto

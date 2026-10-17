@@ -1,0 +1,17 @@
+services:
+  relic-server:
+    command: ["server", "start", "--worker"]
+    environment:
+      RELIC_DATABASE_URL: sqlite:///var/lib/relic/data/relic.db
+      RELIC_OBJECT_STORAGE_TYPE: filesystem
+      RELIC_OBJECT_STORAGE_PATH: /var/lib/relic/data/objects
+      RELIC_GARBAGE_COLLECTION_INTERVAL: ${RELIC_GARBAGE_COLLECTION_INTERVAL:-10m}
+      RELIC_GARBAGE_COLLECTION_GRACE_PERIOD: ${RELIC_GARBAGE_COLLECTION_GRACE_PERIOD:-1h}
+      RELIC_TRASH_RETENTION: ${RELIC_TRASH_RETENTION:-336h}
+    volumes:
+      - relic-data:/var/lib/relic/data
+      - vulnerability-database:/var/lib/relic/grype
+    depends_on: !reset {}
+
+volumes:
+  relic-data:

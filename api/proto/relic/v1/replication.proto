@@ -1,0 +1,129 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/options.proto";
+
+// ReplicationService manages push replications of local repositories.
+service ReplicationService {
+  rpc ListReplications(ListReplicationsRequest) returns (ListReplicationsResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/replications"
+    };
+  }
+  rpc GetReplication(GetReplicationRequest) returns (GetReplicationResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/repositories/{repository}/replication"
+    };
+  }
+  // PutReplication creates or replaces a repository's replication. An empty
+  // password keeps the stored one.
+  rpc PutReplication(PutReplicationRequest) returns (PutReplicationResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      put: "/api/v1/repositories/{replication.repository}/replication"
+      body: "replication"
+    };
+  }
+  rpc DeleteReplication(DeleteReplicationRequest) returns (DeleteReplicationResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      delete: "/api/v1/repositories/{repository}/replication"
+    };
+  }
+  // RunReplication queues an immediate push.
+  rpc RunReplication(RunReplicationRequest) returns (RunReplicationResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      post: "/api/v1/repositories/{repository}/replication:run"
+      body: "*"
+    };
+  }
+}
+
+// ReplicationStatus is how a replication's last run went.
+enum ReplicationStatus {
+  REPLICATION_STATUS_UNSPECIFIED = 0;
+  REPLICATION_STATUS_NEVER = 1;
+  REPLICATION_STATUS_OK = 2;
+  REPLICATION_STATUS_FAILED = 3;
+}
+
+// ReplicationDirection is which way a replication copies files.
+enum ReplicationDirection {
+  REPLICATION_DIRECTION_UNSPECIFIED = 0;
+  // REPLICATION_DIRECTION_PUSH copies the repository's files to the target.
+  REPLICATION_DIRECTION_PUSH = 1;
+  // REPLICATION_DIRECTION_PULL copies the target's files the repository
+  // lacks, verifying their checksums.
+  REPLICATION_DIRECTION_PULL = 2;
+  // REPLICATION_DIRECTION_FEDERATED keeps both alike: each run pulls, then
+  // pushes; the last write wins and a delete wins over an older write.
+  // Changes queue a run as they are made.
+  REPLICATION_DIRECTION_FEDERATED = 3;
+}
+
+// Replication copies a local repository's files to or from a repository on
+// another server.
+message Replication {
+  string repository = 1;
+  // target_url is the target repository's URL (the repository's URL on
+  // another Relic).
+  string target_url = 2;
+  string username = 3;
+  // password is write-only; has_password says whether one is stored.
+  string password = 4;
+  bool has_password = 5;
+  // schedule is a standard 5-field cron expression ("0 12 * * *" runs at
+  // noon), or a descriptor such as @daily.
+  string schedule = 6;
+  bool enabled = 7;
+  bool sync_deletes = 8;
+  bool sync_properties = 9;
+  string path_prefix = 10;
+  google.protobuf.Timestamp last_run = 11;
+  ReplicationStatus last_status = 12;
+  string last_error = 13;
+  // on_change also pushes each change as it is made.
+  bool on_change = 14;
+  // timeout_seconds bounds each request to the target; 0 uses the default.
+  int32 timeout_seconds = 15;
+  // direction is push when unspecified.
+  ReplicationDirection direction = 16;
+}
+
+message ListReplicationsRequest {}
+
+message ListReplicationsResponse {
+  repeated Replication replications = 1;
+}
+
+message GetReplicationRequest {
+  string repository = 1;
+}
+
+message GetReplicationResponse {
+  Replication replication = 1;
+}
+
+message PutReplicationRequest {
+  Replication replication = 1;
+}
+
+message PutReplicationResponse {}
+
+message DeleteReplicationRequest {
+  string repository = 1;
+}
+
+message DeleteReplicationResponse {}
+
+message RunReplicationRequest {
+  string repository = 1;
+}
+
+message RunReplicationResponse {}

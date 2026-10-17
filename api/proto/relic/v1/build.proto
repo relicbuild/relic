@@ -1,0 +1,231 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/artifact.proto";
+import "relic/v1/options.proto";
+
+// BuildService reads published build information.
+service BuildService {
+  // ListBuilds returns the builds of a project the caller may read.
+  rpc ListBuilds(ListBuildsRequest) returns (ListBuildsResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/builds"
+    };
+  }
+  // PublishBuildRun stores a build run: the artifacts and dependencies of
+  // its modules, the sources it was built from and its properties. A run
+  // with the same name, number and start replaces the stored one.
+  rpc PublishBuildRun(PublishBuildRunRequest) returns (PublishBuildRunResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      post: "/api/v1/builds/{run.name}/runs"
+      body: "*"
+    };
+  }
+  // GetBuildRun returns one build run's published information.
+  rpc GetBuildRun(GetBuildRunRequest) returns (GetBuildRunResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/builds/{name}/runs/{number}"
+    };
+  }
+  // ListBuildRuns returns a build's runs, newest first.
+  rpc ListBuildRuns(ListBuildRunsRequest) returns (ListBuildRunsResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/builds/{name}/runs"
+    };
+  }
+  // DeleteBuildRuns deletes some or all of a build's runs, and optionally their
+  // artifacts; it needs delete permission on the build and on each artifact.
+  rpc DeleteBuildRuns(DeleteBuildRunsRequest) returns (DeleteBuildRunsResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      delete: "/api/v1/builds/{name}/runs"
+    };
+  }
+  // ApplyBuildRetention applies a retention policy to a build's runs.
+  rpc ApplyBuildRetention(ApplyBuildRetentionRequest) returns (ApplyBuildRetentionResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      post: "/api/v1/builds/{name}:applyRetention"
+      body: "*"
+    };
+  }
+  // PromoteRun records a status on a run and copies or moves its artifacts
+  // (and optionally dependencies) to a target repository. It needs write
+  // permission on the build and on the target.
+  rpc PromoteBuildRun(PromoteBuildRunRequest) returns (PromoteBuildRunResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      post: "/api/v1/builds/{name}/runs/{number}:promote"
+      body: "*"
+    };
+  }
+}
+
+// Build is a build name and its latest run.
+message Build {
+  string name = 1;
+  google.protobuf.Timestamp last_started = 2;
+}
+
+message ListBuildsRequest {
+  // project is the project key; empty for builds outside projects.
+  string project = 1;
+}
+
+message ListBuildsResponse {
+  repeated Build builds = 1;
+}
+
+// BuildRun is one run of a build.
+message BuildRun {
+  string number = 1;
+  google.protobuf.Timestamp started = 2;
+}
+
+message GetBuildRunRequest {
+  string project = 1;
+  string name = 2;
+  string number = 3;
+}
+
+// BuildArtifact is a file a build module produced.
+message BuildArtifact {
+  string name = 1;
+  string path = 2;
+  string type = 3;
+  string sha1 = 4;
+  string sha256 = 5;
+  string md5 = 6;
+}
+
+// BuildDependency is a package a build module used.
+message BuildDependency {
+  string id = 1;
+  string type = 2;
+  string sha1 = 3;
+  string sha256 = 4;
+  repeated string scopes = 5;
+  string md5 = 6;
+}
+
+// BuildModule is one module of a build run.
+message BuildModule {
+  string id = 1;
+  string type = 2;
+  repeated BuildArtifact artifacts = 3;
+  repeated BuildDependency dependencies = 4;
+}
+
+// VcsSource is the source a build run was built from.
+message VcsSource {
+  string url = 1;
+  string revision = 2;
+  string branch = 3;
+}
+
+message GetBuildRunResponse {
+  string name = 1;
+  string number = 2;
+  google.protobuf.Timestamp started = 3;
+  // agent is the CI tool that published it (name and version).
+  string agent = 4;
+  repeated VcsSource vcs = 5;
+  repeated BuildModule modules = 6;
+  map<string, string> properties = 7;
+}
+
+message ListBuildRunsRequest {
+  string project = 1;
+  string name = 2;
+}
+
+message ListBuildRunsResponse {
+  repeated BuildRun runs = 1;
+}
+
+message DeleteBuildRunsRequest {
+  string project = 1;
+  string name = 2;
+  // numbers are the runs to delete; ignored with all.
+  repeated string numbers = 3;
+  bool all = 4;
+  // delete_artifacts deletes the runs' artifacts too.
+  bool delete_artifacts = 5;
+}
+
+message DeleteBuildRunsResponse {}
+
+message ApplyBuildRetentionRequest {
+  string project = 1;
+  string name = 2;
+  // max_runs keeps at most this many runs, newest first; 0 keeps any number.
+  int32 max_runs = 3;
+  // min_started discards runs started before it; unset keeps runs of any age.
+  google.protobuf.Timestamp min_started = 4;
+  // keep lists run numbers that are never discarded.
+  repeated string keep = 5;
+  bool delete_artifacts = 6;
+}
+
+message ApplyBuildRetentionResponse {}
+
+message PromoteBuildRunRequest {
+  string project = 1;
+  string name = 2;
+  string number = 3;
+  // status is recorded on the run, with comment.
+  string status = 4;
+  string comment = 5;
+  // source_repository limits the files to one repository; empty for all.
+  string source_repository = 6;
+  // target_repository receives the files; empty to record a status only.
+  string target_repository = 7;
+  // dependencies promotes the run's dependencies too.
+  bool dependencies = 8;
+  // copy keeps the files where they are; otherwise they move.
+  bool copy = 9;
+  bool fail_fast = 10;
+  // dry_run reports what would happen and changes nothing.
+  bool dry_run = 11;
+  // properties are set on the promoted files.
+  map<string, PropertyValues> properties = 12;
+}
+
+// PromotionMessage is one line of a promotion's report.
+message PromotionMessage {
+  // level is info, warning or error.
+  string level = 1;
+  string text = 2;
+}
+
+message PromoteBuildRunResponse {
+  repeated PromotionMessage messages = 1;
+}
+
+// PublishedBuildRun is a build run as a CI tool publishes it.
+message PublishedBuildRun {
+  string name = 1;
+  string number = 2;
+  google.protobuf.Timestamp started = 3;
+  // agent_name and agent_version name the CI tool that publishes it.
+  string agent_name = 4;
+  string agent_version = 5;
+  repeated VcsSource vcs = 6;
+  repeated BuildModule modules = 7;
+  map<string, string> properties = 8;
+}
+
+message PublishBuildRunRequest {
+  // project is the build's project; empty for builds outside projects.
+  string project = 1;
+  PublishedBuildRun run = 2;
+}
+
+message PublishBuildRunResponse {}

@@ -1,0 +1,33 @@
+{
+  "name": "example-repositories",
+  "repo": {
+    "include-patterns": [
+      "**"
+    ],
+    "exclude-patterns": [
+      "secret/**"
+    ],
+    "repositories": [
+      "example-generic-local",
+      "example-maven-remote"
+    ],
+    "actions": {
+      "users": {
+        "example-user": [
+          "read",
+          "write",
+          "annotate"
+        ]
+      },
+      "groups": {
+        "example-group": [
+          "read",
+          "write",
+          "annotate",
+          "delete",
+          "manage"
+        ]
+      }
+    }
+  }
+}

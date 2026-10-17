@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/options.proto";
+
+// AuditService reads the audit log: changes to administration settings,
+// sign-ins, tokens and blocked downloads.
+service AuditService {
+  // ListAuditEvents returns a page of events, newest first.
+  rpc ListAuditEvents(ListAuditEventsRequest) returns (ListAuditEventsResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/audit-events"
+    };
+  }
+}
+
+enum AuditOutcome {
+  AUDIT_OUTCOME_UNSPECIFIED = 0;
+  AUDIT_OUTCOME_SUCCESS = 1;
+  // The caller was not signed in or not allowed.
+  AUDIT_OUTCOME_DENIED = 2;
+  AUDIT_OUTCOME_FAILURE = 3;
+}
+
+message AuditEvent {
+  string id = 1;
+  google.protobuf.Timestamp time = 2;
+  // actor is the user who acted, or anonymous.
+  string actor = 3;
+  // action is the method or route called, or an event such as
+  // download.blocked.
+  string action = 4;
+  // target is what the action acted on: a name, or a repository and path.
+  string target = 5;
+  AuditOutcome outcome = 6;
+  // client is the address the request came from.
+  string client = 7;
+  // detail is the error, or why a download was blocked.
+  string detail = 8;
+}
+
+message ListAuditEventsRequest {
+  // actor selects one user's events.
+  string actor = 1;
+  // action and target select events whose action or target contains them.
+  string action = 2;
+  string target = 3;
+  AuditOutcome outcome = 4;
+  google.protobuf.Timestamp since = 5;
+  google.protobuf.Timestamp until = 6;
+  // page counts from 1.
+  int32 page = 7;
+  // page_size is at most 1000; 100 when unset.
+  int32 page_size = 8;
+}
+
+message ListAuditEventsResponse {
+  repeated AuditEvent events = 1;
+  // total is the number of events the filters select.
+  int64 total = 2;
+}

@@ -1,0 +1,36 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "relic.fullname" . }}-server
+  labels: {{- include "relic.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "relic.selector" (dict "root" . "component" "server") | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - ports:
+        - {port: {{ include "relic.serverPortName" . }}, protocol: TCP}
+      {{- with .Values.networkPolicy.allowServerAccessFrom }}
+      from: {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- include "relic.metricsIngress" . | nindent 4 }}
+{{- if not (include "relic.singleNode" .) }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "relic.fullname" . }}-worker
+  labels: {{- include "relic.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "relic.selector" (dict "root" . "component" "worker") | nindent 6 }}
+  policyTypes: [Ingress]
+  {{- if .Values.metrics.enabled }}
+  ingress:
+    {{- include "relic.metricsIngress" . | nindent 4 }}
+  {{- else }}
+  ingress: []
+  {{- end }}
+{{- end }}
+{{- end }}

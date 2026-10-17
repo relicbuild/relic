@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "relic/v1/options.proto";
+
+// WorkloadIdentityService manages the token issuers CI jobs sign in with,
+// without stored secrets (SessionService.ExchangeWorkloadToken).
+service WorkloadIdentityService {
+  rpc ListWorkloadIdentities(ListWorkloadIdentitiesRequest) returns (ListWorkloadIdentitiesResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/workload-identities"
+    };
+  }
+  rpc GetWorkloadIdentity(GetWorkloadIdentityRequest) returns (GetWorkloadIdentityResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/workload-identities/{name}"
+    };
+  }
+  rpc PutWorkloadIdentity(PutWorkloadIdentityRequest) returns (PutWorkloadIdentityResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      put: "/api/v1/workload-identities/{workload_identity.name}"
+      body: "workload_identity"
+    };
+  }
+  // DeleteWorkloadIdentity removes a workload identity; tokens it issued stay
+  // valid until they expire.
+  rpc DeleteWorkloadIdentity(DeleteWorkloadIdentityRequest) returns (DeleteWorkloadIdentityResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      delete: "/api/v1/workload-identities/{name}"
+    };
+  }
+}
+
+// WorkloadRule maps a workload token's claims to the Relic user it acts as.
+message WorkloadRule {
+  // claims are claim names and the Ant-style patterns their values must all
+  // match, for example repository: my-org/* and ref: refs/heads/main.
+  map<string, string> claims = 1;
+  // user is the Relic user the issued token is for.
+  string user = 2;
+  // groups narrow the token to these of the user's groups when set.
+  repeated string groups = 3;
+}
+
+// WorkloadIdentity is a trusted issuer of workload tokens and the rules for
+// them. The first rule that matches a token decides.
+message WorkloadIdentity {
+  string name = 1;
+  bool enabled = 2;
+  // issuer is the tokens' iss; Relic reads its signing keys from its
+  // discovery document unless jwks is set.
+  string issuer = 3;
+  // audience is the aud the tokens must name.
+  string audience = 4;
+  // jwks holds the issuer's public signing keys, for an issuer Relic cannot
+  // reach.
+  string jwks = 5;
+  // token_lifetime_minutes is how long issued tokens live: 60 at most, and
+  // when unset.
+  int32 token_lifetime_minutes = 6;
+  repeated WorkloadRule rules = 7;
+}
+
+message ListWorkloadIdentitiesRequest {}
+
+message ListWorkloadIdentitiesResponse {
+  repeated WorkloadIdentity workload_identities = 1;
+}
+
+message GetWorkloadIdentityRequest {
+  string name = 1;
+}
+
+message GetWorkloadIdentityResponse {
+  WorkloadIdentity workload_identity = 1;
+}
+
+message PutWorkloadIdentityRequest {
+  WorkloadIdentity workload_identity = 1;
+}
+
+message PutWorkloadIdentityResponse {
+  WorkloadIdentity workload_identity = 1;
+}
+
+message DeleteWorkloadIdentityRequest {
+  string name = 1;
+}
+
+message DeleteWorkloadIdentityResponse {}

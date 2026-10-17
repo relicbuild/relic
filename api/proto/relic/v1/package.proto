@@ -1,0 +1,164 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/options.proto";
+
+// PackageService reads what packages say about themselves.
+service PackageService {
+  // GetContainerImage returns the image an image tag folder holds.
+  rpc GetContainerImage(GetContainerImageRequest) returns (GetContainerImageResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/repositories/{repository}/packages/container-image/{path=**}"
+    };
+  }
+  // PromoteContainerImage copies or moves an image tag (or every tag of the
+  // image) to another repository. It needs write permission on the target
+  // and, to move, delete permission on the source.
+  rpc PromoteContainerImage(PromoteContainerImageRequest) returns (PromoteContainerImageResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      post: "/api/v1/repositories/{repository}/images/{image=**}:promote"
+      body: "*"
+    };
+  }
+  // GetNpmPackage returns an npm tarball's package.json facts.
+  rpc GetNpmPackage(GetNpmPackageRequest) returns (GetNpmPackageResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/repositories/{repository}/packages/npm/{path=**}"
+    };
+  }
+  // GetPythonPackage returns a wheel's or sdist's core metadata.
+  rpc GetPythonPackage(GetPythonPackageRequest) returns (GetPythonPackageResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/repositories/{repository}/packages/python/{path=**}"
+    };
+  }
+  // GetHelmChart returns a chart's Chart.yaml.
+  rpc GetHelmChart(GetHelmChartRequest) returns (GetHelmChartResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/repositories/{repository}/packages/helm/{path=**}"
+    };
+  }
+}
+
+message GetContainerImageRequest {
+  string repository = 1;
+  string path = 2;
+}
+
+// ImageLayer is one layer and the build step that made it.
+message ImageLayer {
+  string digest = 1;
+  int64 size = 2;
+  string media_type = 3;
+  string instruction = 4;
+  google.protobuf.Timestamp created = 5;
+}
+
+// ImagePlatform is one platform of a multi-platform image.
+message ImagePlatform {
+  string digest = 1;
+  string os = 2;
+  string architecture = 3;
+  string variant = 4;
+  int64 size = 5;
+}
+
+message GetContainerImageResponse {
+  string digest = 1;
+  string media_type = 2;
+  string os = 3;
+  string architecture = 4;
+  google.protobuf.Timestamp created = 5;
+  int64 total_size = 6;
+  map<string, string> labels = 7;
+  repeated ImageLayer layers = 8;
+  repeated ImagePlatform platforms = 9;
+}
+
+message GetNpmPackageRequest {
+  string repository = 1;
+  string path = 2;
+}
+
+message GetNpmPackageResponse {
+  string name = 1;
+  string version = 2;
+  string description = 3;
+  string license = 4;
+  string homepage = 5;
+  string repository = 6;
+  repeated string keywords = 7;
+  map<string, string> dependencies = 8;
+  map<string, string> dev_dependencies = 9;
+  map<string, string> peer_dependencies = 10;
+}
+
+message GetPythonPackageRequest {
+  string repository = 1;
+  string path = 2;
+}
+
+message GetPythonPackageResponse {
+  string name = 1;
+  string version = 2;
+  string summary = 3;
+  string license = 4;
+  string requires_python = 5;
+  string author = 6;
+  string home_page = 7;
+  // project_urls are "label, url".
+  repeated string project_urls = 8;
+  repeated string requires_dist = 9;
+  repeated string classifiers = 10;
+}
+
+message GetHelmChartRequest {
+  string repository = 1;
+  string path = 2;
+}
+
+// PackageMetadataEntry is a name with optional details (chart maintainers, dependencies).
+message PackageMetadataEntry {
+  map<string, string> fields = 1;
+}
+
+message GetHelmChartResponse {
+  string name = 1;
+  string version = 2;
+  string app_version = 3;
+  string description = 4;
+  string type = 5;
+  string api_version = 6;
+  string kube_version = 7;
+  string home = 8;
+  string icon = 9;
+  bool deprecated = 10;
+  repeated string keywords = 11;
+  repeated string sources = 12;
+  repeated PackageMetadataEntry maintainers = 13;
+  repeated PackageMetadataEntry dependencies = 14;
+}
+
+message PromoteContainerImageRequest {
+  string repository = 1;
+  // image is the image's name in the repository ("team/app").
+  string image = 2;
+  // tag is the tag to promote; empty for every tag.
+  string tag = 3;
+  string target_repository = 4;
+  // target_image and target_tag rename it; empty keeps the source's.
+  string target_image = 5;
+  string target_tag = 6;
+  // copy keeps the source; otherwise it moves.
+  bool copy = 7;
+}
+
+message PromoteContainerImageResponse {}

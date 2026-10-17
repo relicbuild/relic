@@ -1,0 +1,166 @@
+rule_files:
+  - relic-rules.yaml
+evaluation_interval: 1m
+tests:
+  - name: no server is scraped
+    interval: 1m
+    input_series:
+      - series: 'relic_build_info{component="worker", version="1.0.0", revision="abc"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: RelicDown
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: RelicDown
+        exp_alerts:
+          - exp_labels: {severity: critical, component: server}
+            exp_annotations:
+              summary: No Relic server is running
+              description: No Relic server has been scraped for 5 minutes. Clients, package managers and the web UI cannot reach Relic.
+              runbook_url: /docs/guides/monitoring#relicdown
+
+  - name: a healthy server raises nothing
+    interval: 1m
+    input_series:
+      - series: 'relic_build_info{component="server", version="1.0.0", revision="abc"}'
+        values: '1x30'
+      - series: 'relic_http_requests_total{family="packages", code="2xx"}'
+        values: '0+60x30'
+      - series: 'relic_object_storage_ops_total{op="get", result="success"}'
+        values: '0+60x30'
+    alert_rule_test:
+      - {eval_time: 25m, alertname: RelicDown, exp_alerts: []}
+      - {eval_time: 25m, alertname: RelicHighErrorRate, exp_alerts: []}
+      - {eval_time: 25m, alertname: RelicStorageErrors, exp_alerts: []}
+
+  - name: object storage errors
+    interval: 1m
+    input_series:
+      - series: 'relic_object_storage_ops_total{op="put", result="error"}'
+        values: '0+1x30'
+      - series: 'relic_object_storage_ops_total{op="put", result="success"}'
+        values: '0+10x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: RelicStorageErrors
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: Object storage operations fail
+              description: 9.091% of object storage operations failed over 10 minutes.
+              runbook_url: /docs/guides/monitoring#relicstorageerrors
+
+  - name: content integrity
+    interval: 1m
+    input_series:
+      - series: 'relic_blob_integrity_failures_total{problem="corrupt"}'
+        values: '0 0 0 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - {eval_time: 2m, alertname: RelicContentIntegrity, exp_alerts: []}
+      - eval_time: 5m
+        alertname: RelicContentIntegrity
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: Stored content is missing or damaged
+              description: "Reads of missing or damaged content in 15 minutes: 1."
+              runbook_url: /docs/guides/monitoring#reliccontentintegrity
+
+  - name: 5xx on one API family
+    interval: 1m
+    input_series:
+      - series: 'relic_http_requests_total{family="container-registry", code="5xx"}'
+        values: '0+30x30'
+      - series: 'relic_http_requests_total{family="container-registry", code="2xx"}'
+        values: '0+30x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: RelicHighErrorRate
+        exp_alerts:
+          - exp_labels: {severity: critical, family: container-registry}
+            exp_annotations:
+              summary: More than 5% of container-registry requests fail
+              description: 50% of the container-registry API's requests answered 5xx over the last 10 minutes.
+              runbook_url: /docs/guides/monitoring#relichigherrorrate
+
+  - name: a waiting job and a failing replication
+    interval: 1m
+    input_series:
+      - series: 'relic_job_oldest_available_age_seconds{kind="gc", instance="w:8091"}'
+        values: '2000x10'
+      - series: 'relic_replication_consecutive_failures{repository="libs-local"}'
+        values: '0 1 2 3 3'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: RelicJobBacklog
+        exp_alerts:
+          - exp_labels: {severity: warning, kind: gc}
+            exp_annotations:
+              summary: gc jobs wait more than 30 minutes
+              description: The oldest gc job has waited 33m 20s.
+              runbook_url: /docs/guides/monitoring#relicjobbacklog
+      - eval_time: 4m
+        alertname: RelicReplicationFailing
+        exp_alerts:
+          - exp_labels: {severity: warning, repository: libs-local}
+            exp_annotations:
+              summary: Replication of libs-local keeps failing
+              description: The last 3 push replication runs of libs-local failed.
+              runbook_url: /docs/guides/monitoring#relicreplicationfailing
+
+  - name: slow downloads burn the error budget fast
+    interval: 1m
+    input_series:
+      - series: 'relic_http_request_duration_seconds_bucket{method="GET", family="packages", le="2"}'
+        values: '0+50x70'
+      - series: 'relic_http_request_duration_seconds_count{method="GET", family="packages"}'
+        values: '0+100x70'
+    alert_rule_test:
+      - eval_time: 65m
+        alertname: RelicDownloadLatencySLO
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: Downloads are slow (fast error budget burn)
+              description: 50% of downloads took longer than 2 seconds over the last hour.
+              runbook_url: /docs/guides/monitoring#relicdownloadlatencyslo
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: Downloads are slow (slow error budget burn)
+              description: 50% of downloads took longer than 2 seconds over the last 6 hours.
+              runbook_url: /docs/guides/monitoring#relicdownloadlatencyslo
+
+  - name: a single node's volume fills up
+    interval: 1m
+    input_series:
+      - series: 'relic_disk_free_bytes{instance="relic:8091", volume="database"}'
+        values: '50x10 5x30'
+      - series: 'relic_disk_size_bytes{instance="relic:8091", volume="database"}'
+        values: '100x40'
+    alert_rule_test:
+      - {eval_time: 10m, alertname: RelicDiskSpaceLow, exp_alerts: []}
+      - eval_time: 30m
+        alertname: RelicDiskSpaceLow
+        exp_alerts:
+          - exp_labels: {severity: warning, instance: "relic:8091", volume: database}
+            exp_annotations:
+              summary: The database volume of relic:8091 is almost full
+              description: 5% of the volume is free. A single node keeps its SQLite database and filesystem object store on it.
+              runbook_url: /docs/guides/monitoring#relicdiskspacelow
+
+  - name: the server's certificate nears its expiry
+    interval: 1m
+    input_series:
+      - series: 'relic_tls_certificate_expiry_timestamp_seconds{instance="relic:8091", source="operator"}'
+        values: '1209900x10'
+    alert_rule_test:
+      - {eval_time: 0m, alertname: RelicServerCertificateExpiring, exp_alerts: []}
+      - eval_time: 10m
+        alertname: RelicServerCertificateExpiring
+        exp_alerts:
+          - exp_labels: {severity: warning, instance: "relic:8091", source: operator}
+            exp_annotations:
+              summary: The operator certificate relic:8091 serves expires soon
+              description: It expires in 13d 23h 55m 0s. Clients refuse an expired certificate.
+              runbook_url: /docs/guides/monitoring#relicservercertificateexpiring

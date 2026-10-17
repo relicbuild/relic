@@ -1,0 +1,264 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/options.proto";
+
+// SystemService reports on the server itself.
+service SystemService {
+  // GetVersion returns the server's version.
+  rpc GetVersion(GetVersionRequest) returns (GetVersionResponse) {
+    option (relic.v1.access) = ACCESS_PUBLIC;
+    option (google.api.http) = {
+      get: "/api/v1/version"
+    };
+  }
+  // GetSystemStatus returns the health checks, stored content, background jobs
+  // and scanner state.
+  rpc GetSystemStatus(GetSystemStatusRequest) returns (GetSystemStatusResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/system/status"
+    };
+  }
+  // GetDashboardSummary returns the dashboard's numbers, counted over what the
+  // caller may read.
+  rpc GetDashboardSummary(GetDashboardSummaryRequest) returns (GetDashboardSummaryResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/dashboard-summary"
+    };
+  }
+  // ListBackgroundJobs returns recent background jobs, newest first, with
+  // every attempt's error in full.
+  rpc ListBackgroundJobs(ListBackgroundJobsRequest) returns (ListBackgroundJobsResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/system/jobs"
+    };
+  }
+  // CheckStorage queues a storage check: objects no blob names are handed
+  // to garbage collection, missing or damaged content is reported, and a
+  // share of the stored content is re-hashed. Its report is the job's
+  // output.
+  rpc CheckStorage(CheckStorageRequest) returns (CheckStorageResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      post: "/api/v1/storage-checks"
+      body: "*"
+    };
+  }
+  // GetUsageReport reports storage, growth, downloads and deploys over the
+  // last days days, by repository, project and day, with the top
+  // downloaders and deployers.
+  rpc GetUsageReport(GetUsageReportRequest) returns (GetUsageReportResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/usage"
+    };
+  }
+  // CollectGarbage queues a garbage collection of unreferenced content.
+  rpc CollectGarbage(CollectGarbageRequest) returns (CollectGarbageResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      post: "/api/v1/garbage-collections"
+      body: "*"
+    };
+  }
+}
+
+message GetVersionRequest {}
+
+message GetVersionResponse {
+  // version is Relic's own version.
+  string version = 1;
+  // revision is the source revision the server was built from.
+  string revision = 2;
+}
+
+message GetSystemStatusRequest {}
+
+// HealthCheck is the result of probing one dependency.
+message HealthCheck {
+  string name = 1;
+  bool ok = 2;
+  string error = 3;
+  int64 latency_ms = 4;
+}
+
+// StorageUsage is stored content and the part garbage collection will reclaim.
+message StorageUsage {
+  int64 blobs = 1;
+  int64 bytes = 2;
+  int64 unreferenced_blobs = 3;
+  int64 unreferenced_bytes = 4;
+}
+
+// BackgroundJobSummary is one kind of background job.
+message BackgroundJobSummary {
+  string kind = 1;
+  // states counts the jobs by state.
+  map<string, int32> states = 2;
+  google.protobuf.Timestamp last_finished = 3;
+  string last_error = 4;
+  google.protobuf.Timestamp last_error_at = 5;
+}
+
+// ScannerStatus is Relic Scan's state.
+message ScannerStatus {
+  // vulnerability_database_built is when the newest vulnerability database any scan used was built.
+  google.protobuf.Timestamp vulnerability_database_built = 1;
+  // scans counts scanned contents by status.
+  map<string, int32> scans = 2;
+}
+
+message GetSystemStatusResponse {
+  repeated HealthCheck checks = 1;
+  StorageUsage storage = 2;
+  repeated BackgroundJobSummary background_jobs = 3;
+  ScannerStatus scanner = 4;
+  // workers are the processes that ran jobs lately (the last hour), with
+  // what they run now.
+  repeated JobWorker workers = 5;
+  repeated JobQueue queues = 6;
+}
+
+message GetDashboardSummaryRequest {}
+
+message GetDashboardSummaryResponse {
+  // repositories counts readable repositories by class (local, remote, virtual).
+  map<string, int32> repositories = 1;
+  int64 builds = 2;
+  // scans counts scanned contents by status.
+  map<string, int32> scans = 3;
+  // findings counts findings by severity.
+  map<string, int32> findings = 4;
+  google.protobuf.Timestamp vulnerability_database_built = 5;
+}
+
+message CollectGarbageRequest {}
+
+message CollectGarbageResponse {}
+
+// JobWorker is a process working the job queue: a Relic server or worker
+// replica, known by the jobs it takes.
+message JobWorker {
+  // id is the queue client's ID (host name and start time).
+  string id = 1;
+  int32 running = 2;
+  // last_active is when it last started a job.
+  google.protobuf.Timestamp last_active = 3;
+  // leader runs the periodic jobs and the queue's maintenance.
+  bool leader = 4;
+}
+
+// JobQueue is a named queue: its producers report in regularly.
+message JobQueue {
+  string name = 1;
+  // updated is when a producer last reported on the queue.
+  google.protobuf.Timestamp updated = 2;
+  bool paused = 3;
+  int32 waiting = 4;
+  int32 running = 5;
+}
+
+message ListBackgroundJobsRequest {
+  // kind and state (available, running, retryable, discarded, completed,
+  // cancelled, scheduled, pending) narrow the list when set.
+  string kind = 1;
+  string state = 2;
+  // limit caps the list; 0 means 50, at most 500.
+  int32 limit = 3;
+}
+
+message ListBackgroundJobsResponse {
+  repeated BackgroundJob jobs = 1;
+}
+
+// BackgroundJob is one job, as the queue keeps it (finished jobs are kept
+// for a day).
+message BackgroundJob {
+  int64 id = 1;
+  string kind = 2;
+  string state = 3;
+  string queue = 4;
+  int32 attempt = 5;
+  int32 max_attempts = 6;
+  google.protobuf.Timestamp created = 7;
+  google.protobuf.Timestamp scheduled = 8;
+  google.protobuf.Timestamp attempted = 9;
+  google.protobuf.Timestamp finalized = 10;
+  // worker is the ID of the worker that ran the last attempt.
+  string worker = 11;
+  // args is the job's arguments, as JSON.
+  string args = 12;
+  repeated BackgroundJobError errors = 13;
+  // output is what the job recorded, as JSON, such as a storage check's
+  // report; empty when it recorded nothing.
+  string output = 14;
+}
+
+// BackgroundJobError is one failed attempt.
+message BackgroundJobError {
+  int32 attempt = 1;
+  google.protobuf.Timestamp at = 2;
+  string error = 3;
+}
+
+message CheckStorageRequest {}
+
+message CheckStorageResponse {
+  // job_id is the queued check, or the one already queued or running.
+  int64 job_id = 1;
+}
+
+message GetUsageReportRequest {
+  // days is the period, today included; 0 means 30, at most 730.
+  int32 days = 1;
+}
+
+// RepositoryUsage is one repository over the period: its latest stored
+// files and bytes, the bytes it grew by, and its downloads and deploys.
+message RepositoryUsage {
+  string repository = 1;
+  string project = 2;
+  int64 files = 3;
+  int64 bytes = 4;
+  int64 growth_bytes = 5;
+  int64 downloads = 6;
+  int64 deploys = 7;
+}
+
+message ProjectUsage {
+  string project = 1;
+  int64 bytes = 2;
+  int64 growth_bytes = 3;
+  int64 downloads = 4;
+  int64 deploys = 5;
+}
+
+message DayUsage {
+  // day is YYYY-MM-DD, UTC.
+  string day = 1;
+  int64 bytes = 2;
+  int64 downloads = 3;
+  int64 deploys = 4;
+}
+
+message UserUsage {
+  string user = 1;
+  int64 downloads = 2;
+  int64 deploys = 3;
+}
+
+message GetUsageReportResponse {
+  string from = 1;
+  string to = 2;
+  repeated RepositoryUsage repositories = 3;
+  repeated ProjectUsage projects = 4;
+  repeated DayUsage days = 5;
+  repeated UserUsage top_downloaders = 6;
+  repeated UserUsage top_deployers = 7;
+}

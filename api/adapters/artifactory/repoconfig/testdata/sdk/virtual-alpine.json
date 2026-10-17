@@ -1,0 +1,22 @@
+{
+  "rclass": "virtual",
+  "key": "example-alpine-virtual",
+  "projectKey": "example-projectKey",
+  "environments": [
+    "DEV"
+  ],
+  "packageType": "alpine",
+  "description": "example-description",
+  "notes": "example-notes",
+  "includesPattern": "**/*",
+  "excludesPattern": "tmp/**",
+  "repoLayoutRef": "simple-default",
+  "primaryKeyPairRef": "example-primaryKeyPairRef",
+  "secondaryKeyPairRef": "example-secondaryKeyPairRef",
+  "repositories": [
+    "example-alpine-local"
+  ],
+  "artifactoryRequestsCanRetrieveRemoteArtifacts": true,
+  "defaultDeploymentRepo": "example-alpine-local",
+  "virtualRetrievalCachePeriodSecs": 600
+}

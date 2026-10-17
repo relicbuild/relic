@@ -1,0 +1,256 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+
+	"go.yaml.in/yaml/v3"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
+)
+
+type document struct {
+	kind  *kind
+	name  string
+	msg   proto.Message
+	owned map[string]bool
+}
+
+func (d document) String() string { return strings.ToLower(d.kind.name) + "/" + d.name }
+
+type resourceYAML struct {
+	APIVersion string         `yaml:"apiVersion"`
+	Kind       string         `yaml:"kind"`
+	Metadata   metadataYAML   `yaml:"metadata"`
+	Spec       map[string]any `yaml:"spec,omitempty"`
+}
+
+type metadataYAML struct {
+	Name string `yaml:"name"`
+}
+
+func readDocuments(files []string, stdin io.Reader) ([]document, error) {
+	if len(files) == 0 {
+		return nil, errors.New("give at least one file with -f")
+	}
+
+	var out []document
+
+	for _, f := range files {
+		r := stdin
+
+		if f != "-" {
+			b, err := os.ReadFile(f) //nolint:gosec // the user names the files to read
+			if err != nil {
+				return nil, err
+			}
+
+			r = bytes.NewReader(b)
+		}
+
+		docs, err := decodeDocuments(r)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", f, err)
+		}
+
+		out = append(out, docs...)
+	}
+
+	return out, nil
+}
+
+func decodeDocuments(r io.Reader) ([]document, error) {
+	dec := yaml.NewDecoder(r)
+
+	var out []document
+
+	for i := 1; ; i++ {
+		var y resourceYAML
+
+		err := dec.Decode(&y)
+		if errors.Is(err, io.EOF) {
+			return out, nil
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("document %d: %w", i, err)
+		}
+
+		if y.APIVersion == "" && y.Kind == "" && y.Spec == nil {
+			continue
+		}
+
+		d, err := decode(y)
+		if err != nil {
+			return nil, fmt.Errorf("document %d: %w", i, err)
+		}
+
+		out = append(out, d)
+	}
+}
+
+func decode(y resourceYAML) (document, error) {
+	if y.APIVersion != apiVersion {
+		return document{}, fmt.Errorf("apiVersion is %q, want %s", y.APIVersion, apiVersion)
+	}
+
+	k, err := kindNamed(y.Kind)
+	if err != nil || k.name != y.Kind {
+		return document{}, fmt.Errorf("unknown kind %q", y.Kind)
+	}
+
+	if y.Metadata.Name == "" {
+		return document{}, errors.New("metadata.name is required")
+	}
+
+	spec := y.Spec
+	if spec == nil {
+		spec = map[string]any{}
+	}
+
+	nameKey := jsonName(k.new(), k.nameField)
+	if n, ok := spec[nameKey]; ok && n != y.Metadata.Name {
+		return document{}, fmt.Errorf("spec.%s %v differs from metadata.name %q", nameKey, n, y.Metadata.Name)
+	}
+
+	spec[nameKey] = y.Metadata.Name
+	if k.prepare != nil {
+		k.prepare(spec)
+	}
+
+	expandEnums(spec, k.new().ProtoReflect().Descriptor())
+
+	b, err := json.Marshal(spec)
+	if err != nil {
+		return document{}, fmt.Errorf("spec: %w", err)
+	}
+
+	m := k.new()
+	if err := protojson.Unmarshal(b, m); err != nil {
+		return document{}, fmt.Errorf("spec of %s %s: %w", y.Kind, y.Metadata.Name, err)
+	}
+
+	owned := map[string]bool{}
+
+	fields := m.ProtoReflect().Descriptor().Fields()
+	for key := range spec {
+		f := fields.ByJSONName(key)
+		if f == nil {
+			f = fields.ByName(protoreflect.Name(key))
+		}
+
+		if f != nil {
+			owned[f.JSONName()] = true
+		}
+	}
+
+	return document{
+		kind:  k,
+		name:  y.Metadata.Name,
+		msg:   m,
+		owned: owned,
+	}, nil
+}
+
+func jsonName(m proto.Message, field string) string {
+	return m.ProtoReflect().Descriptor().Fields().ByName(protoreflect.Name(field)).JSONName()
+}
+
+func nameOf(m proto.Message, field string) string {
+	r := m.ProtoReflect()
+	return r.Get(r.Descriptor().Fields().ByName(protoreflect.Name(field))).String()
+}
+
+func restrict(m proto.Message, owned map[string]bool, ignored []string) proto.Message {
+	c := proto.Clone(m)
+	r := c.ProtoReflect()
+
+	fields := r.Descriptor().Fields()
+	for i := range fields.Len() {
+		if f := fields.Get(i); !owned[f.JSONName()] {
+			r.Clear(f)
+		}
+	}
+
+	for _, p := range ignored {
+		clearPath(r, strings.Split(p, "."))
+	}
+
+	return c
+}
+
+func clearPath(r protoreflect.Message, path []string) {
+	f := r.Descriptor().Fields().ByJSONName(path[0])
+	switch {
+	case f == nil:
+	case len(path) == 1:
+		r.Clear(f)
+	case f.Message() != nil && !f.IsList() && !f.IsMap() && r.Has(f):
+		clearPath(r.Mutable(f).Message(), path[1:])
+	}
+}
+
+func merged(live proto.Message, d document) proto.Message {
+	out := proto.Clone(live)
+	r, want := out.ProtoReflect(), d.msg.ProtoReflect()
+
+	fields := r.Descriptor().Fields()
+	for i := range fields.Len() {
+		f := fields.Get(i)
+		if !d.owned[f.JSONName()] {
+			continue
+		}
+
+		r.Clear(f)
+
+		if want.Has(f) {
+			r.Set(f, want.Get(f))
+		}
+	}
+
+	return out
+}
+
+func toYAML(k *kind, m proto.Message) ([]byte, error) {
+	b, err := protojson.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+
+	spec := map[string]any{}
+	if err := json.Unmarshal(b, &spec); err != nil {
+		return nil, err
+	}
+
+	delete(spec, jsonName(m, k.nameField))
+
+	var out bytes.Buffer
+
+	enc := yaml.NewEncoder(&out)
+	enc.SetIndent(2)
+
+	if err := enc.Encode(
+		resourceYAML{
+			APIVersion: apiVersion,
+			Kind:       k.name,
+			Metadata: metadataYAML{
+				Name: nameOf(m, k.nameField),
+			},
+			Spec: spec,
+		},
+	); err != nil {
+		return nil, err
+	}
+
+	if err := enc.Close(); err != nil {
+		return nil, err
+	}
+
+	return out.Bytes(), nil
+}

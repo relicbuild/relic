@@ -1,0 +1,15 @@
+.git
+**/node_modules
+web/.nuxt
+web/.output
+internal/app/ui/dist
+web/site/.nuxt
+web/site/.output
+web/.data
+web/dist
+web/e2e/results
+web/site/.data
+web/site/dist
+api/adapters/artifactory/compat/e2e/results
+api/adapters/artifactory/compat/upstream/results
+api/adapters/artifactory/relic-indexer/relic-indexer

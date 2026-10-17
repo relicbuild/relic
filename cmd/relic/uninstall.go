@@ -1,0 +1,333 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+
+	"github.com/spf13/cobra"
+
+	"relic/internal/platform/terminal"
+)
+
+func uninstallCmd(g *globals) *cobra.Command {
+	var (
+		home, root         string
+		yes, system, purge bool
+	)
+
+	cmd := &cobra.Command{
+		Use: "uninstall",
+		Annotations: map[string]string{
+			progressAnnotation: "off",
+		},
+		Short: "Remove what relic server setup installed on this machine, keeping the server's data",
+		Long: "Stops and removes the systemd service, the shell completion and the relic binary that relic server setup " +
+			"installed. The server's data, its settings (which hold the encryption key) and the client config stay, " +
+			"unless --purge.",
+		Example: "  relic server uninstall\n" +
+			"  sudo relic server uninstall --system\n" +
+			"  relic server uninstall --purge --yes",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			m, err := newMachineSetup(cmd, g, home, root)
+			if err != nil {
+				return err
+			}
+
+			m.yes, m.system = yes, system
+
+			return m.runUninstall(cmd.Context(), purge)
+		},
+	}
+	cmd.Flags().StringVar(&home, "home", userHome(), "the home directory user files are under")
+	cmd.Flags().StringVar(&root, "root", "/", "the root directory system files are under")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask before removing anything")
+	cmd.Flags().
+		BoolVar(&system, "system", false, "as root: remove the system service relic server setup --system installed")
+	cmd.Flags().BoolVar(&purge, "purge", false, "also delete the server's data, its settings and the client config")
+
+	return cmd
+}
+
+func (m *machineSetup) runUninstall(ctx context.Context, purge bool) error {
+	if m.system && m.euid != 0 {
+		return errors.New("uninstall: --system removes files under /etc and /usr: run it with sudo")
+	}
+
+	remove, keep := m.uninstallPlan()
+	if purge {
+		remove = append(remove, keep...)
+		keep = nil
+	}
+
+	if len(remove) == 0 {
+		_, _ = fmt.Fprintln(m.out, "relic server setup installed nothing here.")
+		m.printKept(keep)
+
+		return nil
+	}
+
+	m.printPlan("relic server uninstall will:", remove)
+
+	if !m.yes {
+		ok, err := m.ask("Proceed? [Y/n] ", true)
+		if err != nil {
+			return err
+		}
+
+		if !ok {
+			return errors.New("uninstall: cancelled; nothing was changed")
+		}
+	}
+
+	for _, a := range remove {
+		if err := m.apply(ctx, a); err != nil {
+			return err
+		}
+	}
+
+	_, _ = fmt.Fprintln(m.out, "Done.")
+	m.printKept(keep)
+
+	return nil
+}
+
+func (m *machineSetup) uninstallPlan() (remove, keep []machineAction) {
+	if m.system {
+		return m.systemUninstallPlan()
+	}
+
+	var actions []machineAction
+
+	unit := filepath.Join(m.xdg("XDG_CONFIG_HOME", ".config"), "systemd", "user", "relic.service")
+	if exists(unit) {
+		actions = append(actions,
+			machineAction{
+				what: "stop the server",
+				command: []string{
+					"systemctl",
+					"--user",
+					"disable",
+					"--now",
+					"relic.service",
+				},
+				state: "run",
+			},
+			removal("systemd user unit", unit),
+			machineAction{
+				what: "systemd",
+				command: []string{
+					"systemctl",
+					"--user",
+					"daemon-reload",
+				},
+				state: "run",
+			},
+		)
+	}
+
+	for _, rc := range []string{
+		".bashrc",
+		".zshrc",
+	} {
+		if a, ok := m.withoutCompletionBlock(filepath.Join(m.home, rc)); ok {
+			actions = append(actions, a)
+		}
+	}
+
+	for _, p := range []string{
+		filepath.Join(m.configDir(), "completion.bash"),
+		filepath.Join(m.configDir(), "completion.zsh"),
+		filepath.Join(m.xdg("XDG_CONFIG_HOME", ".config"), "fish", "completions", "relic.fish"),
+	} {
+		if exists(p) {
+			actions = append(actions, removal("shell completion", p))
+		}
+	}
+
+	if strings.HasPrefix(m.executable, m.home+"/") && !strings.Contains(m.executable, "go-build") {
+		actions = append(actions, existing(removal("relic binary", m.executable))...)
+	}
+
+	return actions, existing(
+		removal("client config: contexts and tokens", m.configPath),
+		removal("server settings, with the encryption key", filepath.Join(m.configDir(), "server.env")),
+		removal("the server's database and files", m.dataDir()),
+	)
+}
+
+func (m *machineSetup) systemUninstallPlan() (remove, keep []machineAction) {
+	var actions []machineAction
+
+	if unit := filepath.Join(m.root, systemUnit); exists(unit) {
+		actions = append(actions,
+			machineAction{
+				what: "stop the server",
+				command: []string{
+					"systemctl",
+					"disable",
+					"--now",
+					"relic.service",
+				},
+				state: "run",
+			},
+			removal("systemd unit", unit),
+			machineAction{
+				what: "systemd",
+				command: []string{
+					"systemctl",
+					"daemon-reload",
+				},
+				state: "run",
+			},
+		)
+	}
+
+	actions = append(actions, existing(
+		removal("relic binary", filepath.Join(m.root, systemBinary)),
+		removal("bash completion for every user", filepath.Join(m.root, systemCompletion)),
+	)...)
+
+	keep = existing(
+		removal("server settings, with the encryption key", filepath.Join(m.root, systemSettings)),
+		removal("the server's database and files", filepath.Join(m.root, systemDataDir)),
+	)
+
+	if m.hasUser(systemUser) {
+		keep = append(keep, machineAction{
+			what: "system user owning the data",
+			command: []string{
+				"userdel",
+				systemUser,
+			},
+			state: "run",
+		})
+	}
+
+	return actions, keep
+}
+
+func (m *machineSetup) withoutCompletionBlock(rc string) (machineAction, bool) {
+	old, err := os.ReadFile(rc) //nolint:gosec // the user's shell rc file
+	if err != nil {
+		return machineAction{}, false
+	}
+
+	begin, end := blockMarkers("completion")
+
+	i := strings.Index(string(old), begin+"\n")
+	if i < 0 {
+		return machineAction{}, false
+	}
+
+	j := strings.Index(string(old[i:]), end+"\n")
+	if j < 0 {
+		return machineAction{}, false
+	}
+
+	a := m.file("completion block", rc, append(old[:i:i], old[i+j+len(end)+1:]...), 0o644)
+	if fi, err := os.Stat(rc); err == nil {
+		a.mode = fi.Mode().Perm()
+	}
+
+	a.state = "update"
+
+	return a, true
+}
+
+func (m *machineSetup) printKept(keep []machineAction) {
+	kept := terminal.Table{
+		Headers: []string{
+			"KEPT",
+			"WHAT",
+			"FILES",
+			"SIZE",
+		},
+		RightAligned: []int{
+			2,
+			3,
+		},
+	}
+
+	for _, a := range keep {
+		if a.command != nil {
+			kept.Rows = append(kept.Rows, []string{
+				"user " + systemUser,
+				a.what,
+				"",
+				"",
+			})
+
+			continue
+		}
+
+		files, size := usage(a.path)
+		if files == 0 {
+			continue
+		}
+
+		kept.Rows = append(kept.Rows, []string{
+			m.tilde(a.path),
+			a.what,
+			strconv.Itoa(files),
+			terminal.ByteSize(size),
+		})
+	}
+
+	if len(kept.Rows) == 0 {
+		return
+	}
+
+	_, _ = fmt.Fprintln(m.out, "Kept on this machine (relic server uninstall --purge deletes them):")
+	_ = kept.Print(m.out)
+}
+
+func removal(what, path string) machineAction {
+	return machineAction{
+		what:  what,
+		path:  path,
+		state: "remove",
+	}
+}
+
+func existing(actions ...machineAction) []machineAction {
+	var out []machineAction
+
+	for _, a := range actions {
+		if exists(a.path) {
+			out = append(out, a)
+		}
+	}
+
+	return out
+}
+
+func exists(path string) bool {
+	_, err := os.Lstat(path)
+
+	return err == nil
+}
+
+func usage(path string) (files int, size int64) {
+	_ = filepath.WalkDir(path, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil //nolint:nilerr // an unreadable entry is left out of the count
+		}
+
+		files++
+
+		if fi, err := d.Info(); err == nil {
+			size += fi.Size()
+		}
+
+		return nil
+	})
+
+	return files, size
+}

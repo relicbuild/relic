@@ -1,0 +1,134 @@
+openapi: 3.1.0
+info:
+  title: Relic API
+  version: v1
+  description: |
+    Relic's own API. Every method below is a REST route under `/api/v1/`; the
+    same method is also served over Connect and gRPC-Web at
+    `POST /api/relic.v1.<Service>/<Method>`, by the same handler with the same
+    access checks. Errors map to HTTP statuses, with a
+    `{"code": <number>, "message": "..."}` body. File contents are plain HTTP
+    under `/api/v1/files/` and `/api/v1/archive/`.
+
+    Authenticate with basic credentials (a password or an access token) or a
+    bearer token. The web UI's session cookie works under `/api/` only, and
+    writes made with it need the `X-Relic-UI` header.
+
+    The compatibility APIs that package managers and other clients use are not
+    described here; the documentation lists them.
+security:
+  - basic: []
+  - bearer: []
+components:
+  securitySchemes:
+    basic:
+      type: http
+      scheme: basic
+    bearer:
+      type: http
+      scheme: bearer
+paths:
+  /api/v1/files/{repository}/{path}:
+    parameters:
+      - {name: repository, in: path, required: true, schema: {type: string}}
+      - {name: path, in: path, required: true, description: The item's path in the repository; it may contain slashes., schema: {type: string}}
+    get:
+      tags: [Files]
+      summary: Download a file
+      description: Streams the file's contents. Range requests are supported.
+      responses:
+        "200": {description: The contents., content: {application/octet-stream: {schema: {type: string, format: binary}}}}
+        "206": {description: The requested range.}
+        "404": {description: No such file, or you may not read it.}
+    head:
+      tags: [Files]
+      summary: A file's headers
+      responses:
+        "200": {description: The file exists; its size and checksums are in the headers.}
+        "404": {description: No such file, or you may not read it.}
+    put:
+      tags: [Files]
+      summary: Upload a file
+      description: Stores the body as the file, creating missing folders. Replacing a file needs delete permission.
+      requestBody:
+        required: true
+        content: {application/octet-stream: {schema: {type: string, format: binary}}}
+      responses:
+        "201": {description: Stored; the body is the item as JSON (relic.v1.Item).}
+        "403": {description: You may not deploy here.}
+  /api/v1/archive/{repository}/{path}:
+    get:
+      tags: [Files]
+      summary: Read one entry of an archive
+      description: Serves one entry of a zip or tar file as text. List the entries with ArtifactService.ListArchiveEntries.
+      parameters:
+        - {name: repository, in: path, required: true, schema: {type: string}}
+        - {name: path, in: path, required: true, schema: {type: string}}
+        - {name: entry, in: query, required: true, schema: {type: string}}
+      responses:
+        "200": {description: The entry's contents., content: {text/plain: {schema: {type: string}}}}
+        "401": {description: Sign in first.}
+  /api/v1/releases/import:
+    post:
+      tags: [Files]
+      summary: Import a release archive
+      description: Imports an archive written by ReleaseService.ExportRelease (administrators). The body is the archive.
+      requestBody:
+        required: true
+        content: {application/octet-stream: {schema: {type: string, format: binary}}}
+      responses:
+        "201": {description: Imported; the body is the release as JSON.}
+        "403": {description: Only administrators import releases.}
+  /api/v1/vulnerability-database:
+    put:
+      tags: [Files]
+      summary: Import a vulnerability database
+      description: Takes a vulnerability database archive (Grype's `db import` format) for installations without Internet access (administrators). The worker installs it and re-matches what was scanned against an older database.
+      requestBody:
+        required: true
+        content: {application/octet-stream: {schema: {type: string, format: binary}}}
+      responses:
+        "202": {description: Uploaded; the worker installs it.}
+        "403": {description: Only administrators import vulnerability databases.}
+  /api/v1/sbom/{repository}/{path}:
+    parameters:
+      - {name: repository, in: path, required: true, schema: {type: string}}
+      - {name: path, in: path, required: true, description: The item's path in the repository; it may contain slashes., schema: {type: string}}
+    get:
+      tags: [Files]
+      summary: Export a file's SBOM
+      description: The SBOM Relic Scan made of the file, as CycloneDX, SPDX or Syft JSON.
+      parameters:
+        - {name: format, in: query, required: false, schema: {type: string, enum: [cyclonedx, spdx, syft], default: cyclonedx}}
+      responses:
+        "200": {description: The SBOM., content: {application/json: {}}}
+        "404": {description: No such file, no SBOM for it, or you may not read it.}
+    put:
+      tags: [Files]
+      summary: Import a file's SBOM
+      description: Stores the body (CycloneDX, SPDX or Syft JSON) as the file's SBOM and queues matching it against the vulnerability database. Needs deploy permission on the file.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object}}}
+      responses:
+        "204": {description: Stored; matching is queued.}
+        "400": {description: The body is not an SBOM, or the path is a folder.}
+        "403": {description: You may not deploy here.}
+  /api/v1/end-of-life-data:
+    put:
+      tags: [Files]
+      summary: Import end-of-life data
+      description: Takes a dump of endoflife.date's products for installations without Internet access (administrators). Scans are assessed again.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object}}}
+      responses:
+        "200": {description: 'Imported; the body is {"products": <number>}.', content: {application/json: {}}}
+        "403": {description: Only administrators import end-of-life data.}
+  /api/v1/openapi.json:
+    get:
+      tags: [Files]
+      summary: This description
+      security: []
+      responses:
+        "200": {description: The OpenAPI description of the Relic API., content: {application/json: {}}}

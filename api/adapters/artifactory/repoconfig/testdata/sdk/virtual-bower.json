@@ -1,0 +1,26 @@
+{
+  "rclass": "virtual",
+  "key": "example-bower-virtual",
+  "projectKey": "example-projectKey",
+  "environments": [
+    "DEV"
+  ],
+  "packageType": "bower",
+  "description": "example-description",
+  "notes": "example-notes",
+  "includesPattern": "**/*",
+  "excludesPattern": "tmp/**",
+  "repoLayoutRef": "simple-default",
+  "primaryKeyPairRef": "example-primaryKeyPairRef",
+  "secondaryKeyPairRef": "example-secondaryKeyPairRef",
+  "repositories": [
+    "example-bower-local"
+  ],
+  "artifactoryRequestsCanRetrieveRemoteArtifacts": true,
+  "defaultDeploymentRepo": "example-bower-local",
+  "externalDependenciesEnabled": true,
+  "externalDependenciesPatterns": [
+    "**/github.com/**"
+  ],
+  "externalDependenciesRemoteRepo": "example-externalDependenciesRemoteRepo"
+}

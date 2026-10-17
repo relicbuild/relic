@@ -1,0 +1,305 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/options.proto";
+import "relic/v1/repository.proto";
+import "relic/v1/scan.proto";
+import "relic/v1/security.proto";
+
+// ArtifactService reads and manages the items in repositories. File
+// contents move over plain HTTP at /api/v1/files/<repository>/<path>.
+service ArtifactService {
+  // StatItem returns one file or folder the caller may read.
+  rpc StatItem(StatItemRequest) returns (StatItemResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/repositories/{repository}/items/{path=**}"
+      additional_bindings {get: "/api/v1/repositories/{repository}/items"}
+    };
+  }
+  // ListChildren returns a folder's children the caller may read, folders
+  // first.
+  rpc ListChildren(ListChildrenRequest) returns (ListChildrenResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/repositories/{repository}/children/{path=**}"
+      additional_bindings {get: "/api/v1/repositories/{repository}/children"}
+    };
+  }
+  // SearchItems finds files by name in the repositories the caller may read.
+  rpc SearchItems(SearchItemsRequest) returns (SearchItemsResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/items"
+    };
+  }
+  rpc GetProperties(GetPropertiesRequest) returns (GetPropertiesResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/repositories/{repository}/properties/{path=**}"
+    };
+  }
+  // SetProperties adds or replaces properties (needs annotate).
+  rpc SetProperties(SetPropertiesRequest) returns (SetPropertiesResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      put: "/api/v1/repositories/{repository}/properties/{path=**}"
+      body: "*"
+    };
+  }
+  // DeleteProperties removes properties (needs annotate).
+  rpc DeleteProperties(DeletePropertiesRequest) returns (DeletePropertiesResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      delete: "/api/v1/repositories/{repository}/properties/{path=**}"
+    };
+  }
+  // GetItemDetails returns everything the item page shows: the item, its
+  // properties, scan, build links, downloads and what the caller may do.
+  rpc GetItemDetails(GetItemDetailsRequest) returns (GetItemDetailsResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/repositories/{repository}/details/{path=**}"
+    };
+  }
+  // GetEffectivePermissions lists who may do what on an item (viewers and
+  // administrators).
+  rpc GetEffectivePermissions(GetEffectivePermissionsRequest) returns (GetEffectivePermissionsResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/repositories/{repository}/effective-permissions/{path=**}"
+      additional_bindings {get: "/api/v1/repositories/{repository}/effective-permissions"}
+    };
+  }
+  // ListArchiveEntries lists a zip or tar file's entries. One entry's
+  // content is at /api/v1/archive/<repository>/<path>?entry=<entry>.
+  rpc ListArchiveEntries(ListArchiveEntriesRequest) returns (ListArchiveEntriesResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/repositories/{repository}/archive-entries/{path=**}"
+    };
+  }
+  // CopyItem copies a file or folder (read on the source, write on the
+  // destination). Contents are shared, not copied.
+  rpc CopyItem(CopyItemRequest) returns (CopyItemResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      post: "/api/v1/repositories/{repository}/copy/{path=**}"
+      body: "*"
+    };
+  }
+  // MoveItem moves a file or folder (delete on the source, write on the
+  // destination).
+  rpc MoveItem(MoveItemRequest) returns (MoveItemResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      post: "/api/v1/repositories/{repository}/move/{path=**}"
+      body: "*"
+    };
+  }
+  // DeleteItem deletes a file or folder: into the trash can when it is on.
+  rpc DeleteItem(DeleteItemRequest) returns (DeleteItemResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      delete: "/api/v1/repositories/{repository}/items/{path=**}"
+    };
+  }
+}
+
+// Checksums are a file's digests, lower-case hex.
+message Checksums {
+  string sha1 = 1;
+  string sha256 = 2;
+  string md5 = 3;
+}
+
+// Item is a file or folder in a repository.
+message Item {
+  string repository = 1;
+  // path is relative to the repository root; "" is the root.
+  string path = 2;
+  string name = 3;
+  bool folder = 4;
+  int64 size = 5;
+  Checksums checksums = 6;
+  google.protobuf.Timestamp created = 7;
+  string created_by = 8;
+  google.protobuf.Timestamp modified = 9;
+  string modified_by = 10;
+  // vulnerabilities counts findings by severity (in ListChildren and
+  // SearchItems; for an image folder, its manifest's).
+  map<string, int32> vulnerabilities = 11;
+}
+
+message StatItemRequest {
+  string repository = 1;
+  string path = 2;
+}
+
+message StatItemResponse {
+  Item item = 1;
+}
+
+message ListChildrenRequest {
+  string repository = 1;
+  string path = 2;
+}
+
+message ListChildrenResponse {
+  repeated Item items = 1;
+}
+
+message SearchItemsRequest {
+  // name is matched against file names (substring, case-insensitive).
+  string name = 1;
+  // repository limits the search to one repository when set.
+  string repository = 2;
+  // limit caps the results per repository; 0 means 100.
+  int32 limit = 3;
+}
+
+message SearchItemsResponse {
+  repeated Item items = 1;
+}
+
+// PropertyValues are one property's values.
+message PropertyValues {
+  repeated string values = 1;
+}
+
+message GetPropertiesRequest {
+  string repository = 1;
+  string path = 2;
+}
+
+message GetPropertiesResponse {
+  map<string, PropertyValues> properties = 1;
+}
+
+message SetPropertiesRequest {
+  string repository = 1;
+  string path = 2;
+  map<string, PropertyValues> properties = 3;
+  // recursive also sets them on everything below a folder.
+  bool recursive = 4;
+}
+
+message SetPropertiesResponse {}
+
+message DeletePropertiesRequest {
+  string repository = 1;
+  string path = 2;
+  repeated string keys = 3;
+  bool recursive = 4;
+}
+
+message DeletePropertiesResponse {}
+
+message GetItemDetailsRequest {
+  string repository = 1;
+  string path = 2;
+}
+
+// BuildLink is a build run that produced or used an item's content.
+message BuildLink {
+  string name = 1;
+  string number = 2;
+  google.protobuf.Timestamp started = 3;
+  string module = 4;
+  // scopes says how a dependency was used; empty for artifacts.
+  string scopes = 5;
+}
+
+// DownloadStats are an item's recorded downloads.
+message DownloadStats {
+  int64 count = 1;
+  google.protobuf.Timestamp last_downloaded_at = 2;
+  // last_downloaded_by is shown to administrators only.
+  string last_downloaded_by = 3;
+}
+
+message GetItemDetailsResponse {
+  Item item = 1;
+  // format is the repository's format.
+  Format format = 2;
+  // image says the item is an image tag folder.
+  bool image = 3;
+  bool can_delete = 4;
+  bool can_annotate = 5;
+  DownloadStats downloads = 6;
+  repeated BuildLink produced_by = 7;
+  repeated BuildLink used_by = 8;
+  map<string, PropertyValues> properties = 9;
+  ItemScan scan = 10;
+}
+
+message GetEffectivePermissionsRequest {
+  string repository = 1;
+  string path = 2;
+}
+
+// EffectiveGrant is what one user or group may do on an item, and through
+// which permissions.
+message EffectiveGrant {
+  string principal = 1;
+  bool group = 2;
+  repeated Action actions = 3;
+  // permissions are the names of the permissions that grant it.
+  repeated string permissions = 4;
+}
+
+message GetEffectivePermissionsResponse {
+  repeated EffectiveGrant grants = 1;
+}
+
+message ListArchiveEntriesRequest {
+  string repository = 1;
+  string path = 2;
+}
+
+// ArchiveEntry is a file or folder inside an archive.
+message ArchiveEntry {
+  string path = 1;
+  int64 size = 2;
+  google.protobuf.Timestamp modified = 3;
+  bool folder = 4;
+}
+
+message ListArchiveEntriesResponse {
+  // kind is zip, tar or tar.gz.
+  string kind = 1;
+  repeated ArchiveEntry entries = 2;
+  // truncated says there were more entries than listed.
+  bool truncated = 3;
+}
+
+message CopyItemRequest {
+  string repository = 1;
+  string path = 2;
+  string to_repository = 3;
+  string to_path = 4;
+  // dry_run checks the copy without doing it.
+  bool dry_run = 5;
+}
+
+message CopyItemResponse {}
+
+message MoveItemRequest {
+  string repository = 1;
+  string path = 2;
+  string to_repository = 3;
+  string to_path = 4;
+  bool dry_run = 5;
+}
+
+message MoveItemResponse {}
+
+message DeleteItemRequest {
+  string repository = 1;
+  string path = 2;
+}
+
+message DeleteItemResponse {}

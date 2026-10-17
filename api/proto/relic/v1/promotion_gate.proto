@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/options.proto";
+
+// PromotionGateService manages the conditions a release version must meet to
+// be promoted to an environment. ReleaseService.PromoteRelease refuses a
+// promotion any gate of the target environment refuses, and records each
+// decision as evidence on the version's manifest.
+service PromotionGateService {
+  rpc ListPromotionGates(ListPromotionGatesRequest) returns (ListPromotionGatesResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/promotion-gates"
+    };
+  }
+  rpc GetPromotionGate(GetPromotionGateRequest) returns (GetPromotionGateResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/promotion-gates/{name}"
+    };
+  }
+  rpc PutPromotionGate(PutPromotionGateRequest) returns (PutPromotionGateResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      put: "/api/v1/promotion-gates/{promotion_gate.name}"
+      body: "promotion_gate"
+    };
+  }
+  rpc DeletePromotionGate(DeletePromotionGateRequest) returns (DeletePromotionGateResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      delete: "/api/v1/promotion-gates/{name}"
+    };
+  }
+}
+
+// PromotionGate is a condition for promotions to an environment.
+message PromotionGate {
+  string name = 1;
+  // environment the gate guards, matched without regard to case.
+  string environment = 2;
+  // condition is a CEL expression that must be true. Its variables:
+  // release (project, name, version, tag, createdBy, artifacts with
+  // repository, path, sha256 and size), environment, evidence (the
+  // version's evidence: predicateType, predicate, verified, keyAlias,
+  // createdBy), scan (finding counts: critical, high, medium, low, unknown,
+  // malicious, and unscanned artifacts) and signed (the manifest verifies
+  // with Relic's release key).
+  string condition = 3;
+  string description = 4;
+  google.protobuf.Timestamp created = 5;
+  google.protobuf.Timestamp updated = 6;
+}
+
+message ListPromotionGatesRequest {}
+
+message ListPromotionGatesResponse {
+  repeated PromotionGate promotion_gates = 1;
+}
+
+message GetPromotionGateRequest {
+  string name = 1;
+}
+
+message GetPromotionGateResponse {
+  PromotionGate promotion_gate = 1;
+}
+
+message PutPromotionGateRequest {
+  PromotionGate promotion_gate = 1;
+}
+
+message PutPromotionGateResponse {
+  PromotionGate promotion_gate = 1;
+}
+
+message DeletePromotionGateRequest {
+  string name = 1;
+}
+
+message DeletePromotionGateResponse {}

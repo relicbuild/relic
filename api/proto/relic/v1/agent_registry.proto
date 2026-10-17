@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/options.proto";
+import "relic/v1/repository.proto";
+
+// AgentRegistryService lists and approves the entries of the agent
+// registries: MCP server definitions in mcp repositories and skill bundles
+// in skills repositories. Only approved entries are served, through
+// /api/mcp/{repository}/v0/servers for MCP clients.
+service AgentRegistryService {
+  // ListRegistryEntries lists a repository's entries the caller may read;
+  // unapproved ones only to administrators and viewers.
+  rpc ListRegistryEntries(ListRegistryEntriesRequest) returns (ListRegistryEntriesResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/repositories/{repository}/registry-entries"
+    };
+  }
+  // ApproveRegistryEntry approves an entry's current content; a new upload to
+  // its path needs a new approval.
+  rpc ApproveRegistryEntry(ApproveRegistryEntryRequest) returns (ApproveRegistryEntryResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      post: "/api/v1/repositories/{repository}/registry-entries:approve"
+      body: "*"
+    };
+  }
+  rpc RevokeRegistryApproval(RevokeRegistryApprovalRequest) returns (RevokeRegistryApprovalResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      post: "/api/v1/repositories/{repository}/registry-entries:revoke"
+      body: "*"
+    };
+  }
+}
+
+// RegistryEntry is an MCP server definition or a skill bundle.
+message RegistryEntry {
+  string repository = 1;
+  string path = 2;
+  // format is FORMAT_MCP or FORMAT_SKILLS.
+  Format format = 3;
+  string name = 4;
+  string version = 5;
+  string description = 6;
+  string sha256 = 7;
+  // document is the server.json, or the SKILL.md front matter, as JSON.
+  string document = 8;
+  google.protobuf.Timestamp updated = 9;
+  bool approved = 10;
+  string approved_by = 11;
+  google.protobuf.Timestamp approved_at = 12;
+}
+
+message ListRegistryEntriesRequest {
+  string repository = 1;
+}
+
+message ListRegistryEntriesResponse {
+  repeated RegistryEntry entries = 1;
+}
+
+message ApproveRegistryEntryRequest {
+  string repository = 1;
+  string path = 2;
+  // sha256 is the content the administrator reviewed; when set, the approval
+  // fails if the entry has changed since.
+  string sha256 = 3;
+}
+
+message ApproveRegistryEntryResponse {}
+
+message RevokeRegistryApprovalRequest {
+  string repository = 1;
+  string path = 2;
+}
+
+message RevokeRegistryApprovalResponse {}

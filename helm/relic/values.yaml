@@ -1,0 +1,461 @@
+image:
+  repository: ghcr.io/relicbuild/relic
+  tag: ""            # defaults to v<appVersion>, the release's image tag
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# Secret with the keys below. When empty, the chart creates one from
+# `credentials`.
+existingCredentialsSecret: ""
+credentials:
+  databaseURL: ""    # RELIC_DATABASE_URL when postgresql.enabled is false, e.g. postgres://relic:pw@db:5432/relic?sslmode=require
+  objectStorageAccessKey: ""    # RELIC_OBJECT_STORAGE_ACCESS_KEY when seaweedfs.enabled is false
+  objectStorageSecretKey: ""    # RELIC_OBJECT_STORAGE_SECRET_KEY when seaweedfs.enabled is false
+  objectStorageAzureConnectionString: ""  # RELIC_OBJECT_STORAGE_AZURE_CONNECTION_STRING for objectStorage.type azure
+  # RELIC_ADMIN_PASSWORD, used once to create the admin user.
+  adminPassword: ""
+  # RELIC_ENCRYPTION_KEY (openssl rand -base64 32), required: seals signing
+  # keys, upstream and LDAP manager passwords in the database. Keep a copy
+  # apart from the database backups; the data cannot be read without it.
+  encryptionKey: ""
+
+# The CloudNativePG operator (its official chart), installed with Relic.
+postgresql-operator:
+  enabled: true
+  # The alias would rename the chart, and with it the label
+  # app.kubernetes.io/name the operator finds its own Deployment by.
+  nameOverride: cloudnative-pg
+  crds:
+    create: false
+  webhook:
+    mutating:
+      failurePolicy: Ignore
+    validating:
+      failurePolicy: Ignore
+  monitoring:
+    # With the monitoring stack: the operator's PodMonitor (needs the Prometheus Operator).
+    podMonitorEnabled: false
+
+# PostgreSQL: a CloudNativePG Cluster from the official cnpg/cluster chart
+# (https://github.com/cloudnative-pg/charts).
+postgresql:
+  enabled: true
+  # The Cluster is <release>-postgresql, its Secret <release>-postgresql-app.
+  nameOverride: postgresql
+  cluster:
+    instances: 3
+    initdb:
+      database: relic
+      owner: relic
+    storage:
+      size: 10Gi
+
+# Object storage: SeaweedFS from its official chart
+# (https://github.com/seaweedfs/seaweedfs/tree/master/k8s/charts/seaweedfs).
+# Keep createBuckets in step with objectStorage.artifactsBucket and objectStorage.temporaryBucket.
+seaweedfs:
+  enabled: true
+  # Data lives on volume claims, which follow a rescheduled pod; size them here.
+  master:
+    data:
+      type: persistentVolumeClaim
+      size: 1Gi
+      storageClass: ""
+    logs:
+      type: emptyDir
+  volume:
+    dataDirs:
+      - name: data1
+        type: persistentVolumeClaim
+        size: 50Gi
+        storageClass: ""
+        maxVolumes: 0
+  filer:
+    data:
+      type: persistentVolumeClaim
+      size: 10Gi
+      storageClass: ""
+    logs:
+      type: emptyDir
+  s3:
+    enabled: true
+    enableAuth: true
+    createBuckets:
+      - name: artifacts
+      - name: temporary
+
+# The metadata store: postgresql (the bundled cluster above, or
+# credentials.databaseURL) or sqlite, a file on the data volume.
+database:
+  engine: postgresql
+
+# The volume of a single-node installation (database.engine sqlite or
+# objectStorage.type filesystem), mounted at /var/lib/relic/data.
+data:
+  size: 20Gi
+  storageClass: ""
+
+# caCertificate trusts a private CA for ldaps:// and StartTLS
+# (RELIC_LDAP_CA_CERTIFICATE_FILE), in addition to the system roots.
+ldap:
+  caCertificate: ""
+
+tls:
+  # false serves plain HTTP, behind a proxy that terminates TLS.
+  enabled: true
+  # A kubernetes.io/tls Secret every replica serves; empty: each pod generates its own certificate authority.
+  existingSecret: ""
+  # Names the generated certificate holds besides the Service's and the ingress hosts.
+  hostnames: []
+  # The oldest TLS version clients may use: "1.2" or "1.3".
+  minVersion: "1.2"
+
+objectStorage:
+  # s3 (SeaweedFS above, or objectStorage.endpoint and the credentials),
+  # azure (Azure Blob Storage), gcs (Google Cloud Storage), or filesystem:
+  # the content on the data volume, a single-node installation (with
+  # seaweedfs.enabled false).
+  type: s3
+  # RELIC_OBJECT_STORAGE_ENDPOINT when seaweedfs.enabled is false: an
+  # S3-compatible service (http://seaweedfs-s3.storage:8333), empty for AWS
+  # S3; the Azure account's blob URL; empty for Google Cloud Storage.
+  endpoint: ""
+  region: us-east-1
+  # when_supported, or when_required for servers that reject the checksum headers.
+  checksum: when_supported
+  artifactsBucket: artifacts
+  temporaryBucket: temporary
+  # true reads no key from the credentials Secret: the platform's identity
+  # authenticates (IRSA or EKS Pod Identity for s3, workload or managed
+  # identity for azure, workload identity for gcs); see serviceAccount.annotations.
+  defaultCredentials: false
+  # RELIC_OBJECT_STORAGE_SSE (AES256 or aws:kms), its KMS key and the
+  # storage class, for every S3 write.
+  serverSideEncryption: ""
+  sseKmsKeyId: ""
+  storageClass: ""
+
+# RELIC_TRUSTED_PROXIES: peers whose X-Forwarded-* headers Relic believes
+# (the client address and https for generated URLs, cookies and HSTS).
+trustedProxies: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
+
+# Extra environment variables for both server and worker.
+extraEnv: []
+
+# Prometheus metrics on a port of their own (8091).
+metrics:
+  enabled: true
+  # RELIC_METRICS_REPOSITORY_LABEL: the repository name on the artifact,
+  # upstream, cache and replication series. Series grow with repositories.
+  repositoryNameLabel: false
+  # RELIC_PROFILING_ENABLED: /debug/pprof/ on the metrics port.
+  profiling: false
+  # Where the NetworkPolicy admits scrapes from (NetworkPolicyPeers); empty
+  # admits every pod in the cluster.
+  allowScrapesFrom: []
+  # Rendered only when the Prometheus Operator's API (monitoring.coreos.com/v1)
+  # exists.
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    labels: {}
+  prometheusRule:
+    enabled: true
+    labels: {}
+    # Prefixed to each alert's runbook_url (/docs/guides/monitoring#…),
+    # e.g. https://relic.example.com; empty keeps the path.
+    runbookBaseURL: ""
+
+# OpenTelemetry traces over OTLP/HTTP (OTEL_* variables). With
+# monitoringStack.enabled and no endpoint, they go to the bundled Alloy.
+tracing:
+  otlpEndpoint: ""
+  # Parent-based at 10%: a traced caller's decision wins.
+  sampler: parentbased_traceidratio
+  samplerArg: "0.1"
+
+logging:
+  level: info        # RELIC_LOG_LEVEL: debug, info, warn, error
+  format: json       # RELIC_LOG_FORMAT: json or text
+  # OTEL_LOGS_EXPORTER=otlp: also send log records over OTLP.
+  otlp: false
+
+# Relic's Grafana dashboards as ConfigMaps for Grafana's dashboard sidecar.
+# Always rendered with monitoringStack.enabled.
+grafana:
+  dashboards:
+    enabled: false
+    label: grafana_dashboard
+    labelValue: "1"
+    # The folder, as the annotation the sidecar reads
+    # (sidecar.dashboards.folderAnnotation).
+    folderAnnotation: grafana_folder
+    folder: Relic
+
+# The monitoring stack: kube-prometheus-stack (Prometheus
+# Operator, Prometheus, Alertmanager, Grafana, kube-state-metrics,
+# node-exporter), Tempo, Loki and Alloy, from their official charts.
+monitoringStack:
+  enabled: false
+
+kube-prometheus-stack:
+  kubeControllerManager: {enabled: false}
+  kubeScheduler: {enabled: false}
+  kubeEtcd: {enabled: false}
+  kubeProxy: {enabled: false}
+  defaultRules:
+    rules:
+      etcd: false
+      kubeControllerManager: false
+      kubeSchedulerAlerting: false
+      kubeSchedulerRecording: false
+      kubeProxy: false
+  prometheus:
+    prometheusSpec:
+      enableFeatures: [exemplar-storage]
+      retention: 15d
+      # Select every ServiceMonitor, PodMonitor and rule, not only this release's.
+      serviceMonitorSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues: false
+      ruleSelectorNilUsesHelmValues: false
+      probeSelectorNilUsesHelmValues: false
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            accessModes: [ReadWriteOnce]
+            resources:
+              requests: {storage: 20Gi}
+  grafana:
+    # The admin password is generated and kept in the <release>-grafana
+    # Secret (admin-password).
+    defaultDashboardsTimezone: browser
+    sidecar:
+      dashboards:
+        enabled: true
+        label: grafana_dashboard
+        labelValue: "1"
+        folderAnnotation: grafana_folder
+        provider:
+          foldersFromFilesStructure: true
+      datasources:
+        enabled: true
+        # Prometheus exemplars carry trace_id: open the trace in Tempo.
+        exemplarTraceIdDestinations:
+          datasourceUid: tempo
+          traceIdLabelName: trace_id
+
+tempo:
+  tempo:
+    retention: 168h
+    receivers:
+      otlp:
+        protocols:
+          grpc: {endpoint: "0.0.0.0:4317"}
+          http: {endpoint: "0.0.0.0:4318"}
+  persistence:
+    enabled: true
+    size: 10Gi
+
+loki:
+  deploymentMode: SingleBinary
+  loki:
+    auth_enabled: false
+    commonConfig:
+      replication_factor: 1
+    storage:
+      type: filesystem
+    schemaConfig:
+      configs:
+        - from: "2026-01-01"
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index: {prefix: loki_index_, period: 24h}
+    limits_config:
+      retention_period: 168h
+      allow_structured_metadata: true
+    compactor:
+      retention_enabled: true
+      delete_request_store: filesystem
+  singleBinary:
+    replicas: 1
+    persistence:
+      enabled: true
+      size: 10Gi
+  read: {replicas: 0}
+  write: {replicas: 0}
+  backend: {replicas: 0}
+  gateway: {enabled: false}
+  chunksCache: {enabled: false}
+  resultsCache: {enabled: false}
+  lokiCanary: {enabled: false}
+  test: {enabled: false}
+  minio: {enabled: false}
+
+alloy:
+  crds:
+    create: false
+  controller:
+    type: deployment
+    replicas: 1
+  rbac:
+    # Only what the configuration below uses: the namespace's pods and their logs.
+    rules:
+      - apiGroups: [""]
+        resources: [pods, pods/log, namespaces]
+        verbs: [get, list, watch]
+  alloy:
+    extraPorts:
+      - {name: otlp-grpc, port: 4317, targetPort: 4317, protocol: TCP}
+      - {name: otlp-http, port: 4318, targetPort: 4318, protocol: TCP}
+    configMap:
+      # Rendered with tpl.
+      content: |-
+        {{- $tempo := ternary .Release.Name (printf "%s-tempo" .Release.Name) (contains "tempo" .Release.Name) }}
+        {{- $loki := ternary .Release.Name (printf "%s-loki" .Release.Name) (contains "loki" .Release.Name) }}
+        discovery.kubernetes "pods" {
+          role = "pod"
+          namespaces {
+            names = ["{{ .Release.Namespace }}"]
+          }
+        }
+        discovery.relabel "pods" {
+          targets = discovery.kubernetes.pods.targets
+          rule {
+            source_labels = ["__meta_kubernetes_namespace"]
+            target_label  = "namespace"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_pod_name"]
+            target_label  = "pod"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_pod_container_name"]
+            target_label  = "container"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+            target_label  = "app"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_component"]
+            target_label  = "component"
+          }
+        }
+        loki.source.kubernetes "pods" {
+          targets    = discovery.relabel.pods.output
+          forward_to = [loki.write.default.receiver]
+        }
+        loki.write "default" {
+          endpoint {
+            url = "http://{{ $loki }}:3100/loki/api/v1/push"
+          }
+        }
+
+        otelcol.receiver.otlp "default" {
+          grpc {
+            endpoint = "0.0.0.0:4317"
+          }
+          http {
+            endpoint = "0.0.0.0:4318"
+          }
+          output {
+            traces = [otelcol.processor.batch.default.input]
+            logs   = [otelcol.processor.batch.default.input]
+          }
+        }
+        otelcol.processor.batch "default" {
+          output {
+            traces = [otelcol.exporter.otlp.tempo.input]
+            logs   = [otelcol.exporter.otlphttp.loki.input]
+          }
+        }
+        otelcol.exporter.otlp "tempo" {
+          client {
+            endpoint = "{{ $tempo }}:4317"
+            tls {
+              insecure = true
+            }
+          }
+        }
+        otelcol.exporter.otlphttp "loki" {
+          client {
+            endpoint = "http://{{ $loki }}:3100/otlp"
+          }
+        }
+
+server:
+  replicas: 2
+  resources:
+    requests: {cpu: 250m, memory: 256Mi}
+    limits: {memory: 1Gi}
+  # Temporary files (release bundle export/import, archive exploding).
+  temporaryVolumeSize: 10Gi
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+worker:
+  replicas: 1
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {memory: 2Gi}
+  temporaryVolumeSize: 20Gi
+  # Grype's vulnerability database.
+  vulnerabilityDatabase:
+    persistence: true
+    size: 5Gi
+    storageClass: ""
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+service:
+  type: ClusterIP
+  port: ""          # empty: 443, or 80 with tls.enabled false
+  nodePort: ""       # with type NodePort; empty lets Kubernetes choose
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  # Large uploads: raise the proxy body size limit on the ingress controller.
+  hosts:
+    - host: relic.example.com
+  tls: []
+
+networkPolicy:
+  enabled: true
+  # Peers allowed to reach the server (empty: all). Include the ingress controller's namespace.
+  allowServerAccessFrom: []
+
+# Labels for the server and worker pods, for example
+# azure.workload.identity/use: "true".
+podLabels: {}
+
+serviceAccount:
+  create: true
+  name: ""
+  # For example eks.amazonaws.com/role-arn, azure.workload.identity/client-id
+  # or iam.gke.io/gcp-service-account.
+  annotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile: {type: RuntimeDefault}
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: {drop: [ALL]}

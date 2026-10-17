@@ -1,0 +1,25 @@
+{
+  "rclass": "virtual",
+  "key": "example-go-virtual",
+  "projectKey": "example-projectKey",
+  "environments": [
+    "DEV"
+  ],
+  "packageType": "go",
+  "description": "example-description",
+  "notes": "example-notes",
+  "includesPattern": "**/*",
+  "excludesPattern": "tmp/**",
+  "repoLayoutRef": "simple-default",
+  "primaryKeyPairRef": "example-primaryKeyPairRef",
+  "secondaryKeyPairRef": "example-secondaryKeyPairRef",
+  "repositories": [
+    "example-go-local"
+  ],
+  "artifactoryRequestsCanRetrieveRemoteArtifacts": true,
+  "defaultDeploymentRepo": "example-go-local",
+  "externalDependenciesEnabled": true,
+  "externalDependenciesPatterns": [
+    "**/github.com/**"
+  ]
+}

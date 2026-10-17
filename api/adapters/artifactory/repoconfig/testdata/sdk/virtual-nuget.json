@@ -1,0 +1,22 @@
+{
+  "rclass": "virtual",
+  "key": "example-nuget-virtual",
+  "projectKey": "example-projectKey",
+  "environments": [
+    "DEV"
+  ],
+  "packageType": "nuget",
+  "description": "example-description",
+  "notes": "example-notes",
+  "includesPattern": "**/*",
+  "excludesPattern": "tmp/**",
+  "repoLayoutRef": "simple-default",
+  "primaryKeyPairRef": "example-primaryKeyPairRef",
+  "secondaryKeyPairRef": "example-secondaryKeyPairRef",
+  "repositories": [
+    "example-nuget-local"
+  ],
+  "artifactoryRequestsCanRetrieveRemoteArtifacts": true,
+  "defaultDeploymentRepo": "example-nuget-local",
+  "forceNugetAuthentication": true
+}

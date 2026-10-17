@@ -1,0 +1,21 @@
+{
+  "rclass": "virtual",
+  "key": "example-swift-virtual",
+  "projectKey": "example-projectKey",
+  "environments": [
+    "DEV"
+  ],
+  "packageType": "swift",
+  "description": "example-description",
+  "notes": "example-notes",
+  "includesPattern": "**/*",
+  "excludesPattern": "tmp/**",
+  "repoLayoutRef": "simple-default",
+  "primaryKeyPairRef": "example-primaryKeyPairRef",
+  "secondaryKeyPairRef": "example-secondaryKeyPairRef",
+  "repositories": [
+    "example-swift-local"
+  ],
+  "artifactoryRequestsCanRetrieveRemoteArtifacts": true,
+  "defaultDeploymentRepo": "example-swift-local"
+}

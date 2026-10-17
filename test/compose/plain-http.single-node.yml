@@ -1,0 +1,3 @@
+services:
+  relic-server:
+    command: ["server", "start", "--worker", "--no-tls"]

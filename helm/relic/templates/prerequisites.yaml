@@ -1,0 +1,6 @@
+{{- if and .Values.postgresql.enabled (not (index .Values "postgresql-operator" "enabled")) (not (.Capabilities.APIVersions.Has "postgresql.cnpg.io/v1")) }}
+{{- fail "postgresql.enabled with postgresql-operator.enabled=false needs a CloudNativePG operator (API postgresql.cnpg.io/v1). Install it once per Kubernetes cluster:\n  helm upgrade --install cnpg cloudnative-pg --repo https://cloudnative-pg.github.io/charts -n cnpg-system --create-namespace --wait\nor keep postgresql-operator.enabled=true to install it with Relic, or set postgresql.enabled=false and credentials.databaseURL to use an existing PostgreSQL." }}
+{{- end }}
+{{- if and .Values.monitoringStack.enabled (not (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1")) }}
+{{- fail "monitoringStack.enabled needs the Prometheus Operator's CRDs (API monitoring.coreos.com/v1), which helm upgrade does not install. Apply them once:\n  helm pull prometheus-community/kube-prometheus-stack --version 91.5.3 --untar -d /tmp\n  kubectl apply --server-side -f /tmp/kube-prometheus-stack/charts/crds/crds/\nthen run the upgrade again." }}
+{{- end }}

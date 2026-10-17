@@ -1,0 +1,29 @@
+{
+  "rclass": "local",
+  "key": "example-docker-local",
+  "projectKey": "example-projectKey",
+  "environments": [
+    "DEV"
+  ],
+  "packageType": "docker",
+  "description": "example-description",
+  "notes": "example-notes",
+  "includesPattern": "**/*",
+  "excludesPattern": "tmp/**",
+  "repoLayoutRef": "simple-default",
+  "blackedOut": true,
+  "xrayIndex": true,
+  "propertySets": [
+    "artifactory"
+  ],
+  "downloadRedirect": true,
+  "priorityResolution": true,
+  "cdnRedirect": true,
+  "primaryKeyPairRef": "example-primaryKeyPairRef",
+  "secondaryKeyPairRef": "example-secondaryKeyPairRef",
+  "archiveBrowsingEnabled": true,
+  "maxUniqueTags": 3,
+  "dockerApiVersion": "V2",
+  "blockPushingSchema1": true,
+  "dockerTagRetention": 3
+}

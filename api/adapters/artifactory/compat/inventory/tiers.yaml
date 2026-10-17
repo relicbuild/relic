@@ -1,0 +1,302 @@
+# Rules apply in order; the first rule that sets a field wins.
+# Match: exact command path, "<path> *" for the command and everything below it, or "*<suffix>" for top-level commands ending in it.
+
+hidden_candidates:
+  - package-alias
+  - intro
+  - cargo
+  - dockerloginhelp
+  - dockerpushhelp
+  - dockerpullhelp
+  - dockerbuildhelp
+  - npminstallhelp
+  - npmcihelp
+  - npmpublishhelp
+  - rt mvn-config
+  - rt mvn
+  - rt gradle-config
+  - rt gradle
+  - rt cocoapods-config
+  - rt swift-config
+  - rt npm-config
+  - rt npm-install
+  - rt npm-ci
+  - rt npm-publish
+  - rt yarn-config
+  - rt yarn
+  - rt nuget-config
+  - rt nuget
+  - rt dotnet-config
+  - rt dotnet
+  - rt go-config
+  - rt go-publish
+  - rt go
+  - rt pip-config
+  - rt pip-install
+  - rt access-token-create
+  - rt build-scan
+  - rt docker-push
+  - rt docker-pull
+  - git audit
+  - git count-contributors
+  - source-mcp
+  - sast-server
+  - audit-mvn
+  - audit-gradle
+  - audit-npm
+  - audit-go
+  - audit-pip
+  - audit-pipenv
+  - xr scan
+  - xr audit-mvn
+  - xr audit-gradle
+  - xr audit-npm
+  - xr audit-go
+  - xr audit-pip
+  - xr audit-pipenv
+
+rules:
+  - match:
+      - config *
+      - completion *
+      - generate-summary-markdown
+      - intro
+      - package-alias *
+      - dockerloginhelp
+      - dockerpushhelp
+      - dockerpullhelp
+      - dockerbuildhelp
+      - npminstallhelp
+      - npmcihelp
+      - npmpublishhelp
+      - rt build-collect-env
+      - rt build-add-git
+      - rt build-add-dependencies
+      - rt build-clean
+      - rt repo-template
+      - rt permission-target-template
+      - rt replication-template
+      - rt nuget-deps-tree
+      - evd generate-key-pair
+      - options
+    local_only: true
+  - match:
+      - "*-config"
+      - rt mvn-config
+      - rt gradle-config
+      - rt cocoapods-config
+      - rt swift-config
+      - rt npm-config
+      - rt yarn-config
+      - rt nuget-config
+      - rt dotnet-config
+      - rt go-config
+      - rt pip-config
+    local_only: true
+
+  - match: [ds *]
+    tier: C
+    category: distribution-v1
+  - match: [mc *]
+    tier: C
+    category: mission-control
+  - match: [pl *]
+    tier: C
+    category: pipelines
+  - match: [worker *]
+    tier: C
+    category: workers
+  - match: [apptrust *]
+    tier: C
+    category: apptrust
+
+  - match:
+      - release-bundle-annotate
+      - release-bundle-create
+      - release-bundle-delete-local
+      - release-bundle-delete-remote
+      - release-bundle-distribute
+      - release-bundle-export
+      - release-bundle-finalize
+      - release-bundle-import
+      - release-bundle-promote
+      - release-bundle-search
+      - release-bundle-update
+    tier: B
+    category: release-bundles-v2
+  - match: [evd *]
+    tier: B
+    category: evidence
+  - match: [curation-audit]
+    tier: B
+    category: curation
+  - match:
+      - rt transfer-config
+      - rt transfer-config-merge
+      - rt transfer-files
+      - rt transfer-plugin-install
+      - rt transfer-settings
+    tier: B
+    category: migration
+  - match: [rt replication-template, rt replication-create, rt replication-delete]
+    tier: B
+    category: replication
+
+  - match:
+      - config *
+      - completion *
+      - generate-summary-markdown
+      - options
+      - package-alias *
+      - dockerloginhelp
+      - dockerpushhelp
+      - dockerpullhelp
+      - dockerbuildhelp
+      - npminstallhelp
+      - npmcihelp
+      - npmpublishhelp
+    tier: A
+    category: cli-local
+  - match: [rt, xr]
+    tier: A
+    category: namespace
+  - match: [login, access-token-create, rt access-token-create]
+    tier: A
+    category: auth
+  - match: [rt ping, rt curl, xr curl, api *]
+    tier: A
+    category: platform
+  - match:
+      - rt upload
+      - rt download
+      - rt direct-download
+      - rt move
+      - rt copy
+      - rt delete
+      - rt search
+      - rt set-props
+      - rt delete-props
+      - rt git-lfs-clean
+    tier: A
+    category: files
+  - match:
+      - rt build-publish
+      - rt build-collect-env
+      - rt build-append
+      - rt build-add-dependencies
+      - rt build-add-git
+      - rt build-clean
+      - rt build-promote
+      - rt build-discard
+      - rt build-docker-create
+      - rt docker-promote
+    tier: A
+    category: build-info
+  - match:
+      - rt repo-template
+      - rt repo-create
+      - rt repo-update
+      - rt repo-delete
+      - rt user-create
+      - rt users-create
+      - rt users-delete
+      - rt group-create
+      - rt group-add-users
+      - rt group-delete
+      - rt permission-target-template
+      - rt permission-target-create
+      - rt permission-target-update
+      - rt permission-target-delete
+    tier: A
+    category: admin
+  - match:
+      - audit
+      - scan
+      - build-scan
+      - rt build-scan
+      - xr scan
+      - audit-mvn
+      - audit-gradle
+      - audit-npm
+      - audit-go
+      - audit-pip
+      - audit-pipenv
+      - xr audit-mvn
+      - xr audit-gradle
+      - xr audit-npm
+      - xr audit-go
+      - xr audit-pip
+      - xr audit-pipenv
+    tier: A
+    category: security
+  - match: [xr offline-update]
+    tier: B
+    category: security
+  - match:
+      - mvn
+      - mvn-config
+      - mvnw
+      - gradle
+      - gradle-config
+      - npm *
+      - npm-config
+      - yarn
+      - yarn-config
+      - pnpm *
+      - pnpm-config
+      - pip *
+      - pip-config
+      - pipenv *
+      - pipenv-config
+      - poetry *
+      - poetry-config
+      - twine *
+      - go *
+      - go-config
+      - go-publish
+      - docker *
+      - rt podman-push
+      - rt podman-pull
+      - rt docker-push
+      - rt docker-pull
+      - rt mvn
+      - rt mvn-config
+      - rt gradle
+      - rt gradle-config
+      - rt npm-config
+      - rt npm-install
+      - rt npm-ci
+      - rt npm-publish
+      - rt yarn
+      - rt yarn-config
+      - rt go
+      - rt go-config
+      - rt go-publish
+      - rt pip-config
+      - rt pip-install
+    tier: A
+    category: formats-wave1
+  - match:
+      - nuget *
+      - nuget-config
+      - dotnet *
+      - dotnet-config
+      - helm *
+      - terraform *
+      - terraform-config
+      - conan *
+      - conan-config
+      - cargo *
+      - ruby *
+      - ruby-config
+      - rt nuget
+      - rt nuget-config
+      - rt nuget-deps-tree
+      - rt dotnet
+      - rt dotnet-config
+      - apk *
+      - apt *
+      - nix *
+      - hugging-face *
+    tier: A
+    category: formats-wave2

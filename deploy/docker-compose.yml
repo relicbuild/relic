@@ -1,0 +1,237 @@
+# Credentials here are dev-only.
+name: relic
+
+x-telemetry: &telemetry
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${RELIC_OTLP_ENDPOINT:-}
+  OTEL_TRACES_SAMPLER: always_on
+  RELIC_LOG_LEVEL: ${RELIC_LOG_LEVEL:-info}
+  RELIC_PROFILING_ENABLED: ${RELIC_PROFILING_ENABLED:-false}
+
+x-seaweedfs: &seaweedfs
+  image: chrislusf/seaweedfs:4.48
+  restart: unless-stopped
+
+services:
+  postgresql:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: relic
+      POSTGRES_PASSWORD: ${RELIC_DATABASE_PASSWORD:-relic}
+      POSTGRES_DB: relic
+    volumes:
+      - postgresql:/var/lib/postgresql
+    ports:
+      - "127.0.0.1:${RELIC_POSTGRESQL_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "relic", "-d", "relic"]
+      interval: 2s
+      retries: 30
+
+  seaweedfs-master:
+    <<: *seaweedfs
+    command: master -ip=seaweedfs-master -port=9333 -mdir=/data -defaultReplication=001 -volumeSizeLimitMB=1024 -metricsPort=9324
+    volumes:
+      - seaweedfs-master:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://seaweedfs-master:9333/cluster/status"]
+      interval: 2s
+      retries: 30
+
+  seaweedfs-volume-1: &volume
+    <<: *seaweedfs
+    command: volume -ip=seaweedfs-volume-1 -port=8080 -dir=/data -max=0 -mserver=seaweedfs-master:9333 -dataCenter=dc1 -rack=rack1 -metricsPort=9325
+    volumes:
+      - seaweedfs-volume-1:/data
+    depends_on:
+      seaweedfs-master:
+        condition: service_healthy
+
+  seaweedfs-volume-2:
+    <<: *volume
+    command: volume -ip=seaweedfs-volume-2 -port=8080 -dir=/data -max=0 -mserver=seaweedfs-master:9333 -dataCenter=dc1 -rack=rack1 -metricsPort=9325
+    volumes:
+      - seaweedfs-volume-2:/data
+
+  seaweedfs-filer:
+    <<: *seaweedfs
+    command: filer -ip=seaweedfs-filer -port=8888 -master=seaweedfs-master:9333 -defaultStoreDir=/data -metricsPort=9326
+    volumes:
+      - seaweedfs-filer:/data
+    depends_on:
+      - seaweedfs-volume-1
+      - seaweedfs-volume-2
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://seaweedfs-filer:8888/"]
+      interval: 2s
+      retries: 30
+
+  seaweedfs-s3:
+    <<: *seaweedfs
+    command: s3 -filer=seaweedfs-filer:8888 -port=8333 -config=/etc/seaweedfs/s3.json -metricsPort=9327
+    volumes:
+      - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+    ports:
+      - "127.0.0.1:${RELIC_OBJECT_STORAGE_PORT:-8333}:8333"
+    depends_on:
+      seaweedfs-filer:
+        condition: service_healthy
+
+  seaweedfs-create-buckets:
+    image: chrislusf/seaweedfs:4.48
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        shell() { weed shell -master=seaweedfs-master:9333 -filer=seaweedfs-filer:8888; }
+        buckets=$$(echo s3.bucket.list | shell)
+        for b in artifacts temporary; do
+          echo "$$buckets" | grep -qw "$$b" || echo "s3.bucket.create -name $$b" | shell
+        done
+        echo "fs.configure -locationPrefix=/buckets/temporary/ -ttl=1d -apply" | shell
+    depends_on:
+      seaweedfs-filer:
+        condition: service_healthy
+
+  relic-server:
+    build:
+      context: ..
+      args:
+        INDEXER_PLATFORMS: linux/amd64 linux/arm64
+    environment:
+      RELIC_HTTP_LISTEN_ADDRESS: ":8090"
+      RELIC_DATABASE_URL: postgres://relic:${RELIC_DATABASE_PASSWORD:-relic}@postgresql:5432/relic?sslmode=disable
+      RELIC_OBJECT_STORAGE_ENDPOINT: http://seaweedfs-s3:8333
+      RELIC_OBJECT_STORAGE_ACCESS_KEY: relic-dev-access-key
+      RELIC_OBJECT_STORAGE_SECRET_KEY: relic-dev-secret-key-not-for-production
+      RELIC_ENCRYPTION_KEY: ${RELIC_ENCRYPTION_KEY:-cmVsaWMtZGV2LXNlY3JldHMta2V5LW5vdC1wcm9kISE=}
+      RELIC_ADMIN_PASSWORD: ${RELIC_ADMIN_PASSWORD:-password}
+      RELIC_UPSTREAM_ALLOW_PRIVATE_ADDRESSES: ${RELIC_UPSTREAM_ALLOW_PRIVATE_ADDRESSES:-true}
+      RELIC_WEBHOOK_ALLOW_PRIVATE_ADDRESSES: ${RELIC_WEBHOOK_ALLOW_PRIVATE_ADDRESSES:-true}
+      RELIC_TRASH_ENABLED: ${RELIC_TRASH_ENABLED:-true}
+      RELIC_TRUSTED_PROXIES: ${RELIC_TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.1,::1}
+      RELIC_FAILED_SIGN_INS_BEFORE_BACKOFF: ${RELIC_FAILED_SIGN_INS_BEFORE_BACKOFF:-20}
+      RELIC_DATABASE_MAX_CONNECTIONS: ${RELIC_DATABASE_MAX_CONNECTIONS:-20}
+      RELIC_TLS_HOSTNAMES: relic-server
+      <<: *telemetry
+    volumes:
+      - relic-tls:/etc/relic/tls
+    ports:
+      - "127.0.0.1:${RELIC_PORT:-8090}:8090"
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      seaweedfs-create-buckets:
+        condition: service_completed_successfully
+      seaweedfs-s3:
+        condition: service_started
+
+  relic-worker:
+    build:
+      context: ..
+      args:
+        INDEXER_PLATFORMS: linux/amd64 linux/arm64
+    command: ["server", "worker"]
+    environment:
+      RELIC_HTTP_LISTEN_ADDRESS: ":8090"
+      RELIC_GARBAGE_COLLECTION_INTERVAL: ${RELIC_GARBAGE_COLLECTION_INTERVAL:-10m}
+      RELIC_GARBAGE_COLLECTION_GRACE_PERIOD: ${RELIC_GARBAGE_COLLECTION_GRACE_PERIOD:-1h}
+      RELIC_TRASH_RETENTION: ${RELIC_TRASH_RETENTION:-336h}
+      RELIC_DATABASE_URL: postgres://relic:${RELIC_DATABASE_PASSWORD:-relic}@postgresql:5432/relic?sslmode=disable
+      RELIC_OBJECT_STORAGE_ENDPOINT: http://seaweedfs-s3:8333
+      RELIC_OBJECT_STORAGE_ACCESS_KEY: relic-dev-access-key
+      RELIC_OBJECT_STORAGE_SECRET_KEY: relic-dev-secret-key-not-for-production
+      RELIC_ENCRYPTION_KEY: ${RELIC_ENCRYPTION_KEY:-cmVsaWMtZGV2LXNlY3JldHMta2V5LW5vdC1wcm9kISE=}
+      RELIC_ADMIN_PASSWORD: ${RELIC_ADMIN_PASSWORD:-password}
+      RELIC_UPSTREAM_ALLOW_PRIVATE_ADDRESSES: ${RELIC_UPSTREAM_ALLOW_PRIVATE_ADDRESSES:-true}
+      RELIC_WEBHOOK_ALLOW_PRIVATE_ADDRESSES: ${RELIC_WEBHOOK_ALLOW_PRIVATE_ADDRESSES:-true}
+      <<: *telemetry
+    volumes:
+      - vulnerability-database:/var/lib/relic/grype
+    depends_on:
+      relic-server:
+        condition: service_started
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.161.0
+    profiles: [observability]
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./observability/compose/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    depends_on: [tempo, loki]
+
+  tempo:
+    image: grafana/tempo:2.9.0
+    profiles: [observability]
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./observability/compose/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo:/var/tempo
+
+  loki:
+    image: grafana/loki:3.6.12
+    profiles: [observability]
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - loki:/loki
+
+  alloy:
+    image: grafana/alloy:v1.20.0
+    profiles: [observability]
+    command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
+    volumes:
+      - ./observability/compose/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: [loki]
+
+  postgresql-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.18.1
+    profiles: [observability]
+    environment:
+      DATA_SOURCE_URI: postgresql:5432/relic?sslmode=disable
+      DATA_SOURCE_USER: relic
+      DATA_SOURCE_PASS: ${RELIC_DATABASE_PASSWORD:-relic}
+    depends_on:
+      postgresql:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    profiles: [observability]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --enable-feature=exemplar-storage
+    volumes:
+      - ./observability/compose/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/relic-rules.yaml:/etc/prometheus/rules/relic-rules.yaml:ro
+      - prometheus:/prometheus
+    ports:
+      - "127.0.0.1:${RELIC_PROMETHEUS_PORT:-9090}:9090"
+
+  grafana:
+    image: grafana/grafana:13.2.2
+    profiles: [observability]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - ./observability/compose/grafana/datasources.yaml:/etc/grafana/provisioning/datasources/relic.yaml:ro
+      - ./observability/compose/grafana/dashboards.yaml:/etc/grafana/provisioning/dashboards/relic.yaml:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${RELIC_GRAFANA_PORT:-3000}:3000"
+    depends_on: [prometheus, tempo, loki]
+
+volumes:
+  relic-tls:
+  vulnerability-database:
+  tempo:
+  loki:
+  prometheus:
+  grafana:
+  postgresql:
+  seaweedfs-master:
+  seaweedfs-volume-1:
+  seaweedfs-volume-2:
+  seaweedfs-filer:

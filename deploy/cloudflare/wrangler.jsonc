@@ -1,0 +1,48 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "relic",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "observability": {
+    "enabled": true
+  },
+  "containers": [
+    {
+      "class_name": "Relic",
+      "image": "./Dockerfile",
+      "instance_type": "standard-2",
+      "max_instances": 1
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "RELIC",
+        "class_name": "Relic"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "Relic"
+      ]
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "*/5 * * * *"
+    ]
+  },
+  // Settings that are not secret; set the secret ones with wrangler secret put.
+  "vars": {
+    "RELIC_HTTP_LISTEN_ADDRESS": ":8090",
+    "RELIC_OBJECT_STORAGE_ENDPOINT": "https://<account-id>.r2.cloudflarestorage.com",
+    "RELIC_OBJECT_STORAGE_REGION": "auto",
+    "RELIC_OBJECT_STORAGE_ARTIFACTS_BUCKET": "relic-artifacts",
+    "RELIC_OBJECT_STORAGE_TEMPORARY_BUCKET": "relic-temporary",
+    // Only the Worker reaches the container, so every peer is the Worker.
+    "RELIC_TRUSTED_PROXIES": "0.0.0.0/0,::/0"
+  }
+}

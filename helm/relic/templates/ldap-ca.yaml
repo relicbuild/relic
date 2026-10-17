@@ -1,0 +1,9 @@
+{{- if .Values.ldap.caCertificate }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "relic.fullname" . }}-ldap-ca
+  labels: {{- include "relic.labels" . | nindent 4 }}
+data:
+  ca.crt: {{ .Values.ldap.caCertificate | quote }}
+{{- end }}

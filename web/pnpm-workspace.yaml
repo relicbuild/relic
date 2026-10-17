@@ -1,0 +1,10 @@
+allowBuilds:
+  '@bufbuild/buf': false # the binary comes from its platform package
+  '@parcel/watcher': false
+  '@tailwindcss/oxide': false
+  better-sqlite3: false # content uses node:sqlite (sqliteConnector: native)
+  esbuild: false
+  unrs-resolver: false
+  vue-demi: false
+patchedDependencies:
+  docus@5.13.0: patches/docus@5.13.0.patch

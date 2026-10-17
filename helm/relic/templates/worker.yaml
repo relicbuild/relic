@@ -1,0 +1,87 @@
+{{- if and .Values.worker.vulnerabilityDatabase.persistence (gt (int .Values.worker.replicas) 1) }}
+{{- fail "worker.replicas above 1 needs worker.vulnerabilityDatabase.persistence=false: the database volume is ReadWriteOnce" }}
+{{- end }}
+{{- if and .Values.worker.vulnerabilityDatabase.persistence }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "relic.fullname" . }}-vulnerability-database
+  labels: {{- include "relic.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.worker.vulnerabilityDatabase.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests: {storage: {{ .Values.worker.vulnerabilityDatabase.size }}}
+---
+{{- end }}
+{{- if not (include "relic.singleNode" .) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "relic.fullname" . }}-worker
+  labels:
+    {{- include "relic.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  {{- if .Values.worker.vulnerabilityDatabase.persistence }}
+  # A ReadWriteOnce volume cannot be shared by old and new pods.
+  strategy: {type: Recreate}
+  {{- end }}
+  selector:
+    matchLabels: {{- include "relic.selector" (dict "root" . "component" "worker") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "relic.labels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "relic.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      # Running jobs get up to 5 minutes to finish (runWorker).
+      terminationGracePeriodSeconds: 330
+      containers:
+        - name: relic
+          image: {{ include "relic.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["server", "worker"]
+          env: {{- include "relic.env" . | nindent 12 }}
+          {{- if .Values.metrics.enabled }}
+          ports:
+            - {name: metrics, containerPort: 8091}
+          {{- end }}
+          resources: {{- toYaml .Values.worker.resources | nindent 12 }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - {name: temporary, mountPath: /tmp}
+            - {name: vulnerability-database, mountPath: /var/lib/relic/grype}
+      volumes:
+        - name: temporary
+          emptyDir: {sizeLimit: {{ .Values.worker.temporaryVolumeSize }}}
+        - name: vulnerability-database
+          {{- if .Values.worker.vulnerabilityDatabase.persistence }}
+          persistentVolumeClaim: {claimName: {{ include "relic.fullname" . }}-vulnerability-database}
+          {{- else }}
+          emptyDir: {sizeLimit: {{ .Values.worker.vulnerabilityDatabase.size }}}
+          {{- end }}
+      {{- with .Values.worker.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

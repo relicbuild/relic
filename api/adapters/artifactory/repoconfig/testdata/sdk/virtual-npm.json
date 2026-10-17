@@ -1,0 +1,27 @@
+{
+  "rclass": "virtual",
+  "key": "example-npm-virtual",
+  "projectKey": "example-projectKey",
+  "environments": [
+    "DEV"
+  ],
+  "packageType": "npm",
+  "description": "example-description",
+  "notes": "example-notes",
+  "includesPattern": "**/*",
+  "excludesPattern": "tmp/**",
+  "repoLayoutRef": "simple-default",
+  "primaryKeyPairRef": "example-primaryKeyPairRef",
+  "secondaryKeyPairRef": "example-secondaryKeyPairRef",
+  "repositories": [
+    "example-npm-local"
+  ],
+  "artifactoryRequestsCanRetrieveRemoteArtifacts": true,
+  "defaultDeploymentRepo": "example-npm-local",
+  "virtualRetrievalCachePeriodSecs": 600,
+  "externalDependenciesEnabled": true,
+  "externalDependenciesPatterns": [
+    "**/github.com/**"
+  ],
+  "externalDependenciesRemoteRepo": "example-externalDependenciesRemoteRepo"
+}

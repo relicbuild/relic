@@ -1,0 +1,24 @@
+{
+  "rclass": "virtual",
+  "key": "example-maven-virtual",
+  "projectKey": "example-projectKey",
+  "environments": [
+    "DEV"
+  ],
+  "packageType": "maven",
+  "description": "example-description",
+  "notes": "example-notes",
+  "includesPattern": "**/*",
+  "excludesPattern": "tmp/**",
+  "repoLayoutRef": "simple-default",
+  "primaryKeyPairRef": "example-primaryKeyPairRef",
+  "secondaryKeyPairRef": "example-secondaryKeyPairRef",
+  "repositories": [
+    "example-maven-local"
+  ],
+  "artifactoryRequestsCanRetrieveRemoteArtifacts": true,
+  "defaultDeploymentRepo": "example-maven-local",
+  "pomRepositoryReferencesCleanupPolicy": "discard_active_reference",
+  "keyPair": "example-keyPair",
+  "forceMavenAuthentication": true
+}

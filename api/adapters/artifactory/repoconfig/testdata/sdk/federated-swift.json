@@ -1,0 +1,31 @@
+{
+  "rclass": "federated",
+  "key": "example-swift-federated",
+  "projectKey": "example-projectKey",
+  "environments": [
+    "DEV"
+  ],
+  "packageType": "swift",
+  "description": "example-description",
+  "notes": "example-notes",
+  "includesPattern": "**/*",
+  "excludesPattern": "tmp/**",
+  "repoLayoutRef": "simple-default",
+  "blackedOut": true,
+  "xrayIndex": true,
+  "propertySets": [
+    "artifactory"
+  ],
+  "downloadRedirect": true,
+  "priorityResolution": true,
+  "cdnRedirect": true,
+  "primaryKeyPairRef": "example-primaryKeyPairRef",
+  "secondaryKeyPairRef": "example-secondaryKeyPairRef",
+  "archiveBrowsingEnabled": true,
+  "members": [
+    {
+      "url": "https://example.com/swift",
+      "enabled": true
+    }
+  ]
+}

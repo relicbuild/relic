@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/options.proto";
+
+// KeyService shows the key pairs Relic signs repository metadata with (Debian
+// and Alpine indexes, Helm and release manifests). Relic creates a key pair
+// the first time a repository that names it is signed.
+service SigningKeyService {
+  // ListKeyPairs returns the key pairs, without their private keys.
+  rpc ListKeyPairs(ListKeyPairsRequest) returns (ListKeyPairsResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/key-pairs"
+    };
+  }
+  // GetPublicKey returns a key pair's public key, for clients to trust.
+  rpc GetPublicKey(GetPublicKeyRequest) returns (GetPublicKeyResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/key-pairs/{name}/public-key"
+    };
+  }
+}
+
+// KeyPair is a signing key pair, without its private key.
+message KeyPair {
+  string name = 1;
+  // kind is gpg or rsa.
+  string kind = 2;
+  string public_key = 3;
+  google.protobuf.Timestamp created = 4;
+}
+
+message ListKeyPairsRequest {}
+
+message ListKeyPairsResponse {
+  repeated KeyPair key_pairs = 1;
+}
+
+message GetPublicKeyRequest {
+  string name = 1;
+}
+
+message GetPublicKeyResponse {
+  string public_key = 1;
+}

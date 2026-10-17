@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/protobuf/descriptor.proto";
+
+// Access is who may call a method. The server's interceptor enforces it,
+// and every method must declare one.
+enum Access {
+  ACCESS_UNSPECIFIED = 0;
+  // Anyone, signed in or not.
+  ACCESS_PUBLIC = 1;
+  // Any signed-in caller: a user, a token or a session.
+  ACCESS_AUTHENTICATED = 2;
+  // Administrators only.
+  ACCESS_ADMIN = 3;
+  // Viewers and administrators: administration methods that only read.
+  ACCESS_VIEWER = 4;
+}
+
+extend google.protobuf.MethodOptions {
+  // access is the method's access level.
+  Access access = 50001;
+}

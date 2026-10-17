@@ -1,0 +1,163 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "relic/v1/options.proto";
+
+// LdapService manages the LDAP servers users sign in with, and how their
+// groups become Relic groups.
+service LdapService {
+  rpc ListLdapServers(ListLdapServersRequest) returns (ListLdapServersResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/ldap-servers"
+    };
+  }
+  // PutLdapServer creates or replaces an LDAP server. An empty manager password
+  // keeps the stored one.
+  rpc PutLdapServer(PutLdapServerRequest) returns (PutLdapServerResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      put: "/api/v1/ldap-servers/{ldap_server.name}"
+      body: "ldap_server"
+    };
+  }
+  rpc DeleteLdapServer(DeleteLdapServerRequest) returns (DeleteLdapServerResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      delete: "/api/v1/ldap-servers/{name}"
+    };
+  }
+  rpc ListLdapGroupMappings(ListLdapGroupMappingsRequest) returns (ListLdapGroupMappingsResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/ldap-group-mappings"
+    };
+  }
+  rpc PutLdapGroupMapping(PutLdapGroupMappingRequest) returns (PutLdapGroupMappingResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      put: "/api/v1/ldap-group-mappings/{ldap_group_mapping.name}"
+      body: "ldap_group_mapping"
+    };
+  }
+  rpc DeleteLdapGroupMapping(DeleteLdapGroupMappingRequest) returns (DeleteLdapGroupMappingResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      delete: "/api/v1/ldap-group-mappings/{name}"
+    };
+  }
+  // TestLdapSignIn signs a user in with LDAP server settings that need not be
+  // saved. Refused credentials and unreachable servers are answers, not
+  // errors.
+  rpc TestLdapSignIn(TestLdapSignInRequest) returns (TestLdapSignInResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      post: "/api/v1/ldap-servers:test"
+      body: "*"
+    };
+  }
+}
+
+// LdapUserSearch is how users are found when no user DN pattern is set.
+message LdapUserSearch {
+  string filter = 1;
+  string base = 2;
+  bool sub_tree = 3;
+  string manager_dn = 4;
+  // manager_password is write-only.
+  string manager_password = 5;
+}
+
+// LdapServer is an LDAP server users sign in with.
+message LdapServer {
+  string name = 1;
+  bool enabled = 2;
+  // url is ldap://host[:port]/<base DN> or ldaps://….
+  string url = 3;
+  string user_dn_pattern = 4;
+  LdapUserSearch search = 5;
+  bool auto_create_user = 6;
+  string email_attribute = 7;
+  bool start_tls = 8;
+  // has_manager_password says whether a manager password is stored.
+  bool has_manager_password = 9;
+}
+
+// GroupStrategy is how an LDAP server records group membership.
+enum GroupStrategy {
+  GROUP_STRATEGY_UNSPECIFIED = 0;
+  // GROUP_STRATEGY_STATIC: groups list their members.
+  GROUP_STRATEGY_STATIC = 1;
+  // GROUP_STRATEGY_DYNAMIC: users list their groups.
+  GROUP_STRATEGY_DYNAMIC = 2;
+  // GROUP_STRATEGY_HIERARCHY: groups are the organizational units of the
+  // user's DN.
+  GROUP_STRATEGY_HIERARCHY = 3;
+}
+
+// LdapGroupMapping reads an LDAP server's groups into Relic groups.
+message LdapGroupMapping {
+  string name = 1;
+  // ldap_server is the name of the LdapServer it reads.
+  string ldap_server = 2;
+  string base_dn = 3;
+  string name_attribute = 4;
+  string member_attribute = 5;
+  bool sub_tree = 6;
+  string filter = 7;
+  string description_attribute = 8;
+  // strategy is static when unspecified.
+  GroupStrategy strategy = 9;
+}
+
+message ListLdapServersRequest {}
+
+message ListLdapServersResponse {
+  repeated LdapServer ldap_servers = 1;
+}
+
+message PutLdapServerRequest {
+  LdapServer ldap_server = 1;
+}
+
+message PutLdapServerResponse {}
+
+message DeleteLdapServerRequest {
+  string name = 1;
+}
+
+message DeleteLdapServerResponse {}
+
+message ListLdapGroupMappingsRequest {}
+
+message ListLdapGroupMappingsResponse {
+  repeated LdapGroupMapping ldap_group_mappings = 1;
+}
+
+message PutLdapGroupMappingRequest {
+  LdapGroupMapping ldap_group_mapping = 1;
+}
+
+message PutLdapGroupMappingResponse {}
+
+message DeleteLdapGroupMappingRequest {
+  string name = 1;
+}
+
+message DeleteLdapGroupMappingResponse {}
+
+message TestLdapSignInRequest {
+  LdapServer ldap_server = 1;
+  string username = 2;
+  string password = 3;
+}
+
+message TestLdapSignInResponse {
+  bool ok = 1;
+  string dn = 2;
+  string email = 3;
+  repeated string groups = 4;
+  string error = 5;
+}

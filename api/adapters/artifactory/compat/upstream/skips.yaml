@@ -1,0 +1,6 @@
+# Upstream tests skipped per suite, each with a reason.
+# Format (kept flat for the runner's parser):
+#
+# <suite>:
+#   - test: TestName          # Go test name, anchored as ^TestName$
+#     reason: why it is skipped

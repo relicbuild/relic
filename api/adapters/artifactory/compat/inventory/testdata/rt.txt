@@ -1,0 +1,21 @@
+NAME:
+   jf rt - Repository commands
+
+USAGE:
+   jf rt command [command options] [arguments...]
+
+COMMANDS:
+   ping, p   Checks that the server answers.
+   curl, cl  Sends a request with the configured server details.
+
+   Build Info:
+     build-publish, bp            Publishes a build.
+     build-add-dependencies, bad  Adds local files to a build
+                                  as its dependencies.
+
+   Files Management:
+     upload, u     Uploads files.
+     download, dl  Downloads files.
+
+OPTIONS:
+   --help, -h  show help

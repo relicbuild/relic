@@ -1,0 +1,55 @@
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Build output
+bin/
+dist/
+vendor/
+/relic
+!internal/app/ui/dist/
+internal/app/ui/dist/*
+!internal/app/ui/dist/.gitkeep
+
+# Test artifacts
+*.test
+coverage.*
+# The compatibility SDK suite's route coverage, source code despite its name.
+!api/adapters/artifactory/compat/sdk/coverage.go
+*.out
+
+# Web
+web/node_modules/
+web/.nuxt/
+web/.output/
+web/site/.nuxt/
+web/site/.output/
+web/site/dist
+web/site/node_modules/
+web/site/.wrangler/
+web/site/.data/
+web/dist
+web/.data/
+web/.cache/
+
+
+# E2E results
+api/adapters/artifactory/compat/e2e/results/
+api/adapters/artifactory/compat/upstream/results/
+
+# A stray `go build` in the indexer module
+/api/adapters/artifactory/relic-indexer/relic-indexer
+
+# Helm dependencies (helm dependency build)
+/helm/relic/charts/
+
+
+# Task
+.task/
+ignore/

@@ -1,0 +1,34 @@
+Relic is starting. The server applies database migrations before it reports ready.
+{{- if .Values.postgresql.enabled }}
+PostgreSQL runs as the CloudNativePG cluster {{ include "relic.dependencyName" (dict "root" . "chart" "postgresql") }}{{ if index .Values "postgresql-operator" "enabled" }} (with the operator this release installed){{ end }}; the server
+pods restart until it accepts connections:
+  kubectl -n {{ .Release.Namespace }} get cluster {{ include "relic.dependencyName" (dict "root" . "chart" "postgresql") }}
+{{- end }}
+
+The admin password:
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "relic.credentialsSecretName" . }} -o jsonpath='{.data.adminPassword}' | base64 -d
+
+Sign in to the web UI as admin, then point your clients at Relic: the web UI's
+"Set me up" page and the docs (/docs) show how.
+
+{{- if not .Values.tls.enabled }}
+The server serves plain HTTP (tls.enabled false): terminate TLS in front of it.
+{{- else if .Values.tls.existingSecret }}
+The server serves HTTPS with the certificate in the Secret {{ .Values.tls.existingSecret }}.
+{{- else }}
+The server serves HTTPS with a certificate authority each pod generates{{ if not (include "relic.singleNode" .) }} and loses on restart{{ end }}.
+Clients that verify the server need one certificate: set tls.existingSecret (a
+kubernetes.io/tls Secret, for example from cert-manager).
+{{- end }}
+
+Readiness: /readyz (database and object storage). Liveness: /healthz.
+{{- if .Values.metrics.enabled }}
+Metrics: /metrics on port 8091 of every pod (Service {{ include "relic.fullname" . }}-metrics).
+{{- end }}
+{{- if .Values.monitoringStack.enabled }}
+
+Grafana, with Relic's dashboards (folder "{{ .Values.grafana.dashboards.folder }}"), Tempo and Loki:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "relic.dependencyName" (dict "root" . "chart" "grafana") }} 3000:80
+  then http://127.0.0.1:3000, user admin, password:
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "relic.dependencyName" (dict "root" . "chart" "grafana") }} -o jsonpath='{.data.admin-password}' | base64 -d
+{{- end }}

@@ -1,0 +1,25 @@
+{
+  "rclass": "local",
+  "key": "example-puppet-local",
+  "projectKey": "example-projectKey",
+  "environments": [
+    "DEV"
+  ],
+  "packageType": "puppet",
+  "description": "example-description",
+  "notes": "example-notes",
+  "includesPattern": "**/*",
+  "excludesPattern": "tmp/**",
+  "repoLayoutRef": "simple-default",
+  "blackedOut": true,
+  "xrayIndex": true,
+  "propertySets": [
+    "artifactory"
+  ],
+  "downloadRedirect": true,
+  "priorityResolution": true,
+  "cdnRedirect": true,
+  "primaryKeyPairRef": "example-primaryKeyPairRef",
+  "secondaryKeyPairRef": "example-secondaryKeyPairRef",
+  "archiveBrowsingEnabled": true
+}

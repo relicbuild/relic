@@ -1,0 +1,65 @@
+{{- if or .Values.grafana.dashboards.enabled .Values.monitoringStack.enabled }}
+{{- range $path, $_ := .Files.Glob "files/observability/dashboards/*.json" }}
+{{- $name := base $path | trimSuffix ".json" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-dashboard-%s" (include "relic.fullname" $) ($name | trimPrefix "relic-") | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "relic.labels" $ | nindent 4 }}
+    {{ $.Values.grafana.dashboards.label }}: {{ $.Values.grafana.dashboards.labelValue | quote }}
+  annotations:
+    {{ $.Values.grafana.dashboards.folderAnnotation }}: {{ $.Values.grafana.dashboards.folder | quote }}
+data:
+  {{ base $path }}: |-
+    {{- $.Files.Get $path | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- if .Values.monitoringStack.enabled }}
+{{- $tempo := include "relic.dependencyName" (dict "root" . "chart" "tempo") }}
+{{- $loki := include "relic.dependencyName" (dict "root" . "chart" "loki") }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "relic.fullname" . }}-datasources
+  labels:
+    {{- include "relic.labels" . | nindent 4 }}
+    grafana_datasource: "1"
+data:
+  relic-datasources.yaml: |-
+    apiVersion: 1
+    datasources:
+      - name: Tempo
+        type: tempo
+        uid: tempo
+        access: proxy
+        url: http://{{ $tempo }}:3200
+        jsonData:
+          tracesToLogsV2:
+            datasourceUid: loki
+            spanStartTimeShift: -5m
+            spanEndTimeShift: 5m
+            filterByTraceID: false
+            customQuery: true
+            query: '{app="relic"} |= "$${__trace.traceId}"'
+          lokiSearch:
+            datasourceUid: loki
+          serviceMap:
+            datasourceUid: prometheus
+          nodeGraph:
+            enabled: true
+      - name: Loki
+        type: loki
+        uid: loki
+        access: proxy
+        url: http://{{ $loki }}:3100
+        jsonData:
+          derivedFields:
+            - name: trace_id
+              datasourceUid: tempo
+              matcherRegex: '"trace_id":"(\w+)"'
+              url: '$${__value.raw}'
+              urlDisplayLabel: Open the trace
+{{- end }}

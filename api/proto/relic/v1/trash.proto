@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/options.proto";
+
+// TrashService manages the trash can deleted items go to.
+service TrashService {
+  // ListTrash lists a page of the trash can's entries, newest first.
+  rpc ListTrash(ListTrashRequest) returns (ListTrashResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/trash"
+    };
+  }
+  // RestoreTrash puts an item back, where it was or at another place.
+  rpc RestoreTrash(RestoreTrashRequest) returns (RestoreTrashResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      post: "/api/v1/trash:restore"
+      body: "*"
+    };
+  }
+  // DeleteTrashEntry deletes one item from the trash can for good.
+  rpc DeleteTrashEntry(DeleteTrashEntryRequest) returns (DeleteTrashEntryResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      delete: "/api/v1/trash/{path=**}"
+    };
+  }
+  // EmptyTrash deletes everything in the trash can for good.
+  rpc EmptyTrash(EmptyTrashRequest) returns (EmptyTrashResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      delete: "/api/v1/trash"
+    };
+  }
+}
+
+// TrashEntry is one deleted item.
+message TrashEntry {
+  // path is inside the trash can.
+  string path = 1;
+  string name = 2;
+  bool folder = 3;
+  int64 size = 4;
+  string original_repository = 5;
+  string original_path = 6;
+  string deleted_by = 7;
+  google.protobuf.Timestamp deleted = 8;
+}
+
+message ListTrashRequest {
+  // page counts from 1.
+  int32 page = 1;
+  // page_size is at most 200; 50 when unset.
+  int32 page_size = 2;
+  // query selects entries whose original repository and path, or whose
+  // deleter, contains it.
+  string query = 3;
+  // original_repository selects the entries deleted from one repository.
+  string original_repository = 4;
+  // deleted_by selects one user's deletions.
+  string deleted_by = 5;
+  // kind is "file" or "folder"; empty for both.
+  string kind = 6;
+}
+
+message ListTrashResponse {
+  repeated TrashEntry entries = 1;
+  // total is the number of entries the filters select.
+  int64 total = 2;
+  // original_repositories and deleted_by_users name every repository and
+  // user with entries in the trash can.
+  repeated string original_repositories = 3;
+  repeated string deleted_by_users = 4;
+}
+
+message RestoreTrashRequest {
+  string path = 1;
+  // to_repository and to_path restore elsewhere; empty restores to the
+  // original place.
+  string to_repository = 2;
+  string to_path = 3;
+}
+
+message RestoreTrashResponse {}
+
+message DeleteTrashEntryRequest {
+  string path = 1;
+}
+
+message DeleteTrashEntryResponse {}
+
+message EmptyTrashRequest {}
+
+message EmptyTrashResponse {}

@@ -1,0 +1,827 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/options.proto";
+
+// ScanService reads what Relic Scan found, and manages the policies and
+// watches that turn findings into violations.
+service ScanService {
+  // GetItemScan returns the scan of a file the caller may read (for an image
+  // folder, its manifest's).
+  rpc GetItemScan(GetItemScanRequest) returns (GetItemScanResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/repositories/{repository}/scans/{path=**}"
+    };
+  }
+  // ExplainDownload says whether a download of a file the caller may read
+  // would be blocked, and why, without recording a decision.
+  rpc ExplainDownload(ExplainDownloadRequest) returns (ExplainDownloadResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/repositories/{repository}/download-checks/{path=**}"
+    };
+  }
+  // CheckPackage says whether a package version may be used: not a known
+  // malicious package, offered by the repository's npm or PyPI metadata
+  // (which leaves out versions cooling down, quarantined or blocked), and
+  // with no stored finding that a blocking rule of the watches covering the
+  // repository refuses.
+  rpc CheckPackage(CheckPackageRequest) returns (CheckPackageResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/package-checks"
+    };
+  }
+  // ScanBuildRun queues a scan of a build run's dependencies; its artifacts'
+  // own scans join the result. It needs read permission on the build.
+  rpc ScanBuildRun(ScanBuildRunRequest) returns (ScanBuildRunResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      post: "/api/v1/builds/{name}/runs/{number}:scan"
+      body: "*"
+    };
+  }
+  // GetBuildRunScan returns the newest scan of a build run and the policy
+  // rules its findings violate under the watches covering the build.
+  rpc GetBuildRunScan(GetBuildRunScanRequest) returns (GetBuildRunScanResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/builds/{name}/runs/{number}/scan"
+    };
+  }
+  // ScanPackages queues a scan of packages named by purl (a project's
+  // dependencies, the contents of local files) and returns its ID.
+  rpc ScanPackages(ScanPackagesRequest) returns (ScanPackagesResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      post: "/api/v1/package-scans"
+      body: "*"
+    };
+  }
+  // GetPackagesScan returns a package scan the caller queued: its findings
+  // and the policy rules they violate.
+  rpc GetPackagesScan(GetPackagesScanRequest) returns (GetPackagesScanResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/package-scans/{id}"
+    };
+  }
+  // ExportVex writes the ignore rules as an OpenVEX or CycloneDX document: a
+  // not_affected statement per vulnerability they ignore in packages, and,
+  // when asked, per vulnerability govulncheck found no call path to.
+  rpc ExportVex(ExportVexRequest) returns (ExportVexResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/vex"
+    };
+  }
+  // ImportVex creates ignore rules from an OpenVEX document's not_affected
+  // and fixed statements, or a CycloneDX document's not_affected and
+  // resolved vulnerabilities; each rule's notes name the document and
+  // author.
+  rpc ImportVex(ImportVexRequest) returns (ImportVexResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      post: "/api/v1/vex:import"
+      body: "*"
+    };
+  }
+  // GetItemSbom returns the components of an item's scan (for an image
+  // folder, its manifest's).
+  rpc GetItemSbom(GetItemSbomRequest) returns (GetItemSbomResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/repositories/{repository}/sboms/{path=**}"
+    };
+  }
+  // ListFindings returns findings across everything scanned.
+  rpc ListFindings(ListFindingsRequest) returns (ListFindingsResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/findings"
+    };
+  }
+  // ListOperationalRisks returns operational risks across scanned content:
+  // components past or near end of life, deprecated or unmaintained.
+  rpc ListOperationalRisks(ListOperationalRisksRequest) returns (ListOperationalRisksResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/operational-risks"
+    };
+  }
+  // GetEndOfLifeStatus says what end-of-life data the server holds. PUT a
+  // dump of endoflife.date to the same path to import one.
+  rpc GetEndOfLifeStatus(GetEndOfLifeStatusRequest) returns (GetEndOfLifeStatusResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/end-of-life-data"
+    };
+  }
+  // ListCves returns the CVEs findings name, with what the feeds say.
+  rpc ListCves(ListCvesRequest) returns (ListCvesResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/cves"
+    };
+  }
+  // GetCve returns one CVE and the artifacts it affects.
+  rpc GetCve(GetCveRequest) returns (GetCveResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/cves/{id}"
+    };
+  }
+  rpc ListPolicies(ListPoliciesRequest) returns (ListPoliciesResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/policies"
+    };
+  }
+  rpc PutPolicy(PutPolicyRequest) returns (PutPolicyResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      put: "/api/v1/policies/{policy.name}"
+      body: "policy"
+    };
+  }
+  rpc DeletePolicy(DeletePolicyRequest) returns (DeletePolicyResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      delete: "/api/v1/policies/{name}"
+    };
+  }
+  rpc ListWatches(ListWatchesRequest) returns (ListWatchesResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/watches"
+    };
+  }
+  rpc PutWatch(PutWatchRequest) returns (PutWatchResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      put: "/api/v1/watches/{watch.name}"
+      body: "watch"
+    };
+  }
+  rpc DeleteWatch(DeleteWatchRequest) returns (DeleteWatchResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      delete: "/api/v1/watches/{name}"
+    };
+  }
+  rpc ListIgnoreRules(ListIgnoreRulesRequest) returns (ListIgnoreRulesResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/ignore-rules"
+    };
+  }
+  rpc CreateIgnoreRule(CreateIgnoreRuleRequest) returns (CreateIgnoreRuleResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      post: "/api/v1/ignore-rules"
+      body: "rule"
+    };
+  }
+  rpc DeleteIgnoreRule(DeleteIgnoreRuleRequest) returns (DeleteIgnoreRuleResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      delete: "/api/v1/ignore-rules/{id}"
+    };
+  }
+}
+
+// Severity is how severe a vulnerability is.
+enum Severity {
+  SEVERITY_UNSPECIFIED = 0;
+  SEVERITY_CRITICAL = 1;
+  SEVERITY_HIGH = 2;
+  SEVERITY_MEDIUM = 3;
+  SEVERITY_LOW = 4;
+  SEVERITY_UNKNOWN = 5;
+}
+
+// ScanStatus is where a file's scan stands.
+enum ScanStatus {
+  SCAN_STATUS_UNSPECIFIED = 0;
+  // SCAN_STATUS_NONE: the file was never queued (not a scannable type, or
+  // deployed before scanning was on).
+  SCAN_STATUS_NONE = 1;
+  SCAN_STATUS_QUEUED = 2;
+  SCAN_STATUS_DONE = 3;
+  // SCAN_STATUS_PARTIAL: some content could not be cataloged.
+  SCAN_STATUS_PARTIAL = 4;
+  SCAN_STATUS_FAILED = 5;
+  // SCAN_STATUS_SKIPPED: the file is too large or not a package.
+  SCAN_STATUS_SKIPPED = 6;
+}
+
+// Cvss is one CVSS rating of a finding.
+message Cvss {
+  string version = 1;
+  string vector = 2;
+  double score = 3;
+}
+
+// Finding is a vulnerability found in a package.
+message Finding {
+  // id is the scanner's ID: CVE-…, GHSA-…, ….
+  string id = 1;
+  repeated string aliases = 2;
+  Severity severity = 3;
+  string summary = 4;
+  string package_name = 5;
+  string package_version = 6;
+  string purl = 7;
+  repeated string fixed_versions = 8;
+  repeated string urls = 9;
+  repeated Cvss cvss = 10;
+  // malicious marks a malicious package (an OpenSSF MAL- advisory) rather
+  // than a vulnerability.
+  bool malicious = 11;
+  // reachability is "reachable" when govulncheck found a call path to the
+  // vulnerable code, "not_reachable" when it found none, "unknown"
+  // otherwise (every finding outside Go executables).
+  string reachability = 12;
+  // reachability_trace names the call path of a reachable finding.
+  string reachability_trace = 13;
+}
+
+// ItemScan is a file's scan state and findings.
+message ItemScan {
+  ScanStatus status = 1;
+  string reason = 2;
+  int32 components = 3;
+  google.protobuf.Timestamp vulnerability_database_built = 4;
+  repeated Finding findings = 5;
+  // counts counts the findings by severity: critical, high, medium, low,
+  // unknown.
+  map<string, int32> counts = 6;
+  // source names the file scanned for a folder (an image's manifest.json).
+  string source = 7;
+  // issues are what the analyzers found: secrets, misconfigurations,
+  // licenses in files, and code that loading a model would run.
+  repeated ScanIssue issues = 8;
+  // risks are the components' operational risks.
+  repeated OperationalRisk risks = 9;
+}
+
+// OperationalRisk is a risk a scanned component carries: past or near end
+// of life, deprecated or unmaintained.
+message OperationalRisk {
+  // kind is "end_of_life", "deprecated" or "unmaintained".
+  string kind = 1;
+  Severity severity = 2;
+  string purl = 3;
+  string package_name = 4;
+  string package_version = 5;
+  // product and cycle name the endoflife.date product and release cycle.
+  string product = 6;
+  string cycle = 7;
+  // eol_from is the ISO date of the end of life, empty when there is none.
+  string eol_from = 8;
+  string detail = 9;
+  // repository and path name a file holding the component, in listings.
+  string repository = 10;
+  string path = 11;
+}
+
+message ListOperationalRisksRequest {
+  // kind is "end_of_life", "deprecated" or "unmaintained"; empty for all.
+  string kind = 1;
+  // query matches package and product names.
+  string query = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+  // repository limits the risks to content in one repository.
+  string repository = 5;
+}
+
+message ListOperationalRisksResponse {
+  repeated OperationalRisk risks = 1;
+  int64 total = 2;
+}
+
+message GetEndOfLifeStatusRequest {}
+
+message GetEndOfLifeStatusResponse {
+  // source is "feed" or "import"; empty when the server holds no data.
+  string source = 1;
+  int32 products = 2;
+  google.protobuf.Timestamp fetched = 3;
+  google.protobuf.Timestamp changed = 4;
+}
+
+// ScanIssue is something an analyzer found in scanned content: where, and
+// which rule. It never holds a secret itself.
+message ScanIssue {
+  // analyzer is "secrets", "misconfiguration", "license" or "model".
+  string analyzer = 1;
+  string rule = 2;
+  Severity severity = 3;
+  string title = 4;
+  // file is the path in the content (in an archive, relative to its root).
+  string file = 5;
+  int32 line = 6;
+  // resource names what a misconfiguration is on (a Kubernetes object, a
+  // Terraform resource).
+  string resource = 7;
+  // validation is a secret's: "live" (its provider accepts it), "inactive",
+  // "unknown" or "error"; empty when it was not checked.
+  string validation = 8;
+  google.protobuf.Timestamp validated = 9;
+}
+
+message GetItemScanRequest {
+  string repository = 1;
+  string path = 2;
+}
+
+message GetItemScanResponse {
+  ItemScan scan = 1;
+}
+
+message GetItemSbomRequest {
+  string repository = 1;
+  string path = 2;
+}
+
+// ComponentLocation is where a component was found in the scanned content.
+message ComponentLocation {
+  string path = 1;
+  string layer = 2;
+}
+
+// Component is a package the scanner found.
+message Component {
+  string name = 1;
+  string version = 2;
+  string type = 3;
+  string purl = 4;
+  // licenses are SPDX expressions ("MIT OR Apache-2.0") or, when the
+  // scanner found no SPDX license, the name it found.
+  repeated string licenses = 5;
+  repeated ComponentLocation locations = 6;
+  // license_ids are the licenses the expressions name, each once.
+  repeated string license_ids = 7;
+  // violations are the license rules of the watches covering the item's
+  // repository that the component violates, ignore rules applied.
+  repeated LicenseViolation violations = 8;
+}
+
+// LicenseViolation is a license rule a component violates.
+message LicenseViolation {
+  // license is the expression evaluated, empty for a component without one.
+  string license = 1;
+  string watch = 2;
+  string policy = 3;
+  string rule = 4;
+  bool fail_build = 5;
+  bool block_download = 6;
+}
+
+message GetItemSbomResponse {
+  string source = 1;
+  repeated Component components = 2;
+}
+
+// FindingOccurrence is a finding with one file that has it.
+message FindingOccurrence {
+  string id = 1;
+  Severity severity = 2;
+  string package_name = 3;
+  string package_version = 4;
+  string summary = 5;
+  repeated string cves = 6;
+  repeated string fixed_versions = 7;
+  string repository = 8;
+  string path = 9;
+  // epss is the highest exploit probability of its CVEs; unset when unknown.
+  optional double epss = 10;
+  // kev says whether any of its CVEs is known to be exploited.
+  bool kev = 11;
+  // malicious marks a malicious package rather than a vulnerability.
+  bool malicious = 12;
+  // reachability is "reachable", "not_reachable" or "unknown".
+  string reachability = 13;
+}
+
+message ListFindingsRequest {
+  // severity is exact; unspecified for all.
+  Severity severity = 1;
+  string query = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+  // repository limits the findings to content in one repository.
+  string repository = 5;
+  // purl_type is the package URL type (npm, maven, pypi, golang, deb, …).
+  string purl_type = 6;
+  // fixable_only keeps findings with a fixed version.
+  bool fixable_only = 7;
+  // kev_only keeps findings whose CVEs are known to be exploited (CISA KEV).
+  bool kev_only = 8;
+  // malicious_only keeps malicious packages (MAL- advisories).
+  bool malicious_only = 9;
+}
+
+message ListFindingsResponse {
+  repeated FindingOccurrence findings = 1;
+  int64 total = 2;
+}
+
+// CveSummary is a CVE findings name, with how much it affects.
+message CveSummary {
+  string id = 1;
+  string title = 2;
+  // severity is that of the most severe finding naming the CVE.
+  Severity severity = 3;
+  google.protobuf.Timestamp published = 4;
+  optional double cvss_score = 5;
+  string cvss_version = 6;
+  optional double epss = 7;
+  optional double epss_percentile = 8;
+  bool kev = 9;
+  bool ransomware = 10;
+  string exploitation = 11;
+  int64 artifacts = 12;
+  int64 packages = 13;
+}
+
+// CveFeed says when a feed was last read.
+message CveFeed {
+  string name = 1;
+  string version = 2;
+  google.protobuf.Timestamp last_fetched_at = 3;
+}
+
+message ListCvesRequest {
+  string query = 1;
+  bool kev_only = 2;
+  double min_epss = 3;
+  // severity is exact; unspecified for all.
+  Severity severity = 4;
+  // sort: epss (default), cvss, published, affected or id.
+  string sort = 5;
+  int32 page = 6;
+  int32 page_size = 7;
+}
+
+message ListCvesResponse {
+  repeated CveSummary cves = 1;
+  int64 total = 2;
+  repeated CveFeed feeds = 3;
+}
+
+// AffectedFile is a file a CVE affects.
+message AffectedFile {
+  string finding = 1;
+  Severity severity = 2;
+  string package_name = 3;
+  string package_version = 4;
+  string purl = 5;
+  repeated string fixed_versions = 6;
+  string repository = 7;
+  string path = 8;
+}
+
+// Cve is everything known about one CVE.
+message Cve {
+  CveSummary summary = 1;
+  string description = 2;
+  string state = 3;
+  google.protobuf.Timestamp updated = 4;
+  repeated string cwes = 5;
+  repeated string references = 6;
+  string cvss_vector = 7;
+  string cvss_source = 8;
+  string automatable = 9;
+  string technical_impact = 10;
+  google.protobuf.Timestamp epss_date = 11;
+  google.protobuf.Timestamp kev_added = 12;
+  google.protobuf.Timestamp kev_due = 13;
+  string kev_action = 14;
+  google.protobuf.Timestamp record_checked = 15;
+  repeated AffectedFile affected = 16;
+}
+
+message GetCveRequest {
+  string id = 1;
+}
+
+message GetCveResponse {
+  Cve cve = 1;
+}
+
+// PolicyRule turns matching findings into violations.
+message PolicyRule {
+  string name = 1;
+  int32 priority = 2;
+  // Security rules: min_severity or a CVSS range.
+  Severity min_severity = 3;
+  optional double cvss_from = 4;
+  optional double cvss_to = 5;
+  bool fix_version_only = 6;
+  // License rules: allowed or banned licenses.
+  repeated string allowed_licenses = 7;
+  repeated string banned_licenses = 8;
+  optional bool allow_unknown = 9;
+  bool fail_build = 10;
+  bool block_download = 11;
+  bool block_unscanned = 12;
+  // malicious matches malicious packages (MAL- advisories) only, in place
+  // of min_severity or a CVSS range.
+  bool malicious = 13;
+  // secrets matches secrets found in content; misconfigurations
+  // misconfigurations, at or above min_severity when it is set.
+  bool secrets = 14;
+  bool misconfigurations = 15;
+  // condition is a CEL expression over the finding or issue (id, cves,
+  // severity, cvss, fixable, malicious, package_name, version, purl, analyzer,
+  // rule, file, eol, unmaintained, reachable, secret_live) and where it was found (repository,
+  // path, build). It narrows the rule's criterion, or alone is the
+  // criterion.
+  string condition = 16;
+  // end_of_life matches components past or near end of life, at or above
+  // min_severity when it is set; unmaintained matches deprecated and
+  // unmaintained packages.
+  bool end_of_life = 17;
+  bool unmaintained = 18;
+  // ignore_unreachable skips vulnerabilities govulncheck found no call path
+  // to.
+  bool ignore_unreachable = 19;
+  // live_secrets matches secrets their provider still accepts.
+  bool live_secrets = 20;
+}
+
+// PolicyKind is what a policy's rules look at.
+enum PolicyKind {
+  POLICY_KIND_UNSPECIFIED = 0;
+  POLICY_KIND_SECURITY = 1;
+  POLICY_KIND_LICENSE = 2;
+}
+
+// Policy is an ordered list of rules of one kind.
+message Policy {
+  string name = 1;
+  PolicyKind kind = 2;
+  string description = 3;
+  repeated PolicyRule rules = 4;
+}
+
+message ListPoliciesRequest {}
+
+message ListPoliciesResponse {
+  repeated Policy policies = 1;
+}
+
+message PutPolicyRequest {
+  Policy policy = 1;
+}
+
+message PutPolicyResponse {}
+
+message DeletePolicyRequest {
+  string name = 1;
+}
+
+message DeletePolicyResponse {}
+
+// WatchScopeKind is what a watch scope covers.
+enum WatchScopeKind {
+  WATCH_SCOPE_KIND_UNSPECIFIED = 0;
+  WATCH_SCOPE_KIND_REPOSITORY = 1;
+  WATCH_SCOPE_KIND_BUILD = 2;
+}
+
+// WatchScope is what a watch covers of one kind of resource: all of them,
+// or some by name.
+message WatchScope {
+  WatchScopeKind kind = 1;
+  bool all = 2;
+  repeated string names = 3;
+}
+
+// Watch applies policies to repositories and builds.
+message Watch {
+  string name = 1;
+  string description = 2;
+  bool active = 3;
+  repeated WatchScope scopes = 4;
+  // policies are policy names.
+  repeated string policies = 5;
+}
+
+message ListWatchesRequest {}
+
+message ListWatchesResponse {
+  repeated Watch watches = 1;
+}
+
+message PutWatchRequest {
+  Watch watch = 1;
+}
+
+message PutWatchResponse {}
+
+message DeleteWatchRequest {
+  string name = 1;
+}
+
+message DeleteWatchResponse {}
+
+// IgnoreRule ignores violations matching every non-empty filter.
+message IgnoreRule {
+  string id = 1;
+  string notes = 2;
+  google.protobuf.Timestamp expires = 3;
+  repeated string vulnerabilities = 4;
+  repeated string cves = 5;
+  repeated string licenses = 6;
+  repeated string watches = 7;
+  repeated string policies = 8;
+  // packages are package URLs (pkg:npm/lodash@4.17.15); one without a
+  // version matches every version.
+  repeated string packages = 9;
+  // artifact_paths match "<repository>/<path>" prefixes.
+  repeated string artifact_paths = 10;
+  repeated IgnoredBuild builds = 11;
+}
+
+// IgnoredBuild names a build, and optionally one run of it.
+message IgnoredBuild {
+  string name = 1;
+  // number is empty for every run.
+  string number = 2;
+}
+
+message ListIgnoreRulesRequest {}
+
+message ListIgnoreRulesResponse {
+  repeated IgnoreRule rules = 1;
+}
+
+message CreateIgnoreRuleRequest {
+  IgnoreRule rule = 1;
+}
+
+message CreateIgnoreRuleResponse {
+  IgnoreRule rule = 1;
+}
+
+message DeleteIgnoreRuleRequest {
+  string id = 1;
+}
+
+message DeleteIgnoreRuleResponse {}
+
+message ScanBuildRunRequest {
+  // project is the build's project; empty for builds outside projects.
+  string project = 1;
+  string name = 2;
+  string number = 3;
+}
+
+message ScanBuildRunResponse {}
+
+message GetBuildRunScanRequest {
+  string project = 1;
+  string name = 2;
+  string number = 3;
+}
+
+// PolicyViolation is a policy rule a finding violates under a watch.
+message PolicyViolation {
+  string watch = 1;
+  string policy = 2;
+  string rule = 3;
+  // finding_id and purl name the finding and its package.
+  string finding_id = 4;
+  string purl = 5;
+  bool fail_build = 6;
+  // block_download is set when the rule blocks downloads.
+  bool block_download = 7;
+}
+
+message GetBuildRunScanResponse {
+  // scan holds the status and the findings of the dependencies and of the
+  // artifacts' own scans.
+  ItemScan scan = 1;
+  repeated PolicyViolation violations = 2;
+  // fail_build is set when a violated rule fails builds.
+  bool fail_build = 3;
+}
+
+message ScanPackagesRequest {
+  // purls are the packages, at most 10000.
+  repeated string purls = 1;
+  // watches name the watches whose policies apply.
+  repeated string watches = 2;
+  // repository applies the watches covering that repository too: what
+  // downloading the packages through it would meet.
+  string repository = 3;
+}
+
+message ScanPackagesResponse {
+  string id = 1;
+}
+
+message GetPackagesScanRequest {
+  string id = 1;
+}
+
+message GetPackagesScanResponse {
+  ItemScan scan = 1;
+  repeated PolicyViolation violations = 2;
+  bool fail_build = 3;
+  // block_download is set when a violated rule blocks downloads.
+  bool block_download = 4;
+}
+
+// VexFormat is the format of a VEX document.
+enum VexFormat {
+  // VEX_FORMAT_UNSPECIFIED is OpenVEX.
+  VEX_FORMAT_UNSPECIFIED = 0;
+  VEX_FORMAT_OPENVEX = 1;
+  // VEX_FORMAT_CYCLONEDX is a CycloneDX 1.6 document of vulnerabilities and
+  // their analysis.
+  VEX_FORMAT_CYCLONEDX = 2;
+}
+
+message ExportVexRequest {
+  VexFormat format = 1;
+  // include_unreachable also states the vulnerabilities govulncheck found no
+  // call path to, per scanned file.
+  bool include_unreachable = 2;
+}
+
+message ExportVexResponse {
+  // document is the VEX document (JSON) in the format asked for.
+  string document = 1;
+  // skipped counts the rules VEX cannot express (no vulnerability or no
+  // package), and expired ones.
+  int32 skipped = 2;
+}
+
+message ImportVexRequest {
+  // document is an OpenVEX or CycloneDX document (JSON).
+  string document = 1;
+}
+
+message ImportVexResponse {
+  repeated IgnoreRule rules = 1;
+  // skipped counts the statements left out: other statuses, and those
+  // naming no package URL.
+  int32 skipped = 2;
+}
+
+message ExplainDownloadRequest {
+  string repository = 1;
+  string path = 2;
+}
+
+message ExplainDownloadResponse {
+  bool blocked = 1;
+  string reason = 2;
+  // policy names the policy, or quarantine.
+  string policy = 3;
+  string watch = 4;
+  // rule names the policy's rule, the quarantine state, or unscanned.
+  string rule = 5;
+}
+
+message CheckPackageRequest {
+  // purl is the package URL with its version, for example
+  // pkg:npm/lodash@4.17.21.
+  string purl = 1;
+  // repository is where the package would come from; empty checks the
+  // malicious catalog and every active watch.
+  string repository = 2;
+}
+
+enum PackageRefusalKind {
+  PACKAGE_REFUSAL_KIND_UNSPECIFIED = 0;
+  PACKAGE_REFUSAL_KIND_MALICIOUS = 1;
+  // PACKAGE_REFUSAL_KIND_NOT_OFFERED: the repository's metadata leaves the
+  // version out, or does not have it.
+  PACKAGE_REFUSAL_KIND_NOT_OFFERED = 2;
+  PACKAGE_REFUSAL_KIND_POLICY = 3;
+}
+
+message PackageRefusal {
+  PackageRefusalKind kind = 1;
+  string reason = 2;
+  string policy = 3;
+  string watch = 4;
+  string rule = 5;
+}
+
+message CheckPackageResponse {
+  bool allowed = 1;
+  repeated PackageRefusal refusals = 2;
+  // risks are the version's operational risks (end of life, deprecated,
+  // unmaintained); they refuse it only through a policy.
+  repeated OperationalRisk risks = 3;
+}

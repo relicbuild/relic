@@ -1,0 +1,29 @@
+{
+  "rclass": "local",
+  "key": "example-yum-local",
+  "projectKey": "example-projectKey",
+  "environments": [
+    "DEV"
+  ],
+  "packageType": "yum",
+  "description": "example-description",
+  "notes": "example-notes",
+  "includesPattern": "**/*",
+  "excludesPattern": "tmp/**",
+  "repoLayoutRef": "simple-default",
+  "blackedOut": true,
+  "xrayIndex": true,
+  "propertySets": [
+    "artifactory"
+  ],
+  "downloadRedirect": true,
+  "priorityResolution": true,
+  "cdnRedirect": true,
+  "primaryKeyPairRef": "example-primaryKeyPairRef",
+  "secondaryKeyPairRef": "example-secondaryKeyPairRef",
+  "archiveBrowsingEnabled": true,
+  "yumRootDepth": 3,
+  "calculateYumMetadata": true,
+  "enableFileListsIndexing": true,
+  "yumGroupFileNames": "groups.xml"
+}

@@ -1,0 +1,14 @@
+NAME:
+   jf config - Server configuration commands
+
+USAGE:
+   jf config command [command options] [arguments...]
+
+COMMANDS:
+   add         Adds a server configuration.
+   remove, rm  Removes a server configuration.
+   show, s     Shows the stored configuration.
+   use         Sets the active server.
+
+OPTIONS:
+   --help, -h  show help

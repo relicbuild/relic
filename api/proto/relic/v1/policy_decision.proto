@@ -1,0 +1,93 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/options.proto";
+import "relic/v1/scan.proto";
+
+// PolicyDecisionService lists the policy decisions that blocked downloads,
+// builds and promotions, and previews what a policy would violate.
+service PolicyDecisionService {
+  rpc ListPolicyDecisions(ListPolicyDecisionsRequest) returns (ListPolicyDecisionsResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/policy-decisions"
+    };
+  }
+  // PreviewPolicy lists the scanned files whose stored findings a policy
+  // would violate, without storing the policy.
+  rpc PreviewPolicy(PreviewPolicyRequest) returns (PreviewPolicyResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      post: "/api/v1/policies:preview"
+      body: "*"
+    };
+  }
+}
+
+enum PolicyDecisionKind {
+  POLICY_DECISION_KIND_UNSPECIFIED = 0;
+  POLICY_DECISION_KIND_DOWNLOAD = 1;
+  POLICY_DECISION_KIND_BUILD = 2;
+  POLICY_DECISION_KIND_RELEASE = 3;
+}
+
+// PolicyDecision is a decision that blocked something, counted each time it
+// was taken.
+message PolicyDecision {
+  PolicyDecisionKind kind = 1;
+  // subject is <repository>/<path>, <build>/<number> or <release>/<version>.
+  string subject = 2;
+  // policy names the policy, the quarantine or the promotion gate.
+  string policy = 3;
+  string watch = 4;
+  // rule names the policy's rule, the quarantine state, or the environment
+  // of a promotion.
+  string rule = 5;
+  string reason = 6;
+  // actor is who the latest decision was for.
+  string actor = 7;
+  int64 count = 8;
+  google.protobuf.Timestamp first_seen = 9;
+  google.protobuf.Timestamp last_seen = 10;
+}
+
+message ListPolicyDecisionsRequest {
+  // kind filters by kind; unspecified lists every kind.
+  PolicyDecisionKind kind = 1;
+  // limit defaults to 500.
+  int32 limit = 2;
+}
+
+message ListPolicyDecisionsResponse {
+  repeated PolicyDecision decisions = 1;
+}
+
+message PreviewPolicyRequest {
+  Policy policy = 1;
+  // repositories limits the preview; empty covers every repository.
+  repeated string repositories = 2;
+  // limit defaults to 1000.
+  int32 limit = 3;
+}
+
+// PolicyPreviewHit is a stored file the policy would raise a violation on.
+message PolicyPreviewHit {
+  string repository = 1;
+  string path = 2;
+  string sha256 = 3;
+  string rule = 4;
+  // issue names the vulnerability, analyzer rule or license, and where.
+  string issue = 5;
+  bool fail_build = 6;
+  bool block_download = 7;
+}
+
+message PreviewPolicyResponse {
+  repeated PolicyPreviewHit hits = 1;
+  // truncated is set when the limit, or the number of files a preview
+  // reads, was reached.
+  bool truncated = 2;
+}

@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/options.proto";
+
+// QuarantineService lists the files quarantined remote repositories hold, and
+// releases or rejects them.
+service QuarantineService {
+  rpc ListQuarantined(ListQuarantinedRequest) returns (ListQuarantinedResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/quarantine"
+    };
+  }
+  // ReleaseQuarantined serves a held file whatever its scan says.
+  rpc ReleaseQuarantined(ReleaseQuarantinedRequest) returns (ReleaseQuarantinedResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      post: "/api/v1/quarantine:release"
+      body: "*"
+    };
+  }
+  // RejectQuarantined never serves a file, whatever its scan says.
+  rpc RejectQuarantined(RejectQuarantinedRequest) returns (RejectQuarantinedResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      post: "/api/v1/quarantine:reject"
+      body: "*"
+    };
+  }
+}
+
+enum QuarantineState {
+  QUARANTINE_STATE_UNSPECIFIED = 0;
+  // QUARANTINE_STATE_AWAITING_SCAN: Relic Scan has not scanned the file yet.
+  QUARANTINE_STATE_AWAITING_SCAN = 1;
+  // QUARANTINE_STATE_SCAN_FAILED: the scan failed; an administrator decides.
+  QUARANTINE_STATE_SCAN_FAILED = 2;
+  QUARANTINE_STATE_MALICIOUS = 3;
+  QUARANTINE_STATE_REJECTED = 4;
+  // QUARANTINE_STATE_SCAN_SKIPPED: Relic Scan skipped the file, too large to
+  // scan or no longer stored; an administrator decides.
+  QUARANTINE_STATE_SCAN_SKIPPED = 5;
+}
+
+// QuarantinedFile is a file a quarantined remote repository holds.
+message QuarantinedFile {
+  string repository = 1;
+  string path = 2;
+  string sha256 = 3;
+  google.protobuf.Timestamp cached = 4;
+  QuarantineState state = 5;
+  // reason is a rejection's reason.
+  string reason = 6;
+  string decided_by = 7;
+}
+
+message ListQuarantinedRequest {}
+
+message ListQuarantinedResponse {
+  repeated QuarantinedFile files = 1;
+}
+
+message ReleaseQuarantinedRequest {
+  string repository = 1;
+  string path = 2;
+  string reason = 3;
+}
+
+message ReleaseQuarantinedResponse {}
+
+message RejectQuarantinedRequest {
+  string repository = 1;
+  string path = 2;
+  string reason = 3;
+}
+
+message RejectQuarantinedResponse {}

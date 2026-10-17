@@ -1,0 +1,256 @@
+version: '3'
+
+vars:
+  VERSION:
+    sh: git describe --tags --always --dirty
+  BIN_DIR: '{{.BIN_DIR | default (print .HOME "/.local/bin")}}'
+  COMPOSE: docker compose -f deploy/docker-compose.yml
+  DATA_DIR: '{{.DATA_DIR | default (print .HOME "/.local/share/relic-dev")}}'
+  PORT: '{{.PORT | default "8090"}}'
+  METRICS_PORT: '{{.METRICS_PORT | default "8092"}}'
+  IMAGE: ghcr.io/relicbuild/relic:local
+  DEV_KEY: cmVsaWMtZGV2LXNlY3JldHMta2V5LW5vdC1wcm9kISE=
+  TEST_PACKAGE_PARALLELISM:
+    sh: echo $(( ($(getconf _NPROCESSORS_ONLN) + 3) / 4 ))
+
+env:
+  RYUK_RECONNECTION_TIMEOUT: 10m
+
+tasks:
+  default:
+    cmds:
+      - task --list-all
+    silent: true
+
+  install:
+    desc: Build relic with the web UI into BIN_DIR
+    deps: [ui]
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version={{.VERSION}}" -o {{.BIN_DIR}}/relic ./cmd/relic
+      - '{{.BIN_DIR}}/relic --version'
+
+  cli:install:
+    desc: Build relic without the web UI into BIN_DIR
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - CGO_ENABLED=0 go build -tags noui -trimpath -ldflags "-s -w -X main.version={{.VERSION}}" -o {{.BIN_DIR}}/relic ./cmd/relic
+      - '{{.BIN_DIR}}/relic --version'
+
+  ui:
+    desc: Build the web UI into internal/app/ui/dist
+    dir: web
+    sources:
+      - app/**/*
+      - content/**/*
+      - public/**/*
+      - nuxt.config.ts
+      - package.json
+      - pnpm-lock.yaml
+    generates:
+      - ../internal/app/ui/dist/index.html
+    cmds:
+      - pnpm install --frozen-lockfile
+      - pnpm generate
+      - find ../internal/app/ui/dist -mindepth 1 ! -name .gitkeep -delete
+      - cp -r .output/public/. ../internal/app/ui/dist/
+
+  up:
+    desc: Start PostgreSQL and SeaweedFS
+    cmds:
+      - '{{.COMPOSE}} up -d --wait postgresql seaweedfs-s3 seaweedfs-create-buckets'
+
+  down:
+    desc: Stop the Compose stack
+    cmds:
+      - '{{.COMPOSE}} down'
+
+  stack:
+    desc: Run the full Compose stack
+    cmds:
+      - '{{.COMPOSE}} up --build'
+
+  run:
+    desc: Run a single node on SQLite and the filesystem store in DATA_DIR
+    deps: [ui]
+    env:
+      RELIC_HTTP_LISTEN_ADDRESS: 127.0.0.1:{{.PORT}}
+      RELIC_METRICS_LISTEN_ADDRESS: 127.0.0.1:{{.METRICS_PORT}}
+      RELIC_ADMIN_PASSWORD: password
+      RELIC_ENCRYPTION_KEY: '{{.DEV_KEY}}'
+      RELIC_DATABASE_URL: sqlite://{{.DATA_DIR}}/relic.db
+      RELIC_OBJECT_STORAGE_TYPE: filesystem
+      RELIC_OBJECT_STORAGE_PATH: '{{.DATA_DIR}}/objects'
+      RELIC_SCAN_VULNERABILITY_DATABASE_DIR: '{{.DATA_DIR}}/grype'
+      RELIC_TLS_DIRECTORY: '{{.DATA_DIR}}/tls'
+    cmds:
+      - mkdir -p {{.DATA_DIR}}
+      - go run ./cmd/relic server start --worker
+
+  run:postgres:
+    desc: Run the server and worker against the Compose PostgreSQL and SeaweedFS
+    deps: [ui, up]
+    env:
+      RELIC_HTTP_LISTEN_ADDRESS: 127.0.0.1:{{.PORT}}
+      RELIC_METRICS_LISTEN_ADDRESS: 127.0.0.1:{{.METRICS_PORT}}
+      RELIC_ADMIN_PASSWORD: password
+      RELIC_ENCRYPTION_KEY: '{{.DEV_KEY}}'
+      RELIC_DATABASE_URL: postgres://relic:relic@localhost:5432/relic?sslmode=disable
+      RELIC_OBJECT_STORAGE_ENDPOINT: http://localhost:8333
+      RELIC_OBJECT_STORAGE_ACCESS_KEY: relic-dev-access-key
+      RELIC_OBJECT_STORAGE_SECRET_KEY: relic-dev-secret-key-not-for-production
+      RELIC_SCAN_VULNERABILITY_DATABASE_DIR: '{{.DATA_DIR}}/grype'
+      RELIC_TLS_DIRECTORY: '{{.DATA_DIR}}/tls'
+    cmds:
+      - go run ./cmd/relic server start --worker
+
+  run:docker:
+    desc: Build the image and run it as one container on SQLite and volumes
+    cmds:
+      - docker build -t {{.IMAGE}} .
+      - >-
+        docker run --rm --name relic-dev -p {{.PORT}}:8090
+        -e RELIC_ADMIN_PASSWORD=password -e RELIC_ENCRYPTION_KEY={{.DEV_KEY}}
+        -e RELIC_DATABASE_URL=sqlite:///var/lib/relic/data/relic.db
+        -e RELIC_OBJECT_STORAGE_TYPE=filesystem -e RELIC_OBJECT_STORAGE_PATH=/var/lib/relic/data/objects
+        -v relic-dev-data:/var/lib/relic/data -v relic-dev-grype:/var/lib/relic/grype -v relic-dev-tls:/etc/relic/tls
+        {{.IMAGE}} server start --worker
+
+  service:
+    desc: Install relic and run it as a systemd user service
+    deps: [install]
+    cmds:
+      - '{{.BIN_DIR}}/relic server setup {{.CLI_ARGS}}'
+
+  clean:
+    desc: Delete DATA_DIR and the run:docker volumes
+    cmds:
+      - rm -rf {{.DATA_DIR}}
+      - docker volume rm -f relic-dev-data relic-dev-grype relic-dev-tls
+
+  web:
+    desc: Run the web UI dev server
+    dir: web
+    env:
+      NODE_EXTRA_CA_CERTS: '{{.DATA_DIR}}/tls/ca.crt'
+    cmds:
+      - pnpm dev
+
+  web:site:
+    desc: Run the relic.build site dev server
+    dir: web
+    cmds:
+      - pnpm dev:site
+
+  site:
+    desc: Build the relic.build site into web/site/.output/public
+    dir: web
+    cmds:
+      - pnpm install --frozen-lockfile
+      - pnpm generate:site
+
+  gen:
+    desc: Regenerate protos, queries, routes, dashboards and the metrics reference
+    cmds:
+      - go tool -modfile=tools/protogen/go.mod buf generate
+      - cd web && pnpm gen:api
+      - sqlc generate
+      - go run ./tools/sqlitebridge
+      - go run ./api/adapters/artifactory/compat/routes
+      - go run ./tools/dashgen
+      - go run ./tools/metricsdoc
+
+  fmt:
+    desc: Unfold and format changed Go files
+    cmds:
+      - go tool unfold -changed -w
+      - golangci-lint fmt ./...
+
+  lint:
+    desc: Lint Go, protos and the web UI
+    cmds:
+      - go tool -modfile=tools/protogen/go.mod buf lint
+      - golangci-lint run ./...
+      - go tool unfold -changed
+      - cd web && pnpm lint && pnpm typecheck
+
+  test:
+    desc: Unit tests
+    cmds:
+      - go test ./...
+      - cd web && pnpm test
+
+  test:integration:
+    desc: Integration tests on PostgreSQL, and on SQLite for the packages that use a test database, both at once, each a quarter of the CPUs wide
+    deps:
+      - test:integration:postgresql
+      - test:integration:sqlite
+
+  test:integration:postgresql:
+    internal: true
+    cmds:
+      - go test -p {{.TEST_PACKAGE_PARALLELISM}} -tags=integration ./...
+
+  test:integration:sqlite:
+    internal: true
+    cmds:
+      - RELIC_TEST_DATABASE=sqlite go test -p {{.TEST_PACKAGE_PARALLELISM}} -tags=integration $(test/database-packages.sh)
+
+  test:race:
+    desc: Integration tests on PostgreSQL and SQLite with the race detector, both at once, each a quarter of the CPUs wide
+    deps:
+      - test:race:postgresql
+      - test:race:sqlite
+
+  test:race:postgresql:
+    internal: true
+    cmds:
+      - go test -p {{.TEST_PACKAGE_PARALLELISM}} -race -tags=integration ./...
+
+  test:race:sqlite:
+    internal: true
+    cmds:
+      - RELIC_TEST_DATABASE=sqlite go test -p {{.TEST_PACKAGE_PARALLELISM}} -race -tags=integration $(test/database-packages.sh)
+
+  test:core:
+    desc: "Tier 1: the integration suite, then the core scenarios, the SDK suite and the UI e2e on the single binary"
+    cmds:
+      - task: test:integration
+      - task: e2e:core
+
+  e2e:core:
+    internal: true
+    cmds:
+      - test/tier.sh core
+
+  test:platform:
+    desc: "Tier 2: the platform scenarios on the Compose stack (PostgreSQL, SeaweedFS, a separate worker)"
+    cmds:
+      - test/tier.sh platform
+
+  test:k8s:
+    desc: "The k8s tier: one kind cluster, the Helm chart, Kubernetes pulls, a rolling restart and an upgrade, HA, and the restore drill"
+    cmds:
+      - test/tier.sh k8s
+
+  test:all:
+    desc: "The full gate before a merge request: the integration suite with the race detector, then tiers 1 and 2 at once"
+    cmds:
+      - task: test:race
+      - task: e2e:core-and-platform
+
+  e2e:core-and-platform:
+    internal: true
+    deps:
+      - e2e:core
+      - test:platform
+
+  e2e:
+    desc: Package client end-to-end scenarios
+    cmds:
+      - RELIC_PORT=28090 api/adapters/artifactory/compat/e2e/run.sh {{.CLI_ARGS}}
+
+  release:snapshot:
+    desc: Build every release archive into dist/ without publishing
+    cmds:
+      - goreleaser release --snapshot --clean --skip=sign

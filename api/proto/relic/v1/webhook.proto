@@ -1,0 +1,158 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/options.proto";
+
+// WebhookService subscribes URLs to Relic's events. Each event is queued for
+// every enabled webhook subscribed to its type and delivered by the worker:
+// a POST signed with HMAC-SHA256 when the webhook has a secret
+// (X-Relic-Signature: sha256=<hex>), tried up to 8 times with backoff.
+service WebhookService {
+  rpc ListWebhooks(ListWebhooksRequest) returns (ListWebhooksResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/webhooks"
+    };
+  }
+  rpc GetWebhook(GetWebhookRequest) returns (GetWebhookResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/webhooks/{name}"
+    };
+  }
+  rpc PutWebhook(PutWebhookRequest) returns (PutWebhookResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      put: "/api/v1/webhooks/{webhook.name}"
+      body: "webhook"
+    };
+  }
+  // DeleteWebhook removes a webhook and its deliveries.
+  rpc DeleteWebhook(DeleteWebhookRequest) returns (DeleteWebhookResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      delete: "/api/v1/webhooks/{name}"
+    };
+  }
+  // ListWebhookDeliveries lists the latest deliveries, newest first.
+  rpc ListWebhookDeliveries(ListWebhookDeliveriesRequest) returns (ListWebhookDeliveriesResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/webhook-deliveries"
+    };
+  }
+  // PingWebhook queues a webhook.ping event for one webhook.
+  rpc PingWebhook(PingWebhookRequest) returns (PingWebhookResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      post: "/api/v1/webhooks/{name}:ping"
+      body: "*"
+    };
+  }
+}
+
+enum WebhookFormat {
+  WEBHOOK_FORMAT_UNSPECIFIED = 0;
+  // WEBHOOK_FORMAT_JSON posts the event as JSON: id, type, subject, actor,
+  // time and data.
+  WEBHOOK_FORMAT_JSON = 1;
+  // WEBHOOK_FORMAT_SLACK posts a Slack message ({"text": ...}) to an
+  // incoming webhook URL.
+  WEBHOOK_FORMAT_SLACK = 2;
+}
+
+// Webhook subscribes a URL to event types.
+message Webhook {
+  string name = 1;
+  string url = 2;
+  // events are event types: artifact.deployed, artifact.deleted,
+  // scan.finished, download.blocked, release.promoted, quarantine.released,
+  // quarantine.rejected, or * for all.
+  repeated string events = 3;
+  WebhookFormat format = 4;
+  bool enabled = 5;
+  string description = 6;
+  // secret signs deliveries; write-only, kept when left empty.
+  string secret = 7;
+  // has_secret reports whether deliveries are signed.
+  bool has_secret = 8;
+  google.protobuf.Timestamp created = 9;
+  google.protobuf.Timestamp updated = 10;
+}
+
+enum WebhookDeliveryStatus {
+  WEBHOOK_DELIVERY_STATUS_UNSPECIFIED = 0;
+  // WEBHOOK_DELIVERY_STATUS_PENDING: queued, or waiting for a retry.
+  WEBHOOK_DELIVERY_STATUS_PENDING = 1;
+  WEBHOOK_DELIVERY_STATUS_DELIVERED = 2;
+  // WEBHOOK_DELIVERY_STATUS_FAILED: every attempt failed.
+  WEBHOOK_DELIVERY_STATUS_FAILED = 3;
+}
+
+// WebhookDelivery is one event sent, or to be sent, to a webhook.
+message WebhookDelivery {
+  string id = 1;
+  string webhook = 2;
+  string event = 3;
+  // payload is the event as JSON.
+  string payload = 4;
+  WebhookDeliveryStatus status = 5;
+  int32 attempts = 6;
+  google.protobuf.Timestamp next_attempt = 7;
+  // response_status is the receiver's last HTTP status, 0 without one.
+  int32 response_status = 8;
+  string error = 9;
+  google.protobuf.Timestamp created = 10;
+  google.protobuf.Timestamp delivered = 11;
+}
+
+message ListWebhooksRequest {}
+
+message ListWebhooksResponse {
+  repeated Webhook webhooks = 1;
+}
+
+message GetWebhookRequest {
+  string name = 1;
+}
+
+message GetWebhookResponse {
+  Webhook webhook = 1;
+}
+
+message PutWebhookRequest {
+  Webhook webhook = 1;
+}
+
+message PutWebhookResponse {
+  Webhook webhook = 1;
+}
+
+message DeleteWebhookRequest {
+  string name = 1;
+}
+
+message DeleteWebhookResponse {}
+
+message ListWebhookDeliveriesRequest {
+  // webhook filters by webhook; empty lists every webhook's.
+  string webhook = 1;
+  // limit defaults to 100.
+  int32 limit = 2;
+}
+
+message ListWebhookDeliveriesResponse {
+  repeated WebhookDelivery deliveries = 1;
+}
+
+message PingWebhookRequest {
+  string name = 1;
+}
+
+message PingWebhookResponse {
+  // delivery is the queued delivery's id.
+  string delivery = 1;
+}

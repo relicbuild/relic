@@ -1,0 +1,21 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+rule_files:
+  - /etc/prometheus/rules/relic-rules.yaml
+scrape_configs:
+  - job_name: relic-server
+    static_configs:
+      - targets: ["relic-server:8091"]
+        labels: {component: server}
+      - targets: ["relic-worker:8091"]
+        labels: {component: worker}
+  - job_name: seaweedfs
+    static_configs:
+      - targets: ["seaweedfs-master:9324", "seaweedfs-volume-1:9325", "seaweedfs-volume-2:9325", "seaweedfs-filer:9326", "seaweedfs-s3:9327"]
+  - job_name: postgresql
+    static_configs:
+      - targets: ["postgresql-exporter:9187"]
+  - job_name: observability
+    static_configs:
+      - targets: ["prometheus:9090", "tempo:3200", "loki:3100", "alloy:12345"]

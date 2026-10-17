@@ -1,0 +1,22 @@
+{
+  "name": "example-builds",
+  "build": {
+    "include-patterns": [
+      "example-build/**"
+    ],
+    "exclude-patterns": [
+      "example-build/scratch/**"
+    ],
+    "repositories": [
+      "artifactory-build-info"
+    ],
+    "actions": {
+      "users": {
+        "example-ci": [
+          "read",
+          "write"
+        ]
+      }
+    }
+  }
+}

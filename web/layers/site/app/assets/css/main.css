@@ -1,0 +1,46 @@
+@import "tailwindcss" theme(static);
+@import "@nuxt/ui";
+
+@source "../../../content/**/*";
+
+/* The landing page's package orbit (components/landing/PackageOrbit.vue):
+   rings turn, chips turn back to stay upright, and each chip fades out and
+   in to switch between its two names. */
+@theme {
+  --animate-orbit-spin: orbit-spin linear infinite;
+  --animate-orbit-spin-back: orbit-spin-back linear infinite;
+  --animate-orbit-breathe: orbit-breathe 18s ease-in-out infinite;
+  --animate-orbit-face-one: orbit-face-one 18s step-end infinite;
+  --animate-orbit-face-two: orbit-face-two 18s step-end infinite;
+
+  @keyframes orbit-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes orbit-spin-back {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(-360deg); }
+  }
+
+  @keyframes orbit-breathe {
+    0% { opacity: 0; transform: scale(0.94); }
+    6% { opacity: 1; transform: scale(1); }
+    41% { opacity: 1; transform: scale(1); }
+    47% { opacity: 0; transform: scale(0.94); }
+    53% { opacity: 0; transform: scale(0.94); }
+    59% { opacity: 1; transform: scale(1); }
+    94% { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(0.94); }
+  }
+
+  @keyframes orbit-face-one {
+    0%, 46% { opacity: 1; }
+    50%, 100% { opacity: 0; }
+  }
+
+  @keyframes orbit-face-two {
+    0%, 46% { opacity: 0; }
+    50%, 100% { opacity: 1; }
+  }
+}

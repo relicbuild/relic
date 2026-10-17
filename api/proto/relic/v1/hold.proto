@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/options.proto";
+
+// HoldService manages legal holds. A held item, with everything under it,
+// cannot be deleted, moved or overwritten, and cleanup policies skip it.
+service HoldService {
+  rpc ListHolds(ListHoldsRequest) returns (ListHoldsResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/holds"
+    };
+  }
+  // PutHold places a hold on an item, or replaces its reason.
+  rpc PutHold(PutHoldRequest) returns (PutHoldResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      put: "/api/v1/holds"
+      body: "*"
+    };
+  }
+  rpc DeleteHold(DeleteHoldRequest) returns (DeleteHoldResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      delete: "/api/v1/holds"
+    };
+  }
+}
+
+message Hold {
+  string repository = 1;
+  string path = 2;
+  string reason = 3;
+  string created_by = 4;
+  google.protobuf.Timestamp created = 5;
+}
+
+message ListHoldsRequest {}
+
+message ListHoldsResponse {
+  repeated Hold holds = 1;
+}
+
+message PutHoldRequest {
+  string repository = 1;
+  string path = 2;
+  string reason = 3;
+}
+
+message PutHoldResponse {}
+
+message DeleteHoldRequest {
+  string repository = 1;
+  string path = 2;
+}
+
+message DeleteHoldResponse {}

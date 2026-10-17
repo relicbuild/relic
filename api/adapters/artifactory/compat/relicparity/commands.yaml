@@ -1,0 +1,328 @@
+# Each entry has exactly one of:
+#   relic:    the relic command that does it (checked against the command tree)
+#   planned:  the relic command to build; the list of planned entries only
+#             shrinks
+#   none:     why relic needs no command for it
+commands:
+  rt upload:
+    relic: artifact upload
+  rt download:
+    relic: artifact download
+  rt direct-download:
+    relic: artifact download
+  rt search:
+    relic: artifact search
+  rt copy:
+    relic: artifact cp
+  rt move:
+    relic: artifact mv
+  rt delete:
+    relic: artifact rm
+  rt set-props:
+    relic: artifact props set
+  rt delete-props:
+    relic: artifact props delete
+  rt git-lfs-clean:
+    relic: artifact lfs clean
+  rt repo-create:
+    relic: apply
+  rt repo-update:
+    relic: apply
+  rt repo-delete:
+    relic: delete
+  rt user-create:
+    relic: apply
+  rt users-create:
+    relic: apply
+  rt users-delete:
+    relic: delete
+  rt group-create:
+    relic: apply
+  rt group-add-users:
+    relic: apply
+  rt group-delete:
+    relic: delete
+  rt permission-target-create:
+    relic: apply
+  rt permission-target-update:
+    relic: apply
+  rt permission-target-delete:
+    relic: delete
+  rt replication-create:
+    relic: apply
+  rt replication-delete:
+    relic: delete
+  config add:
+    relic: auth login
+  config show:
+    relic: auth context
+  login:
+    relic: auth login
+  access-token-create:
+    relic: auth token create
+  rt access-token-create:
+    relic: auth token create
+  rt ping:
+    relic: auth status
+  rt curl:
+    relic: api
+  xr curl:
+    relic: api
+  api:
+    relic: api
+  api docs:
+    relic: api docs
+  api docs search:
+    relic: api docs
+  api docs describe:
+    relic: api docs describe
+  rt build-publish:
+    relic: build publish
+  rt build-append:
+    relic: build append
+  rt build-add-dependencies:
+    relic: build add-dependencies
+  rt build-add-git:
+    relic: build add-git
+  rt build-collect-env:
+    relic: build collect-env
+  rt build-clean:
+    relic: build clean
+  rt build-discard:
+    relic: build discard
+  rt build-promote:
+    relic: build promote
+  rt build-docker-create:
+    relic: build add-image
+  rt docker-promote:
+    relic: image promote
+  audit:
+    relic: security audit
+  scan:
+    relic: security scan
+  build-scan:
+    relic: build scan
+  curation-audit:
+    relic: security audit
+  malicious-scan:
+    relic: security scan
+  release-bundle-create:
+    relic: release create
+  release-bundle-update:
+    relic: release update
+  release-bundle-finalize:
+    relic: release finalize
+  release-bundle-promote:
+    relic: release promote
+  release-bundle-annotate:
+    relic: release tag
+  release-bundle-search:
+    relic: release list
+  release-bundle-export:
+    relic: release export
+  release-bundle-import:
+    relic: release import
+  release-bundle-delete-local:
+    relic: release delete
+  release-bundle-delete-remote:
+    none: distribution is out of scope (Tier C); Relic keeps no remote copies to delete
+  release-bundle-distribute:
+    none: distribution is out of scope (Tier C)
+
+  evd:
+    none: the group of the evidence commands below
+  evd create-evidence:
+    relic: evidence create
+  evd get-evidence:
+    relic: evidence get
+  evd verify-evidence:
+    relic: evidence verify
+  evd generate-key-pair:
+    relic: evidence keygen
+  npm-config:
+    relic: package setup
+  npm:
+    relic: package setup
+  yarn-config:
+    relic: package setup
+  yarn:
+    relic: package setup
+  pnpm-config:
+    relic: package setup
+  pnpm:
+    relic: package setup
+  mvn-config:
+    relic: package setup
+  mvn:
+    relic: package setup
+  mvnw:
+    relic: package setup
+  gradle-config:
+    relic: package setup
+  gradle:
+    relic: package setup
+  go-config:
+    relic: package setup
+  go:
+    relic: package setup
+  go-publish:
+    relic: package publish go
+  pip-config:
+    relic: package setup
+  pip:
+    relic: package setup
+  pipenv-config:
+    relic: package setup
+  pipenv:
+    relic: package setup
+  poetry-config:
+    relic: package setup
+  poetry:
+    relic: package setup
+  twine:
+    relic: package setup
+  docker:
+    relic: package setup
+  rt podman-push:
+    relic: package setup
+  rt podman-pull:
+    relic: package setup
+  nuget-config:
+    relic: package setup
+  nuget:
+    relic: package setup
+  dotnet-config:
+    relic: package setup
+  dotnet:
+    relic: package setup
+  conan-config:
+    relic: package setup
+  conan:
+    relic: package setup
+  ruby-config:
+    relic: package setup
+  ruby:
+    relic: package setup
+  terraform-config:
+    relic: package setup
+  terraform:
+    relic: package publish terraform
+  helm:
+    relic: package setup
+  cargo:
+    relic: package setup
+  apk:
+    relic: package setup
+  apt:
+    relic: package setup
+  nix:
+    relic: package setup
+  hugging-face:
+    relic: package huggingface
+  hugging-face upload:
+    relic: package huggingface upload
+  hugging-face download:
+    relic: package huggingface download
+  rt transfer-files:
+    relic: import artifactory
+  rt transfer-config:
+    relic: import artifactory
+  rt transfer-config-merge:
+    relic: import artifactory
+  rt transfer-settings:
+    none: local settings of jf's transfer; relic import artifactory takes --workers
+  rt transfer-plugin-install:
+    none: installs JFrog's transfer plugin on the source; relic import artifactory needs nothing there
+
+  apptrust app-create:
+    none: JFrog AppTrust (Tier C); Relic tracks application versions as releases (relic release)
+  apptrust app-update:
+    none: JFrog AppTrust (Tier C); Relic tracks application versions as releases (relic release)
+  apptrust app-delete:
+    none: JFrog AppTrust (Tier C); Relic tracks application versions as releases (relic release)
+  apptrust app-export:
+    none: JFrog AppTrust (Tier C); Relic tracks application versions as releases (relic release)
+  apptrust app-import:
+    none: JFrog AppTrust (Tier C); Relic tracks application versions as releases (relic release)
+  apptrust package-bind:
+    none: JFrog AppTrust (Tier C); Relic tracks application versions as releases (relic release)
+  apptrust package-unbind:
+    none: JFrog AppTrust (Tier C); Relic tracks application versions as releases (relic release)
+  apptrust ping:
+    none: JFrog AppTrust (Tier C); Relic tracks application versions as releases (relic release)
+  apptrust version-create:
+    none: JFrog AppTrust (Tier C); Relic tracks application versions as releases (relic release)
+  apptrust version-promote:
+    none: JFrog AppTrust (Tier C); Relic tracks application versions as releases (relic release)
+  apptrust version-rollback:
+    none: JFrog AppTrust (Tier C); Relic tracks application versions as releases (relic release)
+  apptrust version-release:
+    none: JFrog AppTrust (Tier C); Relic tracks application versions as releases (relic release)
+  apptrust version-delete:
+    none: JFrog AppTrust (Tier C); Relic tracks application versions as releases (relic release)
+  apptrust version-distribute:
+    none: JFrog AppTrust (Tier C); Relic tracks application versions as releases (relic release)
+  apptrust version-delete-remote:
+    none: JFrog AppTrust (Tier C); Relic tracks application versions as releases (relic release)
+  apptrust version-update:
+    none: JFrog AppTrust (Tier C); Relic tracks application versions as releases (relic release)
+  apptrust version-update-sources:
+    none: JFrog AppTrust (Tier C); Relic tracks application versions as releases (relic release)
+  ds release-bundle-create:
+    none: JFrog Distribution v1 (Tier C); Relic releases are signed and exported (relic release export)
+  ds release-bundle-update:
+    none: JFrog Distribution v1 (Tier C); Relic releases are signed and exported (relic release export)
+  ds release-bundle-sign:
+    none: JFrog Distribution v1 (Tier C); Relic releases are signed and exported (relic release export)
+  ds release-bundle-distribute:
+    none: JFrog Distribution v1 (Tier C); Relic releases are signed and exported (relic release export)
+  ds release-bundle-delete:
+    none: JFrog Distribution v1 (Tier C); Relic releases are signed and exported (relic release export)
+  mc jpd-add:
+    none: JFrog Mission Control (Tier C); Relic has no licenses or platform fleet to manage
+  mc jpd-delete:
+    none: JFrog Mission Control (Tier C); Relic has no licenses or platform fleet to manage
+  mc license-acquire:
+    none: JFrog Mission Control (Tier C); Relic has no licenses or platform fleet to manage
+  mc license-deploy:
+    none: JFrog Mission Control (Tier C); Relic has no licenses or platform fleet to manage
+  mc license-release:
+    none: JFrog Mission Control (Tier C); Relic has no licenses or platform fleet to manage
+  pl status:
+    none: JFrog Pipelines (Tier C); Relic is not a CI system
+  pl sync:
+    none: JFrog Pipelines (Tier C); Relic is not a CI system
+  pl sync-status:
+    none: JFrog Pipelines (Tier C); Relic is not a CI system
+  pl trigger:
+    none: JFrog Pipelines (Tier C); Relic is not a CI system
+  pl version:
+    none: JFrog Pipelines (Tier C); Relic is not a CI system
+  worker init:
+    none: JFrog Workers (Tier C); Relic runs no user code
+  worker test-run:
+    none: JFrog Workers (Tier C); Relic runs no user code
+  worker deploy:
+    none: JFrog Workers (Tier C); Relic runs no user code
+  worker execute:
+    none: JFrog Workers (Tier C); Relic runs no user code
+  worker undeploy:
+    none: JFrog Workers (Tier C); Relic runs no user code
+  worker list:
+    none: JFrog Workers (Tier C); Relic runs no user code
+  worker add-secret:
+    none: JFrog Workers (Tier C); Relic runs no user code
+  worker list-event:
+    none: JFrog Workers (Tier C); Relic runs no user code
+  worker edit-schedule:
+    none: JFrog Workers (Tier C); Relic runs no user code
+  worker execution-history:
+    none: JFrog Workers (Tier C); Relic runs no user code
+  exchange-oidc-token:
+    relic: auth login
+  stats:
+    none: JFrog platform usage statistics; relic auth status reports the server
+  sbom-enrich:
+    none: enriches an SBOM with JFrog Xray data; relic security scan --sbom scans one
+  rt oc:
+    none: OpenShift build of JFrog's; not a Relic concern

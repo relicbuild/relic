@@ -1,0 +1,159 @@
+{{- $single := include "relic.singleNode" . }}
+{{- if $single }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "relic.fullname" . }}-data
+  labels: {{- include "relic.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.data.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests: {storage: {{ .Values.data.size }}}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "relic.fullname" . }}-server
+  labels:
+    {{- include "relic.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  {{- if $single }}
+  replicas: 1
+  # The data volume is ReadWriteOnce, and one process at a time writes it.
+  strategy: {type: Recreate}
+  {{- else if not .Values.server.autoscaling.enabled }}
+  replicas: {{ .Values.server.replicas }}
+  {{- end }}
+  selector:
+    matchLabels: {{- include "relic.selector" (dict "root" . "component" "server") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "relic.labels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        checksum/ldap-ca: {{ .Values.ldap.caCertificate | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "relic.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if $single }}
+      # In-flight uploads finish, then running jobs get up to 5 minutes.
+      terminationGracePeriodSeconds: 450
+      {{- else }}
+      terminationGracePeriodSeconds: 120
+      {{- end }}
+      containers:
+        - name: relic
+          image: {{ include "relic.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - server
+            - start
+            {{- if $single }}
+            - --worker
+            {{- end }}
+            {{- if not .Values.tls.enabled }}
+            - --no-tls
+            {{- end }}
+          env:
+            {{- include "relic.env" . | nindent 12 }}
+            {{- if .Values.tls.enabled }}
+            {{- include "relic.tlsEnv" . | nindent 12 }}
+            {{- end }}
+          ports:
+            - {name: {{ include "relic.serverPortName" . }}, containerPort: 8090}
+            {{- if .Values.metrics.enabled }}
+            - {name: metrics, containerPort: 8091}
+            {{- end }}
+          {{- $port := include "relic.serverPortName" . }}
+          {{- $scheme := upper $port }}
+          startupProbe:
+            httpGet: {path: /readyz, port: {{ $port }}, scheme: {{ $scheme }}}
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /readyz, port: {{ $port }}, scheme: {{ $scheme }}}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: {{ $port }}, scheme: {{ $scheme }}}
+            periodSeconds: 20
+          # The Service drops a terminating pod asynchronously: keep accepting
+          # until it has, then shut down gracefully.
+          lifecycle:
+            preStop:
+              sleep: {seconds: 5}
+          {{- if $single }}
+          resources: {{- toYaml .Values.worker.resources | nindent 12 }}
+          {{- else }}
+          resources: {{- toYaml .Values.server.resources | nindent 12 }}
+          {{- end }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - {name: temporary, mountPath: /tmp}
+            {{- if $single }}
+            - {name: data, mountPath: /var/lib/relic/data}
+            - {name: vulnerability-database, mountPath: /var/lib/relic/grype}
+            {{- end }}
+            {{- if .Values.ldap.caCertificate }}
+            - {name: ldap-ca, mountPath: /etc/relic/ldap, readOnly: true}
+            {{- end }}
+            {{- if and .Values.tls.enabled (or .Values.tls.existingSecret (not $single)) }}
+            - {name: tls, mountPath: /etc/relic/tls{{ if .Values.tls.existingSecret }}, readOnly: true{{ end }}}
+            {{- end }}
+      volumes:
+        - name: temporary
+          emptyDir: {sizeLimit: {{ .Values.server.temporaryVolumeSize }}}
+        {{- if $single }}
+        - name: data
+          persistentVolumeClaim: {claimName: {{ include "relic.fullname" . }}-data}
+        - name: vulnerability-database
+          {{- if .Values.worker.vulnerabilityDatabase.persistence }}
+          persistentVolumeClaim: {claimName: {{ include "relic.fullname" . }}-vulnerability-database}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
+        {{- if .Values.ldap.caCertificate }}
+        - name: ldap-ca
+          configMap: {name: {{ include "relic.fullname" . }}-ldap-ca}
+        {{- end }}
+        {{- if and .Values.tls.enabled .Values.tls.existingSecret }}
+        - name: tls
+          secret: {secretName: {{ .Values.tls.existingSecret }}}
+        {{- else if and .Values.tls.enabled (not $single) }}
+        - name: tls
+          emptyDir: {}
+        {{- end }}
+      {{- with .Values.server.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      affinity:
+        {{- if .Values.server.affinity }}
+        {{- toYaml .Values.server.affinity | nindent 8 }}
+        {{- else }}
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels: {{- include "relic.selector" (dict "root" . "component" "server") | nindent 20 }}
+        {{- end }}

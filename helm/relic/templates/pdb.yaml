@@ -1,0 +1,11 @@
+{{- if and .Values.server.podDisruptionBudget.enabled (not (include "relic.singleNode" .)) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "relic.fullname" . }}-server
+  labels: {{- include "relic.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.server.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels: {{- include "relic.selector" (dict "root" . "component" "server") | nindent 6 }}
+{{- end }}

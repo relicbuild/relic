@@ -1,0 +1,179 @@
+{
+  "headers": [
+    {
+      "tool_name": "scancode-toolkit",
+      "tool_version": "32.5.0",
+      "options": {
+        "input": [
+          "/w/src"
+        ],
+        "--json-pp": "/w/out.json",
+        "--license": true,
+        "--only-findings": false,
+        "--quiet": true
+      },
+      "notice": "Generated with ScanCode and provided on an \"AS IS\" BASIS, WITHOUT WARRANTIES\nOR CONDITIONS OF ANY KIND, either express or implied. No content created from\nScanCode should be considered or used as legal advice. Consult an Attorney\nfor any legal advice.\nScanCode is a free software code scanning tool from nexB Inc. and others.\nVisit https://github.com/nexB/scancode-toolkit/ for support and download.",
+      "start_timestamp": "2026-09-30T125637.881090",
+      "end_timestamp": "2026-09-30T125640.676193",
+      "output_format_version": "4.1.0",
+      "duration": 2.7951138019561768,
+      "message": null,
+      "errors": [],
+      "warnings": [],
+      "extra_data": {
+        "spdx_license_list_version": "3.27",
+        "files_count": 2
+      }
+    }
+  ],
+  "license_detections": [
+    {
+      "identifier": "gpl_3_0-e39f7784-6450-5675-b07b-42d9f930f54c",
+      "license_expression": "gpl-3.0",
+      "license_expression_spdx": "GPL-3.0-only",
+      "detection_count": 1,
+      "reference_matches": [
+        {
+          "license_expression": "gpl-3.0",
+          "license_expression_spdx": "GPL-3.0-only",
+          "from_file": "src/main.c",
+          "start_line": 1,
+          "end_line": 1,
+          "matcher": "2-aho",
+          "score": 100.0,
+          "matched_length": 7,
+          "match_coverage": 100.0,
+          "rule_relevance": 100,
+          "rule_identifier": "gpl-3.0_623.RULE",
+          "rule_url": "https://github.com/nexB/scancode-toolkit/tree/develop/src/licensedcode/data/rules/gpl-3.0_623.RULE"
+        }
+      ]
+    },
+    {
+      "identifier": "mit-a674baff-1ba4-aa0a-c1d2-f1772b743bc2",
+      "license_expression": "mit",
+      "license_expression_spdx": "MIT",
+      "detection_count": 1,
+      "reference_matches": [
+        {
+          "license_expression": "mit",
+          "license_expression_spdx": "MIT",
+          "from_file": "src/LICENSE",
+          "start_line": 1,
+          "end_line": 1,
+          "matcher": "2-aho",
+          "score": 100.0,
+          "matched_length": 2,
+          "match_coverage": 100.0,
+          "rule_relevance": 100,
+          "rule_identifier": "mit_14.RULE",
+          "rule_url": "https://github.com/nexB/scancode-toolkit/tree/develop/src/licensedcode/data/rules/mit_14.RULE"
+        },
+        {
+          "license_expression": "mit",
+          "license_expression_spdx": "MIT",
+          "from_file": "src/LICENSE",
+          "start_line": 5,
+          "end_line": 13,
+          "matcher": "2-aho",
+          "score": 80.0,
+          "matched_length": 86,
+          "match_coverage": 100.0,
+          "rule_relevance": 80,
+          "rule_identifier": "mit_17.RULE",
+          "rule_url": "https://github.com/nexB/scancode-toolkit/tree/develop/src/licensedcode/data/rules/mit_17.RULE"
+        }
+      ]
+    }
+  ],
+  "files": [
+    {
+      "path": "src",
+      "type": "directory",
+      "detected_license_expression": null,
+      "detected_license_expression_spdx": null,
+      "license_detections": [],
+      "license_clues": [],
+      "percentage_of_license_text": 0,
+      "scan_errors": []
+    },
+    {
+      "path": "src/LICENSE",
+      "type": "file",
+      "detected_license_expression": "mit",
+      "detected_license_expression_spdx": "MIT",
+      "license_detections": [
+        {
+          "license_expression": "mit",
+          "license_expression_spdx": "MIT",
+          "matches": [
+            {
+              "license_expression": "mit",
+              "license_expression_spdx": "MIT",
+              "from_file": "src/LICENSE",
+              "start_line": 1,
+              "end_line": 1,
+              "matcher": "2-aho",
+              "score": 100.0,
+              "matched_length": 2,
+              "match_coverage": 100.0,
+              "rule_relevance": 100,
+              "rule_identifier": "mit_14.RULE",
+              "rule_url": "https://github.com/nexB/scancode-toolkit/tree/develop/src/licensedcode/data/rules/mit_14.RULE"
+            },
+            {
+              "license_expression": "mit",
+              "license_expression_spdx": "MIT",
+              "from_file": "src/LICENSE",
+              "start_line": 5,
+              "end_line": 13,
+              "matcher": "2-aho",
+              "score": 80.0,
+              "matched_length": 86,
+              "match_coverage": 100.0,
+              "rule_relevance": 80,
+              "rule_identifier": "mit_17.RULE",
+              "rule_url": "https://github.com/nexB/scancode-toolkit/tree/develop/src/licensedcode/data/rules/mit_17.RULE"
+            }
+          ],
+          "identifier": "mit-a674baff-1ba4-aa0a-c1d2-f1772b743bc2"
+        }
+      ],
+      "license_clues": [],
+      "percentage_of_license_text": 95.65,
+      "scan_errors": []
+    },
+    {
+      "path": "src/main.c",
+      "type": "file",
+      "detected_license_expression": "gpl-3.0",
+      "detected_license_expression_spdx": "GPL-3.0-only",
+      "license_detections": [
+        {
+          "license_expression": "gpl-3.0",
+          "license_expression_spdx": "GPL-3.0-only",
+          "matches": [
+            {
+              "license_expression": "gpl-3.0",
+              "license_expression_spdx": "GPL-3.0-only",
+              "from_file": "src/main.c",
+              "start_line": 1,
+              "end_line": 1,
+              "matcher": "2-aho",
+              "score": 100.0,
+              "matched_length": 7,
+              "match_coverage": 100.0,
+              "rule_relevance": 100,
+              "rule_identifier": "gpl-3.0_623.RULE",
+              "rule_url": "https://github.com/nexB/scancode-toolkit/tree/develop/src/licensedcode/data/rules/gpl-3.0_623.RULE"
+            }
+          ],
+          "identifier": "gpl_3_0-e39f7784-6450-5675-b07b-42d9f930f54c"
+        }
+      ],
+      "license_clues": [],
+      "percentage_of_license_text": 58.33,
+      "scan_errors": []
+    }
+  ]
+}

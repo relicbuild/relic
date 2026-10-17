@@ -1,0 +1,384 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/options.proto";
+
+// SecurityService manages users, groups, permissions and access tokens.
+service SecurityService {
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/users"
+    };
+  }
+  rpc GetUser(GetUserRequest) returns (GetUserResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/users/{name}"
+    };
+  }
+  // PutUser creates or replaces a user. A new user needs a password; a
+  // replaced one keeps it when none is given.
+  rpc PutUser(PutUserRequest) returns (PutUserResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      put: "/api/v1/users/{user.name}"
+      body: "user"
+    };
+  }
+  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      delete: "/api/v1/users/{name}"
+    };
+  }
+  rpc ListGroups(ListGroupsRequest) returns (ListGroupsResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/groups"
+    };
+  }
+  rpc GetGroup(GetGroupRequest) returns (GetGroupResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/groups/{name}"
+    };
+  }
+  // PutGroup creates or replaces a group and its members.
+  rpc PutGroup(PutGroupRequest) returns (PutGroupResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      put: "/api/v1/groups/{group.name}"
+      body: "group"
+    };
+  }
+  rpc DeleteGroup(DeleteGroupRequest) returns (DeleteGroupResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      delete: "/api/v1/groups/{name}"
+    };
+  }
+  rpc ListPermissions(ListPermissionsRequest) returns (ListPermissionsResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/permissions"
+    };
+  }
+  rpc GetPermission(GetPermissionRequest) returns (GetPermissionResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/permissions/{name}"
+    };
+  }
+  // PutPermission creates or replaces a permission.
+  rpc PutPermission(PutPermissionRequest) returns (PutPermissionResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      put: "/api/v1/permissions/{permission.name}"
+      body: "permission"
+    };
+  }
+  rpc DeletePermission(DeletePermissionRequest) returns (DeletePermissionResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      delete: "/api/v1/permissions/{name}"
+    };
+  }
+  // CreateToken issues an access token for the caller, with the caller's
+  // permissions. It is returned once.
+  rpc CreateToken(CreateTokenRequest) returns (CreateTokenResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      post: "/api/v1/tokens"
+      body: "*"
+    };
+  }
+  // ListTokens returns access tokens without their secrets: the caller's
+  // own, or for an administrator everyone's (or one user's).
+  rpc ListTokens(ListTokensRequest) returns (ListTokensResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/tokens"
+    };
+  }
+  // RevokeToken revokes a token at once on every replica: the caller's own,
+  // or any token for an administrator.
+  rpc RevokeToken(RevokeTokenRequest) returns (RevokeTokenResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      delete: "/api/v1/tokens/{id}"
+    };
+  }
+}
+
+// Realm is where a user's credentials are checked.
+enum Realm {
+  REALM_UNSPECIFIED = 0;
+  // REALM_INTERNAL: Relic's own password.
+  REALM_INTERNAL = 1;
+  // REALM_LDAP: an LDAP directory.
+  REALM_LDAP = 2;
+  // REALM_SSO: an identity provider (single sign-on, SCIM).
+  REALM_SSO = 3;
+}
+
+// User is a user account.
+message User {
+  string name = 1;
+  string email = 2;
+  bool admin = 3;
+  repeated string groups = 4;
+  // password is write-only.
+  string password = 5;
+  // realm is output only.
+  Realm realm = 6;
+  // viewer may read the administration pages without changing anything.
+  bool viewer = 7;
+  // disabled users cannot sign in, and their tokens stop working.
+  bool disabled = 8;
+}
+
+message ListUsersRequest {}
+
+message ListUsersResponse {
+  repeated User users = 1;
+}
+
+message GetUserRequest {
+  string name = 1;
+}
+
+message GetUserResponse {
+  User user = 1;
+}
+
+message PutUserRequest {
+  User user = 1;
+}
+
+message PutUserResponse {
+  User user = 1;
+  bool created = 2;
+}
+
+message DeleteUserRequest {
+  string name = 1;
+}
+
+message DeleteUserResponse {}
+
+// Group is a set of users that permissions name together.
+message Group {
+  string name = 1;
+  string description = 2;
+  // default_for_new_users adds users created without groups to the group.
+  bool default_for_new_users = 3;
+  // admin makes members administrators.
+  bool admin = 4;
+  repeated string members = 5;
+  // viewer makes members viewers.
+  bool viewer = 6;
+}
+
+message ListGroupsRequest {}
+
+message ListGroupsResponse {
+  repeated Group groups = 1;
+}
+
+message GetGroupRequest {
+  string name = 1;
+}
+
+message GetGroupResponse {
+  Group group = 1;
+}
+
+message PutGroupRequest {
+  Group group = 1;
+}
+
+message PutGroupResponse {
+  Group group = 1;
+  bool created = 2;
+}
+
+message DeleteGroupRequest {
+  string name = 1;
+}
+
+message DeleteGroupResponse {}
+
+// Action is what a permission grants.
+enum Action {
+  ACTION_UNSPECIFIED = 0;
+  ACTION_READ = 1;
+  // ACTION_WRITE deploys files and caches remote content.
+  ACTION_WRITE = 2;
+  ACTION_ANNOTATE = 3;
+  // ACTION_DELETE deletes and overwrites.
+  ACTION_DELETE = 4;
+  // ACTION_MANAGE implies every other action.
+  ACTION_MANAGE = 5;
+  // ACTION_PROMOTE promotes and distributes releases.
+  ACTION_PROMOTE = 6;
+}
+
+// ResourceKind is what a rule covers.
+enum ResourceKind {
+  RESOURCE_KIND_UNSPECIFIED = 0;
+  // RESOURCE_KIND_REPOSITORY covers items in repositories.
+  RESOURCE_KIND_REPOSITORY = 1;
+  // RESOURCE_KIND_BUILD covers published builds; patterns match
+  // "<name>/**".
+  RESOURCE_KIND_BUILD = 2;
+  // RESOURCE_KIND_RELEASE covers release versions; patterns match
+  // "<name>/<version>".
+  RESOURCE_KIND_RELEASE = 3;
+}
+
+// RepositorySet selects repositories by class rather than by name.
+enum RepositorySet {
+  REPOSITORY_SET_UNSPECIFIED = 0;
+  REPOSITORY_SET_ALL = 1;
+  REPOSITORY_SET_LOCAL = 2;
+  REPOSITORY_SET_REMOTE = 3;
+}
+
+// RepositorySelector is the repositories a rule covers: whole sets, and repositories
+// by name.
+message RepositorySelector {
+  repeated RepositorySet sets = 1;
+  repeated string repositories = 2;
+}
+
+// PermissionGrant is what one user or one group may do.
+message PermissionGrant {
+  oneof principal {
+    string user = 1;
+    string group = 2;
+  }
+  repeated Action actions = 3;
+}
+
+// PermissionRule grants actions on one kind of resource.
+message PermissionRule {
+  ResourceKind resource = 1;
+  // selector is the repositories the rule covers (for builds and releases,
+  // the repositories that store them).
+  RepositorySelector selector = 2;
+  // include and exclude are Ant patterns on paths in those repositories; an
+  // empty include covers everything.
+  repeated string include = 3;
+  repeated string exclude = 4;
+  repeated PermissionGrant grants = 5;
+}
+
+// Permission grants users and groups actions: at most one rule per kind of
+// resource.
+message Permission {
+  string name = 1;
+  repeated PermissionRule rules = 2;
+}
+
+message ListPermissionsRequest {}
+
+message ListPermissionsResponse {
+  repeated Permission permissions = 1;
+}
+
+message GetPermissionRequest {
+  string name = 1;
+}
+
+message GetPermissionResponse {
+  Permission permission = 1;
+}
+
+message PutPermissionRequest {
+  Permission permission = 1;
+}
+
+message PutPermissionResponse {
+  Permission permission = 1;
+}
+
+message DeletePermissionRequest {
+  string name = 1;
+}
+
+message DeletePermissionResponse {}
+
+// TokenScopeKind is what a token acts as.
+enum TokenScopeKind {
+  TOKEN_SCOPE_KIND_UNSPECIFIED = 0;
+  // TOKEN_SCOPE_KIND_USER acts as the user, with all their groups.
+  TOKEN_SCOPE_KIND_USER = 1;
+  // TOKEN_SCOPE_KIND_GROUPS acts with the scope's groups only.
+  TOKEN_SCOPE_KIND_GROUPS = 2;
+  // TOKEN_SCOPE_KIND_ADMIN acts as an administrator while the user is one.
+  TOKEN_SCOPE_KIND_ADMIN = 3;
+}
+
+// TokenScope narrows what a token may do; it never grants more than the
+// user has when the token is used.
+message TokenScope {
+  TokenScopeKind kind = 1;
+  // groups are the groups a groups-scoped token acts with (an admin scope
+  // may name them too).
+  repeated string groups = 2;
+}
+
+message CreateTokenRequest {
+  string description = 1;
+  // expires_days is the token's lifetime, at most 3650; 0 never expires for an
+  // administrator. Other users' tokens expire within 365 days.
+  int32 expires_days = 2;
+  // scope is the user's own rights when unset. Only administrators may ask
+  // for an admin scope or groups they are not in.
+  TokenScope scope = 3;
+  // project is the project the token is for.
+  string project = 4;
+}
+
+message CreateTokenResponse {
+  string access_token = 1;
+  // expires_in is in seconds; 0 never expires.
+  int64 expires_in = 2;
+  TokenScope scope = 3;
+}
+
+// AccessToken is an issued token, without its secret.
+message AccessToken {
+  string id = 1;
+  string username = 2;
+  TokenScope scope = 3;
+  string description = 4;
+  string project = 5;
+  google.protobuf.Timestamp created = 6;
+  // expires is unset for a token that never expires.
+  google.protobuf.Timestamp expires = 7;
+  bool revoked = 8;
+  bool refreshable = 9;
+}
+
+message ListTokensRequest {
+  // username limits an administrator's list to one user; others always see
+  // their own tokens.
+  string username = 1;
+  // include_revoked lists revoked tokens too.
+  bool include_revoked = 2;
+}
+
+message ListTokensResponse {
+  repeated AccessToken tokens = 1;
+}
+
+message RevokeTokenRequest {
+  string id = 1;
+}
+
+message RevokeTokenResponse {}

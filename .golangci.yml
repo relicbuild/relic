@@ -1,0 +1,196 @@
+version: "2"
+
+run:
+  build-tags:
+    - integration
+    - e2e
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - depguard
+    - contextcheck
+    - errorlint
+    - exhaustive
+    - gosec
+    - nilerr
+    - noctx
+    - prealloc
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - wsl_v5
+  exclusions:
+    rules:
+      - path: (^tools/|^api/adapters/artifactory/compat/|_test\.go$)
+        linters: [gosec]
+        text: "G(204|304|702|703)"
+      - path: _test\.go$
+        linters: [gosec]
+        text: "G117"
+  settings:
+    depguard:
+      rules:
+        api-layers:
+          files:
+            - "**/api/relicapi/**"
+            - "**/api/adapters/**"
+            - "**/api/packages/**"
+            - "**/api/scim/**"
+            - "**/api/mcpserver/**"
+            - "!**/*_integration_test.go"
+          deny:
+            - pkg: relic/internal/platform/database$
+              desc: use a domain service; API layers never query the store
+        packages:
+          files:
+            - "**/api/packages/**"
+          deny:
+            - pkg: relic/api/adapters
+              desc: the protocols must not depend on the compatibility adapter
+            - pkg: relic/api/relicapi
+              desc: the protocols must not depend on the Relic API's handlers
+        database-engine:
+          files:
+            - "$all"
+            - "!**/internal/platform/database/**"
+            - "!**/internal/platform/telemetry/db.go"
+            - "!$test"
+          deny:
+            - pkg: github.com/jackc/pgx
+              desc: use database.Querier, database.Rows and database.IsNoRows
+            - pkg: github.com/riverqueue/river/riverdriver
+              desc: use database.DB.NewJobClient
+        domain:
+          files:
+            - "**/internal/**"
+            - "!**/internal/app/**"
+            - "!$test"
+          deny:
+            - pkg: relic/api
+              desc: domain packages must not import the API layers
+        platform:
+          files:
+            - "**/internal/platform/**"
+            - "!**/internal/platform/httpserver/**"
+          deny:
+            - pkg: relic/internal/access
+              desc: platform packages know nothing of Relic's modules
+            - pkg: relic/internal/artifacts
+              desc: platform packages know nothing of Relic's modules
+            - pkg: relic/internal/scanning
+              desc: platform packages know nothing of Relic's modules
+            - pkg: relic/internal/delivery
+              desc: platform packages know nothing of Relic's modules
+            - pkg: relic/internal/systemstatus
+              desc: platform packages know nothing of Relic's modules
+            - pkg: relic/internal/app
+              desc: platform packages know nothing of Relic's modules
+        platform-httpserver:
+          list-mode: lax
+          files:
+            - "**/internal/platform/httpserver/**"
+          allow:
+            - relic/internal/access/auth
+          deny:
+            - pkg: relic/internal/access
+              desc: the router needs access/auth only
+            - pkg: relic/internal/artifacts
+              desc: platform packages know nothing of Relic's modules
+            - pkg: relic/internal/scanning
+              desc: platform packages know nothing of Relic's modules
+            - pkg: relic/internal/delivery
+              desc: platform packages know nothing of Relic's modules
+            - pkg: relic/internal/systemstatus
+              desc: platform packages know nothing of Relic's modules
+            - pkg: relic/internal/app
+              desc: platform packages know nothing of Relic's modules
+        access:
+          files:
+            - "**/internal/access/**"
+          deny:
+            - pkg: relic/internal/artifacts
+              desc: access sits below artifacts
+            - pkg: relic/internal/scanning
+              desc: access sits below scanning
+            - pkg: relic/internal/delivery
+              desc: access sits below delivery
+            - pkg: relic/internal/systemstatus
+              desc: modules do not depend on systemstatus
+            - pkg: relic/internal/app
+              desc: modules never import the application's wiring
+        artifacts:
+          files:
+            - "**/internal/artifacts/**"
+          deny:
+            - pkg: relic/internal/scanning
+              desc: artifacts sits below scanning
+            - pkg: relic/internal/delivery
+              desc: artifacts sits below delivery
+            - pkg: relic/internal/systemstatus
+              desc: modules do not depend on systemstatus
+            - pkg: relic/internal/app
+              desc: modules never import the application's wiring
+        scanning:
+          files:
+            - "**/internal/scanning/**"
+          deny:
+            - pkg: relic/internal/delivery
+              desc: scanning sits below delivery
+            - pkg: relic/internal/systemstatus
+              desc: modules do not depend on systemstatus
+            - pkg: relic/internal/app
+              desc: modules never import the application's wiring
+        delivery:
+          files:
+            - "**/internal/delivery/**"
+          deny:
+            - pkg: relic/internal/systemstatus
+              desc: modules do not depend on systemstatus
+            - pkg: relic/internal/app
+              desc: modules never import the application's wiring
+        systemstatus:
+          files:
+            - "**/internal/systemstatus/**"
+          deny:
+            - pkg: relic/internal/access
+              desc: systemstatus reads the platform only
+            - pkg: relic/internal/artifacts
+              desc: systemstatus reads the platform only
+            - pkg: relic/internal/scanning
+              desc: systemstatus reads the platform only
+            - pkg: relic/internal/delivery
+              desc: systemstatus reads the platform only
+            - pkg: relic/internal/app
+              desc: modules never import the application's wiring
+        foreign-types-in-adapters:
+          files:
+            - "**/internal/**"
+          deny:
+            - pkg: github.com/jfrog
+              desc: translate foreign documents in api/adapters; the domain uses Relic's types
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+    exhaustive:
+      default-signifies-exhaustive: true
+
+formatters:
+  exclusions:
+    paths:
+      - api/gen
+  enable:
+    - gofmt
+    - gofumpt
+    - goimports
+    - golines
+  settings:
+    golines:
+      max-len: 120
+    gofumpt:
+      module-path: relic
+    goimports:
+      local-prefixes:
+        - relic

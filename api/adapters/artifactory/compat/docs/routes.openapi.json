@@ -1,0 +1,3925 @@
+{
+  "components": {
+    "schemas": {},
+    "securitySchemes": {
+      "basic": {
+        "scheme": "basic",
+        "type": "http"
+      },
+      "bearer": {
+        "description": "An access token (command-line clients, CI).",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "session": {
+        "description": "The web UI's session; honoured under /api/ only.",
+        "in": "cookie",
+        "name": "relic_session",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "Every HTTP route the Relic server registers, with its access level: Relic's own and the compatibility adapter's (api/adapters/artifactory). An internal inventory for tests; the Relic API's description is api/apispec.",
+    "title": "Relic HTTP routes",
+    "version": "1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/.well-known/terraform.json": {
+      "get": {
+        "operationId": "getWellKnownTerraformJson",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "GET /.well-known/terraform.json",
+        "tags": [
+          "Terraform"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/access/api/v1/ldap/groups": {
+      "get": {
+        "operationId": "getAccessApiV1LdapGroups",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /access/api/v1/ldap/groups",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      },
+      "post": {
+        "operationId": "postAccessApiV1LdapGroups",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /access/api/v1/ldap/groups",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/access/api/v1/ldap/groups/{name}": {
+      "delete": {
+        "operationId": "deleteAccessApiV1LdapGroupsName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /access/api/v1/ldap/groups/{name}",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      },
+      "get": {
+        "operationId": "getAccessApiV1LdapGroupsName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /access/api/v1/ldap/groups/{name}",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      },
+      "put": {
+        "operationId": "putAccessApiV1LdapGroupsName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PUT /access/api/v1/ldap/groups/{name}",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/access/api/v1/ldap/settings": {
+      "get": {
+        "operationId": "getAccessApiV1LdapSettings",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /access/api/v1/ldap/settings",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      },
+      "post": {
+        "operationId": "postAccessApiV1LdapSettings",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /access/api/v1/ldap/settings",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/access/api/v1/ldap/settings/{key}": {
+      "delete": {
+        "operationId": "deleteAccessApiV1LdapSettingsKey",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /access/api/v1/ldap/settings/{key}",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      },
+      "get": {
+        "operationId": "getAccessApiV1LdapSettingsKey",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /access/api/v1/ldap/settings/{key}",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      },
+      "put": {
+        "operationId": "putAccessApiV1LdapSettingsKey",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PUT /access/api/v1/ldap/settings/{key}",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/access/api/v1/oidc/token": {
+      "post": {
+        "operationId": "postAccessApiV1OidcToken",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "POST /access/api/v1/oidc/token",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/access/api/v1/system/ping": {
+      "get": {
+        "operationId": "getAccessApiV1SystemPing",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "GET /access/api/v1/system/ping",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/access/api/v1/tokens": {
+      "post": {
+        "operationId": "postAccessApiV1Tokens",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "POST /access/api/v1/tokens",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/access/api/v2/authentication/jfrog_client_login/request": {
+      "post": {
+        "operationId": "postAccessApiV2AuthenticationJfrog_client_loginRequest",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "POST /access/api/v2/authentication/jfrog_client_login/request",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/access/api/v2/authentication/jfrog_client_login/token/{session}": {
+      "get": {
+        "operationId": "getAccessApiV2AuthenticationJfrog_client_loginTokenSession",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "session",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "GET /access/api/v2/authentication/jfrog_client_login/token/{session}",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/access/api/v2/groups": {
+      "get": {
+        "operationId": "getAccessApiV2Groups",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /access/api/v2/groups",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      },
+      "post": {
+        "operationId": "postAccessApiV2Groups",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /access/api/v2/groups",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/access/api/v2/groups/{name}": {
+      "delete": {
+        "operationId": "deleteAccessApiV2GroupsName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /access/api/v2/groups/{name}",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      },
+      "get": {
+        "operationId": "getAccessApiV2GroupsName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /access/api/v2/groups/{name}",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      },
+      "patch": {
+        "operationId": "patchAccessApiV2GroupsName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PATCH /access/api/v2/groups/{name}",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/access/api/v2/groups/{name}/members": {
+      "patch": {
+        "operationId": "patchAccessApiV2GroupsNameMembers",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PATCH /access/api/v2/groups/{name}/members",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/access/api/v2/permissions": {
+      "get": {
+        "operationId": "getAccessApiV2Permissions",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /access/api/v2/permissions",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      },
+      "post": {
+        "operationId": "postAccessApiV2Permissions",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /access/api/v2/permissions",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/access/api/v2/permissions/{name}": {
+      "delete": {
+        "operationId": "deleteAccessApiV2PermissionsName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /access/api/v2/permissions/{name}",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      },
+      "get": {
+        "operationId": "getAccessApiV2PermissionsName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /access/api/v2/permissions/{name}",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/access/api/v2/permissions/{name}/{resource}": {
+      "delete": {
+        "operationId": "deleteAccessApiV2PermissionsNameResource",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "resource",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /access/api/v2/permissions/{name}/{resource}",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      },
+      "get": {
+        "operationId": "getAccessApiV2PermissionsNameResource",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "resource",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /access/api/v2/permissions/{name}/{resource}",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      },
+      "patch": {
+        "operationId": "patchAccessApiV2PermissionsNameResource",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "resource",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PATCH /access/api/v2/permissions/{name}/{resource}",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      },
+      "put": {
+        "operationId": "putAccessApiV2PermissionsNameResource",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "resource",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PUT /access/api/v2/permissions/{name}/{resource}",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/access/api/v2/users": {
+      "get": {
+        "operationId": "getAccessApiV2Users",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /access/api/v2/users",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      },
+      "post": {
+        "operationId": "postAccessApiV2Users",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /access/api/v2/users",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/access/api/v2/users/{username}": {
+      "delete": {
+        "operationId": "deleteAccessApiV2UsersUsername",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /access/api/v2/users/{username}",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      },
+      "get": {
+        "operationId": "getAccessApiV2UsersUsername",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /access/api/v2/users/{username}",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      },
+      "patch": {
+        "operationId": "patchAccessApiV2UsersUsername",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PATCH /access/api/v2/users/{username}",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/access/api/v2/users/{username}/groups": {
+      "patch": {
+        "operationId": "patchAccessApiV2UsersUsernameGroups",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PATCH /access/api/v2/users/{username}/groups",
+        "tags": [
+          "Access"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/api/v1/openapi.json": {
+      "get": {
+        "operationId": "getApiV1OpenapiJson",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "GET /api/v1/openapi.json",
+        "tags": [
+          "Relic API: openapi.json"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/artifactory/api/build": {
+      "get": {
+        "operationId": "getArtifactoryApiBuild",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/build",
+        "tags": [
+          "Artifactory: build"
+        ],
+        "x-relic-access": "authenticated"
+      },
+      "put": {
+        "operationId": "putArtifactoryApiBuild",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PUT /artifactory/api/build",
+        "tags": [
+          "Artifactory: build"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/build/delete": {
+      "post": {
+        "operationId": "postArtifactoryApiBuildDelete",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /artifactory/api/build/delete",
+        "tags": [
+          "Artifactory: build"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/build/promote/{name}/{number}": {
+      "post": {
+        "operationId": "postArtifactoryApiBuildPromoteNameNumber",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /artifactory/api/build/promote/{name}/{number}",
+        "tags": [
+          "Artifactory: build"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/build/retention/{name}": {
+      "post": {
+        "operationId": "postArtifactoryApiBuildRetentionName",
+        "parameters": [
+          {
+            "description": "The rest of the path; may contain slashes.",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /artifactory/api/build/retention/{name...}",
+        "tags": [
+          "Artifactory: build"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/build/{rest}": {
+      "get": {
+        "operationId": "getArtifactoryApiBuildRest",
+        "parameters": [
+          {
+            "description": "The rest of the path; may contain slashes.",
+            "in": "path",
+            "name": "rest",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/build/{rest...}",
+        "tags": [
+          "Artifactory: build"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/builds/buildArtifacts/{rest}": {
+      "get": {
+        "operationId": "getArtifactoryApiBuildsBuildArtifactsRest",
+        "parameters": [
+          {
+            "description": "The rest of the path; may contain slashes.",
+            "in": "path",
+            "name": "rest",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/builds/buildArtifacts/{rest...}",
+        "tags": [
+          "Artifactory: builds"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/conan/{repo}/v1/ping": {
+      "get": {
+        "operationId": "getArtifactoryApiConanRepoV1Ping",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "GET /artifactory/api/conan/{repo}/v1/ping",
+        "tags": [
+          "Artifactory: conan"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/artifactory/api/copy/{path}": {
+      "post": {
+        "operationId": "postArtifactoryApiCopyPath",
+        "parameters": [
+          {
+            "description": "The rest of the path; may contain slashes.",
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /artifactory/api/copy/{path...}",
+        "tags": [
+          "Artifactory: copy"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/gpg/key/public": {
+      "get": {
+        "operationId": "getArtifactoryApiGpgKeyPublic",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/gpg/key/public",
+        "tags": [
+          "Artifactory: gpg"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/huggingfaceml/{repo}/lfs/{oid}": {
+      "put": {
+        "operationId": "putArtifactoryApiHuggingfacemlRepoLfsOid",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "oid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "PUT /artifactory/api/huggingfaceml/{repo}/lfs/{oid}",
+        "tags": [
+          "Artifactory: huggingfaceml"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/artifactory/api/move/{path}": {
+      "post": {
+        "operationId": "postArtifactoryApiMovePath",
+        "parameters": [
+          {
+            "description": "The rest of the path; may contain slashes.",
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /artifactory/api/move/{path...}",
+        "tags": [
+          "Artifactory: move"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/npm/auth": {
+      "get": {
+        "operationId": "getArtifactoryApiNpmAuth",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/npm/auth",
+        "tags": [
+          "Artifactory: npm"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/npm/{repo}/-/user/{user}": {
+      "put": {
+        "operationId": "putArtifactoryApiNpmRepoUserUser",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "user",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "PUT /artifactory/api/npm/{repo}/-/user/{user}",
+        "tags": [
+          "Artifactory: npm"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/artifactory/api/release/import/": {
+      "post": {
+        "operationId": "postArtifactoryApiReleaseImport",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /artifactory/api/release/import/",
+        "tags": [
+          "Artifactory: release"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/artifactory/api/replication/execute/{repoKey}": {
+      "post": {
+        "operationId": "postArtifactoryApiReplicationExecuteRepoKey",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repoKey",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /artifactory/api/replication/execute/{repoKey}",
+        "tags": [
+          "Artifactory: replication"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/artifactory/api/replication/{repoKey}": {
+      "get": {
+        "operationId": "getArtifactoryApiReplicationRepoKey",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repoKey",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/replication/{repoKey}",
+        "tags": [
+          "Artifactory: replication"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/artifactory/api/replications/{repoKey}": {
+      "delete": {
+        "operationId": "deleteArtifactoryApiReplicationsRepoKey",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repoKey",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /artifactory/api/replications/{repoKey}",
+        "tags": [
+          "Artifactory: replications"
+        ],
+        "x-relic-access": "admin"
+      },
+      "get": {
+        "operationId": "getArtifactoryApiReplicationsRepoKey",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repoKey",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/replications/{repoKey}",
+        "tags": [
+          "Artifactory: replications"
+        ],
+        "x-relic-access": "admin"
+      },
+      "post": {
+        "operationId": "postArtifactoryApiReplicationsRepoKey",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repoKey",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /artifactory/api/replications/{repoKey}",
+        "tags": [
+          "Artifactory: replications"
+        ],
+        "x-relic-access": "admin"
+      },
+      "put": {
+        "operationId": "putArtifactoryApiReplicationsRepoKey",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repoKey",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PUT /artifactory/api/replications/{repoKey}",
+        "tags": [
+          "Artifactory: replications"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/artifactory/api/repositories": {
+      "get": {
+        "operationId": "getArtifactoryApiRepositories",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/repositories",
+        "tags": [
+          "Artifactory: repositories"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/repositories/": {
+      "get": {
+        "operationId": "getArtifactoryApiRepositories",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/repositories/{$}",
+        "tags": [
+          "Artifactory: repositories"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/repositories/{key}": {
+      "delete": {
+        "operationId": "deleteArtifactoryApiRepositoriesKey",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /artifactory/api/repositories/{key}",
+        "tags": [
+          "Artifactory: repositories"
+        ],
+        "x-relic-access": "admin"
+      },
+      "get": {
+        "operationId": "getArtifactoryApiRepositoriesKey",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/repositories/{key}",
+        "tags": [
+          "Artifactory: repositories"
+        ],
+        "x-relic-access": "admin"
+      },
+      "post": {
+        "operationId": "postArtifactoryApiRepositoriesKey",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /artifactory/api/repositories/{key}",
+        "tags": [
+          "Artifactory: repositories"
+        ],
+        "x-relic-access": "admin"
+      },
+      "put": {
+        "operationId": "putArtifactoryApiRepositoriesKey",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PUT /artifactory/api/repositories/{key}",
+        "tags": [
+          "Artifactory: repositories"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/artifactory/api/search/aql": {
+      "post": {
+        "operationId": "postArtifactoryApiSearchAql",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /artifactory/api/search/aql",
+        "tags": [
+          "Artifactory: search"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/security/encryptedPassword": {
+      "get": {
+        "operationId": "getArtifactoryApiSecurityEncryptedPassword",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/security/encryptedPassword",
+        "tags": [
+          "Artifactory: security"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/security/groups": {
+      "get": {
+        "operationId": "getArtifactoryApiSecurityGroups",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/security/groups",
+        "tags": [
+          "Artifactory: security"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/artifactory/api/security/groups/{name}": {
+      "delete": {
+        "operationId": "deleteArtifactoryApiSecurityGroupsName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /artifactory/api/security/groups/{name}",
+        "tags": [
+          "Artifactory: security"
+        ],
+        "x-relic-access": "admin"
+      },
+      "get": {
+        "operationId": "getArtifactoryApiSecurityGroupsName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/security/groups/{name}",
+        "tags": [
+          "Artifactory: security"
+        ],
+        "x-relic-access": "admin"
+      },
+      "post": {
+        "operationId": "postArtifactoryApiSecurityGroupsName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /artifactory/api/security/groups/{name}",
+        "tags": [
+          "Artifactory: security"
+        ],
+        "x-relic-access": "admin"
+      },
+      "put": {
+        "operationId": "putArtifactoryApiSecurityGroupsName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PUT /artifactory/api/security/groups/{name}",
+        "tags": [
+          "Artifactory: security"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/artifactory/api/security/keypair/public/repositories/{repo}": {
+      "get": {
+        "operationId": "getArtifactoryApiSecurityKeypairPublicRepositoriesRepo",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/security/keypair/public/repositories/{repo}",
+        "tags": [
+          "Artifactory: security"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/security/keypair/{name}/public": {
+      "get": {
+        "operationId": "getArtifactoryApiSecurityKeypairNamePublic",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/security/keypair/{name}/public",
+        "tags": [
+          "Artifactory: security"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/security/keys/trusted": {
+      "get": {
+        "operationId": "getArtifactoryApiSecurityKeysTrusted",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/security/keys/trusted",
+        "tags": [
+          "Artifactory: security"
+        ],
+        "x-relic-access": "admin"
+      },
+      "post": {
+        "operationId": "postArtifactoryApiSecurityKeysTrusted",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /artifactory/api/security/keys/trusted",
+        "tags": [
+          "Artifactory: security"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/artifactory/api/security/keys/trusted/{kid}": {
+      "delete": {
+        "operationId": "deleteArtifactoryApiSecurityKeysTrustedKid",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "kid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /artifactory/api/security/keys/trusted/{kid}",
+        "tags": [
+          "Artifactory: security"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/artifactory/api/security/token": {
+      "post": {
+        "operationId": "postArtifactoryApiSecurityToken",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "POST /artifactory/api/security/token",
+        "tags": [
+          "Artifactory: security"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/artifactory/api/security/users": {
+      "get": {
+        "operationId": "getArtifactoryApiSecurityUsers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/security/users",
+        "tags": [
+          "Artifactory: security"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/artifactory/api/security/users/{name}": {
+      "delete": {
+        "operationId": "deleteArtifactoryApiSecurityUsersName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /artifactory/api/security/users/{name}",
+        "tags": [
+          "Artifactory: security"
+        ],
+        "x-relic-access": "admin"
+      },
+      "get": {
+        "operationId": "getArtifactoryApiSecurityUsersName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/security/users/{name}",
+        "tags": [
+          "Artifactory: security"
+        ],
+        "x-relic-access": "admin"
+      },
+      "post": {
+        "operationId": "postArtifactoryApiSecurityUsersName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /artifactory/api/security/users/{name}",
+        "tags": [
+          "Artifactory: security"
+        ],
+        "x-relic-access": "admin"
+      },
+      "put": {
+        "operationId": "putArtifactoryApiSecurityUsersName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PUT /artifactory/api/security/users/{name}",
+        "tags": [
+          "Artifactory: security"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/artifactory/api/storage/{path}": {
+      "delete": {
+        "operationId": "deleteArtifactoryApiStoragePath",
+        "parameters": [
+          {
+            "description": "The rest of the path; may contain slashes.",
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /artifactory/api/storage/{path...}",
+        "tags": [
+          "Artifactory: storage"
+        ],
+        "x-relic-access": "authenticated"
+      },
+      "get": {
+        "operationId": "getArtifactoryApiStoragePath",
+        "parameters": [
+          {
+            "description": "The rest of the path; may contain slashes.",
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/storage/{path...}",
+        "tags": [
+          "Artifactory: storage"
+        ],
+        "x-relic-access": "authenticated"
+      },
+      "put": {
+        "operationId": "putArtifactoryApiStoragePath",
+        "parameters": [
+          {
+            "description": "The rest of the path; may contain slashes.",
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PUT /artifactory/api/storage/{path...}",
+        "tags": [
+          "Artifactory: storage"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/system/ping": {
+      "get": {
+        "operationId": "getArtifactoryApiSystemPing",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "GET /artifactory/api/system/ping",
+        "tags": [
+          "Artifactory: system"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/artifactory/api/system/service_id": {
+      "get": {
+        "operationId": "getArtifactoryApiSystemService_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/system/service_id",
+        "tags": [
+          "Artifactory: system"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/system/usage": {
+      "post": {
+        "operationId": "postArtifactoryApiSystemUsage",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /artifactory/api/system/usage",
+        "tags": [
+          "Artifactory: system"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/system/version": {
+      "get": {
+        "operationId": "getArtifactoryApiSystemVersion",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/system/version",
+        "tags": [
+          "Artifactory: system"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/terraform/": {
+      "get": {
+        "operationId": "getArtifactoryApiTerraform",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/terraform/",
+        "tags": [
+          "Artifactory: terraform"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/terraform/archive/": {
+      "get": {
+        "operationId": "getArtifactoryApiTerraformArchive",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "GET /artifactory/api/terraform/archive/",
+        "tags": [
+          "Artifactory: terraform"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/artifactory/api/terraform/provider-archive/": {
+      "get": {
+        "operationId": "getArtifactoryApiTerraformProviderArchive",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "GET /artifactory/api/terraform/provider-archive/",
+        "tags": [
+          "Artifactory: terraform"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/artifactory/api/terraform/v1/modules/": {
+      "get": {
+        "operationId": "getArtifactoryApiTerraformV1Modules",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/terraform/v1/modules/",
+        "tags": [
+          "Artifactory: terraform"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/trash/clean/{path}": {
+      "delete": {
+        "operationId": "deleteArtifactoryApiTrashCleanPath",
+        "parameters": [
+          {
+            "description": "The rest of the path; may contain slashes.",
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /artifactory/api/trash/clean/{path...}",
+        "tags": [
+          "Artifactory: trash"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/artifactory/api/trash/empty": {
+      "post": {
+        "operationId": "postArtifactoryApiTrashEmpty",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /artifactory/api/trash/empty",
+        "tags": [
+          "Artifactory: trash"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/artifactory/api/trash/restore/{path}": {
+      "post": {
+        "operationId": "postArtifactoryApiTrashRestorePath",
+        "parameters": [
+          {
+            "description": "The rest of the path; may contain slashes.",
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /artifactory/api/trash/restore/{path...}",
+        "tags": [
+          "Artifactory: trash"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/artifactory/api/v1/uploads/config": {
+      "get": {
+        "operationId": "getArtifactoryApiV1UploadsConfig",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/v1/uploads/config",
+        "tags": [
+          "Artifactory: v1"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/v2/repositories/batch": {
+      "post": {
+        "operationId": "postArtifactoryApiV2RepositoriesBatch",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /artifactory/api/v2/repositories/batch",
+        "tags": [
+          "Artifactory: v2"
+        ],
+        "x-relic-access": "admin"
+      },
+      "put": {
+        "operationId": "putArtifactoryApiV2RepositoriesBatch",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PUT /artifactory/api/v2/repositories/batch",
+        "tags": [
+          "Artifactory: v2"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/artifactory/api/v2/security/permissions": {
+      "get": {
+        "operationId": "getArtifactoryApiV2SecurityPermissions",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/v2/security/permissions",
+        "tags": [
+          "Artifactory: v2"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/artifactory/api/v2/security/permissions/{name}": {
+      "delete": {
+        "operationId": "deleteArtifactoryApiV2SecurityPermissionsName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /artifactory/api/v2/security/permissions/{name}",
+        "tags": [
+          "Artifactory: v2"
+        ],
+        "x-relic-access": "admin"
+      },
+      "get": {
+        "operationId": "getArtifactoryApiV2SecurityPermissionsName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/v2/security/permissions/{name}",
+        "tags": [
+          "Artifactory: v2"
+        ],
+        "x-relic-access": "admin"
+      },
+      "post": {
+        "operationId": "postArtifactoryApiV2SecurityPermissionsName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /artifactory/api/v2/security/permissions/{name}",
+        "tags": [
+          "Artifactory: v2"
+        ],
+        "x-relic-access": "admin"
+      },
+      "put": {
+        "operationId": "putArtifactoryApiV2SecurityPermissionsName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PUT /artifactory/api/v2/security/permissions/{name}",
+        "tags": [
+          "Artifactory: v2"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/conan/{repo}/v1/ping": {
+      "get": {
+        "operationId": "getConanRepoV1Ping",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "GET /conan/{repo}/v1/ping",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/evidence/api/v1/subject/{path}": {
+      "post": {
+        "operationId": "postEvidenceApiV1SubjectPath",
+        "parameters": [
+          {
+            "description": "The rest of the path; may contain slashes.",
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /evidence/api/v1/subject/{path...}",
+        "tags": [
+          "Evidence"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/evidence/api/v1/system/version": {
+      "get": {
+        "operationId": "getEvidenceApiV1SystemVersion",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /evidence/api/v1/system/version",
+        "tags": [
+          "Evidence"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "getHealthz",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "GET /healthz",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/huggingface/{repo}/lfs/{oid}": {
+      "put": {
+        "operationId": "putHuggingfaceRepoLfsOid",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "oid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "PUT /huggingface/{repo}/lfs/{oid}",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/jfconnect/api/v1/backoffice/metrics/log": {
+      "post": {
+        "operationId": "postJfconnectApiV1BackofficeMetricsLog",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /jfconnect/api/v1/backoffice/metrics/log",
+        "tags": [
+          "JFrog Connect"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/lifecycle/api/v2/distribution/distribute/{name}/{version}": {
+      "post": {
+        "operationId": "postLifecycleApiV2DistributionDistributeNameVersion",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /lifecycle/api/v2/distribution/distribute/{name}/{version}",
+        "tags": [
+          "Lifecycle"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/lifecycle/api/v2/distribution/export/status/{name}/{version}": {
+      "get": {
+        "operationId": "getLifecycleApiV2DistributionExportStatusNameVersion",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /lifecycle/api/v2/distribution/export/status/{name}/{version}",
+        "tags": [
+          "Lifecycle"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/lifecycle/api/v2/distribution/export/{name}/{version}": {
+      "post": {
+        "operationId": "postLifecycleApiV2DistributionExportNameVersion",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /lifecycle/api/v2/distribution/export/{name}/{version}",
+        "tags": [
+          "Lifecycle"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/lifecycle/api/v2/distribution/remote_delete/{name}/{version}": {
+      "post": {
+        "operationId": "postLifecycleApiV2DistributionRemote_deleteNameVersion",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /lifecycle/api/v2/distribution/remote_delete/{name}/{version}",
+        "tags": [
+          "Lifecycle"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/lifecycle/api/v2/distribution/trackers/{name}/{version}": {
+      "get": {
+        "operationId": "getLifecycleApiV2DistributionTrackersNameVersion",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /lifecycle/api/v2/distribution/trackers/{name}/{version}",
+        "tags": [
+          "Lifecycle"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/lifecycle/api/v2/promotion/records/{name}/{version}": {
+      "get": {
+        "operationId": "getLifecycleApiV2PromotionRecordsNameVersion",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /lifecycle/api/v2/promotion/records/{name}/{version}",
+        "tags": [
+          "Lifecycle"
+        ],
+        "x-relic-access": "authenticated"
+      },
+      "post": {
+        "operationId": "postLifecycleApiV2PromotionRecordsNameVersion",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /lifecycle/api/v2/promotion/records/{name}/{version}",
+        "tags": [
+          "Lifecycle"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/lifecycle/api/v2/promotion/records/{name}/{version}/{created}": {
+      "delete": {
+        "operationId": "deleteLifecycleApiV2PromotionRecordsNameVersionCreated",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "created",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /lifecycle/api/v2/promotion/records/{name}/{version}/{created}",
+        "tags": [
+          "Lifecycle"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/lifecycle/api/v2/release_bundle": {
+      "patch": {
+        "operationId": "patchLifecycleApiV2Release_bundle",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PATCH /lifecycle/api/v2/release_bundle",
+        "tags": [
+          "Lifecycle"
+        ],
+        "x-relic-access": "authenticated"
+      },
+      "post": {
+        "operationId": "postLifecycleApiV2Release_bundle",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /lifecycle/api/v2/release_bundle",
+        "tags": [
+          "Lifecycle"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/lifecycle/api/v2/release_bundle/existence/{name}/{version}": {
+      "get": {
+        "operationId": "getLifecycleApiV2Release_bundleExistenceNameVersion",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /lifecycle/api/v2/release_bundle/existence/{name}/{version}",
+        "tags": [
+          "Lifecycle"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/lifecycle/api/v2/release_bundle/groups": {
+      "get": {
+        "operationId": "getLifecycleApiV2Release_bundleGroups",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /lifecycle/api/v2/release_bundle/groups",
+        "tags": [
+          "Lifecycle"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/lifecycle/api/v2/release_bundle/records/{name}": {
+      "get": {
+        "operationId": "getLifecycleApiV2Release_bundleRecordsName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /lifecycle/api/v2/release_bundle/records/{name}",
+        "tags": [
+          "Lifecycle"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/lifecycle/api/v2/release_bundle/records/{name}/{version}": {
+      "delete": {
+        "operationId": "deleteLifecycleApiV2Release_bundleRecordsNameVersion",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /lifecycle/api/v2/release_bundle/records/{name}/{version}",
+        "tags": [
+          "Lifecycle"
+        ],
+        "x-relic-access": "authenticated"
+      },
+      "get": {
+        "operationId": "getLifecycleApiV2Release_bundleRecordsNameVersion",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /lifecycle/api/v2/release_bundle/records/{name}/{version}",
+        "tags": [
+          "Lifecycle"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/lifecycle/api/v2/release_bundle/records/{name}/{version}/tag": {
+      "put": {
+        "operationId": "putLifecycleApiV2Release_bundleRecordsNameVersionTag",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PUT /lifecycle/api/v2/release_bundle/records/{name}/{version}/tag",
+        "tags": [
+          "Lifecycle"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/lifecycle/api/v2/release_bundle/statuses/{name}/{version}": {
+      "get": {
+        "operationId": "getLifecycleApiV2Release_bundleStatusesNameVersion",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /lifecycle/api/v2/release_bundle/statuses/{name}/{version}",
+        "tags": [
+          "Lifecycle"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/lifecycle/api/v2/release_bundle/{name}/{version}/finalize": {
+      "post": {
+        "operationId": "postLifecycleApiV2Release_bundleNameVersionFinalize",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /lifecycle/api/v2/release_bundle/{name}/{version}/finalize",
+        "tags": [
+          "Lifecycle"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/npm/{repo}/-/user/{user}": {
+      "put": {
+        "operationId": "putNpmRepoUserUser",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "user",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "PUT /npm/{repo}/-/user/{user}",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/onemodel/api/v1/graphql": {
+      "post": {
+        "operationId": "postOnemodelApiV1Graphql",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /onemodel/api/v1/graphql",
+        "tags": [
+          "Evidence"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "getReadyz",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "GET /readyz",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/scim/v2/Groups": {
+      "get": {
+        "operationId": "getScimV2Groups",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /scim/v2/Groups",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "admin"
+      },
+      "post": {
+        "operationId": "postScimV2Groups",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /scim/v2/Groups",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/scim/v2/Groups/{id}": {
+      "delete": {
+        "operationId": "deleteScimV2GroupsId",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /scim/v2/Groups/{id}",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "admin"
+      },
+      "get": {
+        "operationId": "getScimV2GroupsId",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /scim/v2/Groups/{id}",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "admin"
+      },
+      "patch": {
+        "operationId": "patchScimV2GroupsId",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PATCH /scim/v2/Groups/{id}",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "admin"
+      },
+      "put": {
+        "operationId": "putScimV2GroupsId",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PUT /scim/v2/Groups/{id}",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/scim/v2/ResourceTypes": {
+      "get": {
+        "operationId": "getScimV2ResourceTypes",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /scim/v2/ResourceTypes",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/scim/v2/Schemas": {
+      "get": {
+        "operationId": "getScimV2Schemas",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /scim/v2/Schemas",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/scim/v2/ServiceProviderConfig": {
+      "get": {
+        "operationId": "getScimV2ServiceProviderConfig",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /scim/v2/ServiceProviderConfig",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/scim/v2/Users": {
+      "get": {
+        "operationId": "getScimV2Users",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /scim/v2/Users",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "admin"
+      },
+      "post": {
+        "operationId": "postScimV2Users",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /scim/v2/Users",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/scim/v2/Users/{id}": {
+      "delete": {
+        "operationId": "deleteScimV2UsersId",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /scim/v2/Users/{id}",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "admin"
+      },
+      "get": {
+        "operationId": "getScimV2UsersId",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /scim/v2/Users/{id}",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "admin"
+      },
+      "patch": {
+        "operationId": "patchScimV2UsersId",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PATCH /scim/v2/Users/{id}",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "admin"
+      },
+      "put": {
+        "operationId": "putScimV2UsersId",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PUT /scim/v2/Users/{id}",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/terraform/": {
+      "get": {
+        "operationId": "getTerraform",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /terraform/",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/terraform/archive/": {
+      "get": {
+        "operationId": "getTerraformArchive",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "GET /terraform/archive/",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/terraform/provider-archive/": {
+      "get": {
+        "operationId": "getTerraformProviderArchive",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "GET /terraform/provider-archive/",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/terraform/v1/modules/": {
+      "get": {
+        "operationId": "getTerraformV1Modules",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /terraform/v1/modules/",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/ui/": {
+      "get": {
+        "operationId": "getUi",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "GET /ui/",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/xray/api/v1/artifact/status": {
+      "post": {
+        "operationId": "postXrayApiV1ArtifactStatus",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /xray/api/v1/artifact/status",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/xray/api/v1/artifacts": {
+      "get": {
+        "operationId": "getXrayApiV1Artifacts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /xray/api/v1/artifacts",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/xray/api/v1/entitlements/feature/{feature}": {
+      "get": {
+        "operationId": "getXrayApiV1EntitlementsFeatureFeature",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "feature",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /xray/api/v1/entitlements/feature/{feature}",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/xray/api/v1/ignore_rules": {
+      "get": {
+        "operationId": "getXrayApiV1Ignore_rules",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /xray/api/v1/ignore_rules",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "admin"
+      },
+      "post": {
+        "operationId": "postXrayApiV1Ignore_rules",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /xray/api/v1/ignore_rules",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/xray/api/v1/ignore_rules/{id}": {
+      "delete": {
+        "operationId": "deleteXrayApiV1Ignore_rulesId",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /xray/api/v1/ignore_rules/{id}",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "admin"
+      },
+      "get": {
+        "operationId": "getXrayApiV1Ignore_rulesId",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /xray/api/v1/ignore_rules/{id}",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/xray/api/v1/indexer-resources/download/{os}/{arch}": {
+      "get": {
+        "operationId": "getXrayApiV1IndexerResourcesDownloadOsArch",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "os",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "arch",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /xray/api/v1/indexer-resources/download/{os}/{arch}",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/xray/api/v1/scan/graph": {
+      "post": {
+        "operationId": "postXrayApiV1ScanGraph",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /xray/api/v1/scan/graph",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/xray/api/v1/scan/graph/{id}": {
+      "get": {
+        "operationId": "getXrayApiV1ScanGraphId",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /xray/api/v1/scan/graph/{id}",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/xray/api/v1/scanArtifact": {
+      "post": {
+        "operationId": "postXrayApiV1ScanArtifact",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /xray/api/v1/scanArtifact",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/xray/api/v1/summary/artifact": {
+      "post": {
+        "operationId": "postXrayApiV1SummaryArtifact",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /xray/api/v1/summary/artifact",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/xray/api/v1/system/ping": {
+      "get": {
+        "operationId": "getXrayApiV1SystemPing",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "GET /xray/api/v1/system/ping",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/xray/api/v1/system/version": {
+      "get": {
+        "operationId": "getXrayApiV1SystemVersion",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /xray/api/v1/system/version",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/xray/api/v2/ci/build": {
+      "post": {
+        "operationId": "postXrayApiV2CiBuild",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /xray/api/v2/ci/build",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/xray/api/v2/ci/build/scanResult": {
+      "post": {
+        "operationId": "postXrayApiV2CiBuildScanResult",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /xray/api/v2/ci/build/scanResult",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/xray/api/v2/policies": {
+      "get": {
+        "operationId": "getXrayApiV2Policies",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /xray/api/v2/policies",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "admin"
+      },
+      "post": {
+        "operationId": "postXrayApiV2Policies",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /xray/api/v2/policies",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/xray/api/v2/policies/{name}": {
+      "delete": {
+        "operationId": "deleteXrayApiV2PoliciesName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /xray/api/v2/policies/{name}",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "admin"
+      },
+      "get": {
+        "operationId": "getXrayApiV2PoliciesName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /xray/api/v2/policies/{name}",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "admin"
+      },
+      "put": {
+        "operationId": "putXrayApiV2PoliciesName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PUT /xray/api/v2/policies/{name}",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/xray/api/v2/summary/artifact": {
+      "post": {
+        "operationId": "postXrayApiV2SummaryArtifact",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /xray/api/v2/summary/artifact",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/xray/api/v2/watches": {
+      "get": {
+        "operationId": "getXrayApiV2Watches",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /xray/api/v2/watches",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "admin"
+      },
+      "post": {
+        "operationId": "postXrayApiV2Watches",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /xray/api/v2/watches",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "admin"
+      }
+    },
+    "/xray/api/v2/watches/{name}": {
+      "delete": {
+        "operationId": "deleteXrayApiV2WatchesName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /xray/api/v2/watches/{name}",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "admin"
+      },
+      "get": {
+        "operationId": "getXrayApiV2WatchesName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /xray/api/v2/watches/{name}",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "admin"
+      },
+      "put": {
+        "operationId": "putXrayApiV2WatchesName",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "PUT /xray/api/v2/watches/{name}",
+        "tags": [
+          "Xray"
+        ],
+        "x-relic-access": "admin"
+      }
+    }
+  },
+  "security": [
+    {
+      "basic": []
+    },
+    {
+      "bearer": []
+    },
+    {
+      "session": []
+    }
+  ]
+}

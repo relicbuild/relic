@@ -1,0 +1,243 @@
+diff --git a/app/components/docs/DocsPageHeaderLinks.vue b/app/components/docs/DocsPageHeaderLinks.vue
+index e7177746fa5fbb6f920727421ba237794f09d600..07b03ec100bc3bad271e7ff4edff93cce6c6e6bd 100644
+--- a/app/components/docs/DocsPageHeaderLinks.vue
++++ b/app/components/docs/DocsPageHeaderLinks.vue
+@@ -92,6 +92,7 @@ async function copyPage() {
+     >
+       <UButton
+         icon="i-lucide-chevron-down"
++        aria-label="More page actions"
+         color="neutral"
+         variant="soft"
+         class="border-l border-muted"
+diff --git a/app/composables/useSeo.ts b/app/composables/useSeo.ts
+index 6ac2f16a2b26178f37bf3fe66fafbfbf6090ec43..b39560de7de04c211e533a0bb0713ff721d4a3bf 100644
+--- a/app/composables/useSeo.ts
++++ b/app/composables/useSeo.ts
+@@ -1,5 +1,5 @@
+ import type { MaybeRefOrGetter } from 'vue'
+-import type { AppConfig } from 'nuxt/schema'
++import type { DocusSeoSchema } from '../types'
+ import type { BreadcrumbItem } from '../utils/navigation'
+ import { joinURL, withoutTrailingSlash } from 'ufo'
+ 
+@@ -34,7 +34,7 @@ export interface UseSeoOptions {
+   breadcrumbs?: MaybeRefOrGetter<BreadcrumbItem[] | undefined>
+ }
+ 
+-type SeoSchemaConfig = NonNullable<AppConfig['seo']['schema']>
++type SeoSchemaConfig = DocusSeoSchema
+ 
+ type SeoOrganizationConfig = NonNullable<SeoSchemaConfig['organization']>
+ 
+@@ -136,7 +136,7 @@ function buildIdentitySchema(
+ export function useSeo(options: UseSeoOptions) {
+   const route = useRoute()
+   const site = useSiteConfig()
+-  const seoSchema = useAppConfig().seo?.schema
++  const seoSchema = (useAppConfig().seo as { schema?: DocusSeoSchema } | undefined)?.schema
+   const { locale, locales, isEnabled: isI18nEnabled, switchLocalePath } = useDocusI18n()
+ 
+   const title = computed(() => toValue(options.title))
+@@ -170,7 +170,7 @@ export function useSeo(options: UseSeoOptions) {
+   // Set canonical link
+   useHead({
+     link: computed(() => {
+-      const links: Array<{ rel: string, href?: string, hreflang?: string }> = []
++      const links: Array<{ rel: 'canonical', href: string } | { rel: 'alternate', hreflang: string, href: string }> = []
+ 
+       // Canonical URL
+       if (canonicalUrl.value) {
+@@ -219,7 +219,7 @@ export function useSeo(options: UseSeoOptions) {
+   // JSON-LD structured data
+   useHead({
+     script: computed(() => {
+-      const scripts: Array<{ type: string, innerHTML: string }> = []
++      const scripts: Array<{ type: 'application/ld+json', innerHTML: string }> = []
+ 
+       if (!baseUrl.value || !title.value) return scripts
+ 
+diff --git a/app/pages/[[lang]]/[...slug].vue b/app/pages/[[lang]]/[...slug].vue
+index 5f18d5a37965e9c9ac6a7da0ac6a550c2ce64c30..8da12aba42e983d74446d3be3215c1949b28251f 100644
+--- a/app/pages/[[lang]]/[...slug].vue
++++ b/app/pages/[[lang]]/[...slug].vue
+@@ -50,7 +50,9 @@ defineOgImage('Docs', {
+   description: formatOgDescription(title, description),
+ })
+ 
+-const github = computed(() => appConfig.github ? appConfig.github : null)
++// Only a known repository can be linked to: a build without git (a
++// container image) has no URL, and its edit link would be relative.
++const github = computed(() => appConfig.github?.url ? appConfig.github : null)
+ 
+ const editLink = computed(() => {
+   if (!github.value) {
+diff --git a/app/plugins/i18n.ts b/app/plugins/i18n.ts
+index 1d568b72d73f1b393d619b913e727e0b00d269e7..c7a00f25d389d53bfe11b9e1239154e846fea767 100644
+--- a/app/plugins/i18n.ts
++++ b/app/plugins/i18n.ts
+@@ -49,7 +49,7 @@ export default defineNuxtPlugin(async () => {
+ 
+   addRouteMiddleware((to: RouteLocationNormalized) => {
+     if (to.path === '/') {
+-      const cookieLocale = useCookie('i18n_redirected').value || i18nConfig.defaultLocale || 'en'
++      const cookieLocale = useCookie('i18n_redirected').value || (i18nConfig as { defaultLocale?: string }).defaultLocale || 'en'
+ 
+       return navigateTo(`/${cookieLocale}`)
+     }
+diff --git a/app/types/index.d.ts b/app/types/index.d.ts
+index d50b130e04ef4558ac4361721b6e71dc512e2afc..5284e0cab90d99306d1894c481ac4fbaa78732d7 100644
+--- a/app/types/index.d.ts
++++ b/app/types/index.d.ts
+@@ -13,6 +13,48 @@ export interface DocusSeoOrganization {
+   sameAs?: string[]
+ }
+ 
++export interface DocusSeoSchema {
++  /**
++   * Schema.org type describing the site.
++   * @default undefined (only `WebSite` is emitted)
++   */
++  type?: 'SoftwareApplication' | 'Product' | 'Organization' | 'Person'
++  /**
++   * Canonical profile URLs (GitHub, X, LinkedIn…), used as `sameAs`.
++   */
++  sameAs?: string[]
++  /**
++   * Category of the application, e.g. `DeveloperApplication`.
++   * Only used with `SoftwareApplication`.
++   */
++  applicationCategory?: string
++  /**
++   * Platforms the application runs on, e.g. `Web`.
++   * Only used with `SoftwareApplication`.
++   */
++  operatingSystem?: string
++  /**
++   * Price of the application. Set to `0` to advertise it as free.
++   * Only used with `SoftwareApplication` and `Product`.
++   */
++  price?: number
++  /**
++   * Currency for `price`, as an ISO 4217 code.
++   * @default 'USD'
++   */
++  priceCurrency?: string
++  /**
++   * Publisher of the site, emitted as a linked `Organization`.
++   *
++   * Set `parentOrganization` when the publisher belongs to a larger
++   * company: both are emitted and linked, so `publisher` keeps pointing
++   * at a single entity.
++   */
++  organization?: DocusSeoOrganization & {
++    parentOrganization?: DocusSeoOrganization
++  }
++}
++
+ declare module 'nuxt/schema' {
+   interface AppConfig {
+     docus: {
+@@ -40,47 +82,7 @@ declare module 'nuxt/schema' {
+        * JSON-LD identity of the site
+        * Allows agents and search engines to understand what the site is about
+        */
+-      schema?: {
+-        /**
+-         * Schema.org type describing the site.
+-         * @default undefined (only `WebSite` is emitted)
+-         */
+-        type?: 'SoftwareApplication' | 'Product' | 'Organization' | 'Person'
+-        /**
+-         * Canonical profile URLs (GitHub, X, LinkedIn…), used as `sameAs`.
+-         */
+-        sameAs?: string[]
+-        /**
+-         * Category of the application, e.g. `DeveloperApplication`.
+-         * Only used with `SoftwareApplication`.
+-         */
+-        applicationCategory?: string
+-        /**
+-         * Platforms the application runs on, e.g. `Web`.
+-         * Only used with `SoftwareApplication`.
+-         */
+-        operatingSystem?: string
+-        /**
+-         * Price of the application. Set to `0` to advertise it as free.
+-         * Only used with `SoftwareApplication` and `Product`.
+-         */
+-        price?: number
+-        /**
+-         * Currency for `price`, as an ISO 4217 code.
+-         * @default 'USD'
+-         */
+-        priceCurrency?: string
+-        /**
+-         * Publisher of the site, emitted as a linked `Organization`.
+-         *
+-         * Set `parentOrganization` when the publisher belongs to a larger
+-         * company: both are emitted and linked, so `publisher` keeps pointing
+-         * at a single entity.
+-         */
+-        organization?: DocusSeoOrganization & {
+-          parentOrganization?: DocusSeoOrganization
+-        }
+-      }
++      schema?: DocusSeoSchema
+     }
+     header: {
+       title: string
+diff --git a/modules/assistant/runtime/composables/useAssistant.ts b/modules/assistant/runtime/composables/useAssistant.ts
+index 7c40d8d54145c3ddcaf29384669740f4f9f97211..8b61d66a2fdfd6dd682243241fc53b4fbf6c3ec1 100644
+--- a/modules/assistant/runtime/composables/useAssistant.ts
++++ b/modules/assistant/runtime/composables/useAssistant.ts
+@@ -56,7 +56,7 @@ export const useAssistant = createSharedComposable(() => {
+     if (!Array.isArray(faqConfig)) {
+       const localizedConfig = faqConfig as LocalizedFaqQuestions
+       const currentLocale = docusRuntimeConfig?.locale || 'en'
+-      const defaultLocale = config.public.i18n?.defaultLocale || 'en'
++      const defaultLocale = (config.public.i18n as { defaultLocale?: string } | undefined)?.defaultLocale || 'en'
+ 
+       const questions = localizedConfig[currentLocale]
+         || localizedConfig[defaultLocale]
+diff --git a/nuxt.config.ts b/nuxt.config.ts
+index 5fd0ac2d402afdf73d5ac1ca57b508030e766c37..0d58e16b34d785354a14fd0eaff3fcea646e7974 100644
+--- a/nuxt.config.ts
++++ b/nuxt.config.ts
+@@ -1,5 +1,7 @@
+ import { join } from 'node:path'
+ import { extendViteConfig, createResolver, useNuxt } from '@nuxt/kit'
++import { defineNuxtConfig } from 'nuxt/config'
++import type { NuxtHooks } from 'nuxt/schema'
+ 
+ const { resolve } = createResolver(import.meta.url)
+ 
+@@ -15,9 +17,10 @@ export default defineNuxtConfig({
+     resolve('./modules/css'),
+     () => {
+       const nuxt = useNuxt()
+-      nuxt.options.icon ||= {}
+-      nuxt.options.icon.customCollections ||= []
+-      nuxt.options.icon.customCollections.push({
++      const nuxtOptions = nuxt.options as typeof nuxt.options & { icon?: { customCollections?: Array<{ prefix: string, dir: string }> } }
++      nuxtOptions.icon ||= {}
++      nuxtOptions.icon.customCollections ||= []
++      nuxtOptions.icon.customCollections.push({
+         prefix: 'custom',
+         dir: join(nuxt.options.srcDir, 'assets/icons'),
+       })
+@@ -90,7 +93,7 @@ export default defineNuxtConfig({
+     },
+   },
+   hooks: {
+-    'nitro:config'(nitroConfig) {
++    'nitro:config'(nitroConfig: Parameters<NuxtHooks['nitro:config']>[0]) {
+       const nuxt = useNuxt()
+ 
+       const i18nOptions = (nuxt.options as typeof nuxt.options & { i18n?: DocusI18nOptions }).i18n
+@@ -134,4 +137,4 @@ export default defineNuxtConfig({
+     ],
+     sitemap: '/sitemap.xml',
+   },
+-})
++} as Parameters<typeof defineNuxtConfig>[0])

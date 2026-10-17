@@ -1,0 +1,182 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/options.proto";
+
+// SessionService signs the web UI in and out.
+service SessionService {
+  // Login checks a user's password and starts a browser session: the
+  // response sets the session cookie.
+  rpc Login(LoginRequest) returns (LoginResponse) {
+    option (relic.v1.access) = ACCESS_PUBLIC;
+    option (google.api.http) = {
+      post: "/api/v1/sessions"
+      body: "*"
+    };
+  }
+  // Logout ends the browser session.
+  rpc Logout(LogoutRequest) returns (LogoutResponse) {
+    option (relic.v1.access) = ACCESS_PUBLIC;
+    option (google.api.http) = {
+      delete: "/api/v1/sessions/current"
+    };
+  }
+  // ApproveLogin approves a CLI login session for the caller, after they
+  // type the code the CLI printed in their terminal.
+  rpc ApproveLogin(ApproveLoginRequest) returns (ApproveLoginResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      post: "/api/v1/cli-logins/{session}:approve"
+      body: "*"
+    };
+  }
+  // ListSignInProviders lists the enabled identity providers for the sign-in
+  // page.
+  rpc ListSignInProviders(ListSignInProvidersRequest) returns (ListSignInProvidersResponse) {
+    option (relic.v1.access) = ACCESS_PUBLIC;
+    option (google.api.http) = {
+      get: "/api/v1/sign-in-providers"
+    };
+  }
+  // GetSignInNote returns the note the operator shows on the sign-in page,
+  // empty when there is none.
+  rpc GetSignInNote(GetSignInNoteRequest) returns (GetSignInNoteResponse) {
+    option (relic.v1.access) = ACCESS_PUBLIC;
+    option (google.api.http) = {
+      get: "/api/v1/sign-in-note"
+    };
+  }
+  // ExchangeWorkloadToken gives a CI job's OIDC token, from an issuer a
+  // workload identity trusts, a short-lived Relic token.
+  rpc ExchangeWorkloadToken(ExchangeWorkloadTokenRequest) returns (ExchangeWorkloadTokenResponse) {
+    option (relic.v1.access) = ACCESS_PUBLIC;
+    option (google.api.http) = {
+      post: "/api/v1/workload-tokens"
+      body: "*"
+    };
+  }
+  // StartWebLogin registers a sign-in a command-line client started with a
+  // session ID it generated (a UUID). A signed-in user approves it in the
+  // browser (ApproveLogin), then the client collects its token
+  // (PollWebLogin).
+  rpc StartWebLogin(StartWebLoginRequest) returns (StartWebLoginResponse) {
+    option (relic.v1.access) = ACCESS_PUBLIC;
+    option (google.api.http) = {
+      post: "/api/v1/web-logins"
+      body: "*"
+    };
+  }
+  // PollWebLogin returns the token of an approved sign-in, once.
+  rpc PollWebLogin(PollWebLoginRequest) returns (PollWebLoginResponse) {
+    option (relic.v1.access) = ACCESS_PUBLIC;
+    option (google.api.http) = {
+      post: "/api/v1/web-logins/{session}:poll"
+      body: "*"
+    };
+  }
+  // GetCurrentUser returns the caller.
+  rpc GetCurrentUser(GetCurrentUserRequest) returns (GetCurrentUserResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/session/user"
+    };
+  }
+}
+
+message LoginRequest {
+  string username = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  Principal principal = 1;
+  google.protobuf.Timestamp expires = 2;
+}
+
+message LogoutRequest {}
+
+message LogoutResponse {}
+
+message ApproveLoginRequest {
+  // session is the ID in the URL the CLI opened.
+  string session = 1;
+  string code = 2;
+}
+
+message ApproveLoginResponse {}
+
+message GetCurrentUserRequest {}
+
+// Principal is who a request acts as.
+message Principal {
+  string username = 1;
+  bool admin = 2;
+  repeated string groups = 3;
+  bool viewer = 4;
+}
+
+message GetCurrentUserResponse {
+  Principal principal = 1;
+}
+
+message ListSignInProvidersRequest {}
+
+// SignInProvider is a button on the sign-in page.
+message SignInProvider {
+  string name = 1;
+  string display_name = 2;
+  // start_path begins a sign-in; add return=<path> to come back there.
+  string start_path = 3;
+}
+
+message ListSignInProvidersResponse {
+  repeated SignInProvider providers = 1;
+}
+
+message GetSignInNoteRequest {}
+
+message GetSignInNoteResponse {
+  // note is plain text; the sign-in page shows it as it is.
+  string note = 1;
+}
+
+message ExchangeWorkloadTokenRequest {
+  // identity is the workload identity's name.
+  string identity = 1;
+  // token is the workload's OIDC token.
+  string token = 2;
+}
+
+message ExchangeWorkloadTokenResponse {
+  string access_token = 1;
+  int64 expires_in_seconds = 2;
+  // username is who the token acts as.
+  string username = 3;
+}
+
+message StartWebLoginRequest {
+  string session = 1;
+}
+
+message StartWebLoginResponse {
+  // approve_path is the page where a signed-in user approves the sign-in.
+  string approve_path = 1;
+  // code is what the user checks against the page.
+  string code = 2;
+}
+
+message PollWebLoginRequest {
+  string session = 1;
+  // description names the client in the token list.
+  string description = 2;
+}
+
+message PollWebLoginResponse {
+  // approved is false while the sign-in waits for approval.
+  bool approved = 1;
+  string access_token = 2;
+  int64 expires_in_seconds = 3;
+}

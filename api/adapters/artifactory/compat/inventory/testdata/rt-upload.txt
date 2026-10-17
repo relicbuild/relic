@@ -1,0 +1,24 @@
+
+Name:
+  jf rt upload - Uploads files.
+
+Usage:
+  jf rt upload [command options] <source pattern> <target pattern>
+
+Arguments:
+  source pattern
+    The local files to upload.
+
+  target pattern
+    The repository path to upload to.
+
+Options:
+  --archive       [Optional] Packs the files into an archive before uploading.
+  --build-name    [Optional] The build the files belong to.
+  --explode       [Default: false] Extracts an uploaded archive on the server.
+  --flat          [Default: false] Drops the local directory structure.
+  --recursive     [Default: true] Includes sub-directories.
+  --regexp        [Default: false] Reads the source pattern as a regular expression.
+  --spec          [Optional] A file that lists what to upload.
+  --sync-deletes  [Optional] Removes server files that no longer exist locally.
+  --target-props  [Optional] Properties to set on the uploaded files.

@@ -1,0 +1,13 @@
+version: v2
+modules:
+  - path: api/proto
+  - path: third_party/proto
+    lint:
+      ignore:
+        - third_party/proto/google
+lint:
+  use:
+    - STANDARD
+breaking:
+  use:
+    - FILE

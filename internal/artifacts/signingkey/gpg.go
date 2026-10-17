@@ -1,0 +1,105 @@
+package signingkey
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+
+	"github.com/ProtonMail/go-crypto/openpgp"
+	"github.com/ProtonMail/go-crypto/openpgp/armor"
+	"github.com/ProtonMail/go-crypto/openpgp/clearsign"
+	"github.com/ProtonMail/go-crypto/openpgp/packet"
+)
+
+// GPG returns the named OpenPGP key pair, creating it on first use, with
+// its armored public key.
+func (s *Service) GPG(ctx context.Context, name string) (*openpgp.Entity, string, error) {
+	row, err := s.getOrCreate(ctx, name, "gpg", func() ([]byte, string, error) {
+		e, err := openpgp.NewEntity(
+			"Relic repository signing",
+			name,
+			"",
+			&packet.Config{
+				Algorithm: packet.PubKeyAlgoRSA,
+				RSABits:   rsaBits,
+			},
+		)
+		if err != nil {
+			return nil, "", err
+		}
+
+		var priv bytes.Buffer
+		if err := e.SerializePrivate(&priv, nil); err != nil {
+			return nil, "", err
+		}
+
+		pub, err := armoredPublic(e)
+		if err != nil {
+			return nil, "", err
+		}
+
+		return priv.Bytes(), pub, nil
+	})
+	if err != nil {
+		return nil, "", err
+	}
+
+	e, err := openpgp.ReadEntity(packet.NewReader(bytes.NewReader(row.PrivateKey)))
+	if err != nil {
+		return nil, "", fmt.Errorf("key pair %s: %w", name, err)
+	}
+
+	return e, row.PublicKey, nil
+}
+
+func armoredPublic(e *openpgp.Entity) (string, error) {
+	var buf bytes.Buffer
+
+	w, err := armor.Encode(&buf, openpgp.PublicKeyType, nil)
+	if err != nil {
+		return "", err
+	}
+
+	if err := e.Serialize(w); err != nil {
+		return "", err
+	}
+
+	if err := w.Close(); err != nil {
+		return "", err
+	}
+
+	buf.WriteString("\n")
+
+	return buf.String(), nil
+}
+
+// ClearSign returns data clear-signed with key, as Debian's InRelease.
+func ClearSign(data []byte, key *openpgp.Entity) ([]byte, error) {
+	var buf bytes.Buffer
+
+	w, err := clearsign.Encode(&buf, key.PrivateKey, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := w.Write(data); err != nil {
+		return nil, err
+	}
+
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+// DetachSign returns an armored detached signature of data, as Debian's
+// Release.gpg and RPM's repomd.xml.asc.
+func DetachSign(data []byte, key *openpgp.Entity) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := openpgp.ArmoredDetachSign(&buf, key, bytes.NewReader(data), nil); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}

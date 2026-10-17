@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/options.proto";
+
+// CleanupService manages cleanup policies, which move old or unused items of
+// local repositories to the trash.
+service CleanupService {
+  rpc ListCleanupPolicies(ListCleanupPoliciesRequest) returns (ListCleanupPoliciesResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/cleanup-policies"
+    };
+  }
+  rpc GetCleanupPolicy(GetCleanupPolicyRequest) returns (GetCleanupPolicyResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      get: "/api/v1/cleanup-policies/{name}"
+    };
+  }
+  // PutCleanupPolicy creates or replaces a policy.
+  rpc PutCleanupPolicy(PutCleanupPolicyRequest) returns (PutCleanupPolicyResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      put: "/api/v1/cleanup-policies/{policy.name}"
+      body: "policy"
+    };
+  }
+  rpc DeleteCleanupPolicy(DeleteCleanupPolicyRequest) returns (DeleteCleanupPolicyResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      delete: "/api/v1/cleanup-policies/{name}"
+    };
+  }
+  // PreviewCleanupPolicy lists what a policy selects now, without moving
+  // anything; the policy need not be stored.
+  rpc PreviewCleanupPolicy(PreviewCleanupPolicyRequest) returns (PreviewCleanupPolicyResponse) {
+    option (relic.v1.access) = ACCESS_VIEWER;
+    option (google.api.http) = {
+      post: "/api/v1/cleanup-policies:preview"
+      body: "*"
+    };
+  }
+  // RunCleanupPolicy moves what a stored policy selects to the trash now.
+  rpc RunCleanupPolicy(RunCleanupPolicyRequest) returns (RunCleanupPolicyResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      post: "/api/v1/cleanup-policies/{name}:run"
+      body: "*"
+    };
+  }
+}
+
+// CleanupPolicy selects the items matching path_pattern in repositories,
+// created more than older_than_days ago and not downloaded for
+// not_downloaded_days, except the keep_latest newest of each folder. The
+// worker moves them to the trash daily when the policy is enabled.
+message CleanupPolicy {
+  string name = 1;
+  bool enabled = 2;
+  repeated string repositories = 3;
+  // path_pattern is an Ant pattern; org/app/* selects the version folders of
+  // org/app. Empty is **.
+  string path_pattern = 4;
+  int32 older_than_days = 5;
+  int32 not_downloaded_days = 6;
+  int32 keep_latest = 7;
+  google.protobuf.Timestamp created = 8;
+  google.protobuf.Timestamp updated = 9;
+  google.protobuf.Timestamp last_run = 10;
+  int64 last_moved = 11;
+  string last_error = 12;
+}
+
+// CleanupCandidate is an item a policy selects.
+message CleanupCandidate {
+  string repository = 1;
+  string path = 2;
+  int64 size = 3;
+  google.protobuf.Timestamp created = 4;
+  google.protobuf.Timestamp last_downloaded = 5;
+}
+
+message ListCleanupPoliciesRequest {}
+
+message ListCleanupPoliciesResponse {
+  repeated CleanupPolicy policies = 1;
+}
+
+message GetCleanupPolicyRequest {
+  string name = 1;
+}
+
+message GetCleanupPolicyResponse {
+  CleanupPolicy policy = 1;
+}
+
+message PutCleanupPolicyRequest {
+  CleanupPolicy policy = 1;
+}
+
+message PutCleanupPolicyResponse {
+  CleanupPolicy policy = 1;
+}
+
+message DeleteCleanupPolicyRequest {
+  string name = 1;
+}
+
+message DeleteCleanupPolicyResponse {}
+
+message PreviewCleanupPolicyRequest {
+  // name previews a stored policy; policy previews one as given.
+  string name = 1;
+  CleanupPolicy policy = 2;
+}
+
+message PreviewCleanupPolicyResponse {
+  repeated CleanupCandidate candidates = 1;
+}
+
+message RunCleanupPolicyRequest {
+  string name = 1;
+}
+
+message RunCleanupPolicyResponse {
+  int64 moved = 1;
+}

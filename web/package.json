@@ -1,0 +1,52 @@
+{
+  "name": "relic-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "postinstall": "nuxt prepare && nuxt prepare site",
+    "lint": "eslint .",
+    "typecheck": "nuxt typecheck && nuxt typecheck site",
+    "gen:api": "cd .. && web/node_modules/.bin/buf generate --template buf.gen.web.yaml",
+    "test": "vitest run",
+    "test:e2e": "e2e/run.sh",
+    "dev:site": "nuxt dev site",
+    "generate:site": "NUXT_SITE_URL=https://relic.build nuxt generate site"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.15.0",
+    "@connectrpc/connect": "2.2.0",
+    "@connectrpc/connect-web": "2.2.0",
+    "@iconify-json/lucide": "^1.2.134",
+    "@nuxt/ui": "^4.11.1",
+    "docus": "5.13.0",
+    "nuxt": "^4.5.2",
+    "tailwindcss": "^4.3.3",
+    "vue": "^3.5.43",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@bufbuild/buf": "1.73.0",
+    "@bufbuild/protoc-gen-es": "2.15.0",
+    "@iconify-json/logos": "^1.2.14",
+    "@iconify-json/material-icon-theme": "^1.2.70",
+    "@iconify-json/simple-icons": "^1.2.97",
+    "@nuxt/content": "3.16.1",
+    "@nuxt/eslint": "^1.17.0",
+    "@nuxt/test-utils": "^4.3.2",
+    "@nuxtjs/mdc": "0.23.1",
+    "@playwright/test": "1.63.0",
+    "@scalar/nuxt": "0.6.54",
+    "@vue/test-utils": "^2.5.1",
+    "eslint": "^10.11.0",
+    "eslint-plugin-better-tailwindcss": "^4.7.0",
+    "happy-dom": "^20.14.5",
+    "lighthouse": "13.5.0",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.2",
+    "vue-tsc": "^3.3.11"
+  },
+  "packageManager": "pnpm@12.5.1"
+}

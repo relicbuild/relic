@@ -1,0 +1,1129 @@
+package main
+
+import (
+	"bytes"
+	"cmp"
+	"encoding/xml"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strings"
+
+	"connectrpc.com/connect"
+	"github.com/spf13/cobra"
+
+	relicv1 "relic/api/gen/relic/v1"
+)
+
+type setupEnv struct {
+	repo       string
+	format     relicv1.Format
+	url        string
+	registry   string
+	files      string
+	host       string
+	user       string
+	token      string
+	home, root string
+	publicKey  string
+	keyPair    string
+	flags      map[string]string
+}
+
+type setupStep struct {
+	file    string
+	content string
+	block   bool
+	mode    fs.FileMode
+	// command runs with stdin, env added to its environment, and argumentFile
+	// passed as a private @file of one argument per line.
+	command      []string
+	stdin        string
+	env          []string
+	argumentFile []string
+}
+
+type setupClient struct {
+	formats []relicv1.Format
+	short   string
+	flags   map[string]string
+	steps   func(e setupEnv) ([]setupStep, error)
+	notes   func(e setupEnv) string
+	system  bool
+}
+
+func withUserinfo(u, user, token string) (string, error) {
+	p, err := url.Parse(u)
+	if err != nil {
+		return "", err
+	}
+
+	p.User = url.UserPassword(user, token)
+
+	return p.String(), nil
+}
+
+func withoutScheme(u string) string {
+	return strings.TrimPrefix(strings.TrimPrefix(u, "https:"), "http:")
+}
+
+func npmSteps(e setupEnv) ([]setupStep, error) {
+	return []setupStep{
+		{
+			file:    ".npmrc",
+			block:   true,
+			mode:    0o600,
+			content: "registry=" + e.url + "\n" + withoutScheme(e.url) + ":_authToken=" + e.token + "\n",
+		},
+	}, nil
+}
+
+var setupClients = map[string]setupClient{
+	"npm": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_NPM,
+		},
+		short: "~/.npmrc: the registry and a token for it",
+		steps: npmSteps,
+	},
+	"pnpm": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_NPM,
+		},
+		short: "~/.npmrc, which pnpm reads",
+		steps: npmSteps,
+	},
+	"yarn": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_NPM,
+		},
+		short: "~/.yarnrc.yml (Yarn 2 and later) and ~/.npmrc (Yarn 1)",
+		steps: func(e setupEnv) ([]setupStep, error) {
+			steps, _ := npmSteps(e)
+
+			return append(steps, setupStep{
+				file:    ".yarnrc.yml",
+				block:   true,
+				mode:    0o600,
+				content: "npmRegistryServer: \"" + e.url + "\"\nnpmAlwaysAuth: true\nnpmAuthToken: \"" + e.token + "\"\n",
+			}), nil
+		},
+	},
+	"maven": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_MAVEN,
+			relicv1.Format_FORMAT_GRADLE,
+		},
+		short: "~/.m2/settings.xml: a mirror of everything through the repository, with credentials",
+		steps: func(e setupEnv) ([]setupStep, error) {
+			return []setupStep{
+				{
+					file: ".m2/settings.xml",
+					mode: 0o600,
+					content: "<settings>\n  <servers>\n    <server>\n      <id>" + e.repo + "</id>\n      <username>" +
+						xmlEscape(
+							e.user,
+						) + "</username>\n      <password>" + xmlEscape(e.token) + "</password>\n    </server>\n" +
+						"  </servers>\n  <mirrors>\n    <mirror>\n      <id>" + e.repo + "</id>\n      <mirrorOf>*</mirrorOf>\n" +
+						"      <url>" + xmlEscape(e.url) + "</url>\n    </mirror>\n  </mirrors>\n</settings>\n",
+				},
+			}, nil
+		},
+		notes: func(e setupEnv) string {
+			return "To deploy, point distributionManagement at " + e.url + " with the server id " + e.repo + "."
+		},
+	},
+	"gradle": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_GRADLE,
+			relicv1.Format_FORMAT_MAVEN,
+		},
+		short: "~/.gradle/gradle.properties: the URL and credentials as relic* properties",
+		steps: func(e setupEnv) ([]setupStep, error) {
+			return []setupStep{
+				{
+					file:    ".gradle/gradle.properties",
+					block:   true,
+					mode:    0o600,
+					content: "relicUrl=" + e.url + "\nrelicUser=" + e.user + "\nrelicToken=" + e.token + "\n",
+				},
+			}, nil
+		},
+		notes: func(_ setupEnv) string {
+			return "In settings.gradle(.kts):\n" +
+				"  dependencyResolutionManagement { repositories { maven {\n" +
+				"    url = uri(providers.gradleProperty(\"relicUrl\").get())\n" +
+				"    credentials { username = providers.gradleProperty(\"relicUser\").get(); " +
+				"password = providers.gradleProperty(\"relicToken\").get() }\n" +
+				"  } } }"
+		},
+	},
+	"go": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_GOMOD,
+		},
+		short: "GOPROXY (go env -w) and ~/.netrc credentials for the go command",
+		flags: map[string]string{
+			"private": "module path patterns published to Relic, not in the public checksum database (GONOSUMDB)",
+		},
+		steps: func(e setupEnv) ([]setupStep, error) {
+			steps := []setupStep{
+				{
+					file:    ".netrc",
+					block:   true,
+					mode:    0o600,
+					content: "machine " + hostOnly(e.host) + " login " + e.user + " password " + e.token + "\n",
+				},
+				{
+					command: []string{
+						"go",
+						"env",
+						"-w",
+						"GOPROXY=" + e.url,
+					},
+				},
+			}
+			if p := e.flags["private"]; p != "" {
+				steps = append(steps, setupStep{
+					command: []string{
+						"go",
+						"env",
+						"-w",
+						"GONOSUMDB=" + p,
+					},
+				})
+			}
+
+			return steps, nil
+		},
+		notes: func(_ setupEnv) string {
+			return "Checksum verification stays on for public modules; name private module paths with --private."
+		},
+	},
+	"pip": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_PYPI,
+		},
+		short: "~/.config/pip/pip.conf: the index URL, and ~/.netrc credentials",
+		steps: pipSteps,
+	},
+	"pipenv": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_PYPI,
+		},
+		short: "~/.netrc credentials; the Pipfile source to add",
+		steps: func(e setupEnv) ([]setupStep, error) {
+			return []setupStep{
+				netrcStep(e),
+			}, nil
+		},
+		notes: func(e setupEnv) string {
+			return "In the Pipfile:\n  [[source]]\n  url = \"" + e.url + "\"\n  verify_ssl = true\n  name = \"" + e.repo + "\""
+		},
+	},
+	"poetry": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_PYPI,
+		},
+		short: "poetry config: the repository and its credentials",
+		steps: func(e setupEnv) ([]setupStep, error) {
+			return []setupStep{
+				{
+					command: []string{
+						"poetry",
+						"config",
+						"repositories." + e.repo,
+						strings.TrimSuffix(e.url, "/simple"),
+					},
+				},
+				{
+					command: []string{
+						"poetry",
+						"config",
+						"http-basic." + e.repo,
+						e.user,
+					},
+					stdin: e.token + "\n",
+				},
+			}, nil
+		},
+		notes: func(e setupEnv) string {
+			return "For dependencies: poetry source add --priority=primary " + e.repo + " " + e.url
+		},
+	},
+	"twine": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_PYPI,
+		},
+		short: "~/.pypirc: the repository to upload to, with credentials",
+		steps: func(e setupEnv) ([]setupStep, error) {
+			return []setupStep{
+				{
+					file: ".pypirc",
+					mode: 0o600,
+					content: "[distutils]\nindex-servers =\n    " + e.repo + "\n\n[" + e.repo + "]\nrepository = " +
+						strings.TrimSuffix(
+							e.url,
+							"/simple",
+						) + "\nusername = " + e.user + "\npassword = " + e.token + "\n",
+				},
+			}, nil
+		},
+		notes: func(e setupEnv) string {
+			return "Upload with: twine upload -r " + e.repo + " dist/*"
+		},
+	},
+	"docker": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_DOCKER,
+			relicv1.Format_FORMAT_OCI,
+		},
+		short: "docker login to the registry",
+		steps: loginSteps("docker"),
+		notes: func(e setupEnv) string {
+			return "Images are " + e.registry + "/<image>:<tag>."
+		},
+	},
+	"podman": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_DOCKER,
+			relicv1.Format_FORMAT_OCI,
+		},
+		short: "podman login to the registry",
+		steps: loginSteps("podman"),
+		notes: func(e setupEnv) string {
+			return "Images are " + e.registry + "/<image>:<tag>."
+		},
+	},
+	"nuget": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_NUGET,
+		},
+		short: "dotnet nuget add source, with credentials",
+		steps: func(e setupEnv) ([]setupStep, error) {
+			return []setupStep{
+				{
+					command: []string{
+						"dotnet",
+					},
+					argumentFile: []string{
+						"nuget",
+						"add",
+						"source",
+						e.url,
+						"--name",
+						e.repo,
+						"--username",
+						e.user,
+						"--password",
+						e.token,
+						"--store-password-in-clear-text",
+					},
+				},
+			}, nil
+		},
+	},
+	"conan": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_CONAN,
+		},
+		short: "conan remote add and login",
+		steps: func(e setupEnv) ([]setupStep, error) {
+			return []setupStep{
+				{
+					command: []string{
+						"conan",
+						"remote",
+						"add",
+						"--force",
+						e.repo,
+						e.url,
+					},
+				},
+				{
+					command: []string{
+						"conan",
+						"remote",
+						"login",
+						e.repo,
+						e.user,
+					},
+					env: []string{
+						"CONAN_PASSWORD=" + e.token,
+					},
+				},
+			}, nil
+		},
+	},
+	"ruby": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_RUBYGEMS,
+		},
+		short: "bundler: a mirror of rubygems.org through the repository, with credentials",
+		steps: func(e setupEnv) ([]setupStep, error) {
+			return []setupStep{
+				{
+					command: []string{
+						"bundle",
+						"config",
+						"set",
+						"--global",
+						"mirror.https://rubygems.org",
+						e.url,
+					},
+				},
+				{
+					command: []string{
+						"ruby",
+						"-rbundler",
+						"-e",
+						"Bundler.settings.set_global(ARGV[0], $stdin.read.chomp)",
+						e.url,
+					},
+					stdin: e.user + ":" + e.token,
+				},
+			}, nil
+		},
+		notes: func(e setupEnv) string {
+			source, err := withUserinfo(e.url, e.user, "<token>")
+			if err != nil {
+				source = e.url
+			}
+
+			return "For gem: gem sources --add " + source
+		},
+	},
+	"terraform": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_TERRAFORM,
+		},
+		short: "~/.terraformrc: credentials for modules, and the repository as the providers' network mirror",
+		steps: func(e setupEnv) ([]setupStep, error) {
+			return []setupStep{
+				{
+					file:  ".terraformrc",
+					block: true,
+					mode:  0o600,
+					content: "credentials \"" + e.host + "\" {\n  token = \"" + e.token + "\"\n}\n" +
+						"provider_installation {\n  network_mirror {\n    url = \"" + e.url + "\"\n  }\n}\n",
+				},
+			}, nil
+		},
+		notes: func(e setupEnv) string {
+			return "Modules: source = \"" + e.host + "/" + e.repo + "__<namespace>/<name>/<provider>\"; " +
+				"publish them with relic package publish terraform."
+		},
+	},
+	"helm": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_HELM,
+			relicv1.Format_FORMAT_HELM_OCI,
+		},
+		short: "helm repo add (or helm registry login for OCI charts)",
+		steps: func(e setupEnv) ([]setupStep, error) {
+			if e.format == relicv1.Format_FORMAT_HELM_OCI {
+				return []setupStep{
+					{
+						command: []string{
+							"helm",
+							"registry",
+							"login",
+							hostOnlyWithPort(e.registry),
+							"--username",
+							e.user,
+							"--password-stdin",
+						},
+						stdin: e.token,
+					},
+				}, nil
+			}
+
+			return []setupStep{
+				{
+					command: []string{
+						"helm",
+						"repo",
+						"add",
+						"--force-update",
+						e.repo,
+						e.url,
+						"--username",
+						e.user,
+						"--password-stdin",
+					},
+					stdin: e.token,
+				},
+			}, nil
+		},
+	},
+	"cargo": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_CARGO,
+		},
+		short: "~/.cargo/config.toml (the sparse registry) and credentials.toml (its token)",
+		steps: func(e setupEnv) ([]setupStep, error) {
+			return []setupStep{
+				{
+					file:  ".cargo/config.toml",
+					block: true,
+					mode:  0o644,
+					content: "[registries." + e.repo + "]\nindex = \"sparse+" + e.url + "\"\n" +
+						"credential-provider = [\"cargo:token\"]\n",
+				},
+				{
+					file:    ".cargo/credentials.toml",
+					block:   true,
+					mode:    0o600,
+					content: "[registries." + e.repo + "]\ntoken = \"Bearer " + e.token + "\"\n",
+				},
+			}, nil
+		},
+		notes: func(e setupEnv) string {
+			return "Use it with --registry " + e.repo + ", or replace crates.io:\n  [source.crates-io]\n  replace-with = \"" + e.repo + "\""
+		},
+	},
+	"apk": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_ALPINE,
+		},
+		short:  "/etc/apk/repositories and the repository's signing key (run as root, e.g. in an image build)",
+		system: true,
+		flags: map[string]string{
+			"branch": "the Alpine branch, as the repository lays it out (v3.21, edge)",
+		},
+		steps: func(e setupEnv) ([]setupStep, error) {
+			branch := e.flags["branch"]
+			if branch == "" {
+				return nil, errors.New("apk: give the branch (--branch v3.21)")
+			}
+
+			repository, err := withUserinfo(strings.TrimSuffix(e.url, "/")+"/"+branch+"/main", e.user, e.token)
+			if err != nil {
+				return nil, fmt.Errorf("apk: %w", err)
+			}
+
+			steps := []setupStep{
+				{
+					file:    "etc/apk/repositories",
+					block:   true,
+					mode:    0o600,
+					content: repository + "\n",
+				},
+			}
+			if e.publicKey != "" {
+				steps = append(steps, setupStep{
+					file:    "etc/apk/keys/" + e.keyPair + ".rsa.pub",
+					mode:    0o644,
+					content: e.publicKey,
+				})
+			}
+
+			return steps, nil
+		},
+	},
+	"apt": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_DEBIAN,
+		},
+		short:  "an APT source, its credentials and the repository's signing key (run as root)",
+		system: true,
+		flags: map[string]string{
+			"distribution": "the distribution (bookworm, noble)",
+			"components":   "the components, space-separated (default main)",
+		},
+		steps: func(e setupEnv) ([]setupStep, error) {
+			dist := e.flags["distribution"]
+			if dist == "" {
+				return nil, errors.New("apt: give the distribution (--distribution bookworm)")
+			}
+
+			components := cmp.Or(e.flags["components"], "main")
+			signedBy := ""
+
+			var steps []setupStep
+
+			if e.publicKey != "" {
+				signedBy = "[signed-by=/etc/apt/keyrings/relic-" + e.repo + ".asc] "
+				steps = append(steps, setupStep{
+					file:    "etc/apt/keyrings/relic-" + e.repo + ".asc",
+					mode:    0o644,
+					content: e.publicKey,
+				})
+			}
+
+			return append(
+				steps,
+				setupStep{
+					file:    "etc/apt/sources.list.d/relic-" + e.repo + ".list",
+					mode:    0o644,
+					content: "deb " + signedBy + e.url + " " + dist + " " + components + "\n",
+				},
+				setupStep{
+					file:    "etc/apt/auth.conf.d/relic-" + e.repo + ".conf",
+					mode:    0o600,
+					content: "machine " + e.url + " login " + e.user + " password " + e.token + "\n",
+				},
+			), nil
+		},
+	},
+	"dnf": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_RPM,
+		},
+		short:  "a dnf and yum repository file with its credentials, and the repository's signing key (run as root)",
+		system: true,
+		steps: func(e setupEnv) ([]setupStep, error) {
+			var steps []setupStep
+
+			signature := "repo_gpgcheck=0\n"
+
+			if e.publicKey != "" {
+				keyFile := "etc/pki/rpm-gpg/RPM-GPG-KEY-relic-" + e.repo
+				steps = append(steps, setupStep{
+					file:    keyFile,
+					mode:    0o644,
+					content: e.publicKey,
+				})
+				signature = "repo_gpgcheck=1\ngpgkey=file:///" + keyFile + "\n"
+			}
+
+			return append(steps, setupStep{
+				file: "etc/yum.repos.d/relic-" + e.repo + ".repo",
+				mode: 0o600,
+				content: "[relic-" + e.repo + "]\nname=Relic " + e.repo + "\nbaseurl=" + e.url + "\nusername=" + e.user +
+					"\npassword=" + e.token + "\nenabled=1\ngpgcheck=0\n" + signature,
+			}), nil
+		},
+	},
+	"nix": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_NIX,
+		},
+		short: "~/.config/nix/nix.conf (the binary cache as a substituter) and ~/.netrc credentials",
+		steps: func(e setupEnv) ([]setupStep, error) {
+			return []setupStep{
+				{
+					file:  ".config/nix/nix.conf",
+					block: true,
+					mode:  0o644,
+					content: "extra-substituters = " + e.url + "\nnetrc-file = " +
+						filepath.Join(e.home, ".netrc") + "\n",
+				},
+				netrcStep(e),
+			}, nil
+		},
+		notes: func(_ setupEnv) string {
+			return "Add the cache's signing key to trusted-public-keys, or set require-sigs = false for unsigned caches."
+		},
+	},
+	"huggingface": {
+		formats: []relicv1.Format{
+			relicv1.Format_FORMAT_HUGGINGFACE,
+		},
+		short: "the token huggingface_hub reads; HF_ENDPOINT to export",
+		steps: func(e setupEnv) ([]setupStep, error) {
+			return []setupStep{
+				{
+					file:    ".cache/huggingface/token",
+					mode:    0o600,
+					content: e.token,
+				},
+			}, nil
+		},
+		notes: func(e setupEnv) string {
+			return "export HF_ENDPOINT=" + e.url + "\nor relic package huggingface upload|download, which need neither."
+		},
+	},
+}
+
+func pipSteps(e setupEnv) ([]setupStep, error) {
+	return []setupStep{
+		{
+			file:    ".config/pip/pip.conf",
+			mode:    0o644,
+			content: "[global]\nindex-url = " + e.url + "\n",
+		},
+		netrcStep(e),
+	}, nil
+}
+
+func netrcStep(e setupEnv) setupStep {
+	return setupStep{
+		file:    ".netrc",
+		block:   true,
+		mode:    0o600,
+		content: "machine " + hostOnly(e.host) + " login " + e.user + " password " + e.token + "\n",
+	}
+}
+
+func loginSteps(client string) func(e setupEnv) ([]setupStep, error) {
+	return func(e setupEnv) ([]setupStep, error) {
+		return []setupStep{
+			{
+				command: []string{
+					client,
+					"login",
+					hostOnlyWithPort(e.registry),
+					"--username",
+					e.user,
+					"--password-stdin",
+				},
+				stdin: e.token,
+			},
+		}, nil
+	}
+}
+
+func hostOnly(host string) string {
+	if h, _, ok := strings.Cut(host, ":"); ok {
+		return h
+	}
+
+	return host
+}
+
+func hostOnlyWithPort(registry string) string {
+	h, _, _ := strings.Cut(registry, "/")
+
+	return h
+}
+
+func xmlEscape(s string) string {
+	var b bytes.Buffer
+
+	_ = xml.EscapeText(&b, []byte(s))
+
+	return b.String()
+}
+
+func serverSetupCmd(g *globals) *cobra.Command {
+	var (
+		home, root    string
+		yes, system   bool
+		shell, listen string
+	)
+
+	cmd := &cobra.Command{
+		Use: "setup",
+		Annotations: map[string]string{
+			progressAnnotation: "off",
+		},
+		Short: "Install relic on this machine: config, shell completion and the server as a systemd service",
+		Long: "Shows the client's config file, writes shell completion and loads it from ~/.bashrc (or ~/.zshrc, " +
+			"or fish's completions directory), and runs the server (relic server start --worker on SQLite and the " +
+			"filesystem) as a systemd user service that starts at boot; with --system, as root, as a system service " +
+			"with its own user instead. It lists what it will change and asks first (--yes does not); running it " +
+			"again changes nothing.",
+		Example: "  relic server setup\n" +
+			"  relic server setup --yes --listen 0.0.0.0:8090\n" +
+			"  sudo relic server setup --system",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			m, err := newMachineSetup(cmd, g, home, root)
+			if err != nil {
+				return err
+			}
+
+			m.yes, m.system, m.listen = yes, system, listen
+			m.listenSet = cmd.Flags().Changed("listen")
+
+			if shell != "" {
+				m.shell = shell
+			}
+
+			return m.runSetup(cmd.Context())
+		},
+	}
+	cmd.Flags().StringVar(&home, "home", userHome(), "the home directory user files go under")
+	cmd.Flags().StringVar(&root, "root", "/", "the root directory system files go under")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask before changing anything")
+	cmd.Flags().BoolVar(&system, "system", false, "as root: run the server as a systemd system service")
+	cmd.Flags().StringVar(&shell, "shell", "", "the shell to complete for (default from $SHELL)")
+	cmd.Flags().StringVar(&listen, "listen", "127.0.0.1:8090", "the address the service listens on")
+
+	return cmd
+}
+
+func packageSetupCmd(g *globals) *cobra.Command {
+	var (
+		write, force, showToken, agent bool
+		home, root, project            string
+		values                         = map[string]*string{}
+	)
+
+	names := slices.Sorted(func(yield func(string) bool) {
+		for n := range setupClients {
+			if !yield(n) {
+				return
+			}
+		}
+	})
+
+	var list strings.Builder
+	for _, n := range names {
+		_, _ = fmt.Fprintf(&list, "  %-12s %s\n", n, setupClients[n].short)
+	}
+
+	cmd := &cobra.Command{
+		Use:   "setup <client> <repository>",
+		Short: "Configure a package manager client for a repository",
+		Long: "Prints the configuration a client needs to use a repository with your token (shown as <token> " +
+			"unless --show-token), or with --write writes it: user files under --home, system files under " +
+			"--root, and runs the client's own login commands. Files are written 0600 when they hold the " +
+			"token; in files other tools share (.npmrc, .netrc, …) relic writes a marked block and keeps the rest. " +
+			"Clients:\n\n" + list.String(),
+		Example: "  relic package setup npm npm-virtual --write\n" +
+			"  relic package setup maven maven-virtual\n" +
+			"  relic package setup go go-virtual --private 'git.example.com/*' --write\n" +
+			"  relic package setup npm npm-virtual --agent --project .\n" +
+			"  relic package setup apt debian-remote --distribution bookworm --write   # as root, e.g. in a Dockerfile",
+		Args:      cobra.ExactArgs(2),
+		ValidArgs: names,
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) == 0 {
+				return names, cobra.ShellCompDirectiveNoFileComp
+			}
+
+			return completeRepositoriesAt(g, 1)(cmd, args, toComplete)
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, ok := setupClients[args[0]]
+			if !ok {
+				return fmt.Errorf("unknown client %q: use one of %s", args[0], strings.Join(names, ", "))
+			}
+
+			c, err := g.dial()
+			if err != nil {
+				return err
+			}
+
+			e, err := setupEnvFor(cmd, g, c, client, args[1])
+			if err != nil {
+				return err
+			}
+
+			e.home, e.root = home, root
+			e.flags = map[string]string{}
+
+			for k, v := range values {
+				e.flags[k] = *v
+			}
+
+			write = write || agent
+			if !write && !showToken {
+				e.token = "<token>"
+			}
+
+			steps, err := client.steps(e)
+			if err != nil {
+				return err
+			}
+
+			out := cmd.OutOrStdout()
+
+			for _, s := range steps {
+				if write {
+					if err := applySetupStep(cmd, e, client, s, force); err != nil {
+						return err
+					}
+
+					continue
+				}
+
+				printSetupStep(out, e, client, s)
+			}
+
+			if agent {
+				if err := writeAgentFiles(out, project, e.url, args[0], args[1]); err != nil {
+					return err
+				}
+			}
+
+			if client.notes != nil {
+				_, _ = fmt.Fprintf(out, "\n%s\n", client.notes(e))
+			}
+
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&write, "write", false, "write the files and run the commands instead of printing them")
+	cmd.Flags().BoolVar(&agent, "agent", false, "also route coding agents through the repository: write the client's "+
+		"files (--write), an AGENTS.md section and relic mcp in .mcp.json under --project")
+	cmd.Flags().StringVar(&project, "project", ".", "the project directory --agent writes AGENTS.md and .mcp.json into")
+	cmd.Flags().BoolVar(&force, "force", false, "replace files relic does not write a block into")
+	cmd.Flags().BoolVar(&showToken, "show-token", false, "print the token instead of <token>")
+	cmd.Flags().StringVar(&home, "home", userHome(), "the home directory user files go under")
+	cmd.Flags().StringVar(&root, "root", "/", "the root directory system files go under")
+
+	for _, n := range names {
+		for flag, help := range setupClients[n].flags {
+			if _, ok := values[flag]; ok {
+				continue
+			}
+
+			values[flag] = new(string)
+			cmd.Flags().StringVar(values[flag], flag, "", help+" ("+n+")")
+		}
+	}
+
+	return cmd
+}
+
+func userHome() string {
+	h, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+
+	return h
+}
+
+func setupEnvFor(cmd *cobra.Command, g *globals, c *client, client setupClient, repo string) (setupEnv, error) {
+	ctx := cmd.Context()
+
+	r, err := c.repositories.GetRepository(ctx, connect.NewRequest(&relicv1.GetRepositoryRequest{
+		Name: repo,
+	}))
+	if err != nil {
+		return setupEnv{}, fmt.Errorf("setup: %w", err)
+	}
+
+	format := r.Msg.GetRepository().GetFormat()
+	if !slices.Contains(client.formats, format) {
+		return setupEnv{}, fmt.Errorf("setup: %s is a %s repository", repo, formatName(format))
+	}
+
+	ep, err := c.repositories.GetClientEndpoints(ctx, connect.NewRequest(&relicv1.GetClientEndpointsRequest{
+		Name: repo,
+	}))
+	if err != nil {
+		return setupEnv{}, fmt.Errorf("setup: %w", err)
+	}
+
+	me, err := c.sessions.GetCurrentUser(ctx, connect.NewRequest(&relicv1.GetCurrentUserRequest{}))
+	if err != nil {
+		return setupEnv{}, fmt.Errorf("setup: %w", err)
+	}
+
+	target, err := g.target()
+	if err != nil {
+		return setupEnv{}, err
+	}
+
+	if target.token == "" {
+		return setupEnv{}, fmt.Errorf(
+			"setup: no token to give the client: sign in with relic auth login %s --user %s",
+			target.url,
+			me.Msg.GetPrincipal().GetUsername(),
+		)
+	}
+
+	u, err := url.Parse(c.url)
+	if err != nil {
+		return setupEnv{}, err
+	}
+
+	e := setupEnv{
+		repo:     repo,
+		format:   format,
+		url:      ep.Msg.GetPackageManager(),
+		registry: ep.Msg.GetContainerRegistry(),
+		files:    ep.Msg.GetFiles(),
+		host:     u.Host,
+		user:     me.Msg.GetPrincipal().GetUsername(),
+		token:    target.token,
+	}
+	if e.url == "" {
+		e.url = e.files
+	}
+
+	if slices.Contains(signedFormats, format) {
+		key, err := c.repositories.GetRepositorySigningKey(
+			ctx,
+			connect.NewRequest(&relicv1.GetRepositorySigningKeyRequest{
+				Name: repo,
+			}),
+		)
+		if err != nil {
+			return setupEnv{}, fmt.Errorf("setup: the signing key of %s: %w", repo, err)
+		}
+
+		e.keyPair, e.publicKey = key.Msg.GetKeyPair(), key.Msg.GetPublicKey()
+	}
+
+	return e, nil
+}
+
+var signedFormats = []relicv1.Format{
+	relicv1.Format_FORMAT_ALPINE,
+	relicv1.Format_FORMAT_DEBIAN,
+	relicv1.Format_FORMAT_RPM,
+}
+
+func formatName(f relicv1.Format) string {
+	return strings.TrimPrefix(strings.ToLower(f.String()), "format_")
+}
+
+func writeArgumentFile(arguments []string) (string, error) {
+	f, err := os.CreateTemp("", "relic-setup-*.rsp")
+	if err != nil {
+		return "", err
+	}
+
+	var lines strings.Builder
+
+	for _, argument := range arguments {
+		if strings.ContainsAny(argument, "\r\n") || strings.HasPrefix(argument, "#") {
+			_ = f.Close()
+			_ = os.Remove(f.Name())
+
+			return "", errors.New("an argument with a line break or a leading # cannot go in an argument file")
+		}
+
+		lines.WriteString(argument + "\n")
+	}
+
+	_, err = f.WriteString(lines.String())
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+
+	if err != nil {
+		_ = os.Remove(f.Name())
+
+		return "", err
+	}
+
+	return f.Name(), nil
+}
+
+func stepPath(e setupEnv, client setupClient, file string) string {
+	if client.system {
+		return filepath.Join(e.root, file)
+	}
+
+	return filepath.Join(e.home, file)
+}
+
+func printSetupStep(w io.Writer, e setupEnv, client setupClient, s setupStep) {
+	if s.command != nil {
+		cmdline := strings.Join(append(append(slices.Clone(s.env), s.command...), s.argumentFile...), " ")
+		if s.stdin != "" {
+			cmdline = "echo " + strings.TrimSuffix(s.stdin, "\n") + " | " + cmdline
+		}
+
+		_, _ = fmt.Fprintf(w, "$ %s\n", cmdline)
+
+		return
+	}
+
+	what := ""
+	if s.block {
+		what = " (a block; the rest of the file stays)"
+	}
+
+	_, _ = fmt.Fprintf(w, "# %s%s\n%s", stepPath(e, client, s.file), what, s.content)
+
+	if !strings.HasSuffix(s.content, "\n") {
+		_, _ = fmt.Fprintln(w)
+	}
+}
+
+func blockMarkers(repo string) (begin, end string) {
+	return "# relic setup " + repo + " begin", "# relic setup " + repo + " end"
+}
+
+func withBlock(old, repo, content string) (string, error) {
+	begin, end := blockMarkers(repo)
+	block := begin + "\n" + strings.TrimSuffix(content, "\n") + "\n" + end + "\n"
+
+	if i, _ := markerLine(old, begin); i >= 0 {
+		_, after := markerLine(old[i:], end)
+		if after < 0 {
+			return "", fmt.Errorf("%q has no matching %q; fix the file by hand", begin, end)
+		}
+
+		return old[:i] + block + old[i+after:], nil
+	}
+
+	if old != "" && !strings.HasSuffix(old, "\n") {
+		old += "\n"
+	}
+
+	return old + block, nil
+}
+
+func applySetupStep(cmd *cobra.Command, e setupEnv, client setupClient, s setupStep, force bool) error {
+	out := cmd.OutOrStdout()
+
+	if s.command != nil {
+		args := slices.Clone(s.command[1:])
+
+		if s.argumentFile != nil {
+			path, err := writeArgumentFile(s.argumentFile)
+			if err != nil {
+				return fmt.Errorf("setup: %s: %w", s.command[0], err)
+			}
+
+			defer func() {
+				_ = os.Remove(path)
+			}()
+
+			args = append(args, "@"+path)
+		}
+
+		//nolint:gosec // G204: the client's own command, arguments not parsed by a shell
+		c := exec.CommandContext(cmd.Context(), s.command[0], args...)
+		c.Stdin = strings.NewReader(s.stdin)
+		c.Env = append(os.Environ(), s.env...)
+		c.Stdout, c.Stderr = cmd.ErrOrStderr(), cmd.ErrOrStderr()
+
+		if err := c.Run(); err != nil {
+			return fmt.Errorf("setup: %s: %w", s.command[0], err)
+		}
+
+		_, _ = fmt.Fprintf(out, "ran %s\n", strings.Join(append(slices.Clone(s.command), s.argumentFile...)[:2], " "))
+
+		return nil
+	}
+
+	path := stepPath(e, client, s.file)
+
+	old, err := os.ReadFile(path) //nolint:gosec // the client's configuration file
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+
+	content := s.content
+
+	switch {
+	case s.block:
+		content, err = withBlock(string(old), e.repo, s.content)
+		if err != nil {
+			return fmt.Errorf("setup: %s: %w", path, err)
+		}
+	case err == nil && string(old) != s.content && !force:
+		return fmt.Errorf(
+			"setup: %s exists; merge it by hand (relic package setup without --write prints it) or replace it with --force",
+			path,
+		)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+
+	if err := writeFileAtomic(path, strings.NewReader(content), s.mode); err != nil {
+		return err
+	}
+
+	_, _ = fmt.Fprintf(out, "wrote %s\n", path)
+
+	return nil
+}

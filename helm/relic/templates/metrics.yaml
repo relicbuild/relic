@@ -1,0 +1,56 @@
+{{- if .Values.metrics.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "relic.fullname" . }}-metrics
+  labels:
+    {{- include "relic.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: {{ include "relic.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - {name: metrics, port: 8091, targetPort: metrics}
+{{- if and .Values.metrics.serviceMonitor.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1") }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "relic.fullname" . }}
+  labels: {{- include "relic.monitorLabels" (dict "root" . "extra" .Values.metrics.serviceMonitor.labels) | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "relic.selector" (dict "root" . "component" "metrics") | nindent 6 }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.metrics.serviceMonitor.interval }}
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+          targetLabel: component
+{{- end }}
+{{- if and .Values.metrics.prometheusRule.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1") }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "relic.fullname" . }}
+  labels: {{- include "relic.monitorLabels" (dict "root" . "extra" .Values.metrics.prometheusRule.labels) | nindent 4 }}
+spec:
+  {{- $rules := .Files.Get "files/observability/relic-rules.yaml" | fromYaml }}
+  {{- $base := .Values.metrics.prometheusRule.runbookBaseURL | trimSuffix "/" }}
+  {{- if $base }}
+  {{- range $g := $rules.groups }}
+  {{- range $r := $g.rules }}
+  {{- if and $r.annotations $r.annotations.runbook_url }}
+  {{- $_ := set $r.annotations "runbook_url" (printf "%s%s" $base $r.annotations.runbook_url) }}
+  {{- end }}
+  {{- end }}
+  {{- end }}
+  {{- end }}
+  groups: {{- toYaml $rules.groups | nindent 4 }}
+{{- end }}
+{{- end }}

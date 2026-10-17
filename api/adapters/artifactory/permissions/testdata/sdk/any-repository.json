@@ -1,0 +1,22 @@
+{
+  "name": "example-any-repository",
+  "repo": {
+    "include-patterns": [
+      "**"
+    ],
+    "exclude-patterns": [
+      "**/*.tmp"
+    ],
+    "repositories": [
+      "ANY LOCAL",
+      "ANY REMOTE"
+    ],
+    "actions": {
+      "groups": {
+        "readers": [
+          "read"
+        ]
+      }
+    }
+  }
+}

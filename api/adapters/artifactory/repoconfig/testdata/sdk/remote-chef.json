@@ -1,0 +1,56 @@
+{
+  "rclass": "remote",
+  "key": "example-chef-remote",
+  "projectKey": "example-projectKey",
+  "environments": [
+    "DEV"
+  ],
+  "packageType": "chef",
+  "description": "example-description",
+  "notes": "example-notes",
+  "includesPattern": "**/*",
+  "excludesPattern": "tmp/**",
+  "repoLayoutRef": "simple-default",
+  "blackedOut": true,
+  "xrayIndex": true,
+  "propertySets": [
+    "artifactory"
+  ],
+  "downloadRedirect": true,
+  "priorityResolution": true,
+  "cdnRedirect": true,
+  "url": "https://example.com/chef",
+  "username": "example-username",
+  "proxy": "example-proxy",
+  "hardFail": true,
+  "offline": true,
+  "storeArtifactsLocally": true,
+  "socketTimeoutMillis": 15000,
+  "localAddress": "127.0.0.1",
+  "retrievalCachePeriodSecs": 7200,
+  "metadataRetrievalTimeoutSecs": 60,
+  "missedRetrievalCachePeriodSecs": 1800,
+  "unusedArtifactsCleanupPeriodHours": 24,
+  "assumedOfflinePeriodSecs": 300,
+  "shareConfiguration": true,
+  "synchronizeProperties": true,
+  "blockMismatchingMimeTypes": true,
+  "mismatchingMimeTypesOverrideList": "application/json",
+  "allowAnyHostAuth": true,
+  "enableCookieManagement": true,
+  "bypassHeadRequests": true,
+  "clientTlsCertificate": "example-clientTlsCertificate",
+  "contentSynchronisation": {
+    "enabled": true,
+    "statistics": {
+      "enabled": true
+    },
+    "properties": {
+      "enabled": true
+    },
+    "source": {
+      "originAbsenceDetection": true
+    }
+  },
+  "queryParams": "region=example"
+}

@@ -1,0 +1,327 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/artifact.proto";
+import "relic/v1/item_query.proto";
+import "relic/v1/options.proto";
+
+// ReleaseService manages releases: signed, immutable sets of artifacts taken
+// from queries, files, builds or other releases, and promoted through
+// environments. Each method checks the caller's release permission (read,
+// write, annotate, delete or promote on the release); administrators may do
+// everything. The archive of a release version is imported as plain HTTP,
+// POST /api/v1/releases/import, and exported with ExportRelease.
+service ReleaseService {
+  // ListReleases returns the releases the caller may read, with their
+  // latest version.
+  rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/releases"
+    };
+  }
+  // ListReleaseVersions returns a release's versions, newest first.
+  rpc ListReleaseVersions(ListReleaseVersionsRequest) returns (ListReleaseVersionsResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/releases/{name}/versions"
+    };
+  }
+  // GetRelease returns one release version with its artifacts.
+  rpc GetRelease(GetReleaseRequest) returns (GetReleaseResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/releases/{name}/versions/{version}"
+    };
+  }
+  // CreateRelease creates a release version from its sources. Every
+  // artifact it takes must be readable by the caller.
+  rpc CreateRelease(CreateReleaseRequest) returns (CreateReleaseResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      post: "/api/v1/releases/{spec.name}/versions"
+      body: "*"
+    };
+  }
+  // UpdateRelease adds sources to a draft version.
+  rpc UpdateRelease(UpdateReleaseRequest) returns (UpdateReleaseResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      patch: "/api/v1/releases/{spec.name}/versions/{spec.version}"
+      body: "*"
+    };
+  }
+  // FinalizeRelease turns a draft version into a completed one.
+  rpc FinalizeRelease(FinalizeReleaseRequest) returns (FinalizeReleaseResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      post: "/api/v1/releases/{name}/versions/{version}:finalize"
+      body: "*"
+    };
+  }
+  // DeleteRelease deletes a release version and its stored files.
+  rpc DeleteRelease(DeleteReleaseRequest) returns (DeleteReleaseResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      delete: "/api/v1/releases/{name}/versions/{version}"
+    };
+  }
+  // SetReleaseTag sets (or, with an empty tag, clears) a version's tag.
+  rpc SetReleaseTag(SetReleaseTagRequest) returns (SetReleaseTagResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      put: "/api/v1/releases/{name}/versions/{version}/tag"
+      body: "*"
+    };
+  }
+  // PromoteRelease copies (or moves) a completed version's artifacts into
+  // an environment's repositories. Every target must be writable by the
+  // caller.
+  rpc PromoteRelease(PromoteReleaseRequest) returns (PromoteReleaseResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      post: "/api/v1/releases/{name}/versions/{version}/promotions"
+      body: "*"
+    };
+  }
+  // ListReleasePromotions returns a version's promotions, newest first.
+  rpc ListReleasePromotions(ListReleasePromotionsRequest) returns (ListReleasePromotionsResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/releases/{name}/versions/{version}/promotions"
+    };
+  }
+  // DeleteReleasePromotion removes a promotion's record and the files it
+  // placed.
+  rpc DeleteReleasePromotion(DeleteReleasePromotionRequest) returns (DeleteReleasePromotionResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      delete: "/api/v1/releases/{name}/versions/{version}/promotions/{created_millis}"
+    };
+  }
+  // ExportRelease writes a version's archive (its artifacts and signed
+  // manifest) to the release repository and returns the stored item;
+  // download it from /api/v1/files/.
+  rpc ExportRelease(ExportReleaseRequest) returns (ExportReleaseResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      post: "/api/v1/releases/{name}/versions/{version}:export"
+      body: "*"
+    };
+  }
+}
+
+// ReleaseStatus is where a release version is in its life.
+enum ReleaseStatus {
+  RELEASE_STATUS_UNSPECIFIED = 0;
+  RELEASE_STATUS_PROCESSING = 1;
+  RELEASE_STATUS_COMPLETED = 2;
+  RELEASE_STATUS_DRAFT = 3;
+  RELEASE_STATUS_FAILED = 4;
+}
+
+// ReleaseArtifact is one file in a release version.
+message ReleaseArtifact {
+  // repository and path name the file it was taken from.
+  string repository = 1;
+  string path = 2;
+  string sha256 = 3;
+  int64 size = 4;
+}
+
+// Release is one release version.
+message Release {
+  string name = 1;
+  string version = 2;
+  // project is the release's project; empty for releases outside projects.
+  string project = 3;
+  // repository is where the release's files are stored.
+  string repository = 4;
+  ReleaseStatus status = 5;
+  string tag = 6;
+  repeated ReleaseArtifact artifacts = 7;
+  string created_by = 8;
+  google.protobuf.Timestamp created = 9;
+  // versions counts the release's versions (ListReleases only).
+  int64 versions = 10;
+  // manifest is the path of the version's signed manifest in repository; its
+  // evidence, gate decisions included, is listed for that file.
+  string manifest = 11;
+}
+
+// ReleaseSource is where a new version's artifacts come from; set exactly one
+// of its fields.
+message ReleaseSource {
+  // query selects the files to take.
+  ItemQuery query = 1;
+  repeated ReleaseFileRef files = 2;
+  repeated ReleaseBuildRef builds = 3;
+  repeated ReleaseRef releases = 4;
+}
+
+// ReleaseFileRef names one file as "repository/path", optionally with the
+// SHA-256 it must have.
+message ReleaseFileRef {
+  string path = 1;
+  string sha256 = 2;
+}
+
+// ReleaseBuildRef names a build run.
+message ReleaseBuildRef {
+  string name = 1;
+  string number = 2;
+  // project is the build's project; empty for builds outside projects.
+  string project = 3;
+  // dependencies takes the run's dependencies too.
+  bool dependencies = 4;
+}
+
+// ReleaseRef names another release version.
+message ReleaseRef {
+  string name = 1;
+  string version = 2;
+  string project = 3;
+}
+
+// ReleaseSpec is a version to create, or the sources to add to a draft.
+message ReleaseSpec {
+  string name = 1;
+  string version = 2;
+  repeated ReleaseSource sources = 3;
+  // draft creates a version that UpdateRelease can add to until
+  // FinalizeRelease.
+  bool draft = 4;
+}
+
+// ReleasePromotion is a recorded promotion of a release version.
+message ReleasePromotion {
+  ReleaseStatus status = 1;
+  string environment = 2;
+  repeated string include = 3;
+  repeated string exclude = 4;
+  repeated string messages = 5;
+  string created_by = 6;
+  google.protobuf.Timestamp created = 7;
+  // created_millis identifies the promotion (DeleteReleasePromotion).
+  int64 created_millis = 8;
+}
+
+message ListReleasesRequest {}
+
+message ListReleasesResponse {
+  repeated Release releases = 1;
+}
+
+message ListReleaseVersionsRequest {
+  string project = 1;
+  string name = 2;
+}
+
+message ListReleaseVersionsResponse {
+  repeated Release releases = 1;
+}
+
+message GetReleaseRequest {
+  string project = 1;
+  string name = 2;
+  string version = 3;
+}
+
+message GetReleaseResponse {
+  Release release = 1;
+}
+
+message CreateReleaseRequest {
+  string project = 1;
+  ReleaseSpec spec = 2;
+}
+
+message CreateReleaseResponse {
+  Release release = 1;
+}
+
+message UpdateReleaseRequest {
+  string project = 1;
+  ReleaseSpec spec = 2;
+}
+
+message UpdateReleaseResponse {
+  Release release = 1;
+}
+
+message FinalizeReleaseRequest {
+  string project = 1;
+  string name = 2;
+  string version = 3;
+}
+
+message FinalizeReleaseResponse {
+  Release release = 1;
+}
+
+message DeleteReleaseRequest {
+  string project = 1;
+  string name = 2;
+  string version = 3;
+}
+
+message DeleteReleaseResponse {}
+
+message SetReleaseTagRequest {
+  string project = 1;
+  string name = 2;
+  string version = 3;
+  string tag = 4;
+}
+
+message SetReleaseTagResponse {}
+
+message PromoteReleaseRequest {
+  string project = 1;
+  string name = 2;
+  string version = 3;
+  string environment = 4;
+  // include limits the target repositories to these; empty for all.
+  repeated string include = 5;
+  // exclude leaves these repositories out.
+  repeated string exclude = 6;
+  // move removes the files from the previous environment.
+  bool move = 7;
+}
+
+message PromoteReleaseResponse {
+  ReleasePromotion promotion = 1;
+}
+
+message ListReleasePromotionsRequest {
+  string project = 1;
+  string name = 2;
+  string version = 3;
+}
+
+message ListReleasePromotionsResponse {
+  repeated ReleasePromotion promotions = 1;
+}
+
+message DeleteReleasePromotionRequest {
+  string project = 1;
+  string name = 2;
+  string version = 3;
+  int64 created_millis = 4;
+}
+
+message DeleteReleasePromotionResponse {}
+
+message ExportReleaseRequest {
+  string project = 1;
+  string name = 2;
+  string version = 3;
+}
+
+message ExportReleaseResponse {
+  // archive is the stored archive; download it from /api/v1/files/.
+  Item archive = 1;
+}

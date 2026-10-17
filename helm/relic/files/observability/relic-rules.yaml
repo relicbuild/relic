@@ -1,0 +1,208 @@
+groups:
+  - name: relic.slo
+    rules:
+      - record: relic:download_slow:ratio_rate5m
+        expr: |
+          1 - (
+            sum(rate(relic_http_request_duration_seconds_bucket{method="GET", family=~"packages|container-registry", le="2"}[5m]))
+            / sum(rate(relic_http_request_duration_seconds_count{method="GET", family=~"packages|container-registry"}[5m]))
+          )
+      - record: relic:download_slow:ratio_rate30m
+        expr: |
+          1 - (
+            sum(rate(relic_http_request_duration_seconds_bucket{method="GET", family=~"packages|container-registry", le="2"}[30m]))
+            / sum(rate(relic_http_request_duration_seconds_count{method="GET", family=~"packages|container-registry"}[30m]))
+          )
+      - record: relic:download_slow:ratio_rate1h
+        expr: |
+          1 - (
+            sum(rate(relic_http_request_duration_seconds_bucket{method="GET", family=~"packages|container-registry", le="2"}[1h]))
+            / sum(rate(relic_http_request_duration_seconds_count{method="GET", family=~"packages|container-registry"}[1h]))
+          )
+      - record: relic:download_slow:ratio_rate6h
+        expr: |
+          1 - (
+            sum(rate(relic_http_request_duration_seconds_bucket{method="GET", family=~"packages|container-registry", le="2"}[6h]))
+            / sum(rate(relic_http_request_duration_seconds_count{method="GET", family=~"packages|container-registry"}[6h]))
+          )
+
+  - name: relic.alerts
+    rules:
+      - alert: RelicDown
+        expr: absent(relic_build_info{component="server"})
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: No Relic server is running
+          description: No Relic server has been scraped for 5 minutes. Clients, package managers and the web UI cannot reach Relic.
+          runbook_url: /docs/guides/monitoring#relicdown
+
+      - alert: RelicHighErrorRate
+        expr: |
+          (
+            sum by (family) (rate(relic_http_requests_total{code="5xx"}[10m]))
+            / sum by (family) (rate(relic_http_requests_total[10m]))
+          ) > 0.05
+          and sum by (family) (rate(relic_http_requests_total[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "More than 5% of {{ $labels.family }} requests fail"
+          description: "{{ $value | humanizePercentage }} of the {{ $labels.family }} API's requests answered 5xx over the last 10 minutes."
+          runbook_url: /docs/guides/monitoring#relichigherrorrate
+
+      - alert: RelicDownloadLatencySLO
+        expr: relic:download_slow:ratio_rate1h > (14.4 * 0.01) and relic:download_slow:ratio_rate5m > (14.4 * 0.01)
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Downloads are slow (fast error budget burn)
+          description: "{{ $value | humanizePercentage }} of downloads took longer than 2 seconds over the last hour."
+          runbook_url: /docs/guides/monitoring#relicdownloadlatencyslo
+      - alert: RelicDownloadLatencySLO
+        expr: relic:download_slow:ratio_rate6h > (6 * 0.01) and relic:download_slow:ratio_rate30m > (6 * 0.01)
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Downloads are slow (slow error budget burn)
+          description: "{{ $value | humanizePercentage }} of downloads took longer than 2 seconds over the last 6 hours."
+          runbook_url: /docs/guides/monitoring#relicdownloadlatencyslo
+
+      - alert: RelicUpstreamErrors
+        expr: |
+          (
+            sum by (format) (rate(relic_upstream_requests_total{code=~"5xx|error"}[15m]))
+            / sum by (format) (rate(relic_upstream_requests_total[15m]))
+          ) > 0.2
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.format }} upstreams fail"
+          description: "{{ $value | humanizePercentage }} of requests to {{ $labels.format }} remote repositories' upstreams failed over 15 minutes."
+          runbook_url: /docs/guides/monitoring#relicupstreamerrors
+
+      - alert: RelicDBPoolExhausted
+        expr: |
+          sum by (namespace, instance) (rate(relic_db_pool_empty_acquire_total[5m])) > 0
+          and on (namespace, instance)
+          sum by (namespace, instance) (relic_db_pool_acquired) >= sum by (namespace, instance) (relic_db_pool_max)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The database pool of {{ $labels.instance }} is exhausted"
+          description: Every connection is in use and requests wait for one.
+          runbook_url: /docs/guides/monitoring#relicdbpoolexhausted
+
+      - alert: RelicJobBacklog
+        expr: max by (kind) (relic_job_oldest_available_age_seconds) > 1800
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.kind }} jobs wait more than 30 minutes"
+          description: "The oldest {{ $labels.kind }} job has waited {{ $value | humanizeDuration }}."
+          runbook_url: /docs/guides/monitoring#relicjobbacklog
+
+      - alert: RelicScanBacklog
+        expr: max(relic_scan_backlog) > 0 and deriv(max(relic_scan_backlog)[1h:5m]) > 0
+        for: 1h
+        labels:
+          severity: warning
+          cause: backlog
+        annotations:
+          summary: The Relic Scan backlog keeps growing
+          description: "{{ $value }} artifacts wait for a scan, and the queue has grown for an hour."
+          runbook_url: /docs/guides/monitoring#relicscanbacklog
+      - alert: RelicScanBacklog
+        expr: max(relic_scanner_db_age_seconds) > 3 * 86400
+        for: 15m
+        labels:
+          severity: warning
+          cause: scanner-database
+        annotations:
+          summary: The vulnerability database is older than 3 days
+          description: "Grype's database was built {{ $value | humanizeDuration }} ago; findings miss recent advisories."
+          runbook_url: /docs/guides/monitoring#relicscanbacklog
+
+      - alert: RelicCVEFeedStale
+        expr: |
+          max by (feed) (relic_cve_feed_age_seconds{feed="epss"}) > 3 * 20 * 3600
+          or max by (feed) (relic_cve_feed_age_seconds{feed="kev"}) > 3 * 6 * 3600
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: "The {{ $labels.feed }} CVE feed is stale"
+          description: "The {{ $labels.feed }} feed was last read {{ $value | humanizeDuration }} ago."
+          runbook_url: /docs/guides/monitoring#reliccvefeedstale
+
+      - alert: RelicGCFailing
+        expr: |
+          sum(increase(relic_gc_runs_total{result="success"}[6h])) == 0
+          and sum(increase(relic_gc_runs_total[6h])) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Garbage collection has not succeeded in 6 hours
+          description: Every garbage collection run of the last 6 hours failed; unreferenced content is not reclaimed.
+          runbook_url: /docs/guides/monitoring#relicgcfailing
+
+      - alert: RelicReplicationFailing
+        expr: max by (repository) (relic_replication_consecutive_failures) >= 3
+        labels:
+          severity: warning
+        annotations:
+          summary: "Replication of {{ $labels.repository }} keeps failing"
+          description: "The last {{ $value }} push replication runs of {{ $labels.repository }} failed."
+          runbook_url: /docs/guides/monitoring#relicreplicationfailing
+
+      - alert: RelicStorageErrors
+        expr: |
+          (
+            sum(rate(relic_object_storage_ops_total{result="error"}[10m]))
+            / sum(rate(relic_object_storage_ops_total[10m]))
+          ) > 0.01
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: Object storage operations fail
+          description: "{{ $value | humanizePercentage }} of object storage operations failed over 10 minutes."
+          runbook_url: /docs/guides/monitoring#relicstorageerrors
+
+      - alert: RelicContentIntegrity
+        expr: sum(increase(relic_blob_integrity_failures_total[15m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: Stored content is missing or damaged
+          description: "Reads of missing or damaged content in 15 minutes: {{ $value }}."
+          runbook_url: /docs/guides/monitoring#reliccontentintegrity
+
+      - alert: RelicDiskSpaceLow
+        expr: |
+          max by (namespace, instance, volume) (relic_disk_free_bytes / relic_disk_size_bytes) < 0.1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The {{ $labels.volume }} volume of {{ $labels.instance }} is almost full"
+          description: "{{ $value | humanizePercentage }} of the volume is free. A single node keeps its SQLite database and filesystem object store on it."
+          runbook_url: /docs/guides/monitoring#relicdiskspacelow
+
+      - alert: RelicServerCertificateExpiring
+        expr: |
+          min by (namespace, instance, source) (relic_tls_certificate_expiry_timestamp_seconds) - time() < 14 * 86400
+        labels:
+          severity: warning
+        annotations:
+          summary: "The {{ $labels.source }} certificate {{ $labels.instance }} serves expires soon"
+          description: "It expires in {{ $value | humanizeDuration }}. Clients refuse an expired certificate."
+          runbook_url: /docs/guides/monitoring#relicservercertificateexpiring

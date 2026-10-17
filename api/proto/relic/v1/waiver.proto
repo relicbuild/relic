@@ -1,0 +1,126 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "relic/v1/options.proto";
+import "relic/v1/scan.proto";
+
+// WaiverService takes requests for ignore rules from any signed-in user;
+// administrators approve them, with an expiry, or reject them.
+service WaiverService {
+  rpc RequestWaiver(RequestWaiverRequest) returns (RequestWaiverResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      post: "/api/v1/waivers"
+      body: "*"
+    };
+  }
+  // ListWaivers lists a page of the caller's waivers, newest first;
+  // administrators and viewers see everyone's.
+  rpc ListWaivers(ListWaiversRequest) returns (ListWaiversResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      get: "/api/v1/waivers"
+    };
+  }
+  // WithdrawWaiver deletes the caller's own pending waiver.
+  rpc WithdrawWaiver(WithdrawWaiverRequest) returns (WithdrawWaiverResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      delete: "/api/v1/waivers/{id}"
+    };
+  }
+  // ApproveWaiver turns a pending waiver into an ignore rule that expires.
+  rpc ApproveWaiver(ApproveWaiverRequest) returns (ApproveWaiverResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      post: "/api/v1/waivers/{id}:approve"
+      body: "*"
+    };
+  }
+  rpc RejectWaiver(RejectWaiverRequest) returns (RejectWaiverResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      post: "/api/v1/waivers/{id}:reject"
+      body: "*"
+    };
+  }
+}
+
+enum WaiverStatus {
+  WAIVER_STATUS_UNSPECIFIED = 0;
+  WAIVER_STATUS_PENDING = 1;
+  WAIVER_STATUS_APPROVED = 2;
+  WAIVER_STATUS_REJECTED = 3;
+}
+
+// Waiver asks for an ignore rule. Approved, it becomes one that expires.
+message Waiver {
+  string id = 1;
+  string requested_by = 2;
+  string reason = 3;
+  // rule holds the filters asked for; its id, notes and expiry are unset.
+  IgnoreRule rule = 4;
+  WaiverStatus status = 5;
+  string decided_by = 6;
+  string decision_note = 7;
+  google.protobuf.Timestamp decided = 8;
+  google.protobuf.Timestamp expires = 9;
+  // ignore_rule_id is the ignore rule an approval created.
+  string ignore_rule_id = 10;
+  google.protobuf.Timestamp created = 11;
+}
+
+message RequestWaiverRequest {
+  IgnoreRule rule = 1;
+  string reason = 2;
+}
+
+message RequestWaiverResponse {
+  Waiver waiver = 1;
+}
+
+message ListWaiversRequest {
+  // status filters by status; unspecified lists all.
+  WaiverStatus status = 1;
+  // mine lists only the caller's waivers.
+  bool mine = 2;
+  // page counts from 1.
+  int32 page = 3;
+  // page_size is at most 200; 50 when unset.
+  int32 page_size = 4;
+}
+
+message ListWaiversResponse {
+  repeated Waiver waivers = 1;
+  // total is the number of waivers the filters select.
+  int64 total = 2;
+}
+
+message WithdrawWaiverRequest {
+  string id = 1;
+}
+
+message WithdrawWaiverResponse {}
+
+message ApproveWaiverRequest {
+  string id = 1;
+  // days the ignore rule lasts, 1 to 365.
+  int32 days = 2;
+  string note = 3;
+}
+
+message ApproveWaiverResponse {
+  Waiver waiver = 1;
+}
+
+message RejectWaiverRequest {
+  string id = 1;
+  string note = 2;
+}
+
+message RejectWaiverResponse {
+  Waiver waiver = 1;
+}

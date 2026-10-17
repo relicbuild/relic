@@ -1,0 +1,7 @@
+<!-- Built into the client image to fill /opt/m2-seed, the read-only local
+     repository tail the scenarios' mvn reads plugins from. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>relic.seed</groupId><artifactId>seed</artifactId><version>1.0.0</version>
+  <properties><maven.compiler.release>17</maven.compiler.release><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding></properties>
+</project>

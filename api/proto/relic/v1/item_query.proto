@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+package relic.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// ItemQuery selects items (files and folders) by their fields, their
+// properties and the builds that produced or used them.
+message ItemQuery {
+  // criteria selects items; unset matches every item.
+  ItemCriterion criteria = 1;
+}
+
+// ItemCriterion is a group of criteria or one comparison.
+message ItemCriterion {
+  oneof criterion {
+    // all matches when every child matches.
+    ItemCriteria all = 1;
+    // any matches when some child matches.
+    ItemCriteria any = 2;
+    ItemFieldComparison field = 3;
+    ItemPropertyComparison property = 4;
+    // same_property matches when one property satisfies every child at once;
+    // its children are property comparisons.
+    ItemCriteria same_property = 5;
+    ItemBuildComparison build = 6;
+  }
+}
+
+// ItemCriteria are the children of a group.
+message ItemCriteria {
+  repeated ItemCriterion criteria = 1;
+}
+
+// ItemField is a field of an item.
+enum ItemField {
+  ITEM_FIELD_UNSPECIFIED = 0;
+  ITEM_FIELD_REPOSITORY = 1;
+  // ITEM_FIELD_PATH is the folder the item is in; "." at the repository root.
+  ITEM_FIELD_PATH = 2;
+  ITEM_FIELD_NAME = 3;
+  // ITEM_FIELD_TYPE is "file" or "folder".
+  ITEM_FIELD_TYPE = 4;
+  ITEM_FIELD_SIZE = 5;
+  ITEM_FIELD_CREATED = 6;
+  ITEM_FIELD_CREATED_BY = 7;
+  ITEM_FIELD_MODIFIED = 8;
+  ITEM_FIELD_MODIFIED_BY = 9;
+  ITEM_FIELD_UPDATED = 10;
+  ITEM_FIELD_SHA1 = 11;
+  ITEM_FIELD_MD5 = 12;
+  ITEM_FIELD_SHA256 = 13;
+  // ITEM_FIELD_DEPTH counts path segments: 1 for items at the root.
+  ITEM_FIELD_DEPTH = 14;
+}
+
+// ComparisonOperator compares a field with a value. MATCH and NOT_MATCH
+// take a pattern where * matches any run of characters and ? one character.
+enum ComparisonOperator {
+  COMPARISON_OPERATOR_UNSPECIFIED = 0;
+  COMPARISON_OPERATOR_EQUAL = 1;
+  COMPARISON_OPERATOR_NOT_EQUAL = 2;
+  COMPARISON_OPERATOR_GREATER = 3;
+  COMPARISON_OPERATOR_GREATER_OR_EQUAL = 4;
+  COMPARISON_OPERATOR_LESS = 5;
+  COMPARISON_OPERATOR_LESS_OR_EQUAL = 6;
+  COMPARISON_OPERATOR_MATCH = 7;
+  COMPARISON_OPERATOR_NOT_MATCH = 8;
+}
+
+// ComparisonValue is the value a field is compared with.
+message ComparisonValue {
+  oneof value {
+    string text = 1;
+    int64 number = 2;
+    google.protobuf.Timestamp time = 3;
+    // missing compares with a missing value (EQUAL and NOT_EQUAL only).
+    bool missing = 4;
+  }
+}
+
+// ItemFieldComparison compares one of the item's fields.
+message ItemFieldComparison {
+  ItemField field = 1;
+  ComparisonOperator operator = 2;
+  ComparisonValue value = 3;
+}
+
+// ItemPropertyComparison compares the item's properties. With compare_key
+// it compares property keys; otherwise the value of the property named key
+// (any property when key is empty). The negative operators match items that
+// have no such property.
+message ItemPropertyComparison {
+  string key = 1;
+  bool compare_key = 2;
+  ComparisonOperator operator = 3;
+  string value = 4;
+}
+
+// ItemBuildRelation is how an item relates to a build run: an artifact the
+// run produced or a dependency it used, matched by SHA-1.
+enum ItemBuildRelation {
+  ITEM_BUILD_RELATION_UNSPECIFIED = 0;
+  ITEM_BUILD_RELATION_ARTIFACT = 1;
+  ITEM_BUILD_RELATION_DEPENDENCY = 2;
+}
+
+// BuildRunField is a field of a build run.
+enum BuildRunField {
+  BUILD_RUN_FIELD_UNSPECIFIED = 0;
+  BUILD_RUN_FIELD_NAME = 1;
+  BUILD_RUN_FIELD_NUMBER = 2;
+}
+
+// ItemBuildComparison matches items related to a build run whose field
+// satisfies the comparison. Build comparisons of one relation in the same
+// "all" group constrain the same run.
+message ItemBuildComparison {
+  ItemBuildRelation relation = 1;
+  BuildRunField field = 2;
+  ComparisonOperator operator = 3;
+  string value = 4;
+}
