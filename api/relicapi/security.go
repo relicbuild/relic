@@ -460,15 +460,10 @@ func (s *securityServer) CreateToken(
 		)
 	}
 
-	expires := time.Duration(days) * 24 * time.Hour
-	if !caller.Admin && (expires == 0 || expires > auth.MaxUserTokenLifetime) {
-		expires = auth.MaxUserTokenLifetime
-	}
-
 	tok, err := s.d.Tokens.Issue(ctx, caller.LimitIssue(auth.IssueParams{
 		Username:    caller.Name(),
 		Scope:       scope,
-		ExpiresIn:   expires,
+		ExpiresIn:   time.Duration(days) * 24 * time.Hour,
 		Description: req.Msg.GetDescription(),
 		Project:     req.Msg.GetProject(),
 	}, time.Now()))

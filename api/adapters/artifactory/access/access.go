@@ -138,10 +138,6 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) {
 		expiry = time.Duration(*req.ExpiresIn) * time.Second
 	}
 
-	if !caller.Admin && (expiry == 0 || expiry > auth.MaxUserTokenLifetime) {
-		expiry = auth.MaxUserTokenLifetime
-	}
-
 	tok, err := h.tokens.Issue(ctx, caller.LimitIssue(auth.IssueParams{
 		Username:    username,
 		Scope:       scope,

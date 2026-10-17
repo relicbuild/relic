@@ -71,9 +71,6 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) {
 		expires = time.Duration(secs) * time.Second
 	}
 
-	if !caller.Admin && (expires == 0 || expires > auth.MaxUserTokenLifetime) {
-		expires = auth.MaxUserTokenLifetime
-	}
 	// Unknown scope parts are ignored on this route.
 	scope, _ := access.ParseScope(r.PostForm.Get("scope"))
 	if !caller.MayGrant(scope) {

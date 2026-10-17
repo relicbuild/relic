@@ -326,7 +326,8 @@ func (h *Handler) npmLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := h.authn.Password(r, body.Name, body.Password); err != nil {
+	p, err := h.authn.Password(r, body.Name, body.Password)
+	if err != nil {
 		if errors.Is(err, auth.ErrBadCredentials) {
 			httperror.Write(w, r, http.StatusUnauthorized, "Bad credentials")
 			return
@@ -341,14 +342,11 @@ func (h *Handler) npmLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tok, err := h.tokens.Issue(
-		r.Context(),
-		auth.IssueParams{
-			Username:    body.Name,
-			Scope:       auth.UserScope,
-			Description: "npm login",
-		},
-	)
+	tok, err := h.tokens.Issue(r.Context(), p.LimitIssue(auth.IssueParams{
+		Username:    p.Username,
+		Scope:       auth.UserScope,
+		Description: "npm login",
+	}, time.Now()))
 	if err != nil {
 		h.writeError(w, r, err)
 		return

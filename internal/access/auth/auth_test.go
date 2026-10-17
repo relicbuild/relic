@@ -823,3 +823,70 @@ func TestAllowExpiredBearer(t *testing.T) {
 		})
 	}
 }
+
+func TestLimitIssueBoundsTheLifetime(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	tests := []struct {
+		name      string
+		p         Principal
+		requested time.Duration
+		want      time.Duration
+	}{
+		{
+			name: "a user asking for a token that never expires",
+			p: Principal{
+				Username: "bob",
+			},
+			want: MaxUserTokenLifetime,
+		},
+		{
+			name: "a user asking for more than the maximum",
+			p: Principal{
+				Username: "bob",
+			},
+			requested: 2 * MaxUserTokenLifetime,
+			want:      MaxUserTokenLifetime,
+		},
+		{
+			name: "a user within the maximum",
+			p: Principal{
+				Username: "bob",
+			},
+			requested: time.Hour,
+			want:      time.Hour,
+		},
+		{
+			name: "an administrator",
+			p: Principal{
+				Username: "root",
+				Admin:    true,
+			},
+		},
+		{
+			name: "a workload identity's token",
+			p: Principal{
+				Username:             "ci-bot",
+				WorkloadIdentity:     "github",
+				WorkloadTokenExpires: now.Add(time.Hour),
+			},
+			want: time.Hour,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := tt.p.LimitIssue(IssueParams{
+				Username:  tt.p.Username,
+				Scope:     UserScope,
+				ExpiresIn: tt.requested,
+			}, now)
+			if got.ExpiresIn != tt.want {
+				t.Errorf("ExpiresIn = %v, want %v", got.ExpiresIn, tt.want)
+			}
+		})
+	}
+}
