@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
@@ -144,5 +145,41 @@ func TestSAMLSignIn(t *testing.T) {
 		response,
 	); !errors.Is(err, sso.ErrRefused) {
 		t.Errorf("a response for another service provider was accepted: %v", err)
+	}
+}
+
+func TestSAMLMetadataWithoutTheIdentityProvidersMetadata(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	unavailable := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(unavailable.Close)
+
+	s := sso.New(databasetest.NewDB(t), nil, slog.New(slog.DiscardHandler))
+	if err := s.PutProvider(ctx, sso.Provider{
+		Name:    "corp",
+		Enabled: true,
+		SAML: &sso.SAMLSettings{
+			MetadataURL: unavailable.URL + "/metadata",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	metadata, err := s.SAMLMetadata(ctx, "corp", samlBase)
+	if err != nil {
+		t.Fatalf("service provider metadata: %v", err)
+	}
+
+	for _, want := range []string{
+		`entityID="` + samlBase + `/metadata"`,
+		`Location="` + samlBase + `/acs"`,
+		"X509Certificate",
+	} {
+		if !strings.Contains(string(metadata), want) {
+			t.Errorf("service provider metadata lacks %s:\n%s", want, metadata)
+		}
 	}
 }

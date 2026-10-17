@@ -60,7 +60,7 @@ func (s *Service) startSAML(ctx context.Context, name, base, returnTo string) (s
 		return "", "", err
 	}
 
-	sp, err := s.serviceProvider(ctx, p, base)
+	sp, err := s.federatedServiceProvider(ctx, p, base)
 	if err != nil {
 		return "", "", err
 	}
@@ -109,7 +109,7 @@ func (s *Service) finishSAML(ctx context.Context, name, base, state, samlRespons
 		return "", "", err
 	}
 
-	sp, err := s.serviceProvider(ctx, p, base)
+	sp, err := s.federatedServiceProvider(ctx, p, base)
 	if err != nil {
 		return "", "", err
 	}
@@ -155,7 +155,7 @@ func (s *Service) SAMLMetadata(ctx context.Context, name, base string) ([]byte, 
 		return nil, fmt.Errorf("%w: %s is not a SAML provider", ErrNotFound, name)
 	}
 
-	sp, err := s.serviceProvider(ctx, p, base)
+	sp, err := s.serviceProvider(p, base)
 	if err != nil {
 		return nil, err
 	}
@@ -168,15 +168,27 @@ func (s *Service) SAMLMetadata(ctx context.Context, name, base string) ([]byte, 
 	return append([]byte(xml.Header), out...), nil
 }
 
-func (s *Service) serviceProvider(ctx context.Context, p Provider, base string) (*saml.ServiceProvider, error) {
+func (s *Service) federatedServiceProvider(
+	ctx context.Context,
+	p Provider,
+	base string,
+) (*saml.ServiceProvider, error) {
+	sp, err := s.serviceProvider(p, base)
+	if err != nil {
+		return nil, err
+	}
+
+	if sp.IDPMetadata, err = s.idpMetadata(ctx, p); err != nil {
+		return nil, err
+	}
+
+	return sp, nil
+}
+
+func (s *Service) serviceProvider(p Provider, base string) (*saml.ServiceProvider, error) {
 	key, cert, err := parseKeyPair(p.SAML.Key, p.SAML.Certificate)
 	if err != nil {
 		return nil, fmt.Errorf("identity provider %s: %w", p.Name, err)
-	}
-
-	idp, err := s.idpMetadata(ctx, p)
-	if err != nil {
-		return nil, err
 	}
 
 	metadataURL, err := url.Parse(base + "/metadata")
@@ -196,7 +208,6 @@ func (s *Service) serviceProvider(ctx context.Context, p Provider, base string) 
 		HTTPClient:        s.client,
 		MetadataURL:       *metadataURL,
 		AcsURL:            *acsURL,
-		IDPMetadata:       idp,
 		AuthnNameIDFormat: saml.UnspecifiedNameIDFormat,
 		SignatureMethod:   dsig.RSASHA256SignatureMethod,
 	}, nil
