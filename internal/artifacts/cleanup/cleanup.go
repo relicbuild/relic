@@ -64,14 +64,57 @@ type Service struct {
 	now   func() time.Time
 }
 
-// New returns a Service.
+// New returns a Service. Deleting a repository removes it from the
+// policies; a policy left without repositories is disabled.
 func New(db *database.DB, repos *repository.Service, log *slog.Logger) *Service {
-	return &Service{
+	s := &Service{
 		db:    db,
 		repos: repos,
 		log:   log,
 		now:   time.Now,
 	}
+	repos.RegisterRemovalHook(s.removeRepository)
+
+	return s
+}
+
+func (s *Service) removeRepository(ctx context.Context, q database.Querier, key string) error {
+	rows, err := q.ListCleanupPolicies(ctx)
+	if err != nil {
+		return fmt.Errorf("list cleanup policies: %w", err)
+	}
+
+	for _, row := range rows {
+		p, err := policyOf(row)
+		if err != nil {
+			return err
+		}
+
+		kept := slices.DeleteFunc(slices.Clone(p.Repositories), func(name string) bool {
+			return name == key
+		})
+		if len(kept) == len(p.Repositories) {
+			continue
+		}
+
+		p.Repositories = kept
+		p.Enabled = p.Enabled && len(kept) > 0
+
+		doc, err := json.Marshal(p)
+		if err != nil {
+			return fmt.Errorf("encode cleanup policy: %w", err)
+		}
+
+		if err := q.UpsertCleanupPolicy(ctx, database.UpsertCleanupPolicyParams{
+			Name: p.Name,
+			Doc:  doc,
+			Now:  s.now(),
+		}); err != nil {
+			return fmt.Errorf("store cleanup policy %s: %w", p.Name, err)
+		}
+	}
+
+	return nil
 }
 
 var namePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
@@ -90,8 +133,12 @@ func (s *Service) validate(ctx context.Context, p Policy) error {
 
 	for _, name := range p.Repositories {
 		r, err := s.repos.GetRepository(ctx, name)
+		if errors.Is(err, repository.ErrRepositoryNotFound) {
+			return fmt.Errorf("%w: repository %s does not exist", ErrInvalid, name)
+		}
+
 		if err != nil {
-			return fmt.Errorf("%w: repository %s: %w", ErrInvalid, name, err)
+			return fmt.Errorf("repository %s: %w", name, err)
 		}
 
 		if r.Class != repository.ClassLocal || name == s.repos.TrashRepository() {

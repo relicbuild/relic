@@ -199,9 +199,89 @@ func TestCleanupPolicyValidation(t *testing.T) {
 			OlderThanDays: 1,
 		},
 	} {
-		if err := s.Put(ctx, p); !errors.Is(err, ErrInvalid) {
-			t.Errorf("%s: Put = %v, want ErrInvalid", name, err)
+		if err := s.Put(ctx, p); !errors.Is(err, ErrInvalid) || errors.Is(err, repository.ErrRepositoryNotFound) {
+			t.Errorf("%s: Put = %v, want ErrInvalid alone", name, err)
 		}
+	}
+}
+
+func TestDeletingARepositoryRemovesItFromPolicies(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	s, repos, _ := newCleanup(t)
+
+	if err := repos.CreateRepository(ctx, repository.Repository{
+		Name:   "apps",
+		Class:  repository.ClassLocal,
+		Format: "maven",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, p := range []Policy{
+		{
+			Name:    "both",
+			Enabled: true,
+			Repositories: []string{
+				"libs",
+				"apps",
+			},
+			OlderThanDays: 5,
+		},
+		{
+			Name:    "apps-only",
+			Enabled: true,
+			Repositories: []string{
+				"apps",
+			},
+			OlderThanDays: 5,
+		},
+	} {
+		if err := s.Put(ctx, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := repos.DeleteRepository(ctx, "apps"); err != nil {
+		t.Fatal(err)
+	}
+
+	both, err := s.Get(ctx, "both")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !slices.Equal(both.Repositories, []string{
+		"libs",
+	}) || !both.Enabled {
+		t.Errorf("policy both = %v, enabled %v; want [libs], enabled", both.Repositories, both.Enabled)
+	}
+
+	both.Enabled = false
+	if err := s.Put(ctx, both); err != nil {
+		t.Errorf("disabling the policy: %v", err)
+	}
+
+	appsOnly, err := s.Get(ctx, "apps-only")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(appsOnly.Repositories) != 0 || appsOnly.Enabled {
+		t.Errorf("policy apps-only = %v, enabled %v; want none, disabled", appsOnly.Repositories, appsOnly.Enabled)
+	}
+
+	if err := repos.CreateRepository(ctx, repository.Repository{
+		Name:   "apps",
+		Class:  repository.ClassLocal,
+		Format: "maven",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if moved, err := s.Run(ctx, "apps-only"); moved != 0 || err != nil {
+		t.Errorf("Run of a policy whose repository was deleted = %d, %v", moved, err)
 	}
 }
 

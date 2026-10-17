@@ -42,6 +42,7 @@ type Service struct {
 	trashLayout   TrashLayout
 	hooks         map[Format]DeployHook
 	deleteHooks   map[Format]DeployHook
+	removalHooks  []RemovalHook
 	metadata      []func(name string) bool
 	box           *sealing.Box
 	fetches       Coalescer[Item]

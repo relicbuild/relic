@@ -254,8 +254,23 @@ func (s *Service) DeleteRepository(ctx context.Context, key string) error {
 			return ErrRepositoryNotFound
 		}
 
+		for _, hook := range s.removalHooks {
+			if err := hook(ctx, q, key); err != nil {
+				return err
+			}
+		}
+
 		return nil
 	})
+}
+
+// RemovalHook drops what refers to a repository, in the transaction that
+// deletes it.
+type RemovalHook func(ctx context.Context, q database.Querier, key string) error
+
+// RegisterRemovalHook runs hook whenever a repository is deleted.
+func (s *Service) RegisterRemovalHook(hook RemovalHook) {
+	s.removalHooks = append(s.removalHooks, hook)
 }
 
 func (s *Service) repositoryFromRow(row database.Repository) Repository {
