@@ -198,6 +198,10 @@ func (s *Service) fromReleases(
 			return err
 		}
 
+		if b.Draft || b.Status != StatusCompleted {
+			return fmt.Errorf("%w: release %s/%s is %s, not completed", ErrInvalid, b.Name, b.Version, b.Status)
+		}
+
 		for _, a := range b.Artifacts {
 			it, err := s.storedArtifact(ctx, b, a)
 			if err != nil {
