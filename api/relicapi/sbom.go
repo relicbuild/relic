@@ -220,7 +220,9 @@ func canDeployEveryCopy(ctx context.Context, d Dependencies, sha256Hex string) e
 
 	for _, it := range copies {
 		if err := can(ctx, d, it.Repository, cleanPath(it.Path()), auth.ActionWrite); err != nil {
-			if errors.Is(err, repository.ErrNotFound) || codeOf(err).Code() == connect.CodePermissionDenied {
+			if errors.Is(err, repository.ErrNotFound) ||
+				errors.Is(err, repository.ErrRepositoryNotFound) ||
+				codeOf(err).Code() == connect.CodePermissionDenied {
 				return denied
 			}
 
