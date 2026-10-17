@@ -75,3 +75,57 @@ func TestMaskedSettingsLine(t *testing.T) {
 		})
 	}
 }
+
+func TestWithSetting(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		content string
+		replace bool
+		want    string
+	}{
+		{
+			name:    "missing",
+			content: "RELIC_LOG_FORMAT=text",
+			replace: true,
+			want:    "RELIC_LOG_FORMAT=text\nRELIC_LOG_LEVEL=debug\n",
+		},
+		{
+			name:    "set",
+			content: "RELIC_LOG_LEVEL=info\nRELIC_LOG_FORMAT=text\n",
+			replace: true,
+			want:    "RELIC_LOG_LEVEL=debug\nRELIC_LOG_FORMAT=text\n",
+		},
+		{
+			name:    "set twice, of which the last applies",
+			content: "RELIC_LOG_LEVEL=info\nRELIC_LOG_FORMAT=text\nRELIC_LOG_LEVEL=warn\n",
+			replace: true,
+			want:    "RELIC_LOG_LEVEL=debug\nRELIC_LOG_FORMAT=text\nRELIC_LOG_LEVEL=debug\n",
+		},
+		{
+			name:    "indented",
+			content: "  RELIC_LOG_LEVEL=info\n",
+			replace: true,
+			want:    "RELIC_LOG_LEVEL=debug\n",
+		},
+		{
+			name:    "kept",
+			content: "RELIC_LOG_LEVEL=info\n",
+			want:    "RELIC_LOG_LEVEL=info\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := withSetting(tt.content, "RELIC_LOG_LEVEL", "debug", tt.replace); got != tt.want {
+				t.Errorf("withSetting = %q, want %q", got, tt.want)
+			}
+
+			if got := keyValues(withSetting(tt.content, "RELIC_LOG_LEVEL", "debug", true), "=")["RELIC_LOG_LEVEL"]; got != "debug" {
+				t.Errorf("the setting that applies is %q, want debug", got)
+			}
+		})
+	}
+}

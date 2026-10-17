@@ -610,15 +610,21 @@ func (m *machineSetup) settings(what, path, data, tlsDirectory string, mode fs.F
 }
 
 func withSetting(content, key, value string, replace bool) string {
+	found := false
+
 	lines := strings.SplitAfter(content, "\n")
 	for i, l := range lines {
-		if strings.HasPrefix(l, key+"=") {
+		if strings.HasPrefix(strings.TrimLeft(l, " \t"), key+"=") {
+			found = true
+
 			if replace {
 				lines[i] = key + "=" + value + "\n"
 			}
-
-			return strings.Join(lines, "")
 		}
+	}
+
+	if found {
+		return strings.Join(lines, "")
 	}
 
 	if content != "" && !strings.HasSuffix(content, "\n") {
@@ -806,10 +812,8 @@ func (m *machineSetup) listenSetting() string {
 
 	b, err := os.ReadFile(path) //nolint:gosec // the settings file relic server setup wrote
 	if err == nil {
-		for l := range strings.Lines(string(b)) {
-			if v, ok := strings.CutPrefix(strings.TrimSpace(l), "RELIC_HTTP_LISTEN_ADDRESS="); ok {
-				return v
-			}
+		if v := keyValues(string(b), "=")["RELIC_HTTP_LISTEN_ADDRESS"]; v != "" {
+			return v
 		}
 	}
 
