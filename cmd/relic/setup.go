@@ -682,10 +682,30 @@ var setupClients = map[string]setupClient{
 	},
 }
 
-// pipConfigFile is the user configuration file pip reads on e.goos.
+// homeEnvironment is e.getenv when e.home is the user's own home, and
+// otherwise a getenv that finds no variable: they describe that home only.
+func homeEnvironment(e setupEnv) func(string) string {
+	if e.getenv == nil || e.home != userHome() {
+		return func(string) string {
+			return ""
+		}
+	}
+
+	return e.getenv
+}
+
+// pipConfigFile is the user configuration file pip reads on e.goos:
+// %APPDATA%\pip\pip.ini on Windows, $XDG_CONFIG_HOME/pip/pip.conf elsewhere
+// but macOS.
 func pipConfigFile(e setupEnv) string {
+	getenv := homeEnvironment(e)
+
 	switch e.goos {
 	case "windows":
+		if appData := getenv("APPDATA"); filepath.IsAbs(appData) {
+			return filepath.Join(appData, "pip", "pip.ini")
+		}
+
 		return "AppData/Roaming/pip/pip.ini"
 	case "darwin":
 		if st, err := os.Stat(
@@ -694,14 +714,30 @@ func pipConfigFile(e setupEnv) string {
 			st.IsDir() {
 			return "Library/Application Support/pip/pip.conf"
 		}
+	default:
+		if configHome := getenv("XDG_CONFIG_HOME"); filepath.IsAbs(configHome) {
+			return filepath.Join(configHome, "pip", "pip.conf")
+		}
 	}
 
 	return ".config/pip/pip.conf"
 }
 
-// terraformConfigFile is the CLI configuration file terraform reads on e.goos.
+// terraformConfigFile is the CLI configuration file terraform reads on e.goos:
+// TF_CLI_CONFIG_FILE, %APPDATA%\terraform.rc on Windows, ~/.terraformrc
+// elsewhere.
 func terraformConfigFile(e setupEnv) string {
+	getenv := homeEnvironment(e)
+
+	if file := getenv("TF_CLI_CONFIG_FILE"); filepath.IsAbs(file) {
+		return file
+	}
+
 	if e.goos == "windows" {
+		if appData := getenv("APPDATA"); filepath.IsAbs(appData) {
+			return filepath.Join(appData, "terraform.rc")
+		}
+
 		return "AppData/Roaming/terraform.rc"
 	}
 
@@ -1100,15 +1136,9 @@ func writeArgumentFile(arguments []string) (string, error) {
 
 // huggingFaceTokenFile is the file huggingface_hub reads its token from:
 // HF_TOKEN_PATH, $HF_HOME/token, $XDG_CACHE_HOME/huggingface/token or
-// ~/.cache/huggingface/token. The variables describe the user's own home
-// only.
+// ~/.cache/huggingface/token.
 func huggingFaceTokenFile(e setupEnv) string {
-	getenv := e.getenv
-	if getenv == nil || e.home != userHome() {
-		getenv = func(string) string {
-			return ""
-		}
-	}
+	getenv := homeEnvironment(e)
 
 	switch {
 	case filepath.IsAbs(getenv("HF_TOKEN_PATH")):

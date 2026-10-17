@@ -115,14 +115,91 @@ func TestSetupWritesWhereTheClientReads(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	own, configHome, appData := userHome(), t.TempDir(), t.TempDir()
 	for _, tc := range []struct {
 		client, goos, home, want string
+		env                      map[string]string
 	}{
 		{
 			client: "pip",
 			goos:   "linux",
 			home:   t.TempDir(),
 			want:   ".config/pip/pip.conf",
+		},
+		{
+			client: "pip",
+			goos:   "linux",
+			home:   own,
+			env: map[string]string{
+				"XDG_CONFIG_HOME": configHome,
+				"APPDATA":         appData,
+			},
+			want: filepath.Join(configHome, "pip", "pip.conf"),
+		},
+		{
+			client: "pip",
+			goos:   "linux",
+			home:   own,
+			env: map[string]string{
+				"XDG_CONFIG_HOME": "relative/config",
+			},
+			want: ".config/pip/pip.conf",
+		},
+		{
+			client: "pip",
+			goos:   "linux",
+			home:   t.TempDir(),
+			env: map[string]string{
+				"XDG_CONFIG_HOME": configHome,
+			},
+			want: ".config/pip/pip.conf",
+		},
+		{
+			client: "pip",
+			goos:   "windows",
+			home:   own,
+			env: map[string]string{
+				"APPDATA":         appData,
+				"XDG_CONFIG_HOME": configHome,
+			},
+			want: filepath.Join(appData, "pip", "pip.ini"),
+		},
+		{
+			client: "pip",
+			goos:   "windows",
+			home:   t.TempDir(),
+			env: map[string]string{
+				"APPDATA": appData,
+			},
+			want: "AppData/Roaming/pip/pip.ini",
+		},
+		{
+			client: "terraform",
+			goos:   "windows",
+			home:   own,
+			env: map[string]string{
+				"APPDATA": appData,
+			},
+			want: filepath.Join(appData, "terraform.rc"),
+		},
+		{
+			client: "terraform",
+			goos:   "linux",
+			home:   own,
+			env: map[string]string{
+				"APPDATA":         appData,
+				"XDG_CONFIG_HOME": configHome,
+			},
+			want: ".terraformrc",
+		},
+		{
+			client: "terraform",
+			goos:   "linux",
+			home:   own,
+			env: map[string]string{
+				"TF_CLI_CONFIG_FILE": filepath.Join(configHome, "relic.tfrc"),
+			},
+			want: filepath.Join(configHome, "relic.tfrc"),
 		},
 		{
 			client: "pip",
@@ -158,13 +235,16 @@ func TestSetupWritesWhereTheClientReads(t *testing.T) {
 		steps, err := setupClients[tc.client].steps(setupEnv{
 			goos: tc.goos,
 			home: tc.home,
+			getenv: func(name string) string {
+				return tc.env[name]
+			},
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
 
 		if steps[0].file != tc.want {
-			t.Errorf("%s on %s writes %s, want %s", tc.client, tc.goos, steps[0].file, tc.want)
+			t.Errorf("%s on %s with %v writes %s, want %s", tc.client, tc.goos, tc.env, steps[0].file, tc.want)
 		}
 	}
 }
