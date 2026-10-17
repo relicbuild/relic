@@ -165,6 +165,60 @@ spec: {class: local, format: npm}
 		t.Fatalf("terraform publish = %q %v", out, err)
 	}
 
+	for _, args := range [][]string{
+		{
+			"banana",
+			"--namespace",
+			"acme",
+		},
+		{
+			"2.0.0",
+			"--namespace",
+			"a/b",
+		},
+		{
+			"2.0.0",
+			"--namespace",
+			"",
+		},
+		{
+			"2.0.0",
+			"--namespace",
+			"acme",
+			"--name",
+			"net/work",
+		},
+	} {
+		publish := append([]string{
+			"package",
+			"publish",
+			"terraform",
+			"tf-local",
+		}, append(args, "--provider", "aws", "--dir", filepath.Join(tf, "network"))...)
+		if _, err := relic(t, config, "", publish...); err == nil {
+			t.Errorf("terraform publish %v succeeded, though the registry cannot list it", args)
+		}
+	}
+
+	if _, err := relic(
+		t,
+		config,
+		"",
+		"package",
+		"publish",
+		"terraform",
+		"tf-local",
+		"2.0.0",
+		"--namespace",
+		"acme",
+		"--provider",
+		"AWS",
+		"--dir",
+		filepath.Join(tf, "network"),
+	); err == nil {
+		t.Error("terraform publish with an upper-case provider succeeded")
+	}
+
 	module := download("tf-local/acme/network/aws/v1.0.0.zip")
 
 	tz, err := zip.NewReader(bytes.NewReader([]byte(module)), int64(len(module)))

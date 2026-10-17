@@ -17,6 +17,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/mod/modfile"
 	gomodule "golang.org/x/mod/module"
+	"golang.org/x/mod/semver"
 	modzip "golang.org/x/mod/zip"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -270,6 +272,10 @@ func terraformPublishCmd(g *globals) *cobra.Command {
 
 			name = cmp.Or(name, filepath.Base(abs))
 
+			if err := checkModuleAddress(namespace, name, provider, version); err != nil {
+				return fmt.Errorf("terraform publish: %w", err)
+			}
+
 			archive, err := zipModule(abs)
 			if err != nil {
 				return fmt.Errorf("terraform publish: %w", err)
@@ -322,6 +328,26 @@ func terraformPublishCmd(g *globals) *cobra.Command {
 	pf.register(cmd)
 
 	return cmd
+}
+
+var (
+	moduleNamePattern     = regexp.MustCompile(`^[0-9A-Za-z](?:[0-9A-Za-z_-]{0,62}[0-9A-Za-z])?$`)
+	moduleProviderPattern = regexp.MustCompile(`^[0-9a-z]{1,64}$`)
+)
+
+func checkModuleAddress(namespace, name, provider, version string) error {
+	switch {
+	case !moduleNamePattern.MatchString(namespace):
+		return fmt.Errorf("namespace %q is not a module namespace: letters, digits, '-' and '_'", namespace)
+	case !moduleNamePattern.MatchString(name):
+		return fmt.Errorf("name %q is not a module name: letters, digits, '-' and '_' (set it with --name)", name)
+	case !moduleProviderPattern.MatchString(provider):
+		return fmt.Errorf("provider %q is not a module provider: lower-case letters and digits", provider)
+	case !semver.IsValid("v" + version):
+		return fmt.Errorf("version %q is not a semantic version", version)
+	}
+
+	return nil
 }
 
 func zipModule(dir string) ([]byte, error) {
