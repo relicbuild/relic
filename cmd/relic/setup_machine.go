@@ -41,6 +41,7 @@ type machineSetup struct {
 	query      func(ctx context.Context, name string, args ...string) (string, error)
 	proc       string
 	hasUser    func(name string) bool
+	lookPath   func(name string) (string, error)
 	in         *bufio.Reader
 	out        io.Writer
 }
@@ -91,6 +92,10 @@ func (m *machineSetup) runSetup(ctx context.Context) error {
 		return err
 	}
 
+	if err := m.findCommands(actions); err != nil {
+		return fmt.Errorf("setup: %w", err)
+	}
+
 	m.printPlan("relic server setup will:", actions)
 
 	if !m.yes {
@@ -111,6 +116,24 @@ func (m *machineSetup) runSetup(ctx context.Context) error {
 	}
 
 	m.printNext()
+
+	return nil
+}
+
+func (m *machineSetup) findCommands(actions []machineAction) error {
+	for _, a := range actions {
+		if a.command == nil {
+			continue
+		}
+
+		if _, err := m.lookPath(a.command[0]); err != nil {
+			return fmt.Errorf(
+				"%s is not on PATH: relic server setup runs the server as a systemd service; "+
+					"without systemd (macOS, Windows), run relic server start by hand",
+				a.command[0],
+			)
+		}
+	}
 
 	return nil
 }
@@ -871,7 +894,8 @@ func newMachineSetup(cmd *cobra.Command, g *globals, home, root string) (*machin
 
 			return err == nil
 		},
-		in:  bufio.NewReader(cmd.InOrStdin()),
-		out: out,
+		lookPath: exec.LookPath,
+		in:       bufio.NewReader(cmd.InOrStdin()),
+		out:      out,
 	}, nil
 }

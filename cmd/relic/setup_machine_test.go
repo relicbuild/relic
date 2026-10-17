@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -45,6 +47,9 @@ func testMachineSetup(t *testing.T, answers string) (*machineSetup, *[]string, *
 		proc: filepath.Join(home, "proc"),
 		hasUser: func(string) bool {
 			return false
+		},
+		lookPath: func(name string) (string, error) {
+			return "/usr/bin/" + name, nil
 		},
 		in:  bufio.NewReader(strings.NewReader(answers)),
 		out: out,
@@ -663,5 +668,89 @@ func TestMachineSetupNeedsAHomeDirectory(t *testing.T) {
 
 	if _, err := os.Stat(".bashrc"); err == nil {
 		t.Error("setup without a home directory wrote .bashrc in the working directory")
+	}
+}
+
+func TestMachineSetupWithoutSystemdChangesNothing(t *testing.T) {
+	t.Parallel()
+
+	for _, system := range []bool{
+		false,
+		true,
+	} {
+		t.Run(fmt.Sprintf("system=%v", system), func(t *testing.T) {
+			t.Parallel()
+
+			m, ran, _ := testMachineSetup(t, "")
+			m.yes, m.system = true, system
+
+			if system {
+				m.euid = 0
+
+				m.executable = filepath.Join(t.TempDir(), "relic")
+				//nolint:gosec // G306: an executable
+				if err := os.WriteFile(m.executable, []byte("binary"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			m.lookPath = func(name string) (string, error) {
+				if name == "systemctl" {
+					return "", exec.ErrNotFound
+				}
+
+				return "/usr/bin/" + name, nil
+			}
+
+			err := m.runSetup(t.Context())
+			if err == nil || !strings.Contains(err.Error(), "systemctl") ||
+				!strings.Contains(err.Error(), "relic server start") {
+				t.Fatalf("err = %v, want one that names systemctl and running the server by hand", err)
+			}
+
+			for _, dir := range []string{
+				m.home,
+				m.root,
+			} {
+				entries, err := os.ReadDir(dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				if len(entries) > 0 {
+					t.Errorf("setup wrote %s: %v", dir, entries)
+				}
+			}
+
+			if len(*ran) > 0 {
+				t.Errorf("ran %v", *ran)
+			}
+		})
+	}
+}
+
+func TestServerConfigSetWithoutSystemdChangesNothing(t *testing.T) {
+	t.Parallel()
+
+	m, _, _ := testMachineSetup(t, "")
+	m.yes = true
+
+	if err := m.runSetup(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(m.configDir(), "server.env")
+	before := readFile(t, path)
+
+	m.lookPath = func(string) (string, error) {
+		return "", exec.ErrNotFound
+	}
+
+	if err := m.setServiceSetting(t.Context(), &bytes.Buffer{}, path, "RELIC_LOG_LEVEL", "debug"); err == nil {
+		t.Fatal("set without systemctl went ahead")
+	}
+
+	if got := readFile(t, path); got != before {
+		t.Errorf("settings changed:\n%s", got)
 	}
 }

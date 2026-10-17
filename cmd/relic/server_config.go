@@ -168,6 +168,16 @@ func (m *machineSetup) setServiceSetting(ctx context.Context, w io.Writer, path,
 		return fmt.Errorf("stat %s: %w", path, err)
 	}
 
+	if err := m.findCommands([]machineAction{
+		{
+			command: []string{
+				"systemctl",
+			},
+		},
+	}); err != nil {
+		return err
+	}
+
 	a := m.file("server settings", path, []byte(withSetting(string(b), key, value, true)), fi.Mode().Perm())
 
 	done := "Set " + key + " and restarted the service."
