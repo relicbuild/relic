@@ -56,6 +56,9 @@ var roleActions = map[Role][]auth.Action{
 
 var keyPattern = regexp.MustCompile(`^[a-z][a-z0-9]{1,31}$`)
 
+// ValidKey reports whether key has the form of a project key.
+func ValidKey(key string) bool { return keyPattern.MatchString(key) }
+
 // Member is a user, or a group, in a role.
 type Member struct {
 	Name  string `json:"name"`
@@ -274,7 +277,7 @@ func (s *Service) store(ctx context.Context, p Project) error {
 }
 
 func validate(p *Project) error {
-	if !keyPattern.MatchString(p.Key) {
+	if !ValidKey(p.Key) {
 		return fmt.Errorf(
 			"%w: key %q: 2 to 32 lower-case letters and digits, starting with a letter",
 			ErrInvalid,

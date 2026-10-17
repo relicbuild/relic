@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"relic/internal/access/auth"
+	"relic/internal/access/project"
 	"relic/internal/artifacts/repository"
 	"relic/internal/delivery/buildinfo"
 	"relic/internal/platform/database"
@@ -561,6 +562,61 @@ func TestDiscardKeepsFilesOfAnotherRun(t *testing.T) {
 
 			if _, err := repos.Stat(ctx, "z-src", tt.path); err != nil {
 				t.Errorf("file of another run: %v, want it kept", err)
+			}
+		})
+	}
+}
+
+func TestPublishKeepsBuildsOutOfAnotherProjectsRepository(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	builds, repos, db := newService(t)
+	projects := project.New(db)
+
+	for _, key := range []string{
+		"alpha",
+		"beta",
+	} {
+		if _, err := projects.Put(ctx, project.Project{
+			Key:  key,
+			Name: key,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := repos.CreateRepository(ctx, repository.Repository{
+		Name:    builds.Repository("beta"),
+		Class:   repository.ClassLocal,
+		Format:  repository.FormatBuild,
+		Project: "alpha",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		project string
+	}{
+		{
+			name:    "repository of another project",
+			project: "beta",
+		},
+		{
+			name:    "project that does not exist",
+			project: "gamma",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := builds.PublishDocument(ctx, tt.project, run("1", time.Now()), "admin")
+			if !errors.Is(err, buildinfo.ErrInvalid) {
+				t.Fatalf("PublishDocument = %v; want ErrInvalid", err)
+			}
+
+			if _, err := repos.Stat(ctx, builds.Repository(tt.project), "app/1.json"); err == nil {
+				t.Error("the build-info file was stored")
 			}
 		})
 	}

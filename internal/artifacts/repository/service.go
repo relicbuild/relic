@@ -49,6 +49,7 @@ type Service struct {
 	versionGate   VersionGate
 	events        events.Publisher
 	projectQuota  func(context.Context, string) (int64, error)
+	storageOwners []StorageOwner
 
 	upstreamChecksMu sync.Mutex
 	upstreamChecks   map[Format]UpstreamCheck

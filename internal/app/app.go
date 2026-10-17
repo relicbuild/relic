@@ -858,6 +858,7 @@ func newRouter(
 
 	builds := buildinfo.NewService(db, repos, buildjson.Format{}, log)
 	builds.SetLayout(layout.BuildInfo)
+	repos.ReserveStorage(builds.StorageOwner)
 	h := adapter.New(repos, builds, sec, tokens, db, log)
 	h.SetReplicationQueue(enqueueReplication(queue))
 	h.SetSecrets(opts.Secrets)
@@ -929,6 +930,7 @@ func newRouter(
 	bundles := release.New(db, repos, builds, keySvc, log)
 	bundles.SetLayout(layout.ReleaseBundles)
 	bundles.SetProjects(projects)
+	repos.ReserveStorage(bundles.StorageOwner)
 	lifecycleapi.New(bundles, sec, log).Register(rt)
 	evidenceSvc := evidence.New(db, repos, log)
 	bundles.SetEvidence(evidenceSvc)

@@ -74,11 +74,36 @@ var DefaultLayout = Layout{
 
 // Repository is the storing repository for a project.
 func (l Layout) Repository(project string) string {
-	if project == "" || project == DefaultProject {
+	if isDefaultProject(project) {
 		return l.DefaultRepository
 	}
 
 	return project + l.ProjectSuffix
+}
+
+func isDefaultProject(key string) bool { return key == "" || key == DefaultProject }
+
+func ownerProject(key string) string {
+	if isDefaultProject(key) {
+		return ""
+	}
+
+	return key
+}
+
+// StorageOwner reports whether name is a storing repository, and the project
+// ("" outside projects) whose releases it stores.
+func (l Layout) StorageOwner(name string) (repository.Format, string, bool) {
+	if name == l.DefaultRepository {
+		return repository.FormatRelease, "", true
+	}
+
+	key, ok := strings.CutSuffix(name, l.ProjectSuffix)
+	if !ok || isDefaultProject(key) || !project.ValidKey(key) {
+		return "", "", false
+	}
+
+	return repository.FormatRelease, key, true
 }
 
 // SetLayout sets where release versions are stored.
@@ -86,6 +111,12 @@ func (s *Service) SetLayout(l Layout) { s.layout = l }
 
 // Layout is where release versions are stored.
 func (s *Service) Layout() Layout { return s.layout }
+
+// StorageOwner reports whether name is a storing repository, and the project
+// whose releases it stores.
+func (s *Service) StorageOwner(name string) (repository.Format, string, bool) {
+	return s.layout.StorageOwner(name)
+}
 
 // Artifact is one file in a release version. Its JSON form is stored with
 // the version and written into export archives and manifests.
@@ -537,15 +568,27 @@ func (s *Service) ensureRepo(ctx context.Context, key, projectKey string) error 
 		}
 	}
 
-	if _, err := s.repos.GetRepository(ctx, key); err == nil {
+	format, owner, _ := s.layout.StorageOwner(key)
+
+	existing, err := s.repos.GetRepository(ctx, key)
+	if err == nil {
+		if existing.Format != format ||
+			ownerProject(existing.Project) != owner {
+			return fmt.Errorf("%w: %s is not the release repository of project %q", ErrInvalid, key, projectKey)
+		}
+
 		return nil
+	}
+
+	if !errors.Is(err, repository.ErrRepositoryNotFound) {
+		return fmt.Errorf("get repository %s: %w", key, err)
 	}
 
 	r := repository.Repository{
 		Name:    key,
 		Class:   repository.ClassLocal,
-		Format:  repository.FormatRelease,
-		Project: projectKey,
+		Format:  format,
+		Project: owner,
 	}
 	if err := s.repos.CreateRepository(ctx, r); err != nil && !errors.Is(err, repository.ErrRepositoryExists) {
 		return err

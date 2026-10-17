@@ -22,9 +22,52 @@ type Repository struct {
 	Updated time.Time
 }
 
+// StorageOwner reports the format and project a repository named name must
+// have when a service stores its own records there; ok is false for every
+// other name.
+type StorageOwner func(name string) (format Format, project string, ok bool)
+
+// ReserveStorage keeps the names owner claims for repositories of the
+// format and project it gives.
+func (s *Service) ReserveStorage(owner StorageOwner) {
+	s.storageOwners = append(s.storageOwners, owner)
+}
+
+func (s *Service) checkStorageName(r Repository) error {
+	for _, owner := range s.storageOwners {
+		format, project, ok := owner(r.Name)
+		if !ok || r.Format == format && r.Project == project {
+			continue
+		}
+
+		if project == "" {
+			return fmt.Errorf(
+				"%w: %s is reserved for %s storage outside projects",
+				ErrInvalidRepository,
+				r.Name,
+				format,
+			)
+		}
+
+		return fmt.Errorf(
+			"%w: %s is reserved for project %s's %s storage",
+			ErrInvalidRepository,
+			r.Name,
+			project,
+			format,
+		)
+	}
+
+	return nil
+}
+
 // CreateRepository stores a new repository.
 func (s *Service) CreateRepository(ctx context.Context, r Repository) error {
 	if err := r.Validate(); err != nil {
+		return err
+	}
+
+	if err := s.checkStorageName(r); err != nil {
 		return err
 	}
 
@@ -54,6 +97,10 @@ func (s *Service) CreateRepository(ctx context.Context, r Repository) error {
 // UpdateRepository replaces a repository's settings.
 func (s *Service) UpdateRepository(ctx context.Context, r Repository) error {
 	if err := r.Validate(); err != nil {
+		return err
+	}
+
+	if err := s.checkStorageName(r); err != nil {
 		return err
 	}
 

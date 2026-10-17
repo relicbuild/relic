@@ -14,6 +14,7 @@ import (
 	"time"
 	"uuid"
 
+	"relic/internal/access/project"
 	"relic/internal/artifacts/repository"
 	"relic/internal/platform/database"
 	"relic/internal/platform/telemetry"
@@ -133,11 +134,36 @@ var DefaultLayout = Layout{
 
 // Repository is the repository holding a project's build-info documents.
 func (l Layout) Repository(project string) string {
-	if project == "" || project == "default" {
+	if isDefaultProject(project) {
 		return l.DefaultRepository
 	}
 
 	return project + l.ProjectSuffix
+}
+
+func isDefaultProject(key string) bool { return key == "" || key == "default" }
+
+func ownerProject(key string) string {
+	if isDefaultProject(key) {
+		return ""
+	}
+
+	return key
+}
+
+// StorageOwner reports whether name is a build-info repository, and the
+// project ("" outside projects) whose build info it holds.
+func (l Layout) StorageOwner(name string) (repository.Format, string, bool) {
+	if name == l.DefaultRepository {
+		return repository.FormatBuild, "", true
+	}
+
+	key, ok := strings.CutSuffix(name, l.ProjectSuffix)
+	if !ok || isDefaultProject(key) || !project.ValidKey(key) {
+		return "", "", false
+	}
+
+	return repository.FormatBuild, key, true
 }
 
 // Project is the project whose build info repository holds; "" for the
@@ -156,6 +182,12 @@ func (s *Service) SetLayout(l Layout) { s.layout = l }
 
 // Repository is the repository holding a project's build-info documents.
 func (s *Service) Repository(project string) string { return s.layout.Repository(project) }
+
+// StorageOwner reports whether name is a build-info repository, and the
+// project whose build info it holds.
+func (s *Service) StorageOwner(name string) (repository.Format, string, bool) {
+	return s.layout.StorageOwner(name)
+}
 
 // PublishDocument stores a build run published as a Document.
 func (s *Service) PublishDocument(ctx context.Context, project string, doc Document, user string) error {
@@ -188,6 +220,10 @@ func (s *Service) Publish(ctx context.Context, project string, raw []byte, user 
 	}
 
 	started := bi.Started
+
+	if err := s.checkProject(ctx, project); err != nil {
+		return err
+	}
 
 	if raw, err = s.format.Prepare(ctx, raw, s.sha256Of); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalid, err)
@@ -335,9 +371,38 @@ func (s *Service) sha256Of(ctx context.Context, sha1 string) (string, bool, erro
 	return b.Sha256, true, nil
 }
 
+func (s *Service) checkProject(ctx context.Context, key string) error {
+	if isDefaultProject(key) {
+		return nil
+	}
+
+	_, err := s.db.GetProject(ctx, key)
+	if errors.Is(database.NotFound(err), database.ErrNotFound) {
+		return fmt.Errorf("%w: project %s does not exist", ErrInvalid, key)
+	}
+
+	if err != nil {
+		return fmt.Errorf("get project %s: %w", key, err)
+	}
+
+	return nil
+}
+
 func (s *Service) ensureRepo(ctx context.Context, project string) error {
 	key := s.Repository(project)
-	if _, err := s.repos.GetRepository(ctx, key); !errors.Is(err, repository.ErrRepositoryNotFound) {
+	format, owner, _ := s.layout.StorageOwner(key)
+
+	existing, err := s.repos.GetRepository(ctx, key)
+	if err == nil {
+		if existing.Format != format ||
+			ownerProject(existing.Project) != owner {
+			return fmt.Errorf("%w: %s is not the build-info repository of project %q", ErrInvalid, key, project)
+		}
+
+		return nil
+	}
+
+	if !errors.Is(err, repository.ErrRepositoryNotFound) {
 		return err
 	}
 
@@ -355,8 +420,8 @@ func (s *Service) ensureRepo(ctx context.Context, project string) error {
 	r := repository.Repository{
 		Name:    key,
 		Class:   repository.ClassLocal,
-		Format:  repository.FormatBuild,
-		Project: project,
+		Format:  format,
+		Project: owner,
 	}
 	if err := s.repos.CreateRepository(ctx, r); err != nil && !errors.Is(err, repository.ErrRepositoryExists) {
 		return fmt.Errorf("create %s: %w", key, err)
