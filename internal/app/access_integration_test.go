@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
-	"relic/internal/platform/database"
 	"strings"
 	"testing"
 	"time"
+
+	"relic/api/adapters/artifactory/layout"
+	"relic/internal/platform/database"
 )
 
 func TestStorageRepositoryNamesAreReservedForTheirProject(t *testing.T) {
@@ -83,7 +85,7 @@ func TestStorageRepositoryNamesAreReservedForTheirProject(t *testing.T) {
 	}{
 		{
 			name:       "build info in the default project",
-			repository: "artifactory-build-info",
+			repository: layout.BuildInfo.Repository(""),
 			format:     "BUILD",
 		},
 		{
