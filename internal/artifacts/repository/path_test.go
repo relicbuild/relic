@@ -71,6 +71,16 @@ func TestCleanPath(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "invalid UTF-8",
+			in:      "bad/a\xffb.txt",
+			wantErr: true,
+		},
+		{
+			name: "non-ASCII UTF-8",
+			in:   "docs/Straße.txt",
+			want: "docs/Straße.txt",
+		},
+		{
 			name: "dots inside names",
 			in:   "a/..b/c..",
 			want: "a/..b/c..",

@@ -166,6 +166,7 @@ func codeOf(err error) *connect.Error {
 		return connect.NewError(connect.CodeAlreadyExists, err)
 	case errors.Is(err, repository.ErrInvalidRepository),
 		errors.Is(err, repository.ErrInvalidPath),
+		errors.Is(err, repository.ErrInvalidProperty),
 		errors.Is(err, security.ErrInvalid),
 		errors.Is(err, ldap.ErrInvalid),
 		errors.Is(err, policy.ErrInvalid),

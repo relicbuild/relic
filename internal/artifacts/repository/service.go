@@ -906,6 +906,10 @@ func ensureFolders(ctx context.Context, q database.Querier, repoKey, path, user 
 }
 
 func replaceProperties(ctx context.Context, q database.Querier, id uuid.UUID, props Properties) error {
+	if err := props.validate(); err != nil {
+		return err
+	}
+
 	if err := q.DeleteItemProperties(ctx, id); err != nil {
 		return fmt.Errorf("clear properties: %w", err)
 	}
@@ -1255,6 +1259,10 @@ func (s *Service) SetProperties(ctx context.Context, item Item, props Properties
 
 // setProperties replaces the values of props' keys, keeping other keys.
 func setProperties(ctx context.Context, q database.Querier, id uuid.UUID, props Properties) error {
+	if err := props.validate(); err != nil {
+		return err
+	}
+
 	if err := q.DeleteItemPropertyKeys(
 		ctx,
 		database.DeleteItemPropertyKeysParams{

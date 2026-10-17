@@ -3,6 +3,7 @@ package repository
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -306,6 +307,10 @@ func (r *Repository) Validate() error {
 			return fmt.Errorf("%w: deployTo %s is not a member of %s", ErrInvalidRepository, d, r.Name)
 		}
 	case ClassLocal:
+	}
+
+	if !storableFields(reflect.ValueOf(r.Config)) {
+		return fmt.Errorf("%w: the settings hold text that is not UTF-8 or holds NUL", ErrInvalidRepository)
 	}
 
 	return nil

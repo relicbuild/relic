@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"fmt"
 	"maps"
 	"slices"
 	"time"
@@ -78,6 +79,22 @@ type Properties map[string][]string
 
 // Keys returns the property keys in sorted order.
 func (p Properties) Keys() []string { return slices.Sorted(maps.Keys(p)) }
+
+func (p Properties) validate() error {
+	for k, values := range p {
+		if !storableText(k) {
+			return fmt.Errorf("%w: the key %q is not UTF-8 text without NUL", ErrInvalidProperty, k)
+		}
+
+		for _, v := range values {
+			if !storableText(v) {
+				return fmt.Errorf("%w: a value of %q is not UTF-8 text without NUL", ErrInvalidProperty, k)
+			}
+		}
+	}
+
+	return nil
+}
 
 func (p Properties) flatten() (keys, values []string) {
 	for _, k := range p.Keys() {

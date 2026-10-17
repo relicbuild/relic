@@ -195,6 +195,7 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, err error) 
 		errors.Is(err, repository.ErrHeld), errors.Is(err, repository.ErrImmutable):
 		status, msg = http.StatusConflict, err.Error()
 	case errors.Is(err, repository.ErrInvalidPath),
+		errors.Is(err, repository.ErrInvalidProperty),
 		errors.Is(err, repository.ErrInvalidRepository),
 		errors.Is(err, repository.ErrNotLocal),
 		errors.Is(err, repository.ErrNotAFile),

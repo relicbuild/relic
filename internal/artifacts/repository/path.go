@@ -17,7 +17,7 @@ const RootPath = "."
 // CleanPath normalizes a path relative to a repository root: surrounding and
 // repeated slashes are dropped.
 func CleanPath(p string) (string, error) {
-	if strings.ContainsAny(p, "\x00\\") {
+	if !storableText(p) || strings.Contains(p, `\`) {
 		return "", ErrInvalidPath
 	}
 

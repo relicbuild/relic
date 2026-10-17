@@ -23,4 +23,5 @@ var (
 	ErrHeld                      = errors.New("the item is under a legal hold")
 	ErrImmutable                 = errors.New("the repository does not allow overwriting a file")
 	ErrQuotaExceeded             = errors.New("the repository's storage quota is used up")
+	ErrInvalidProperty           = errors.New("invalid property")
 )
