@@ -189,6 +189,22 @@ func TestWriteItems(t *testing.T) {
 			},
 		},
 		{
+			name: "nulls sort last ascending",
+			src:  `items.find({"repo":"other","type":"any"}).sort({"$asc":["actual_sha1"]})`,
+			wantNames: []string{
+				"four.jar",
+				"a",
+			},
+		},
+		{
+			name: "nulls sort first descending",
+			src:  `items.find({"repo":"other","type":"any"}).sort({"$desc":["actual_sha1"]})`,
+			wantNames: []string{
+				"a",
+				"four.jar",
+			},
+		},
+		{
 			name: "size range",
 			src:  `items.find({"size":{"$gte":2,"$lt":4}}).sort({"$asc":["size"]})`,
 			wantNames: []string{

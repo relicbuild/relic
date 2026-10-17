@@ -262,7 +262,7 @@ func TestCompile(t *testing.T) {
 				int64(3),
 				int64(2),
 			},
-			` ORDER BY i.created DESC, i.name DESC LIMIT $2 OFFSET $3`,
+			` ORDER BY i.created DESC NULLS FIRST, i.name DESC NULLS FIRST LIMIT $2 OFFSET $3`,
 		},
 	}
 	for _, tt := range tests {

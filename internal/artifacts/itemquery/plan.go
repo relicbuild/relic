@@ -150,9 +150,9 @@ func Compile(q Query) (*Plan, error) {
 				return nil, fmt.Errorf("%w: cannot sort by %q", ErrInvalid, f)
 			}
 
-			dir := " ASC"
+			dir := " ASC NULLS LAST"
 			if q.Sort.Desc {
-				dir = " DESC"
+				dir = " DESC NULLS FIRST"
 			}
 
 			order = append(order, c.expr+dir)
