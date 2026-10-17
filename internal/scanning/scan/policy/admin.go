@@ -208,6 +208,38 @@ func (a *Admin) Watch(ctx context.Context, name string) (Watch, error) {
 	return w, nil
 }
 
+// checkWatchedRepositories refuses a repository a watch names that does not
+// exist or is virtual: downloads are checked against the repository that
+// stores the file, so such a watch would never apply.
+func (a *Admin) checkWatchedRepositories(ctx context.Context, w Watch) error {
+	for _, s := range w.Scopes {
+		if s.Kind != ScopeRepository {
+			continue
+		}
+
+		for _, name := range s.Names {
+			r, err := a.DB.GetRepository(ctx, name)
+			if errors.Is(database.NotFound(err), database.ErrNotFound) {
+				return fmt.Errorf("%w: repository %s does not exist", ErrInvalid, name)
+			}
+
+			if err != nil {
+				return fmt.Errorf("load repository %s: %w", name, err)
+			}
+
+			if r.Class == "virtual" {
+				return fmt.Errorf(
+					"%w: %s is a virtual repository; watch the repositories it includes",
+					ErrInvalid,
+					name,
+				)
+			}
+		}
+	}
+
+	return nil
+}
+
 // SaveWatch creates (create set) or replaces an existing watch.
 func (a *Admin) SaveWatch(ctx context.Context, w Watch, create bool) error {
 	if err := w.Validate(); err != nil {
@@ -223,6 +255,10 @@ func (a *Admin) SaveWatch(ctx context.Context, w Watch, create bool) error {
 
 				return err
 			}
+		}
+
+		if err := a.checkWatchedRepositories(ctx, w); err != nil {
+			return err
 		}
 
 		doc, err := json.Marshal(w)

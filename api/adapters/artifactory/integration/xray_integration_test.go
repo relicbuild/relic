@@ -383,6 +383,20 @@ func TestXrayPoliciesAndViolations(t *testing.T) {
 	}
 
 	watch := `{"general_data":{"name":"w1","active":true},"project_resources":{"resources":[{"type":"build","name":"app"},{"type":"repository","name":"libs"}]},"assigned_policies":[{"name":"sec","type":"security"}]}`
+	if resp, got := do(t, srv, call{
+		method: "POST",
+		path:   "/xray/api/v2/watches",
+		body:   watch,
+	}); resp.StatusCode != 400 || !strings.Contains(got, "libs does not exist") {
+		t.Errorf("a watch on a repository that does not exist = %d %s, want 400", resp.StatusCode, got)
+	}
+
+	do(t, srv, call{
+		method: "PUT",
+		path:   "/artifactory/api/repositories/libs",
+		body:   `{"rclass":"local","packageType":"generic"}`,
+	})
+
 	if resp, got := do(
 		t,
 		srv,
