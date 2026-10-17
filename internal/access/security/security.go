@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -89,14 +90,38 @@ func (s *Service) ReplaceUser(ctx context.Context, u User) (created bool, err er
 	})
 }
 
+var username = regexp.MustCompile(`^[\w.@-]{1,64}$`)
+
+// ValidUsername reports whether name can be a Relic username: 1 to 64 letters, digits or . @ _ -.
+func ValidUsername(name string) bool { return username.MatchString(name) }
+
+func (s *Service) refuseCaseVariant(ctx context.Context, name string) error {
+	users, err := s.db.ListUsers(ctx)
+	if err != nil {
+		return fmt.Errorf("list users: %w", err)
+	}
+
+	for _, u := range users {
+		if strings.EqualFold(u.Username, name) {
+			return fmt.Errorf("%w: user %q differs from %q only by case", ErrExists, u.Username, name)
+		}
+	}
+
+	return nil
+}
+
 type userWrite struct {
 	createOnly   bool
 	withDisabled bool
 }
 
 func (s *Service) putUser(ctx context.Context, u User, w userWrite) (created bool, err error) {
-	if u.Name == "" {
-		return false, fmt.Errorf("%w: name is required", ErrInvalid)
+	if !ValidUsername(u.Name) {
+		return false, fmt.Errorf(
+			"%w: username %q must be 1 to 64 letters, digits or the characters . @ _ -",
+			ErrInvalid,
+			u.Name,
+		)
 	}
 
 	existing, err := s.db.GetUserByUsername(ctx, u.Name)
@@ -108,6 +133,12 @@ func (s *Service) putUser(ctx context.Context, u User, w userWrite) (created boo
 
 	if exists && w.createOnly {
 		return false, fmt.Errorf("%w: user %q", ErrExists, u.Name)
+	}
+
+	if !exists {
+		if err := s.refuseCaseVariant(ctx, u.Name); err != nil {
+			return false, err
+		}
 	}
 
 	hash := existing.PasswordHash

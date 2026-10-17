@@ -18,6 +18,7 @@ import (
 	"uuid"
 
 	"relic/internal/access/auth"
+	"relic/internal/access/security"
 	"relic/internal/platform/database"
 	"relic/internal/platform/sealing"
 )
@@ -100,10 +101,7 @@ func refused(reason string) error {
 	}
 }
 
-var (
-	providerName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
-	userName     = regexp.MustCompile(`^[\w.@-]{1,64}$`)
-)
+var providerName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
 const requestTTL = 10 * time.Minute
 
@@ -442,7 +440,7 @@ type identity struct {
 // provision makes the Relic account of id ready to sign in: it creates it
 // when p may, and replaces the memberships p manages.
 func (s *Service) provision(ctx context.Context, p Provider, id identity) (string, error) {
-	if !userName.MatchString(id.username) {
+	if !security.ValidUsername(id.username) {
 		return "", refused(
 			fmt.Sprintf("the identity provider's username %q is not a valid Relic username", id.username),
 		)

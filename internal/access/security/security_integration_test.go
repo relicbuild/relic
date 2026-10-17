@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 	"uuid"
@@ -495,6 +496,79 @@ func TestUserChangesKeepAnEnabledAdministrator(t *testing.T) {
 
 			if !tt.refused && err != nil {
 				t.Errorf("change = %v, want it accepted", err)
+			}
+		})
+	}
+}
+
+func TestPutUserRefusesNamesThatCannotSignIn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		user    string
+		wantErr error
+	}{
+		{
+			name:    "a colon splits Basic credentials",
+			user:    "build:bot",
+			wantErr: security.ErrInvalid,
+		},
+		{
+			name:    "a space",
+			user:    "build bot",
+			wantErr: security.ErrInvalid,
+		},
+		{
+			name:    "a slash",
+			user:    "build/bot",
+			wantErr: security.ErrInvalid,
+		},
+		{
+			name:    "longer than 64 characters",
+			user:    strings.Repeat("a", 65),
+			wantErr: security.ErrInvalid,
+		},
+		{
+			name:    "differs from an existing user only by case",
+			user:    "Existing",
+			wantErr: security.ErrExists,
+		},
+		{
+			name: "letters, digits and . @ _ -",
+			user: "first.last_2@example-team",
+		},
+		{
+			name: "an existing user replaced under its own name",
+			user: "existing",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			s := security.NewService(databasetest.NewDB(t), slog.New(slog.DiscardHandler))
+
+			if _, err := s.PutUser(ctx, security.User{
+				Name:     "existing",
+				Email:    "existing@example.com",
+				Password: "Existing-pass-1",
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err := s.PutUser(ctx, security.User{
+				Name:     tt.user,
+				Email:    "user@example.com",
+				Password: "User-pass-12345",
+			})
+			if tt.wantErr == nil && err != nil {
+				t.Fatalf("PutUser(%q) = %v, want it accepted", tt.user, err)
+			}
+
+			if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
+				t.Fatalf("PutUser(%q) = %v, want %v", tt.user, err, tt.wantErr)
 			}
 		})
 	}

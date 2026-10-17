@@ -123,7 +123,7 @@ func (d *Directory) User(ctx context.Context, id string) (DirectoryUser, error) 
 // CreateUser creates a single sign-on user. A user of any realm with the
 // same name is a conflict.
 func (d *Directory) CreateUser(ctx context.Context, u DirectoryUser) (DirectoryUser, error) {
-	if !userName.MatchString(u.UserName) {
+	if !security.ValidUsername(u.UserName) {
 		return DirectoryUser{}, fmt.Errorf("%w: userName %q is not a valid Relic username", ErrInvalidValue, u.UserName)
 	}
 
