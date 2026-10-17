@@ -232,6 +232,42 @@ spec:
 	}
 }
 
+func TestDiffShowsTheOneofMemberApplyReplaces(t *testing.T) {
+	t.Parallel()
+
+	docs, err := decodeDocuments(strings.NewReader(
+		"apiVersion: relic.build/v1\nkind: IdentityProvider\nmetadata: {name: corp}\n" +
+			"spec: {oidc: {issuer: \"https://accounts.example.invalid\", clientId: abc}}\n",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	d := docs[0]
+	live := &relicv1.IdentityProvider{
+		Name: "corp",
+		Protocol: &relicv1.IdentityProvider_Saml{
+			Saml: &relicv1.SamlSettings{
+				MetadataUrl: "https://idp.example.invalid/metadata",
+				Certificate: "PEM",
+			},
+		},
+	}
+
+	got, err := unifiedDiff(d, restrict(live, d.owned, d.kind), restrict(d.msg, d.owned, d.kind))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(got, "-  saml:") || !strings.Contains(got, "+  oidc:") {
+		t.Errorf("diff does not show saml replaced by oidc:\n%s", got)
+	}
+
+	if m := merged(live, d).(*relicv1.IdentityProvider); m.GetSaml() != nil || m.GetOidc().GetClientId() != "abc" {
+		t.Errorf("merged = %v", m)
+	}
+}
+
 func TestRestrictLeavesOutOutputOnlyFields(t *testing.T) {
 	t.Parallel()
 

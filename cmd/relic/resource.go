@@ -209,8 +209,16 @@ func decode(y resourceYAML) (document, error) {
 			f = fields.ByName(protoreflect.Name(key))
 		}
 
-		if f != nil {
-			owned[f.JSONName()] = true
+		if f == nil {
+			continue
+		}
+
+		owned[f.JSONName()] = true
+
+		if o := f.ContainingOneof(); o != nil && !o.IsSynthetic() {
+			for i := range o.Fields().Len() {
+				owned[o.Fields().Get(i).JSONName()] = true
+			}
 		}
 	}
 
