@@ -558,8 +558,7 @@ func (s *Service) RemoteInfo(
 }
 
 // RemoteTree fetches the recursive file listing of an upstream commit
-// (cached as metadata), without Xet hashes: clients fetch the files through
-// Relic, which has no Xet endpoints.
+// (cached as metadata), without Xet hashes.
 func (s *Service) RemoteTree(ctx context.Context, r repository.Repository, kind Kind, id, sha string) ([]any, error) {
 	if !shaPattern.MatchString(sha) {
 		return nil, ErrRevisionNotFound
