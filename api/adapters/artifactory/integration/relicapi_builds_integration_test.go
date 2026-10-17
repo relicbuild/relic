@@ -305,6 +305,16 @@ func TestRelicAPIPackageScan(t *testing.T) {
 			body:   `{"rclass":"remote","packageType":"npm","url":"https://registry.npmjs.org"}`,
 		},
 		{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/npm-private",
+			body:   `{"rclass":"local","packageType":"npm"}`,
+		},
+		{
+			method: "POST",
+			path:   "/artifactory/api/v2/security/permissions/dev-npm-remote",
+			body:   `{"name":"dev-npm-remote","repo":{"repositories":["npm-remote"],"actions":{"users":{"dev":["read"]}}}}`,
+		},
+		{
 			method: "POST",
 			path:   "/xray/api/v2/policies",
 			body:   `{"name":"block","type":"security","rules":[{"name":"high","priority":1,"criteria":{"min_severity":"High"},"actions":{"block_download":{"active":true}}}]}`,
@@ -343,6 +353,19 @@ func TestRelicAPIPackageScan(t *testing.T) {
 	} {
 		if _, err := dev.ScanPackages(ctx, connect.NewRequest(req)); code(err) != connect.CodeInvalidArgument {
 			t.Errorf("%s: %v", name, err)
+		}
+	}
+
+	for _, repo := range []string{
+		"npm-missing",
+		"npm-private",
+	} {
+		_, err := dev.ScanPackages(ctx, connect.NewRequest(&relicv1.ScanPackagesRequest{
+			Purls:      lodash,
+			Repository: repo,
+		}))
+		if want := `invalid_argument: repository "` + repo + `" does not exist`; err == nil || err.Error() != want {
+			t.Errorf("scan scoped to %s = %v, want %s", repo, err, want)
 		}
 	}
 

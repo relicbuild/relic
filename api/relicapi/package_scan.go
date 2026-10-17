@@ -95,12 +95,29 @@ func (s *scanServer) existingScope(ctx context.Context, watches []string, repo s
 		return nil
 	}
 
-	_, err := s.d.Repositories.GetRepository(ctx, repo)
+	missing := connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("repository %q does not exist", repo))
+
+	r, err := s.d.Repositories.GetRepository(ctx, repo)
 	if errors.Is(err, repository.ErrRepositoryNotFound) {
-		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("repository %q does not exist", repo))
+		return missing
 	}
 
-	return err
+	if err != nil {
+		return err
+	}
+
+	readable, err := (&repositoryServer{
+		d: s.d,
+	}).canRead(ctx, r)
+	if err != nil {
+		return err
+	}
+
+	if !readable {
+		return missing
+	}
+
+	return nil
 }
 
 func (s *scanServer) GetPackagesScan(
