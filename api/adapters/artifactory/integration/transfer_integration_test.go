@@ -5,6 +5,7 @@ package integration
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -175,5 +176,104 @@ func TestImportArtifactory(t *testing.T) {
 	})
 	if err != nil || report.Repositories.Updated != 1 || report.Files.Copied+report.Files.Skipped != 0 {
 		t.Errorf("one repository = %+v %v", report, err)
+	}
+}
+
+func TestImportArtifactoryNestedVirtualRepositories(t *testing.T) {
+	t.Parallel()
+
+	src := server(t)
+
+	for _, c := range []call{
+		{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/npm-local",
+			body:   `{"rclass":"local","packageType":"npm"}`,
+		},
+		{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/npm-group",
+			body:   `{"rclass":"virtual","packageType":"npm","repositories":["npm-local"],"defaultDeploymentRepo":"npm-local"}`,
+		},
+		{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/all-npm",
+			body:   `{"rclass":"virtual","packageType":"npm","repositories":["npm-group"]}`,
+		},
+	} {
+		if resp, body := do(t, src, c); resp.StatusCode/100 != 2 {
+			t.Fatalf("%s %s = %d %s", c.method, c.path, resp.StatusCode, body)
+		}
+	}
+
+	source := transfer.Server{
+		URL: src.URL,
+		Client: &http.Client{
+			Transport: asAdmin{},
+		},
+	}
+
+	tests := []struct {
+		name         string
+		repositories []string
+		wantCreated  int
+		wantMembers  map[string]string
+		wantNote     string
+	}{
+		{
+			name:        "every repository",
+			wantCreated: 3,
+			wantMembers: map[string]string{
+				"all-npm":   `"repositories":["npm-group"]`,
+				"npm-group": `"repositories":["npm-local"]`,
+			},
+		},
+		{
+			name: "a virtual repository without its members",
+			repositories: []string{
+				"npm-local",
+				"all-npm",
+			},
+			wantCreated: 2,
+			wantMembers: map[string]string{
+				"all-npm": `"repositories":[]`,
+			},
+			wantNote: "npm-group",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dst := server(t)
+
+			report, err := transfer.Import(t.Context(), source, transfer.Server{
+				URL: dst.URL,
+				Client: &http.Client{
+					Transport: relicAPIOnly{},
+				},
+			}, transfer.Options{
+				Repositories: tt.repositories,
+			})
+			if err != nil || len(report.Errors) != 0 || report.Repositories.Created != tt.wantCreated {
+				t.Fatalf("import = %+v %v; want %d repositories created", report, err, tt.wantCreated)
+			}
+
+			for key, want := range tt.wantMembers {
+				resp, body := do(t, dst, call{
+					method: "GET",
+					path:   "/artifactory/api/repositories/" + key,
+				})
+				if resp.StatusCode != 200 || !strings.Contains(body, want) {
+					t.Errorf("GET %s = %d %s; want %s", key, resp.StatusCode, body, want)
+				}
+			}
+
+			if tt.wantNote != "" && !slices.ContainsFunc(report.Notes, func(n string) bool {
+				return strings.Contains(n, tt.wantNote)
+			}) {
+				t.Errorf("notes = %v; want one that names %s", report.Notes, tt.wantNote)
+			}
+		})
 	}
 }
