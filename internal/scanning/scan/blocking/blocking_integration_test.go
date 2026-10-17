@@ -227,6 +227,40 @@ func TestDownloadBlocking(t *testing.T) {
 		t.Errorf("recorded %d decisions, want 2: %+v", len(recorded), recorded)
 	}
 
+	failed, skipped := deploy("d-1.jar", "d"), deploy("e-1.jar", "e")
+
+	if _, err := db.ClaimUnscanned(ctx, database.ClaimUnscannedParams{
+		Now:         now,
+		NamePattern: "^[de]-1.jar$",
+		MaxRows:     10,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for sha, status := range map[string]string{
+		failed:  scan.StatusFailed,
+		skipped: scan.StatusSkipped,
+	} {
+		if err := db.FinishScanArtifact(ctx, database.FinishScanArtifactParams{
+			Sha256: sha,
+			Status: status,
+			Reason: "extract: gzip: invalid header",
+			Now:    now,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for sha, name := range map[string]string{
+		failed:  "d-1.jar",
+		skipped: "e-1.jar",
+	} {
+		d, err := b.Explain(ctx, "libs", name, sha)
+		if err != nil || !d.Blocked || d.Rule != "unscanned" {
+			t.Errorf("%s, never scanned successfully = %+v, %v; want blocked as unscanned", name, d, err)
+		}
+	}
+
 	admin := &policy.Admin{
 		DB: db,
 	}
