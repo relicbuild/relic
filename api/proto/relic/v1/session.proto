@@ -17,7 +17,8 @@ service SessionService {
       body: "*"
     };
   }
-  // Logout ends the browser session.
+  // Logout ends the browser session, and revokes the bearer token the request
+  // carries.
   rpc Logout(LogoutRequest) returns (LogoutResponse) {
     option (relic.v1.access) = ACCESS_PUBLIC;
     option (google.api.http) = {

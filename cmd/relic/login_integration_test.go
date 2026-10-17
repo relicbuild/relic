@@ -222,3 +222,71 @@ spec:
 		t.Errorf("an empty standard input = %v", err)
 	}
 }
+
+func TestLogoutRevokesTheContextsToken(t *testing.T) {
+	t.Parallel()
+
+	srv := testServer(t)
+	config := filepath.Join(t.TempDir(), "config.yaml")
+	g := &globals{
+		config: config,
+		getenv: func(string) string {
+			return ""
+		},
+	}
+
+	login := func() string {
+		if _, err := relic(
+			t,
+			config,
+			"password\n",
+			"auth",
+			"login",
+			srv.URL,
+			"--user",
+			"admin",
+			"--password-stdin",
+			"--context",
+			"work",
+		); err != nil {
+			t.Fatal(err)
+		}
+
+		c, _, err := g.loadConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		work, _ := c.find("work")
+
+		return work.Token
+	}
+	signsIn := func(token string) bool {
+		req := connect.NewRequest(&relicv1.GetCurrentUserRequest{})
+		req.Header().Set("Authorization", "Bearer "+token)
+
+		_, err := relicv1connect.NewSessionServiceClient(http.DefaultClient, srv.URL+"/api").
+			GetCurrentUser(t.Context(), req)
+
+		return err == nil
+	}
+
+	first := login()
+	second := login()
+
+	if signsIn(first) {
+		t.Error("signing in again kept the context's previous token")
+	}
+
+	if !signsIn(second) {
+		t.Fatal("the new token does not sign in")
+	}
+
+	if _, err := relic(t, config, "", "auth", "logout", "work"); err != nil {
+		t.Fatal(err)
+	}
+
+	if signsIn(second) {
+		t.Error("logout kept the context's token")
+	}
+}

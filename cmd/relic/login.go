@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -89,7 +90,10 @@ func loginCmd(g *globals) *cobra.Command {
 				name = u.Host
 			}
 
+			var previous cliContext
+
 			if err := g.updateConfig(func(c *cliConfig) error {
+				previous, _ = c.find(name)
 				c.set(cliContext{
 					Name:                 name,
 					URL:                  base,
@@ -101,6 +105,10 @@ func loginCmd(g *globals) *cobra.Command {
 				return nil
 			}); err != nil {
 				return err
+			}
+
+			if previous.Token != token {
+				_ = revokeContextToken(cmd.Context(), previous)
 			}
 
 			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Signed in to %s as %s (context %s).\n", base, who, name)
@@ -135,6 +143,21 @@ type trustedServer struct {
 
 func (s trustedServer) client(creds credentials) *client {
 	return newClient(s.url, s.certificateAuthority, creds)
+}
+
+func revokeContextToken(ctx context.Context, saved cliContext) error {
+	if saved.Token == "" {
+		return nil
+	}
+
+	c := newClient(strings.TrimRight(saved.URL, "/"), saved.CertificateAuthority, credentials{
+		token: saved.Token,
+	})
+	if _, err := c.sessions.Logout(ctx, connect.NewRequest(&relicv1.LogoutRequest{})); err != nil {
+		return fmt.Errorf("revoke the token of context %s on %s: %w", saved.Name, saved.URL, err)
+	}
+
+	return nil
 }
 
 func passwordLogin(

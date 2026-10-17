@@ -15463,7 +15463,7 @@
           "SessionService"
         ],
         "summary": "Logout",
-        "description": "Logout ends the browser session.",
+        "description": "Logout ends the browser session, and revokes the bearer token the request\n carries.",
         "operationId": "SessionService_Logout",
         "responses": {
           "200": {

@@ -415,30 +415,45 @@ func contextCmd(g *globals) *cobra.Command {
 func logoutCmd(g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "logout [<context>]",
-		Short: "Forget a context and its token (the current context by default)",
+		Short: "Revoke a context's token and forget the context (the current context by default)",
 		Args:  cobra.MaximumNArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			return g.updateConfig(func(c *cliConfig) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var forgotten cliContext
+
+			if err := g.updateConfig(func(c *cliConfig) error {
 				name := cmp.Or(g.context, c.Current)
 				if len(args) == 1 {
 					name = args[0]
 				}
 
-				n := len(c.Contexts)
+				saved, ok := c.find(name)
+				if !ok {
+					return fmt.Errorf("no context %q", name)
+				}
 
+				forgotten = saved
 				c.Contexts = slices.DeleteFunc(c.Contexts, func(x cliContext) bool {
 					return x.Name == name
 				})
-				if name == "" || len(c.Contexts) == n {
-					return fmt.Errorf("no context %q", name)
-				}
 
 				if c.Current == name {
 					c.Current = ""
 				}
 
 				return nil
-			})
+			}); err != nil {
+				return err
+			}
+
+			if err := revokeContextToken(cmd.Context(), forgotten); err != nil {
+				_, _ = fmt.Fprintf(
+					cmd.ErrOrStderr(),
+					"relic: %v; the context is forgotten, but its token stays valid until it expires\n",
+					err,
+				)
+			}
+
+			return nil
 		},
 	}
 }

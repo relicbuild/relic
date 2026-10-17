@@ -65,7 +65,8 @@ type SessionServiceClient interface {
 	// Login checks a user's password and starts a browser session: the
 	// response sets the session cookie.
 	Login(context.Context, *connect.Request[v1.LoginRequest]) (*connect.Response[v1.LoginResponse], error)
-	// Logout ends the browser session.
+	// Logout ends the browser session, and revokes the bearer token the request
+	// carries.
 	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error)
 	// ApproveLogin approves a CLI login session for the caller, after they
 	// type the code the CLI printed in their terminal.
@@ -221,7 +222,8 @@ type SessionServiceHandler interface {
 	// Login checks a user's password and starts a browser session: the
 	// response sets the session cookie.
 	Login(context.Context, *connect.Request[v1.LoginRequest]) (*connect.Response[v1.LoginResponse], error)
-	// Logout ends the browser session.
+	// Logout ends the browser session, and revokes the bearer token the request
+	// carries.
 	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error)
 	// ApproveLogin approves a CLI login session for the caller, after they
 	// type the code the CLI printed in their terminal.
