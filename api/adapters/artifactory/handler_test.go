@@ -46,6 +46,18 @@ func TestUIRedirect(t *testing.T) {
 			"/builds?page=2",
 		},
 		{
+			"/ui/builds/app/7/1792254834424/published?buildRepo=artifactory-build-info",
+			"/builds/app/7",
+		},
+		{
+			"/ui/builds/team%2Fapp/7/1792254834424/published?buildRepo=ci-build-info&projectKey=ci",
+			"/builds/team%2Fapp/7",
+		},
+		{
+			"/ui/builds/app/7",
+			"/builds/app/7",
+		},
+		{
 			"/ui//evil.example",
 			"/evil.example",
 		},

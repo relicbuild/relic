@@ -324,6 +324,12 @@ func uiRedirect(w http.ResponseWriter, r *http.Request) {
 	// TrimLeft keeps "/ui//host" and "/ui/\host" from becoming a
 	// protocol-relative redirect to another host.
 	target := "/" + strings.TrimLeft(strings.TrimPrefix(r.URL.Path, "/ui/"), "/\\")
+
+	run, isBuildRun := buildRunPage(r.URL.EscapedPath())
+	if isBuildRun {
+		target = run
+	}
+
 	q := url.Values{}
 
 	for k, v := range r.URL.Query() {
@@ -331,6 +337,7 @@ func uiRedirect(w http.ResponseWriter, r *http.Request) {
 		case ok:
 			q[renamed] = v
 		case strings.HasPrefix(k, "jfClient"):
+		case isBuildRun && (k == "buildRepo" || k == "projectKey"):
 		default:
 			q[k] = v
 		}
@@ -341,6 +348,22 @@ func uiRedirect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, target, http.StatusMovedPermanently) //nolint:gosec // G710: a path on this host, see above
+}
+
+// buildRunPage maps the build run link jf prints, /ui/builds/<name>/<number>/<started>/published,
+// to the run's page, keeping the name and number escaped.
+func buildRunPage(escapedPath string) (string, bool) {
+	rest, ok := strings.CutPrefix(escapedPath, "/ui/builds/")
+	if !ok {
+		return "", false
+	}
+
+	segments := strings.Split(rest, "/")
+	if len(segments) < 2 || segments[0] == "" || segments[1] == "" {
+		return "", false
+	}
+
+	return "/builds/" + segments[0] + "/" + segments[1], true
 }
 
 const curationAuditPrefix = "/artifactory/api/curation/audit/"
