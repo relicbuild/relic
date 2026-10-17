@@ -45,7 +45,7 @@ func registryHeaders(hdr http.Header, repo string) {
 }
 
 // RegistryMount is the container registry's mount.
-func (h *Handler) RegistryMount() packages.Mount { return h.mount("/v2/") }
+func (h *Handler) RegistryMount() packages.Mount { return h.mount(registryPrefix) }
 
 func (h *Handler) npmAuth(w http.ResponseWriter, r *http.Request) {
 	p := auth.FromContext(r.Context())

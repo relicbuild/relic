@@ -924,6 +924,27 @@ func RegistryError(w http.ResponseWriter, status int, code, msg string) {
 	})
 }
 
+var registryErrorCodes = map[int]string{
+	http.StatusUnauthorized:          "UNAUTHORIZED",
+	http.StatusForbidden:             "DENIED",
+	http.StatusMethodNotAllowed:      "UNSUPPORTED",
+	http.StatusRequestEntityTooLarge: "SIZE_INVALID",
+	http.StatusTooManyRequests:       "TOOMANYREQUESTS",
+}
+
+// RegistryStatusError answers an error the HTTP layer raises before the
+// registry runs (bad credentials, rate limits) in the registry's error
+// format.
+func RegistryStatusError(w http.ResponseWriter, status int, message string) {
+	code, ok := registryErrorCodes[status]
+	if !ok {
+		code = "UNKNOWN"
+	}
+
+	w.Header().Set("Docker-Distribution-API-Version", "registry/2.0")
+	RegistryError(w, status, code, message)
+}
+
 func (h *Handler) allowImage(w http.ResponseWriter, r *http.Request, item repository.Item) bool {
 	if h.blocker == nil {
 		return true

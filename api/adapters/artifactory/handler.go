@@ -257,7 +257,11 @@ func RegisterPaths() {
 		httperror.Register(p, wire.WriteError)
 		telemetry.RegisterFamily(p, families[p])
 	}
+
+	httperror.Register(registryPrefix, packages.RegistryStatusError)
 }
+
+const registryPrefix = "/v2/"
 
 // ConfigureAuth teaches the authenticator what the adapter's clients send.
 func ConfigureAuth(a *auth.Authenticator) {

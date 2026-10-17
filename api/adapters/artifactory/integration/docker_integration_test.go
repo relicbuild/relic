@@ -1287,3 +1287,51 @@ func TestDockerTagList(t *testing.T) {
 		t.Errorf("tags of an image without tags = %d %s, want 200 and none", resp.StatusCode, body)
 	}
 }
+
+func TestDockerRegistryRefusesBadCredentialsInItsErrorFormat(t *testing.T) {
+	t.Parallel()
+
+	srv := server(t)
+
+	tests := []struct {
+		name          string
+		authorization string
+	}{
+		{
+			name:          "a wrong password",
+			authorization: "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:wrong-password")),
+		},
+		{
+			name:          "a malformed token",
+			authorization: "Bearer garbage",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resp, body := do(t, srv, call{
+				method: "GET",
+				path:   "/v2/",
+				noAuth: true,
+				headers: map[string]string{
+					"Authorization": tt.authorization,
+				},
+			})
+
+			var got struct {
+				Errors []struct {
+					Code string `json:"code"`
+				} `json:"errors"`
+			}
+			if resp.StatusCode != http.StatusUnauthorized || json.Unmarshal([]byte(body), &got) != nil ||
+				len(got.Errors) != 1 || got.Errors[0].Code != "UNAUTHORIZED" {
+				t.Errorf("GET /v2/ = %d %s, want 401 UNAUTHORIZED", resp.StatusCode, body)
+			}
+
+			if v := resp.Header.Get("Docker-Distribution-API-Version"); v != "registry/2.0" {
+				t.Errorf("Docker-Distribution-API-Version = %q, want registry/2.0", v)
+			}
+		})
+	}
+}
