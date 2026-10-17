@@ -82,10 +82,11 @@ func quarantineDecideCmd(g *globals, release bool) *cobra.Command {
 	}
 
 	cmd := &cobra.Command{
-		Use:     verb + " <repository>/<path>",
-		Short:   short,
-		Example: "  relic security quarantine " + verb + " maven-remote/org/acme/lib/1.0/lib-1.0.jar --reason \"reviewed\"",
-		Args:    cobra.ExactArgs(1),
+		Use:               verb + " <repository>/<path>",
+		Short:             short,
+		Example:           "  relic security quarantine " + verb + " maven-remote/org/acme/lib/1.0/lib-1.0.jar --reason \"reviewed\"",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeTargetArg(g, 0),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			repo, p, err := splitTarget(args[0])
 			if err != nil {

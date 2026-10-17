@@ -32,7 +32,8 @@ func sbomExportCmd(g *globals) *cobra.Command {
 			"--file. For a container image, give the image's folder (repository/image/tag).",
 		Example: "  relic security sbom export libs-local/app/app-1.4.0.jar > app.cdx.json\n" +
 			"  relic security sbom export docker-local/web/1.2 --format spdx --file web.spdx.json",
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeTargetArg(g, 0),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			repo, p, err := splitTarget(args[0])
 			if err != nil {
@@ -81,8 +82,9 @@ func sbomImportCmd(g *globals) *cobra.Command {
 		Long: "Replaces the SBOM of an item's content with a document you made, for example in your build, and\n" +
 			"has Relic Scan match it for vulnerabilities. Every file with the same content shares the SBOM, so\n" +
 			"this needs deploy permission on each of them.",
-		Example: "  relic security sbom import libs-local/app/app-1.4.0.jar build/bom.json",
-		Args:    cobra.ExactArgs(2),
+		Example:           "  relic security sbom import libs-local/app/app-1.4.0.jar build/bom.json",
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: completeTargetArg(g, 0),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			repo, p, err := splitTarget(args[0])
 			if err != nil {

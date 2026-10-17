@@ -72,6 +72,20 @@ func completeTargets(g *globals) cobra.CompletionFunc {
 	}
 }
 
+// completeTargetArg completes the argument at position from the server and
+// leaves the others, local files, to the shell.
+func completeTargetArg(g *globals, position int) cobra.CompletionFunc {
+	targets := completeTargets(g)
+
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) != position {
+			return nil, cobra.ShellCompDirectiveDefault
+		}
+
+		return targets(cmd, args, toComplete)
+	}
+}
+
 type transfer struct {
 	fromRepo, from, toRepo, to string
 }

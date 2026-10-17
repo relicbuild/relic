@@ -76,7 +76,8 @@ func uploadCmd(g *globals) *cobra.Command {
 		Example: "  relic artifact upload app-1.0.jar libs-local/org/app/1.0/app-1.0.jar\n" +
 			"  relic artifact upload dist/app.tar.gz libs-local/app/\n" +
 			"  relic artifact upload target/app.jar libs-local/org/app/1.0/app.jar --build app/42",
-		Args: cobra.ExactArgs(2),
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: completeTargetArg(g, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			target := args[1]
 			if strings.HasSuffix(target, "/") {
@@ -140,10 +141,11 @@ func downloadCmd(g *globals) *cobra.Command {
 	var output string
 
 	cmd := &cobra.Command{
-		Use:     "download <repository>/<path>",
-		Short:   "Download a file",
-		Example: "  relic artifact download libs-local/org/app/1.0/app-1.0.jar\n  relic artifact download libs-local/notes.txt -o - | less",
-		Args:    cobra.ExactArgs(1),
+		Use:               "download <repository>/<path>",
+		Short:             "Download a file",
+		Example:           "  relic artifact download libs-local/org/app/1.0/app-1.0.jar\n  relic artifact download libs-local/notes.txt -o - | less",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeTargetArg(g, 0),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			repo, p, err := splitTarget(args[0])
 			if err != nil {
