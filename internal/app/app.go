@@ -928,6 +928,7 @@ func newRouter(
 
 	bundles := release.New(db, repos, builds, keySvc, log)
 	bundles.SetLayout(layout.ReleaseBundles)
+	bundles.SetProjects(projects)
 	lifecycleapi.New(bundles, sec, log).Register(rt)
 	evidenceSvc := evidence.New(db, repos, log)
 	bundles.SetEvidence(evidenceSvc)

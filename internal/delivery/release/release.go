@@ -14,6 +14,7 @@ import (
 	"time"
 	"uuid"
 
+	"relic/internal/access/project"
 	"relic/internal/artifacts/itemquery"
 	"relic/internal/artifacts/repository"
 	"relic/internal/artifacts/signingkey"
@@ -133,7 +134,12 @@ type Service struct {
 	// decisions records refused promotions; nil records none.
 	decisions *policy.Decisions
 	events    events.Publisher
+	// projects checks that a release's project exists; nil checks nothing.
+	projects *project.Service
 }
+
+// SetProjects makes releases refuse projects that do not exist.
+func (s *Service) SetProjects(p *project.Service) { s.projects = p }
 
 // SetEvents publishes promotions to p.
 func (s *Service) SetEvents(p events.Publisher) { s.events = p }
@@ -519,7 +525,18 @@ func (s *Service) discard(ctx context.Context, b Release) {
 	}
 }
 
-func (s *Service) ensureRepo(ctx context.Context, key, project string) error {
+func (s *Service) ensureRepo(ctx context.Context, key, projectKey string) error {
+	if s.projects != nil && projectKey != "" && projectKey != DefaultProject {
+		_, err := s.projects.Get(ctx, projectKey)
+		if errors.Is(err, project.ErrNotFound) {
+			return fmt.Errorf("%w: project %s does not exist", ErrInvalid, projectKey)
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+
 	if _, err := s.repos.GetRepository(ctx, key); err == nil {
 		return nil
 	}
@@ -528,7 +545,7 @@ func (s *Service) ensureRepo(ctx context.Context, key, project string) error {
 		Name:    key,
 		Class:   repository.ClassLocal,
 		Format:  repository.FormatRelease,
-		Project: project,
+		Project: projectKey,
 	}
 	if err := s.repos.CreateRepository(ctx, r); err != nil && !errors.Is(err, repository.ErrRepositoryExists) {
 		return err
