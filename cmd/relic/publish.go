@@ -444,7 +444,7 @@ func huggingFaceUploadCmd(g *globals) *cobra.Command {
 		Long: "Makes a commit of the revision holding the previous commit's files and the directory's " +
 			"(which replace files of the same path), as huggingface_hub's upload_folder does.",
 		Example: "  relic package huggingface upload ./bert-tiny hf-local acme/bert-tiny\n" +
-			"  relic hf upload ./data hf-local acme/reviews --dataset --revision v2",
+			"  relic package hf upload ./data hf-local acme/reviews --dataset --revision v2",
 		Args: cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir, repo, id := args[0], args[1], strings.Trim(args[2], "/")

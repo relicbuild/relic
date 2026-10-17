@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 func runRelic(t *testing.T, env map[string]string, args ...string) (string, error) {
@@ -23,6 +25,36 @@ func runRelic(t *testing.T, env map[string]string, args ...string) (string, erro
 	err := root.Execute()
 
 	return out.String(), err
+}
+
+func TestExamplesNameExistingCommands(t *testing.T) {
+	t.Parallel()
+
+	root := newRootCmd(func(string) string {
+		return ""
+	})
+
+	var walk func(c *cobra.Command)
+
+	walk = func(c *cobra.Command) {
+		for line := range strings.SplitSeq(c.Example, "\n") {
+			words := strings.Fields(line)
+			if len(words) < 2 || words[0] != "relic" {
+				continue
+			}
+
+			found, _, err := root.Find(words[1:])
+			if err != nil || found == root {
+				t.Errorf("%s example %q names no command: %v", c.CommandPath(), strings.TrimSpace(line), err)
+			}
+		}
+
+		for _, sub := range c.Commands() {
+			walk(sub)
+		}
+	}
+
+	walk(root)
 }
 
 func TestRootListsGroups(t *testing.T) {

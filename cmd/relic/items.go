@@ -128,8 +128,8 @@ func copyMoveCmd(g *globals, move bool) *cobra.Command {
 		Long: short + " within Relic, between repositories or inside one; folders go with everything below them.\n" +
 			"A destination ending in / is a folder the sources keep their names in; with several sources it always is.",
 		Example: fmt.Sprintf(
-			"  relic %[1]s libs-local/org/app/1.0/app.jar libs-release/org/app/1.0/app.jar\n"+
-				"  relic %[1]s libs-local/org/app/1.0/ libs-release/org/app/ --dry-run",
+			"  relic artifact %[1]s libs-local/org/app/1.0/app.jar libs-release/org/app/1.0/app.jar\n"+
+				"  relic artifact %[1]s libs-local/org/app/1.0/ libs-release/org/app/ --dry-run",
 			use,
 		),
 		Args:              cobra.MinimumNArgs(2),
