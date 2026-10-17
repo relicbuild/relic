@@ -195,8 +195,13 @@ func (s *Service) Store(ctx context.Context, u Upload) (repository.Item, error) 
 	}
 
 	if !filenameMatches(u.File, u.Name, u.Version) {
-		return repository.Item{}, fmt.Errorf("%w: file name %q is not one of %s %s", ErrInvalid, u.File, u.Name,
-			u.Version)
+		return repository.Item{}, fmt.Errorf(
+			"%w: file name %q is not one of %s %s",
+			ErrInvalid,
+			u.File,
+			u.Name,
+			u.Version,
+		)
 	}
 
 	if !ValidName(u.Name) || !versionRe.MatchString(u.Version) {
