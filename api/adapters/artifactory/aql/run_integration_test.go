@@ -205,6 +205,21 @@ func TestWriteItems(t *testing.T) {
 			},
 		},
 		{
+			name: "a creation time matched in the form AQL returns",
+			src:  `items.find({"repo":"other","created":{"$match":"20??-??-??T??:??:??.???Z"}})`,
+			wantNames: []string{
+				"four.jar",
+			},
+		},
+		{
+			name: "a creation time matched in a database's own text form",
+			src:  `items.find({"repo":"other","created":{"$match":"*+00*"}})`,
+		},
+		{
+			name: "a creation time excluded in the form AQL returns",
+			src:  `items.find({"repo":"other","created":{"$nmatch":"*Z"}})`,
+		},
+		{
 			name: "size range",
 			src:  `items.find({"size":{"$gte":2,"$lt":4}}).sort({"$asc":["size"]})`,
 			wantNames: []string{
