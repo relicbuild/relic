@@ -890,3 +890,63 @@ func TestLimitIssueBoundsTheLifetime(t *testing.T) {
 		})
 	}
 }
+
+func TestGroupScopedTokensDropTheUsersOwnGrants(t *testing.T) {
+	t.Parallel()
+
+	perms := Permissions{
+		All: []Permission{
+			{
+				Name: "alice-direct",
+				Repository: &Section{
+					Selector: Selector{
+						Repositories: []string{
+							"ops-local",
+						},
+					},
+					Users: map[string][]Action{
+						"alice": {
+							ActionRead,
+							ActionWrite,
+						},
+					},
+				},
+			},
+		},
+	}
+	alice := Principal{
+		Username: "alice",
+		Groups: []string{
+			"devs",
+		},
+	}
+	repo := Repository{
+		Name:  "ops-local",
+		Class: "local",
+	}
+
+	if !perms.CanInRepository(alice.Subject(), repo, "f.txt", ActionWrite) {
+		t.Fatal("alice cannot use her own grant")
+	}
+
+	for _, scope := range []TokenScope{
+		{
+			Kind: ScopeGroups,
+			Groups: []string{
+				"devs",
+			},
+		},
+		{
+			Kind: ScopeGroups,
+		},
+	} {
+		scoped := scope.Apply(alice)
+		if scoped.Username != "alice" {
+			t.Errorf("a token scoped to %v signs in as %q", scope.Groups, scoped.Username)
+		}
+
+		if perms.CanInRepository(scoped.Subject(), repo, "f.txt", ActionWrite) {
+			t.Errorf("a token scoped to %v keeps alice's own grant", scope.Groups)
+		}
+	}
+}

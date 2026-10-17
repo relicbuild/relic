@@ -49,8 +49,9 @@ type Principal struct {
 	// Viewer may read what administrators read, without changing it.
 	Viewer bool
 	Groups []string
-	// Scoped is set when a token narrowed the principal to explicit groups;
-	// tokens it mints stay within them (CeilScope).
+	// Scoped is set when a token narrowed the principal to explicit groups:
+	// it acts with them alone, without the user's own grants, and tokens it
+	// mints stay within them (CeilScope).
 	Scoped bool
 	// WorkloadIdentity names the workload identity whose token signed the
 	// principal in; tokens it mints expire with that token (LimitIssue).
@@ -62,13 +63,19 @@ type Principal struct {
 // themselves.
 const MaxUserTokenLifetime = 365 * 24 * time.Hour
 
-// Subject returns the principal as an authorization subject.
+// Subject returns the principal as an authorization subject; a scoped
+// principal is its groups alone.
 func (p Principal) Subject() Subject {
-	return Subject{
+	s := Subject{
 		User:   p.Username,
 		Groups: p.Groups,
 		Admin:  p.Admin,
 	}
+	if p.Scoped {
+		s.User = ""
+	}
+
+	return s
 }
 
 // Anonymous reports whether the request carried no credentials.

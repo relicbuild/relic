@@ -90,7 +90,7 @@ func (pr Project) Role(p auth.Principal) Role {
 	var best Role
 
 	for _, m := range pr.Members {
-		if (!m.Group && m.Name == p.Username) || (m.Group && slices.Contains(p.Groups, m.Name)) {
+		if (!m.Group && !p.Scoped && m.Name == p.Username) || (m.Group && slices.Contains(p.Groups, m.Name)) {
 			if best == "" || rank(m.Role) > rank(best) {
 				best = m.Role
 			}
