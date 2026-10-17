@@ -53,12 +53,15 @@ func Open(ctx context.Context, url string) (*DB, error) {
 type Options struct {
 	StatementTimeout time.Duration
 	MaxConnections   int32
+	// MustExist refuses a SQLite database file that does not exist instead
+	// of creating an empty one.
+	MustExist bool
 }
 
 // OpenWith is Open with options.
 func OpenWith(ctx context.Context, url string, opts Options) (*DB, error) {
 	if path, ok := strings.CutPrefix(url, "sqlite://"); ok {
-		e, q, err := openSQLite(ctx, path)
+		e, q, err := openSQLite(ctx, path, opts.MustExist)
 		if err != nil {
 			return nil, err
 		}

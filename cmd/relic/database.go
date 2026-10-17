@@ -45,7 +45,9 @@ sqlite:///absolute/path/relic.db.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
-			src, err := database.Open(ctx, from)
+			src, err := database.OpenWith(ctx, from, database.Options{
+				MustExist: true,
+			})
 			if err != nil {
 				return fmt.Errorf("open the source: %w", err)
 			}
@@ -119,7 +121,9 @@ pg_dump.`,
 				return errors.New("set RELIC_DATABASE_URL or --database-url")
 			}
 
-			db, err := database.Open(cmd.Context(), url)
+			db, err := database.OpenWith(cmd.Context(), url, database.Options{
+				MustExist: true,
+			})
 			if err != nil {
 				return err
 			}

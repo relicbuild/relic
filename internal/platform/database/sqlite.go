@@ -34,9 +34,17 @@ const sqliteMaxConnections = 8
 
 const sqliteBusyTimeout = 10 * time.Second
 
-func openSQLite(ctx context.Context, path string) (*sqliteEngine, Querier, error) {
+func openSQLite(ctx context.Context, path string, mustExist bool) (*sqliteEngine, Querier, error) {
 	if !filepath.IsAbs(path) {
 		return nil, nil, fmt.Errorf("sqlite database path %q must be absolute (sqlite:///path/to/relic.db)", path)
+	}
+
+	if mustExist {
+		if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+			return nil, nil, fmt.Errorf("sqlite database %s does not exist: %w", path, fs.ErrNotExist)
+		} else if err != nil {
+			return nil, nil, fmt.Errorf("sqlite database: %w", err)
+		}
 	}
 
 	if err := localdisk.Check(filepath.Dir(path)); err != nil {
