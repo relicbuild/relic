@@ -3,6 +3,9 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -176,10 +179,24 @@ spec: {class: local, format: generic, environments: [PROD]}
 		t.Errorf("promotions = %q %v", out, err)
 	}
 
+	keyJSON, err := relic(t, config, "", "api", "key-pairs/release-bundles/public-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var key struct {
+		PublicKey string `json:"publicKey"`
+	}
+	if err := json.Unmarshal([]byte(keyJSON), &key); err != nil {
+		t.Fatal(err)
+	}
+
+	keyLine := fmt.Sprintf("signing key sha256 %x\n", sha256.Sum256([]byte(key.PublicKey)))
+
 	archive := filepath.Join(dir, "app-1.0.zip")
 	if out, err := relic(t, config, "", "release", "export", "app", "1.0", "--file", archive); err != nil ||
-		!strings.Contains(out, "exported to "+archive) {
-		t.Fatalf("export = %q %v", out, err)
+		out != "app/1.0 exported to "+archive+"\n"+keyLine {
+		t.Fatalf("export = %q %v; want the key line %q", out, err, keyLine)
 	}
 
 	if st, err := os.Stat(archive); err != nil || st.Size() == 0 {
@@ -202,7 +219,7 @@ spec: {class: local, format: generic, environments: [PROD]}
 		"import",
 		archive,
 	); err != nil ||
-		out != "app/1.0 imported\n" {
+		out != "app/1.0 imported\n"+keyLine {
 		t.Fatalf("import = %q %v", out, err)
 	}
 

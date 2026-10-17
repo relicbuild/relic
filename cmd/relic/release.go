@@ -1,6 +1,9 @@
 package main
 
 import (
+	"archive/zip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -695,7 +698,19 @@ func releaseExportCmd(g *globals) *cobra.Command {
 				return fmt.Errorf("release export: %w", err)
 			}
 
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s/%s exported to %s\n", args[0], args[1], file)
+			fingerprint, err := archiveKeySHA256(file)
+			if err != nil {
+				return fmt.Errorf("release export: %w", err)
+			}
+
+			_, _ = fmt.Fprintf(
+				cmd.OutOrStdout(),
+				"%s/%s exported to %s\nsigning key sha256 %s\n",
+				args[0],
+				args[1],
+				file,
+				fingerprint,
+			)
 
 			return nil
 		},
@@ -752,6 +767,11 @@ func releaseImportCmd(g *globals) *cobra.Command {
 		Example: "  relic release import app-1.4.0.zip",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			fingerprint, err := archiveKeySHA256(args[0])
+			if err != nil {
+				return fmt.Errorf("release import: %w", err)
+			}
+
 			f, err := os.Open(args[0])
 			if err != nil {
 				return err
@@ -807,14 +827,67 @@ func releaseImportCmd(g *globals) *cobra.Command {
 
 			_, _ = fmt.Fprintf(
 				cmd.OutOrStdout(),
-				"%s/%s imported\n",
+				"%s/%s imported\nsigning key sha256 %s\n",
 				got.GetRelease().GetName(),
 				got.GetRelease().GetVersion(),
+				fingerprint,
 			)
 
 			return nil
 		},
 	}
+}
+
+const (
+	releaseArchiveKey    = "signing-key.pem"
+	maxReleaseArchiveKey = 1 << 20
+)
+
+// archiveKeySHA256 is the hex SHA-256 of the signing key's PEM text that a
+// release archive carries, the key the importing server verifies it with.
+func archiveKeySHA256(name string) (string, error) {
+	zr, err := zip.OpenReader(name)
+	if err != nil {
+		return "", fmt.Errorf("not a release archive: %w", err)
+	}
+
+	defer func() {
+		_ = zr.Close()
+	}()
+
+	var key *zip.File
+
+	for _, f := range zr.File {
+		if f.Name != releaseArchiveKey {
+			continue
+		}
+
+		if key != nil {
+			return "", fmt.Errorf("the archive has two %s entries", releaseArchiveKey)
+		}
+
+		key = f
+	}
+
+	if key == nil {
+		return "", fmt.Errorf("the archive has no %s", releaseArchiveKey)
+	}
+
+	rc, err := key.Open()
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", releaseArchiveKey, err)
+	}
+
+	defer func() {
+		_ = rc.Close()
+	}()
+
+	sum := sha256.New()
+	if _, err := io.Copy(sum, io.LimitReader(rc, maxReleaseArchiveKey)); err != nil {
+		return "", fmt.Errorf("%s: %w", releaseArchiveKey, err)
+	}
+
+	return hex.EncodeToString(sum.Sum(nil)), nil
 }
 
 func releaseDeleteCmd(g *globals) *cobra.Command {

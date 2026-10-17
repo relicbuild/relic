@@ -207,6 +207,10 @@ func (s *Service) Import(ctx context.Context, archive io.ReaderAt, size int64, u
 
 	entries := map[string]*zip.File{}
 	for _, f := range zr.File {
+		if entries[f.Name] != nil {
+			return Release{}, fmt.Errorf("%w: archive has two entries named %s", ErrInvalid, f.Name)
+		}
+
 		entries[f.Name] = f
 	}
 
@@ -336,7 +340,8 @@ func readZipJSON(f *zip.File, v any) error {
 }
 
 // verifyManifest checks that the archive's manifest is signed by the key the
-// archive carries and names exactly the index's release and artifacts.
+// archive carries and names exactly the index's release, its creation and its
+// artifacts.
 func (s *Service) verifyManifest(ctx context.Context, entries map[string]*zip.File, idx archiveIndexDoc) error {
 	if entries[s.layout.ManifestName] == nil {
 		return fmt.Errorf("%w: archive has no %s", ErrInvalid, s.layout.ManifestName)
@@ -366,7 +371,12 @@ func (s *Service) verifyManifest(ctx context.Context, entries map[string]*zip.Fi
 		return err
 	}
 
-	if statement.Predicate.Name != idx.Name || statement.Predicate.Version != idx.Version ||
+	predicate := statement.Predicate
+	created, err := time.Parse(timeFormat, predicate.Created)
+
+	if err != nil || !created.Equal(idx.Created.Truncate(time.Millisecond)) ||
+		predicate.Name != idx.Name || predicate.Version != idx.Version ||
+		predicate.Project != idx.Project || predicate.CreatedBy != idx.CreatedBy ||
 		!maps.Equal(statement.digests(), artifactDigests(idx.Artifacts)) {
 		return fmt.Errorf("%w: the archive's index does not match its signed manifest", ErrInvalid)
 	}

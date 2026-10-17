@@ -258,8 +258,11 @@ type signedStatement struct {
 		Digest map[string]string `json:"digest"`
 	} `json:"subject"`
 	Predicate struct {
-		Name    string `json:"name"`
-		Version string `json:"version"`
+		Name      string `json:"name"`
+		Version   string `json:"version"`
+		Project   string `json:"project"`
+		Created   string `json:"created"`
+		CreatedBy string `json:"created_by"`
 	} `json:"predicate"`
 }
 
