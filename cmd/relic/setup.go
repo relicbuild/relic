@@ -22,18 +22,20 @@ import (
 )
 
 type setupEnv struct {
-	repo       string
-	format     relicv1.Format
-	url        string
-	registry   string
-	files      string
-	host       string
-	user       string
-	token      string
-	home, root string
-	publicKey  string
-	keyPair    string
-	flags      map[string]string
+	repo     string
+	format   relicv1.Format
+	url      string
+	registry string
+	files    string
+	host     string
+	user     string
+	token    string
+	// contextToken reports whether token is the saved context's own, which only the CLI holds.
+	contextToken bool
+	home, root   string
+	publicKey    string
+	keyPair      string
+	flags        map[string]string
 }
 
 type setupStep struct {
@@ -754,6 +756,7 @@ func packageSetupCmd(g *globals) *cobra.Command {
 	var (
 		write, force, showToken, agent bool
 		home, root, project            string
+		expiresDays                    int32
 		values                         = map[string]*string{}
 	)
 
@@ -773,9 +776,12 @@ func packageSetupCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "setup <client> <repository>",
 		Short: "Configure a package manager client for a repository",
-		Long: "Prints the configuration a client needs to use a repository with your token (shown as <token> " +
+		Long: "Prints the configuration a client needs to use a repository with a token (shown as <token> " +
 			"unless --show-token), or with --write writes it: user files under --home, system files under " +
-			"--root, and runs the client's own login commands. Files are written 0600 when they hold the " +
+			"--root, and runs the client's own login commands. Signed in with a context, the client gets a " +
+			"token of its own (described as relic package setup <client> <repository>), so signing in again " +
+			"or signing out leaves it working; --token or RELIC_TOKEN is given to the client as it is. " +
+			"Files are written 0600 when they hold the " +
 			"token; in files other tools share (.npmrc, .netrc, …) relic writes a marked block and keeps the rest. " +
 			"Clients:\n\n" + list.String(),
 		Example: "  relic package setup npm npm-virtual --write\n" +
@@ -816,8 +822,15 @@ func packageSetupCmd(g *globals) *cobra.Command {
 			}
 
 			write = write || agent
-			if !write && !showToken {
+
+			switch {
+			case !write && !showToken:
 				e.token = "<token>"
+			case e.contextToken:
+				e.token, err = clientToken(cmd, c, args[0], args[1], expiresDays)
+				if err != nil {
+					return err
+				}
 			}
 
 			steps, err := client.steps(e)
@@ -860,6 +873,8 @@ func packageSetupCmd(g *globals) *cobra.Command {
 	cmd.Flags().BoolVar(&showToken, "show-token", false, "print the token instead of <token>")
 	cmd.Flags().StringVar(&home, "home", userHome(), "the home directory user files go under")
 	cmd.Flags().StringVar(&root, "root", "/", "the root directory system files go under")
+	cmd.Flags().Int32Var(&expiresDays, "expires-days", 90, "lifetime in days of the token issued for the client; "+
+		"0 never expires for administrators and is 365 for other users")
 
 	for _, n := range names {
 		for flag, help := range setupClients[n].flags {
@@ -930,14 +945,15 @@ func setupEnvFor(cmd *cobra.Command, g *globals, c *client, client setupClient, 
 	}
 
 	e := setupEnv{
-		repo:     repo,
-		format:   format,
-		url:      ep.Msg.GetPackageManager(),
-		registry: ep.Msg.GetContainerRegistry(),
-		files:    ep.Msg.GetFiles(),
-		host:     u.Host,
-		user:     me.Msg.GetPrincipal().GetUsername(),
-		token:    target.token,
+		repo:         repo,
+		format:       format,
+		url:          ep.Msg.GetPackageManager(),
+		registry:     ep.Msg.GetContainerRegistry(),
+		files:        ep.Msg.GetFiles(),
+		host:         u.Host,
+		user:         me.Msg.GetPrincipal().GetUsername(),
+		token:        target.token,
+		contextToken: target.contextToken,
 	}
 	if e.url == "" {
 		e.url = e.files
@@ -958,6 +974,20 @@ func setupEnvFor(cmd *cobra.Command, g *globals, c *client, client setupClient, 
 	}
 
 	return e, nil
+}
+
+// clientToken issues the token a client gets in place of the context's own, which signing in again and
+// signing out revoke.
+func clientToken(cmd *cobra.Command, c *client, clientName, repo string, expiresDays int32) (string, error) {
+	resp, err := c.security.CreateToken(cmd.Context(), connect.NewRequest(&relicv1.CreateTokenRequest{
+		Description: "relic package setup " + clientName + " " + repo,
+		ExpiresDays: expiresDays,
+	}))
+	if err != nil {
+		return "", fmt.Errorf("setup: issue a token for %s: %w", clientName, err)
+	}
+
+	return resp.Msg.GetAccessToken(), nil
 }
 
 var signedFormats = []relicv1.Format{

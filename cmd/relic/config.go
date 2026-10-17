@@ -173,8 +173,10 @@ func (c cliConfig) find(name string) (cliContext, bool) {
 }
 
 type serverTarget struct {
-	url                  string
-	token                string
+	url   string
+	token string
+	// contextToken reports whether token is the saved context's own, which only the CLI holds.
+	contextToken         bool
 	username             string
 	password             string
 	certificateAuthority string
@@ -191,7 +193,10 @@ func (t serverTarget) credentials() credentials {
 func (g *globals) target() (serverTarget, error) {
 	url, token := g.getenv("RELIC_URL"), g.getenv("RELIC_TOKEN")
 
-	var certificateAuthority string
+	var (
+		certificateAuthority string
+		contextToken         bool
+	)
 
 	if g.url == "" || g.token == "" {
 		c, _, err := g.loadConfig()
@@ -211,7 +216,7 @@ func (g *globals) target() (serverTarget, error) {
 				certificateAuthority = ctx.CertificateAuthority
 
 				if token == "" {
-					token = ctx.Token
+					token, contextToken = ctx.Token, true
 				}
 			}
 		} else if g.context != "" {
@@ -224,7 +229,7 @@ func (g *globals) target() (serverTarget, error) {
 	}
 
 	if g.token != "" {
-		token = g.token
+		token, contextToken = g.token, false
 	}
 
 	if url == "" {
@@ -240,6 +245,7 @@ func (g *globals) target() (serverTarget, error) {
 	return serverTarget{
 		url:                  strings.TrimRight(url, "/"),
 		token:                token,
+		contextToken:         contextToken && token != "",
 		certificateAuthority: certificateAuthority,
 	}, nil
 }

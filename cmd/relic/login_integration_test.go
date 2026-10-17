@@ -261,24 +261,14 @@ func TestLogoutRevokesTheContextsToken(t *testing.T) {
 
 		return work.Token
 	}
-	signsIn := func(token string) bool {
-		req := connect.NewRequest(&relicv1.GetCurrentUserRequest{})
-		req.Header().Set("Authorization", "Bearer "+token)
-
-		_, err := relicv1connect.NewSessionServiceClient(http.DefaultClient, srv.URL+"/api").
-			GetCurrentUser(t.Context(), req)
-
-		return err == nil
-	}
-
 	first := login()
 	second := login()
 
-	if signsIn(first) {
+	if signsIn(t, srv.URL, first) {
 		t.Error("signing in again kept the context's previous token")
 	}
 
-	if !signsIn(second) {
+	if !signsIn(t, srv.URL, second) {
 		t.Fatal("the new token does not sign in")
 	}
 
@@ -286,7 +276,19 @@ func TestLogoutRevokesTheContextsToken(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if signsIn(second) {
+	if signsIn(t, srv.URL, second) {
 		t.Error("logout kept the context's token")
 	}
+}
+
+func signsIn(t *testing.T, serverURL, token string) bool {
+	t.Helper()
+
+	req := connect.NewRequest(&relicv1.GetCurrentUserRequest{})
+	req.Header().Set("Authorization", "Bearer "+token)
+
+	_, err := relicv1connect.NewSessionServiceClient(http.DefaultClient, serverURL+"/api").
+		GetCurrentUser(t.Context(), req)
+
+	return err == nil
 }
