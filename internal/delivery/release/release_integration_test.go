@@ -410,3 +410,47 @@ func TestSignedNeedsTheManifestOfTheVersion(t *testing.T) {
 		t.Error("signed with another version's manifest = true; want false")
 	}
 }
+
+func TestPromoteCopiesNothingWhenATargetIsRefused(t *testing.T) {
+	t.Parallel()
+
+	f := newReleaseFixture(t)
+	f.create(t, "1.0", false, artifactSource("libs/app.bin", "libs/other.bin"))
+	f.deploy(t, "prod", "other.bin", "original")
+
+	tests := []struct {
+		name   string
+		access Access
+	}{
+		{
+			name: "no write permission on a later target",
+			access: Access{
+				CanWrite: func(_, path string) bool {
+					return path != "other.bin"
+				},
+			},
+		},
+		{
+			name: "no delete permission to overwrite a later target",
+			access: Access{
+				CanDelete: func(string, string) bool {
+					return false
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := f.releases.Promote(t.Context(), "", "app", "1.0", PromotionSpec{
+				Environment: "PROD",
+			}, "dev", tt.access)
+			if !errors.Is(err, ErrForbidden) {
+				t.Fatalf("Promote = %v; want ErrForbidden", err)
+			}
+
+			if _, err := f.repos.Stat(t.Context(), "prod", "app.bin"); !errors.Is(err, repository.ErrNotFound) {
+				t.Errorf("Stat of prod/app.bin after the refused promotion = %v; want ErrNotFound", err)
+			}
+		})
+	}
+}

@@ -129,9 +129,17 @@ func (s *Service) Promote(
 		return Promotion{}, err
 	}
 
+	var copies []repository.CopyInput
+
 	for _, p := range placements {
-		if err := s.promoteArtifact(ctx, p.artifact, stored[p.artifact.Path], p.target, user, access); err != nil {
-			return Promotion{}, err
+		if in, needed := s.artifactCopy(ctx, p.artifact, stored[p.artifact.Path], p.target, user, access); needed {
+			copies = append(copies, in)
+		}
+	}
+
+	if len(copies) > 0 {
+		if err := s.repos.CopyAll(ctx, copies); err != nil {
+			return Promotion{}, fmt.Errorf("promote to %s: %w", req.Environment, err)
 		}
 	}
 
@@ -271,42 +279,37 @@ func (s *Service) pickTarget(
 	return "", false
 }
 
-func (s *Service) promoteArtifact(
+// artifactCopy is the copy that promotes a to target; needed is false when
+// target already holds it.
+func (s *Service) artifactCopy(
 	ctx context.Context,
 	a Artifact,
 	src repository.Item,
 	target, user string,
 	access Access,
-) error {
+) (_ repository.CopyInput, needed bool) {
 	if cur, err := s.repos.Stat(ctx, target, a.Path); err == nil && cur.Checksums.SHA256 == a.SHA256 {
-		return nil
+		return repository.CopyInput{}, false
 	}
 
-	if err := s.repos.Copy(
-		ctx,
-		repository.CopyInput{
-			Source:                src,
-			DestinationRepository: target,
-			DestinationPath:       a.Path,
-			User:                  user,
-			RefuseOverwrite: func(_ context.Context, existing repository.Item) error {
-				if access.canDelete(existing.Repository, existing.Path()) {
-					return nil
-				}
+	return repository.CopyInput{
+		Source:                src,
+		DestinationRepository: target,
+		DestinationPath:       a.Path,
+		User:                  user,
+		RefuseOverwrite: func(_ context.Context, existing repository.Item) error {
+			if access.canDelete(existing.Repository, existing.Path()) {
+				return nil
+			}
 
-				return fmt.Errorf(
-					"%w: overwriting %s/%s needs delete permission",
-					ErrForbidden,
-					existing.Repository,
-					existing.Path(),
-				)
-			},
+			return fmt.Errorf(
+				"%w: overwriting %s/%s needs delete permission",
+				ErrForbidden,
+				existing.Repository,
+				existing.Path(),
+			)
 		},
-	); err != nil {
-		return fmt.Errorf("promote %s to %s: %w", a.Path, target, err)
-	}
-
-	return nil
+	}, true
 }
 
 // Promotions lists a version's promotions, newest first.
