@@ -4,6 +4,7 @@ package security_test
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"slices"
 	"testing"
@@ -331,6 +332,169 @@ func TestDeletingAPrincipalRemovesItsGrants(t *testing.T) {
 						tt.wantGroups,
 					)
 				}
+			}
+		})
+	}
+}
+
+func TestUserChangesKeepAnEnabledAdministrator(t *testing.T) {
+	t.Parallel()
+
+	type account struct {
+		name     string
+		admin    bool
+		disabled bool
+	}
+
+	demote := func(name string) func(*security.Service) error {
+		return func(s *security.Service) error {
+			_, err := s.PutUser(t.Context(), security.User{
+				Name:  name,
+				Email: name + "@example.com",
+			})
+
+			return err
+		}
+	}
+
+	root := account{
+		name:  "root",
+		admin: true,
+	}
+	dormant := account{
+		name:     "dormant",
+		admin:    true,
+		disabled: true,
+	}
+
+	tests := []struct {
+		name     string
+		accounts []account
+		change   func(*security.Service) error
+		refused  bool
+	}{
+		{
+			name: "demoting the only administrator",
+			accounts: []account{
+				root,
+			},
+			change:  demote("root"),
+			refused: true,
+		},
+		{
+			name: "disabling the only administrator",
+			accounts: []account{
+				root,
+			},
+			change: func(s *security.Service) error {
+				_, err := s.ReplaceUser(t.Context(), security.User{
+					Name:     "root",
+					Email:    "root@example.com",
+					Admin:    true,
+					Disabled: true,
+				})
+
+				return err
+			},
+			refused: true,
+		},
+		{
+			name: "turning the only administrator's sign-ins off",
+			accounts: []account{
+				root,
+			},
+			change: func(s *security.Service) error {
+				return s.SetDisabled(t.Context(), "root", true)
+			},
+			refused: true,
+		},
+		{
+			name: "demoting an administrator whose only peer is disabled",
+			accounts: []account{
+				root,
+				dormant,
+			},
+			change:  demote("root"),
+			refused: true,
+		},
+		{
+			name: "deleting an administrator whose only peer is disabled",
+			accounts: []account{
+				root,
+				dormant,
+			},
+			change: func(s *security.Service) error {
+				return s.DeleteUser(t.Context(), "root")
+			},
+			refused: true,
+		},
+		{
+			name: "demoting one of two administrators",
+			accounts: []account{
+				root,
+				{
+					name:  "second",
+					admin: true,
+				},
+			},
+			change: demote("root"),
+		},
+		{
+			name: "keeping the only administrator an administrator",
+			accounts: []account{
+				root,
+			},
+			change: func(s *security.Service) error {
+				_, err := s.PutUser(t.Context(), security.User{
+					Name:  "root",
+					Email: "new@example.com",
+					Admin: true,
+				})
+
+				return err
+			},
+		},
+		{
+			name: "demoting a disabled administrator",
+			accounts: []account{
+				root,
+				dormant,
+			},
+			change: demote("dormant"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			db := databasetest.NewDB(t)
+
+			for _, a := range tt.accounts {
+				if err := db.CreateUser(ctx, database.CreateUserParams{
+					ID:           uuid.NewV7(),
+					Username:     a.name,
+					PasswordHash: "x",
+					Admin:        a.admin,
+				}); err != nil {
+					t.Fatal(err)
+				}
+
+				if err := db.SetUserDisabled(ctx, database.SetUserDisabledParams{
+					Username: a.name,
+					Disabled: a.disabled,
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			err := tt.change(security.NewService(db, slog.New(slog.DiscardHandler)))
+			if tt.refused && !errors.Is(err, security.ErrInvalid) {
+				t.Errorf("change = %v, want %v", err, security.ErrInvalid)
+			}
+
+			if !tt.refused && err != nil {
+				t.Errorf("change = %v, want it accepted", err)
 			}
 		})
 	}

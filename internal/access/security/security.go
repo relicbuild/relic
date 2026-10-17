@@ -126,45 +126,54 @@ func (s *Service) putUser(ctx context.Context, u User, w userWrite) (created boo
 		return false, err
 	}
 
-	err = s.db.WithTx(ctx, func(q database.Querier) error {
-		created, err = q.UpsertUser(ctx, database.UpsertUserParams{
-			ID:           uuid.NewV7(),
-			Username:     u.Name,
-			Email:        u.Email,
-			PasswordHash: hash,
-			Admin:        u.Admin,
-			Viewer:       u.Viewer,
-			Extensions:   extensions,
-		})
-		if err != nil {
-			return fmt.Errorf("save user: %w", err)
-		}
+	disabled := existing.Disabled
+	if w.withDisabled {
+		disabled = u.Disabled
+	}
 
-		if w.createOnly && !created {
-			return fmt.Errorf("%w: user %q", ErrExists, u.Name)
-		}
+	removesAdministrator := exists && existing.Admin && !existing.Disabled && (!u.Admin || disabled)
 
-		if w.withDisabled {
-			if err := q.SetUserDisabled(ctx, database.SetUserDisabledParams{
-				Username: u.Name,
-				Disabled: u.Disabled,
-			}); err != nil {
+	err = s.withAdministratorKept(ctx, removesAdministrator, func() error {
+		return s.db.WithTx(ctx, func(q database.Querier) error {
+			created, err = q.UpsertUser(ctx, database.UpsertUserParams{
+				ID:           uuid.NewV7(),
+				Username:     u.Name,
+				Email:        u.Email,
+				PasswordHash: hash,
+				Admin:        u.Admin,
+				Viewer:       u.Viewer,
+				Extensions:   extensions,
+			})
+			if err != nil {
 				return fmt.Errorf("save user: %w", err)
 			}
-		}
 
-		groups := u.Groups
-		if groups == nil && created {
-			if groups, err = q.DefaultGroups(ctx); err != nil {
-				return err
+			if w.createOnly && !created {
+				return fmt.Errorf("%w: user %q", ErrExists, u.Name)
 			}
-		}
 
-		if groups == nil {
-			return nil
-		}
+			if w.withDisabled {
+				if err := q.SetUserDisabled(ctx, database.SetUserDisabledParams{
+					Username: u.Name,
+					Disabled: u.Disabled,
+				}); err != nil {
+					return fmt.Errorf("save user: %w", err)
+				}
+			}
 
-		return setUserGroups(ctx, q, u.Name, groups)
+			groups := u.Groups
+			if groups == nil && created {
+				if groups, err = q.DefaultGroups(ctx); err != nil {
+					return err
+				}
+			}
+
+			if groups == nil {
+				return nil
+			}
+
+			return setUserGroups(ctx, q, u.Name, groups)
+		})
 	})
 	s.invalidate()
 
@@ -299,24 +308,7 @@ func (s *Service) DeleteUser(ctx context.Context, name string) error {
 		})
 	}
 
-	if u.Admin {
-		err = s.db.WithLock(ctx, administratorsLock, func() error {
-			n, err := s.db.CountAdmins(ctx)
-			if err != nil {
-				return err
-			}
-
-			if n <= 1 {
-				return fmt.Errorf("%w: cannot delete the last administrator", ErrInvalid)
-			}
-
-			return remove()
-		})
-	} else {
-		err = remove()
-	}
-
-	if err != nil {
+	if err := s.withAdministratorKept(ctx, u.Admin && !u.Disabled, remove); err != nil {
 		return err
 	}
 
@@ -325,17 +317,51 @@ func (s *Service) DeleteUser(ctx context.Context, name string) error {
 	return nil
 }
 
+// withAdministratorKept runs change, under the administrators lock when it takes away an enabled administrator,
+// and refuses it when that administrator is the last one.
+func (s *Service) withAdministratorKept(ctx context.Context, removesAdministrator bool, change func() error) error {
+	if !removesAdministrator {
+		return change()
+	}
+
+	return s.db.WithLock(ctx, administratorsLock, func() error {
+		users, err := s.db.ListUsers(ctx)
+		if err != nil {
+			return fmt.Errorf("list users: %w", err)
+		}
+
+		enabled := 0
+
+		for _, u := range users {
+			if u.Admin && !u.Disabled {
+				enabled++
+			}
+		}
+
+		if enabled <= 1 {
+			return fmt.Errorf("%w: the last enabled administrator cannot be deleted, disabled or demoted", ErrInvalid)
+		}
+
+		return change()
+	})
+}
+
 // SetDisabled turns a user's sign-ins off or back on.
 func (s *Service) SetDisabled(ctx context.Context, name string, disabled bool) error {
-	if _, err := s.db.GetUserByUsername(ctx, name); errors.Is(database.NotFound(err), database.ErrNotFound) {
+	u, err := s.db.GetUserByUsername(ctx, name)
+	if errors.Is(database.NotFound(err), database.ErrNotFound) {
 		return fmt.Errorf("%w: user %q", ErrNotFound, name)
-	} else if err != nil {
+	}
+
+	if err != nil {
 		return err
 	}
 
-	return s.db.SetUserDisabled(ctx, database.SetUserDisabledParams{
-		Username: name,
-		Disabled: disabled,
+	return s.withAdministratorKept(ctx, u.Admin && !u.Disabled && disabled, func() error {
+		return s.db.SetUserDisabled(ctx, database.SetUserDisabledParams{
+			Username: name,
+			Disabled: disabled,
+		})
 	})
 }
 
