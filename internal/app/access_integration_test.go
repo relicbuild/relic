@@ -179,10 +179,13 @@ func TestDashboardSummaryCountsWhatTheCallerMayRead(t *testing.T) {
 	}
 
 	if err := db.InsertFinding(t.Context(), database.InsertFindingParams{
-		Sha256:   sha256Hex("binary"),
-		VulnID:   "CVE-2026-0001",
-		Severity: "high",
-		Cvss:     []byte("{}"),
+		Sha256:        sha256Hex("binary"),
+		VulnID:        "CVE-2026-0001",
+		Severity:      "high",
+		Cves:          []string{},
+		FixedVersions: []string{},
+		Cvss:          []byte("{}"),
+		Urls:          []string{},
 	}); err != nil {
 		t.Fatal(err)
 	}
