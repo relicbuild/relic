@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"slices"
 	"strings"
@@ -126,12 +127,14 @@ func Backup(ctx context.Context, db *DB, path string) error {
 		return ErrBackupNotSupported
 	}
 
-	if _, err := os.Stat(path); err == nil {
+	if err := createOwnerOnly(path); errors.Is(err, fs.ErrExist) {
 		return fmt.Errorf("backup %s: the file exists", path)
+	} else if err != nil {
+		return fmt.Errorf("backup %s: %w", path, err)
 	}
 
 	if _, err := e.db.ExecContext(ctx, "VACUUM INTO ?", path); err != nil {
-		return fmt.Errorf("backup %s: %w", path, err)
+		return errors.Join(fmt.Errorf("backup %s: %w", path, err), os.Remove(path))
 	}
 
 	return nil
