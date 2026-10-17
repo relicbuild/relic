@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { create } from '@bufbuild/protobuf'
 import { Format, GetClientEndpointsResponseSchema, RepositoryClass, RepositorySchema } from '~/gen/relic/v1/repository_pb'
-import { clientSetupSnippets } from '~/utils/client-setup'
+import { clientSetupSnippets, tokenExpiry } from '~/utils/client-setup'
 
 const endpoints = create(GetClientEndpointsResponseSchema, {
   files: 'http://relic.test/api/v1/files/r/',
@@ -24,5 +24,15 @@ describe('clientSetupSnippets', () => {
     { name: 'curl quotes a user name with a space', format: Format.GENERIC, title: 'curl', token: '<token>', user: 'john doe', want: 'curl -u \'john doe\':<token> -T' }
   ])('$name', ({ format, title, token, user, want }) => {
     expect(code(format, token, title, user)).toContain(want)
+  })
+})
+
+describe('tokenExpiry', () => {
+  it('lets an administrator mint a token that never expires', () => {
+    expect(tokenExpiry(true)).toEqual({ minDays: 0, maxDays: 3650, label: 'Expires after (days, 0 = never)' })
+  })
+
+  it('bounds the token of a user who is not an administrator to 365 days', () => {
+    expect(tokenExpiry(false)).toEqual({ minDays: 1, maxDays: 365, label: 'Expires after (days, at most 365)' })
   })
 })
