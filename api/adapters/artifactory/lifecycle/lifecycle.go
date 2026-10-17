@@ -347,6 +347,13 @@ func (h *Handler) groups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if project(r) != "" {
+		stored := h.bundles.Layout().Repository(project(r))
+		all = slices.DeleteFunc(all, func(b rb.Release) bool {
+			return b.Repository != stored
+		})
+	}
+
 	if all, err = h.readable(r, all); err != nil {
 		h.fail(w, r, err)
 		return

@@ -154,6 +154,16 @@ func TestReleaseBundles(t *testing.T) {
 		t.Errorf("groups = %s", groups)
 	}
 
+	if _, other := do(t, srv, call{
+		method: "GET",
+		path:   lc + "release_bundle/groups?project=acme",
+	}); strings.Contains(
+		other,
+		`"release_bundle_name": "app"`,
+	) {
+		t.Errorf("groups of project acme = %s; want no release of the default project", other)
+	}
+
 	_, versions := do(t, srv, call{
 		method: "GET",
 		path:   lc + "release_bundle/records/app?limit=1&offset=1",

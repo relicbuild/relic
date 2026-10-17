@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"slices"
 	"time"
 
 	"connectrpc.com/connect"
@@ -239,11 +240,18 @@ func specOf(m *relicv1.ReleaseSpec) (release.Spec, error) {
 
 func (s *releaseServer) ListReleases(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListReleasesRequest],
+	req *connect.Request[relicv1.ListReleasesRequest],
 ) (*connect.Response[relicv1.ListReleasesResponse], error) {
 	all, err := s.d.Releases.Groups(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	if req.Msg.Project != nil {
+		stored := s.d.Releases.Layout().Repository(req.Msg.GetProject())
+		all = slices.DeleteFunc(all, func(r release.Release) bool {
+			return r.Repository != stored
+		})
 	}
 
 	if all, err = s.readable(ctx, all); err != nil {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -391,7 +392,12 @@ func releaseListCmd(g *globals) *cobra.Command {
 			}
 
 			if len(args) == 0 {
-				r, err := c.releases.ListReleases(cmd.Context(), connect.NewRequest(&relicv1.ListReleasesRequest{}))
+				req := &relicv1.ListReleasesRequest{}
+				if cmd.Flags().Changed("project") {
+					req.Project = &ref.project
+				}
+
+				r, err := c.releases.ListReleases(cmd.Context(), connect.NewRequest(req))
 				if err != nil {
 					return fmt.Errorf("release list: %w", err)
 				}
@@ -400,17 +406,19 @@ func releaseListCmd(g *globals) *cobra.Command {
 					table := terminal.Table{
 						Headers: []string{
 							"NAME",
+							"PROJECT",
 							"LATEST",
 							"VERSIONS",
 						},
 						RightAligned: []int{
-							2,
+							3,
 						},
 					}
 
 					for _, rel := range r.Msg.GetReleases() {
 						table.Rows = append(table.Rows, []string{
 							rel.GetName(),
+							cmp.Or(rel.GetProject(), "default"),
 							rel.GetVersion(),
 							strconv.FormatInt(int64(rel.GetVersions()), 10),
 						})

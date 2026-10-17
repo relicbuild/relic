@@ -5714,6 +5714,14 @@
       },
       "relic.v1.ListReleasesRequest": {
         "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "title": "project",
+            "description": "project limits the list to one project's releases (\"\" for releases\n outside projects); unset lists every project's.",
+            "nullable": true
+          }
+        },
         "title": "ListReleasesRequest",
         "additionalProperties": false
       },
@@ -12979,6 +12987,18 @@
         "summary": "ListReleases",
         "description": "ListReleases returns the releases the caller may read, with their\n latest version.",
         "operationId": "ReleaseService_ListReleases",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "description": "project limits the list to one project's releases (\"\" for releases\n outside projects); unset lists every project's.",
+            "schema": {
+              "type": "string",
+              "title": "project",
+              "description": "project limits the list to one project's releases (\"\" for releases\n outside projects); unset lists every project's."
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success",

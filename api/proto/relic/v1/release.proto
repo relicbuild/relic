@@ -209,7 +209,11 @@ message ReleasePromotion {
   int64 created_millis = 8;
 }
 
-message ListReleasesRequest {}
+message ListReleasesRequest {
+  // project limits the list to one project's releases ("" for releases
+  // outside projects); unset lists every project's.
+  optional string project = 1;
+}
 
 message ListReleasesResponse {
   repeated Release releases = 1;

@@ -118,8 +118,18 @@ spec: {class: local, format: generic, environments: [PROD]}
 		"release",
 		"list",
 	); err != nil ||
-		!hasTableRow(out, "app", "1.0", "1") {
+		!hasTableRow(out, "app", "default", "1.0", "1") {
 		t.Errorf("list = %q %v", out, err)
+	}
+
+	if out, err := relic(t, config, "", "release", "list", "--project", ""); err != nil ||
+		!hasTableRow(out, "app", "default", "1.0", "1") {
+		t.Errorf("list --project '' = %q %v", out, err)
+	}
+
+	if out, err := relic(t, config, "", "release", "list", "--project", "acme"); err != nil ||
+		hasTableRowWith(out, "app") {
+		t.Errorf("list --project acme = %q %v; want no release outside acme", out, err)
 	}
 
 	if out, err := relic(
