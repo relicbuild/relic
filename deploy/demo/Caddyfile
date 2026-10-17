@@ -15,6 +15,7 @@ demo.relic.build {
 		-Server
 	}
 	reverse_proxy https://127.0.0.1:8090 {
+		header_up X-Forwarded-For {client_ip}
 		transport http {
 			tls_trust_pool file /etc/caddy/relic-ca.crt
 		}
