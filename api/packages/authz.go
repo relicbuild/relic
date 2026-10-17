@@ -220,8 +220,8 @@ func Forbidden(w http.ResponseWriter, r *http.Request, action, target string) {
 }
 
 // CanReadContent reports whether the caller may read and download some
-// stored file with the given content. Content whose every readable copy is
-// download-blocked is refused with repository.ErrForbidden.
+// stored file with the given content, or repository.ErrForbidden when every
+// readable copy is download-blocked.
 func (h *Handler) CanReadContent(r *http.Request, sums repository.Checksums) (bool, error) {
 	ctx := r.Context()
 

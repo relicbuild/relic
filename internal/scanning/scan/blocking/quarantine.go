@@ -37,8 +37,7 @@ var (
 )
 
 // QuarantinedRepositories tells which remote repositories quarantine what
-// they cache, read at every check so that turning quarantine on applies at
-// once.
+// they cache.
 type QuarantinedRepositories interface {
 	QuarantinedRepositories(ctx context.Context) ([]string, error)
 	Quarantines(ctx context.Context, repoKey string) (bool, error)

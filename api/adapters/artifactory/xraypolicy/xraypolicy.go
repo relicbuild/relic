@@ -126,8 +126,7 @@ var ignoreFilterNames = []string{
 }
 
 // UnmarshalJSON reads ignore filters and refuses, with policy.ErrInvalid, a
-// filter Relic does not evaluate: dropping it would ignore more than the
-// rule names.
+// filter Relic does not evaluate.
 func (f *IgnoreFilters) UnmarshalJSON(b []byte) error {
 	var named map[string]json.RawMessage
 	if err := json.Unmarshal(b, &named); err != nil {
@@ -160,8 +159,8 @@ type IgnoreComponent struct {
 	Version string `json:"version,omitempty"`
 }
 
-// IgnoreArtifact matches an artifact path ("repo/path/"), as a prefix. Name
-// and Version are read only to refuse them.
+// IgnoreArtifact matches an artifact path ("repo/path/") as a prefix, and
+// carries Name and Version only to refuse them.
 type IgnoreArtifact struct {
 	Name    string `json:"name,omitempty"`
 	Version string `json:"version,omitempty"`

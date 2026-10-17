@@ -208,9 +208,8 @@ func (a *Admin) Watch(ctx context.Context, name string) (Watch, error) {
 	return w, nil
 }
 
-// checkWatchedRepositories refuses a repository a watch names that does not
-// exist or is virtual: downloads are checked against the repository that
-// stores the file, so such a watch would never apply.
+// checkWatchedRepositories refuses a watched repository that does not
+// exist or is virtual.
 func (a *Admin) checkWatchedRepositories(ctx context.Context, w Watch) error {
 	for _, s := range w.Scopes {
 		if s.Kind != ScopeRepository {
