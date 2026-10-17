@@ -649,7 +649,7 @@ func (s *Service) Publish(ctx context.Context, repoKey string, doc PublishDocume
 	}
 
 	for tag, version := range doc.DistTags {
-		if err := s.SetTag(ctx, repoKey, doc.Name, tag, version); err != nil {
+		if err := s.pointTag(ctx, repoKey, doc.Name, tag, version); err != nil {
 			return err
 		}
 	}
@@ -682,10 +682,36 @@ func attachmentName(doc PublishDocument, tarball, version string) string {
 	return ""
 }
 
-// SetTag points a dist-tag at a version.
+// SetTag points a dist-tag at a published version.
 func (s *Service) SetTag(ctx context.Context, repoKey, name, tag, version string) error {
 	if tag == "" || version == "" {
-		return fmt.Errorf("%w: tag and version are required", ErrInvalid)
+		return errTagWithoutVersion
+	}
+
+	exists, err := s.db.NpmVersionExists(
+		ctx,
+		database.NpmVersionExistsParams{
+			RepoKey: repoKey,
+			Name:    name,
+			Version: version,
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	if !exists {
+		return fmt.Errorf("%w: %s@%s", ErrNotFound, name, version)
+	}
+
+	return s.pointTag(ctx, repoKey, name, tag, version)
+}
+
+var errTagWithoutVersion = fmt.Errorf("%w: tag and version are required", ErrInvalid)
+
+func (s *Service) pointTag(ctx context.Context, repoKey, name, tag, version string) error {
+	if tag == "" || version == "" {
+		return errTagWithoutVersion
 	}
 
 	return s.db.SetNpmDistTag(

@@ -757,3 +757,70 @@ func TestNpmCopyIndexes(t *testing.T) {
 		t.Errorf("packument after copy = %d %s", resp.StatusCode, body)
 	}
 }
+
+func TestNpmDistTagPointsAtAPublishedVersion(t *testing.T) {
+	t.Parallel()
+
+	srv := server(t)
+	do(
+		t,
+		srv,
+		call{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/npm-local",
+			body:   `{"rclass":"local","packageType":"npm"}`,
+		},
+	)
+
+	base := "/artifactory/api/npm/npm-local"
+	if resp, body := do(t, srv, call{
+		method: "PUT",
+		path:   base + "/tagged",
+		body:   publishDoc("tagged", "1.0.0", npmTarball(t, "tagged", "1.0.0")),
+	}); resp.StatusCode != 201 {
+		t.Fatalf("publish = %d %s", resp.StatusCode, body)
+	}
+
+	tests := []struct {
+		name    string
+		pkg     string
+		version string
+		want    int
+	}{
+		{
+			name:    "a published version",
+			pkg:     "tagged",
+			version: `"1.0.0"`,
+			want:    http.StatusCreated,
+		},
+		{
+			name:    "a version never published",
+			pkg:     "tagged",
+			version: `"9.9.9"`,
+			want:    http.StatusNotFound,
+		},
+		{
+			name:    "a package never published",
+			pkg:     "untagged",
+			version: `"1.0.0"`,
+			want:    http.StatusNotFound,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, body := do(t, srv, call{
+				method: "PUT",
+				path:   base + "/-/package/" + tt.pkg + "/dist-tags/next",
+				body:   tt.version,
+			})
+			if resp.StatusCode != tt.want {
+				t.Errorf("tag %s@%s = %d %s, want %d", tt.pkg, tt.version, resp.StatusCode, body, tt.want)
+			}
+		})
+	}
+
+	var tags map[string]string
+	if getJSON(t, srv, base+"/-/package/tagged/dist-tags", &tags); tags["next"] != "1.0.0" {
+		t.Errorf("dist-tags = %v, want next at 1.0.0", tags)
+	}
+}
