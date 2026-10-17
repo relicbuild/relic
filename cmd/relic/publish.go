@@ -341,7 +341,20 @@ func zipModule(dir string) ([]byte, error) {
 			return nil
 		}
 
-		w, err := zw.Create(filepath.ToSlash(rel))
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+
+		header, err := zip.FileInfoHeader(info)
+		if err != nil {
+			return err
+		}
+
+		header.Name = filepath.ToSlash(rel)
+		header.Method = zip.Deflate
+
+		w, err := zw.CreateHeader(header)
 		if err != nil {
 			return err
 		}
