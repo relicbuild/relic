@@ -265,3 +265,32 @@ func TestAccessTokensRefuseUnsupportedScopes(t *testing.T) {
 		})
 	}
 }
+
+func TestTokensForUnknownUsersAreRefused(t *testing.T) {
+	t.Parallel()
+
+	srv := server(t)
+
+	status, _ := accessTokenFor(t, srv, "admin:password", `{"username":"ghost","expires_in":300}`)
+	if status != 404 {
+		t.Errorf("access token for an unknown user = %d, want 404", status)
+	}
+
+	resp, body := do(t, srv, call{
+		method: "POST",
+		path:   "/artifactory/api/security/token",
+		body:   "username=ghost&expires_in=300",
+		headers: map[string]string{
+			"Content-Type": "application/x-www-form-urlencoded",
+		},
+	})
+	if resp.StatusCode != 404 {
+		t.Errorf("legacy token for an unknown user = %d %s, want 404", resp.StatusCode, body)
+	}
+
+	createTokenUser(t, srv, "ghost", "Ghost-pass-1")
+
+	if tokens := userTokens(t, srv, "ghost", ""); len(tokens) != 0 {
+		t.Errorf("tokens issued before the user existed: %v", tokens)
+	}
+}

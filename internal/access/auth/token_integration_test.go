@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"strings"
 	"testing"
 	"uuid"
@@ -26,6 +27,21 @@ func TestTokensRevoke(t *testing.T) {
 
 	tokens, err := auth.NewTokens(ctx, db, nil, access.Format{})
 	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := tokens.Issue(ctx, auth.IssueParams{
+		Username: "alice",
+		Scope:    auth.UserScope,
+	}); !errors.Is(err, auth.ErrUnknownUser) {
+		t.Fatalf("token for a user who does not exist: %v", err)
+	}
+
+	if err := db.CreateUser(ctx, database.CreateUserParams{
+		ID:           uuid.NewV7(),
+		Username:     "alice",
+		PasswordHash: "!",
+	}); err != nil {
 		t.Fatal(err)
 	}
 

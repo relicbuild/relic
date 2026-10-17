@@ -156,6 +156,11 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) {
 		Description: req.Description,
 		Project:     req.ProjectKey,
 	}, time.Now()))
+	if errors.Is(err, auth.ErrUnknownUser) {
+		wire.WriteError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
 	if err != nil {
 		h.fail(w, r, err)
 		return

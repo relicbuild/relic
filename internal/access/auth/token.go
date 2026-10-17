@@ -30,6 +30,10 @@ var ErrInvalidToken = errors.New("invalid token")
 // may manage.
 var ErrTokenNotFound = errors.New("token not found")
 
+// ErrUnknownUser is returned for a token asked for a user that does not
+// exist.
+var ErrUnknownUser = errors.New("user not found")
+
 // claims are the JWT claims of Relic's tokens. Clients decode them and need
 // numeric exp and iat.
 type claims struct {
@@ -185,8 +189,17 @@ func (t *Tokens) load(ctx context.Context) error {
 	return nil
 }
 
-// Issue creates a token.
+// Issue creates a token for an existing user.
 func (t *Tokens) Issue(ctx context.Context, p IssueParams) (IssuedToken, error) {
+	_, err := t.db.GetUserByUsername(ctx, p.Username)
+	if errors.Is(database.NotFound(err), database.ErrNotFound) {
+		return IssuedToken{}, fmt.Errorf("%w: %s", ErrUnknownUser, p.Username)
+	}
+
+	if err != nil {
+		return IssuedToken{}, fmt.Errorf("look up user: %w", err)
+	}
+
 	out, err := t.issue(ctx, t.db, p)
 	if err != nil {
 		return IssuedToken{}, err
