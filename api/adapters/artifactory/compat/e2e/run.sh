@@ -170,7 +170,7 @@ if [[ ${#scenarios[@]} -gt 0 ]]; then
   docker run --rm --network "$network" -v "$results:/results" \
     -v "$root/api/adapters/artifactory/compat/fixtures/scenarios:/scenarios:ro" -v "$bin:/e2e:ro" -e E2E_PARALLEL \
     "${server_env[@]}" -e RELIC_TOKEN -e RELIC_USER -e RELIC_PASSWORD \
-    -e DOCKER_HOST=tcp://relic-e2e-dind:2375 -e SCENARIO_DOCKER_HOSTNAME=relic-e2e-dind -e E2E_OWN_DAEMON="${own_daemon[*]}" \
+    -e DOCKER_HOST=tcp://relic-e2e-dind:2375 -e SCENARIO_DOCKER_HOSTNAME=relic-e2e-dind -e E2E_OWN_DAEMON="${own_daemon[*]-}" \
     -e TLS_CA=/results/tls-ca.crt \
     -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
     "$project-e2e" "${scenarios[@]}"
