@@ -563,9 +563,17 @@ func releasePromoteCmd(g *globals) *cobra.Command {
 			}
 
 			return printMessage(cmd.OutOrStdout(), output, r.Msg, func(w io.Writer) error {
-				_, err := fmt.Fprintf(w, "%s/%s promoted to %s\n", args[0], args[1], args[2])
+				if _, err := fmt.Fprintf(w, "%s/%s promoted to %s\n", args[0], args[1], args[2]); err != nil {
+					return err
+				}
 
-				return err
+				for _, m := range r.Msg.GetPromotion().GetMessages() {
+					if _, err := fmt.Fprintf(w, "  %s\n", m); err != nil {
+						return err
+					}
+				}
+
+				return nil
 			})
 		},
 	}

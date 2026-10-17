@@ -154,6 +154,21 @@ spec: {class: local, format: generic, environments: [PROD]}
 		t,
 		config,
 		"",
+		"release",
+		"promote",
+		"app",
+		"1.0",
+		"PROD",
+		"--move",
+	); err != nil ||
+		out != "app/1.0 promoted to PROD\n  promotion type move is performed as copy\n" {
+		t.Errorf("promote --move = %q %v", out, err)
+	}
+
+	if out, err := relic(
+		t,
+		config,
+		"",
 		"api",
 		"releases/app/versions/1.0/promotions",
 	); err != nil ||

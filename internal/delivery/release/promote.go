@@ -87,14 +87,17 @@ func (s *Service) Promote(
 		return Promotion{}, err
 	}
 
-	if _, err := s.checkGates(ctx, b, req.Environment, user); err != nil {
-		return Promotion{}, err
-	}
-
 	var msgs []string
 	if req.Move {
 		msgs = append(msgs, "promotion type move is performed as copy")
 	}
+
+	type placement struct {
+		artifact Artifact
+		target   string
+	}
+
+	var placements []placement
 
 	sourceTypes := map[string]repository.Format{}
 	for _, a := range b.Artifacts {
@@ -108,7 +111,26 @@ func (s *Service) Promote(
 			return Promotion{}, fmt.Errorf("%w: cannot write %s/%s", ErrForbidden, target, a.Path)
 		}
 
-		if err := s.promoteArtifact(ctx, a, stored[a.Path], target, user, access); err != nil {
+		placements = append(placements, placement{
+			artifact: a,
+			target:   target,
+		})
+	}
+
+	if len(placements) == 0 && len(b.Artifacts) > 0 {
+		return Promotion{}, fmt.Errorf(
+			"%w: no repository in environment %s accepts any of the version's artifacts",
+			ErrInvalid,
+			req.Environment,
+		)
+	}
+
+	if _, err := s.checkGates(ctx, b, req.Environment, user); err != nil {
+		return Promotion{}, err
+	}
+
+	for _, p := range placements {
+		if err := s.promoteArtifact(ctx, p.artifact, stored[p.artifact.Path], p.target, user, access); err != nil {
 			return Promotion{}, err
 		}
 	}
