@@ -19,7 +19,7 @@ type entry struct {
 	art  Artifact
 }
 
-func (s *Service) resolve(ctx context.Context, project string, sources []Source) ([]entry, error) {
+func (s *Service) resolve(ctx context.Context, project string, sources []Source, access Access) ([]entry, error) {
 	var out []entry
 
 	seen := map[string]string{}
@@ -58,7 +58,7 @@ func (s *Service) resolve(ctx context.Context, project string, sources []Source)
 
 		switch src.Kind {
 		case SourceQuery:
-			err = s.fromQuery(ctx, src.Query, fromItem)
+			err = s.fromQuery(ctx, src.Query, access, fromItem)
 		case SourceArtifacts:
 			err = s.fromArtifacts(ctx, src.Artifacts, fromItem)
 		case SourceBuilds:
@@ -77,7 +77,12 @@ func (s *Service) resolve(ctx context.Context, project string, sources []Source)
 	return out, nil
 }
 
-func (s *Service) fromQuery(ctx context.Context, q itemquery.Query, fn func(repository.Item) error) error {
+func (s *Service) fromQuery(
+	ctx context.Context,
+	q itemquery.Query,
+	access Access,
+	fn func(repository.Item) error,
+) error {
 	plan, err := itemquery.Compile(q)
 	if err != nil {
 		return fmt.Errorf("%w: query: %w", ErrInvalid, err)
@@ -86,11 +91,12 @@ func (s *Service) fromQuery(ctx context.Context, q itemquery.Query, fn func(repo
 	var items []repository.Item
 
 	err = itemquery.Run(ctx, s.db, plan, func(row itemquery.Row) error {
-		if row.Type != repository.TypeFile {
+		path := repository.JoinPath(row.Path, row.Name)
+		if row.Type != repository.TypeFile || !access.canRead(row.Repository, path) {
 			return nil
 		}
 
-		it, err := s.repos.Stat(ctx, row.Repository, repository.JoinPath(row.Path, row.Name))
+		it, err := s.repos.Stat(ctx, row.Repository, path)
 		if err != nil {
 			return err
 		}

@@ -250,7 +250,7 @@ func (s *Service) Create(
 		return Release{}, fmt.Errorf("%w: invalid name or version", ErrInvalid)
 	}
 
-	entries, err := s.resolve(ctx, project, req.Sources)
+	entries, err := s.resolve(ctx, project, req.Sources, access)
 	if err != nil {
 		return Release{}, err
 	}
@@ -329,7 +329,7 @@ func (s *Service) Update(
 			return ErrNotDraft
 		}
 
-		entries, err := s.resolve(ctx, project, req.Sources)
+		entries, err := s.resolve(ctx, project, req.Sources, access)
 		if err != nil {
 			return err
 		}
