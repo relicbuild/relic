@@ -208,10 +208,15 @@ type Message struct {
 	Message string `json:"message"`
 }
 
-// Messages renders a promotion report; never nil, so the JSON is an array.
+// Messages renders a promotion report's warnings and errors, as Artifactory
+// reports them; never nil, so the JSON is an array.
 func Messages(list []buildinfo.Message) []Message {
 	out := make([]Message, 0, len(list))
 	for _, m := range list {
+		if m.Level == buildinfo.LevelInfo {
+			continue
+		}
+
 		out = append(out, Message{
 			Level:   strings.ToUpper(string(m.Level)),
 			Message: m.Text,

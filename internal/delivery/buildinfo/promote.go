@@ -47,6 +47,7 @@ type Level string
 
 // Report levels.
 const (
+	LevelInfo    Level = "info"
 	LevelWarning Level = "warning"
 	LevelError   Level = "error"
 )
@@ -174,7 +175,24 @@ func (s *Service) Promote(
 				if req.FailFast {
 					return msgs, fmt.Errorf("promote %s/%s: %w", it.Repository, it.Path(), err)
 				}
+
+				continue
 			}
+
+			msgs = append(
+				msgs,
+				Message{
+					Level: LevelInfo,
+					Text: fmt.Sprintf(
+						"%s %s/%s to %s/%s",
+						promotionVerb(req),
+						it.Repository,
+						it.Path(),
+						req.TargetRepository,
+						it.Path(),
+					),
+				},
+			)
 		}
 	}
 
@@ -201,6 +219,19 @@ func (s *Service) Promote(
 	}
 
 	return msgs, nil
+}
+
+func promotionVerb(req Promotion) string {
+	switch {
+	case req.DryRun && req.Copy:
+		return "would copy"
+	case req.DryRun:
+		return "would move"
+	case req.Copy:
+		return "copied"
+	default:
+		return "moved"
+	}
 }
 
 // itemQuery selects the stored files of a build run.

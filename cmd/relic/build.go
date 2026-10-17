@@ -957,7 +957,10 @@ func buildPromoteCmd(g *globals) *cobra.Command {
 					}
 				}
 
-				if !failed {
+				switch {
+				case dryRun:
+					_, _ = fmt.Fprintf(w, "%s/%s: dry run, nothing changed\n", name, number)
+				case !failed:
 					_, _ = fmt.Fprintf(w, "%s/%s promoted\n", name, number)
 				}
 

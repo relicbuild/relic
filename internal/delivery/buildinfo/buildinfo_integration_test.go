@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -257,6 +258,72 @@ func TestRepublishReplacesTheRun(t *testing.T) {
 	}
 }
 
+func TestPromoteReportsEachFile(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		dryRun bool
+		copy   bool
+		want   string
+	}{
+		{
+			name:   "dry run of a copy",
+			dryRun: true,
+			copy:   true,
+			want:   "would copy src/p/f.txt to dst/p/f.txt",
+		},
+		{
+			name:   "dry run of a move",
+			dryRun: true,
+			want:   "would move src/p/f.txt to dst/p/f.txt",
+		},
+		{
+			name: "copy",
+			copy: true,
+			want: "copied src/p/f.txt to dst/p/f.txt",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			builds, repos, _ := newService(t)
+
+			built := deployFile(t, repos, "src", "p/f.txt", "f")
+			deployFile(t, repos, "dst", "keep.txt", "k")
+
+			if err := builds.PublishDocument(
+				ctx,
+				"",
+				producing("1", time.Now(), "src/p/f.txt", built),
+				"admin",
+			); err != nil {
+				t.Fatal(err)
+			}
+
+			msgs, err := builds.Promote(ctx, "", "app", "1", buildinfo.Promotion{
+				TargetRepository: "dst",
+				Copy:             tt.copy,
+				DryRun:           tt.dryRun,
+			}, "admin", buildinfo.AllowAll)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if len(msgs) != 1 || msgs[0].Level != buildinfo.LevelInfo || msgs[0].Text != tt.want {
+				t.Errorf("messages = %+v, want info %q", msgs, tt.want)
+			}
+
+			_, err = repos.Stat(ctx, "dst", "p/f.txt")
+			if tt.dryRun != errors.Is(err, repository.ErrNotFound) {
+				t.Errorf("dst/p/f.txt after the promotion: %v", err)
+			}
+		})
+	}
+}
+
 func TestPromoteNeedsDeleteToReplaceAFile(t *testing.T) {
 	t.Parallel()
 
@@ -289,9 +356,11 @@ func TestPromoteNeedsDeleteToReplaceAFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(msgs) != 1 || msgs[0].Level != buildinfo.LevelWarning ||
-		!strings.Contains(msgs[0].Text, "skipped src/ow/f.txt: permission denied") {
-		t.Errorf("messages = %+v, want one skipped src/ow/f.txt", msgs)
+	warnings := slices.DeleteFunc(msgs, func(m buildinfo.Message) bool {
+		return m.Level != buildinfo.LevelWarning
+	})
+	if len(warnings) != 1 || !strings.Contains(warnings[0].Text, "skipped src/ow/f.txt: permission denied") {
+		t.Errorf("warnings = %+v, want one skipped src/ow/f.txt", warnings)
 	}
 
 	kept, err := repos.Stat(ctx, "dst", "ow/f.txt")

@@ -348,7 +348,8 @@ spec: {active: true, scopes: [{kind: build, names: [app]}], policies: [b-sec]}
 	}
 
 	if out, err := relic(t, config, "", "build", "promote", "app", "7", "b-rel", "--dry-run"); err != nil ||
-		!strings.Contains(out, "promoted") {
+		!strings.Contains(out, "would move b-dev/org/app/1.0/app.jar to b-rel/org/app/1.0/app.jar") ||
+		!strings.Contains(out, "app/7: dry run, nothing changed") || strings.Contains(out, "promoted") {
 		t.Errorf("promote --dry-run = %q %v", out, err)
 	}
 
