@@ -147,7 +147,7 @@ func TestNixBinaryCache(t *testing.T) {
 
 	for _, repo := range []string{
 		`{"key":"nix-generic","rclass":"local","packageType":"generic"}`,
-		`{"key":"nix-misdirected","rclass":"virtual","packageType":"nix","repositories":["nix-local"],"defaultDeploymentRepo":"nix-generic"}`,
+		`{"key":"nix-misdirected","rclass":"virtual","packageType":"nix","repositories":["nix-local","nix-generic"],"defaultDeploymentRepo":"nix-generic"}`,
 	} {
 		key := strings.Split(strings.Split(repo, `"key":"`)[1], `"`)[0]
 		if resp, body := do(t, srv, call{

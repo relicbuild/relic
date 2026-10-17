@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"relic/internal/access/project"
@@ -80,6 +81,10 @@ func (s *Service) CreateRepository(ctx context.Context, r Repository) error {
 		return err
 	}
 
+	if err := s.checkMembers(ctx, r); err != nil {
+		return err
+	}
+
 	config, err := s.encodeConfig(r)
 	if err != nil {
 		return err
@@ -124,6 +129,10 @@ func (s *Service) UpdateRepository(ctx context.Context, r Repository) error {
 
 	if existing.Format != r.Format {
 		return fmt.Errorf("%w: cannot change the format from %s to %s", ErrInvalidRepository, existing.Format, r.Format)
+	}
+
+	if err := s.checkMembers(ctx, r); err != nil {
+		return err
 	}
 
 	if r.Config.Remote != nil && r.Config.Remote.Password == "" && existing.Config.Remote != nil {
@@ -258,6 +267,10 @@ func (s *Service) DeleteRepository(ctx context.Context, key string) error {
 			return ErrRepositoryNotFound
 		}
 
+		if err := removeMember(ctx, q, key); err != nil {
+			return err
+		}
+
 		for _, hook := range s.removalHooks {
 			if err := hook(ctx, q, key); err != nil {
 				return err
@@ -266,6 +279,74 @@ func (s *Service) DeleteRepository(ctx context.Context, key string) error {
 
 		return nil
 	})
+}
+
+func (s *Service) checkMembers(ctx context.Context, r Repository) error {
+	if r.Class != ClassVirtual {
+		return nil
+	}
+
+	for _, key := range r.Members() {
+		member, err := s.GetRepository(ctx, key)
+		if errors.Is(err, ErrRepositoryNotFound) {
+			return fmt.Errorf("%w: member %s of %s does not exist", ErrInvalidRepository, key, r.Name)
+		}
+
+		if err != nil {
+			return err
+		}
+
+		if key == r.Config.Virtual.DeployTo && member.Class != ClassLocal {
+			return fmt.Errorf("%w: deployTo %s is not a local repository", ErrInvalidRepository, key)
+		}
+	}
+
+	return nil
+}
+
+func removeMember(ctx context.Context, q database.Querier, key string) error {
+	class := string(ClassVirtual)
+
+	rows, err := q.ListRepositories(ctx, database.ListRepositoriesParams{
+		Class: &class,
+	})
+	if err != nil {
+		return fmt.Errorf("list virtual repositories: %w", err)
+	}
+
+	for _, row := range rows {
+		var c Config
+		if err := json.Unmarshal(row.Config, &c); err != nil {
+			return fmt.Errorf("decode repository %s: %w", row.Key, err)
+		}
+
+		if c.Virtual == nil || !slices.Contains(c.Virtual.Members, key) {
+			continue
+		}
+
+		c.Virtual.Members = slices.DeleteFunc(c.Virtual.Members, func(m string) bool {
+			return m == key
+		})
+		if c.Virtual.DeployTo == key {
+			c.Virtual.DeployTo = ""
+		}
+
+		config, err := json.Marshal(c)
+		if err != nil {
+			return fmt.Errorf("encode repository %s: %w", row.Key, err)
+		}
+
+		if err := q.UpdateRepository(ctx, database.UpdateRepositoryParams{
+			Key:     row.Key,
+			Format:  row.Format,
+			Project: row.Project,
+			Config:  config,
+		}); err != nil {
+			return fmt.Errorf("update repository %s: %w", row.Key, err)
+		}
+	}
+
+	return nil
 }
 
 // RemovalHook drops what refers to a repository, in the transaction that

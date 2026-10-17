@@ -288,6 +288,14 @@ func (r *Repository) Validate() error {
 			r.Config.Virtual.Members = []string{}
 		}
 
+		if slices.Contains(r.Config.Virtual.Members, r.Name) {
+			return fmt.Errorf("%w: virtual repository %s cannot be its own member", ErrInvalidRepository, r.Name)
+		}
+
+		if d := r.Config.Virtual.DeployTo; d != "" && !slices.Contains(r.Config.Virtual.Members, d) {
+			return fmt.Errorf("%w: deployTo %s is not a member of %s", ErrInvalidRepository, d, r.Name)
+		}
+
 		r.Config.Remote = nil
 	default:
 		r.Config.Remote, r.Config.Virtual = nil, nil

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -462,6 +463,163 @@ func TestUpdateRepositoryKeepsTheClassAndFormat(t *testing.T) {
 				t.Errorf("stored class %s, format %s; want local, generic", got.Class, got.Format)
 			}
 		})
+	}
+}
+
+func TestVirtualRepositoryMembersMustExist(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		virtual VirtualConfig
+		wantErr bool
+	}{
+		{
+			name: "local and remote members, deploying to the local one",
+			virtual: VirtualConfig{
+				Members: []string{
+					"generic-local",
+					"generic-remote",
+				},
+				DeployTo: "generic-local",
+			},
+		},
+		{
+			name: "a member that does not exist",
+			virtual: VirtualConfig{
+				Members: []string{
+					"generic-local",
+					"nosuch",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "deploying to a repository that is not a member",
+			virtual: VirtualConfig{
+				Members: []string{
+					"generic-remote",
+				},
+				DeployTo: "generic-local",
+			},
+			wantErr: true,
+		},
+		{
+			name: "deploying to a remote member",
+			virtual: VirtualConfig{
+				Members: []string{
+					"generic-local",
+					"generic-remote",
+				},
+				DeployTo: "generic-remote",
+			},
+			wantErr: true,
+		},
+		{
+			name: "itself as a member",
+			virtual: VirtualConfig{
+				Members: []string{
+					"generic-local",
+					"generic",
+				},
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			s, _, _ := newTestService(t)
+
+			if err := s.CreateRepository(ctx, Repository{
+				Name:   "generic-remote",
+				Class:  ClassRemote,
+				Format: FormatGeneric,
+				Config: Config{
+					Remote: &RemoteConfig{
+						URL: "https://example.invalid/files",
+					},
+				},
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			virtual := Repository{
+				Name:   "generic",
+				Class:  ClassVirtual,
+				Format: FormatGeneric,
+				Config: Config{
+					Virtual: &tt.virtual,
+				},
+			}
+
+			err := s.CreateRepository(ctx, virtual)
+			if tt.wantErr != errors.Is(err, ErrInvalidRepository) {
+				t.Fatalf("CreateRepository = %v, want an invalid repository error: %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr {
+				return
+			}
+
+			if err := s.UpdateRepository(ctx, virtual); err != nil {
+				t.Fatalf("UpdateRepository = %v", err)
+			}
+		})
+	}
+}
+
+func TestDeletingAMemberRemovesItFromVirtualRepositories(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	s, _, _ := newTestService(t)
+
+	if err := s.CreateRepository(ctx, Repository{
+		Name:   "generic-other",
+		Class:  ClassLocal,
+		Format: FormatGeneric,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.CreateRepository(ctx, Repository{
+		Name:   "generic",
+		Class:  ClassVirtual,
+		Format: FormatGeneric,
+		Config: Config{
+			Description: "kept",
+			Virtual: &VirtualConfig{
+				Members: []string{
+					"generic-local",
+					"generic-other",
+				},
+				DeployTo: "generic-local",
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.DeleteRepository(ctx, "generic-local"); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.GetRepository(ctx, "generic")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !slices.Equal(got.Members(), []string{
+		"generic-other",
+	}) || got.Config.Virtual.DeployTo != "" || got.Config.Description != "kept" {
+		t.Errorf("virtual repository = %+v, %+v", got.Config, got.Config.Virtual)
+	}
+
+	if err := s.UpdateRepository(ctx, got); err != nil {
+		t.Errorf("updating the virtual repository: %v", err)
 	}
 }
 
