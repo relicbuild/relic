@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -269,5 +270,77 @@ spec: {class: local, format: huggingface}
 
 	if _, err := relic(t, config, "", "package", "hf", "download", "hf-local", "acme/none", out); err == nil {
 		t.Error("download of a missing model succeeded")
+	}
+}
+
+func TestHuggingFaceDownloadFromRemote(t *testing.T) {
+	t.Parallel()
+
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/models/org/up/revision/main":
+			_, _ = w.Write([]byte(`{"id":"org/up","sha":"` + commit + `","siblings":[` +
+				`{"rfilename":"config.json"},{"rfilename":"onnx/model.onnx"}]}`))
+		case "/org/up/resolve/" + commit + "/config.json":
+			_, _ = w.Write([]byte(`{"up": true}`))
+		case "/org/up/resolve/" + commit + "/onnx/model.onnx":
+			_, _ = w.Write([]byte("onnx"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(upstream.Close)
+
+	srv := testServer(t)
+	dir := t.TempDir()
+	config := filepath.Join(dir, "config.yaml")
+
+	if _, err := relic(
+		t,
+		config,
+		"password\n",
+		"auth",
+		"login",
+		srv.URL,
+		"--user",
+		"admin",
+		"--password-stdin",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := relic(t, config, `apiVersion: relic.build/v1
+kind: Repository
+metadata: {name: hf-remote}
+spec: {class: remote, format: huggingface, remote: {url: "`+upstream.URL+`"}}
+`, "apply", "-f", "-"); err != nil {
+		t.Fatal(err)
+	}
+
+	out := filepath.Join(dir, "up")
+	if got, err := relic(t, config, "", "package", "hf", "download", "hf-remote", "org/up", out); err != nil ||
+		got != "org/up@main: 2 files in "+out+"\n" {
+		t.Fatalf("download = %q %v", got, err)
+	}
+
+	for name, want := range map[string]string{
+		"config.json":     `{"up": true}`,
+		"onnx/model.onnx": "onnx",
+	} {
+		if b, _ := os.ReadFile(filepath.Join(out, filepath.FromSlash(name))); string(b) != want {
+			t.Errorf("%s = %q", name, b)
+		}
+	}
+
+	_, err := relic(t, config, "", "package", "hf", "download", "hf-remote", "org/up", out, "--revision", "dev")
+	if err == nil || !strings.Contains(err.Error(), "has no revision dev") {
+		t.Errorf("download of a missing revision = %v", err)
+	}
+
+	_, err = relic(t, config, "", "package", "hf", "download", "hf-none", "org/up", out)
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Errorf("download from a missing repository = %v", err)
 	}
 }

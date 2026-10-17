@@ -377,8 +377,9 @@ func huggingFaceCmd(g *globals) *cobra.Command {
 			"hf",
 		},
 		Short: "Upload and download Hugging Face models and datasets",
-		Long: "Models and datasets in a Hugging Face repository are stored as commits of revisions. These " +
-			"commands work through the Relic API, without huggingface_hub.",
+		Long: "Models and datasets in a Hugging Face repository are stored as commits of revisions. Upload " +
+			"writes commits through the Relic API and download reads through the repository's Hub API; " +
+			"neither needs huggingface_hub.",
 	}
 	cmd.AddCommand(
 		huggingFaceUploadCmd(g),
@@ -615,8 +616,10 @@ func huggingFaceDownloadCmd(g *globals) *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:     "download <repository> <id> <directory>",
-		Short:   "Download a model or dataset revision into a directory",
+		Use:   "download <repository> <id> <directory>",
+		Short: "Download a model or dataset revision into a directory",
+		Long: "Reads the revision through the repository's Hub API, as huggingface_hub's snapshot_download " +
+			"does, so it works with local, remote and virtual repositories.",
 		Example: "  relic package huggingface download hf-remote google-bert/bert-base-uncased ./bert",
 		Args:    cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -628,38 +631,50 @@ func huggingFaceDownloadCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			latest, ok, err := c.latestCommit(ctx, repo, hfKind(dataset)+"/"+id, revision)
-			if err != nil {
+			if err := c.requireFormat(ctx, repo, relicv1.Format_FORMAT_HUGGINGFACE); err != nil {
 				return fmt.Errorf("huggingface download: %w", err)
 			}
 
-			if !ok {
+			hub := c.url + "/huggingface/" + url.PathEscape(repo)
+
+			snapshot, err := c.hubRevision(ctx, hub, hfKind(dataset), id, revision)
+
+			switch {
+			case errors.Is(err, errHubRevisionNotFound):
 				return fmt.Errorf("huggingface download: %s has no revision %s in %s", id, revision, repo)
-			}
-
-			files, err := c.files(ctx, repo, latest.dir)
-			if err != nil {
+			case err != nil:
 				return fmt.Errorf("huggingface download: %w", err)
 			}
 
-			for _, it := range files {
-				rel := strings.TrimPrefix(it.GetPath(), latest.dir+"/")
+			resolve := hub + "/" + escapedSegments(id) + "/resolve/" + url.PathEscape(snapshot.SHA) + "/"
+			if dataset {
+				resolve = hub + "/datasets/" + escapedSegments(id) + "/resolve/" + url.PathEscape(snapshot.SHA) + "/"
+			}
 
-				target := filepath.Join(dir, filepath.FromSlash(rel))
+			for _, sibling := range snapshot.Siblings {
+				rel := sibling.Rfilename
 				if !filepath.IsLocal(filepath.FromSlash(rel)) {
 					return fmt.Errorf("huggingface download: unsafe path %q", rel)
 				}
 
+				target := filepath.Join(dir, filepath.FromSlash(rel))
 				if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
 					return err
 				}
 
-				if err := c.download(ctx, repo, it.GetPath(), target); err != nil {
-					return fmt.Errorf("huggingface download: %w", err)
+				if err := c.downloadURL(ctx, resolve+escapedSegments(rel), target); err != nil {
+					return fmt.Errorf("huggingface download: %s: %w", rel, err)
 				}
 			}
 
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s@%s: %d files in %s\n", id, revision, len(files), dir)
+			_, _ = fmt.Fprintf(
+				cmd.OutOrStdout(),
+				"%s@%s: %d files in %s\n",
+				id,
+				revision,
+				len(snapshot.Siblings),
+				dir,
+			)
 
 			return nil
 		},
@@ -670,8 +685,89 @@ func huggingFaceDownloadCmd(g *globals) *cobra.Command {
 	return cmd
 }
 
-func (c *client) download(ctx context.Context, repo, p, target string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.fileURL(repo, p), nil)
+func (c *client) requireFormat(ctx context.Context, repo string, formats ...relicv1.Format) error {
+	r, err := c.repositories.GetRepository(ctx, connect.NewRequest(&relicv1.GetRepositoryRequest{
+		Name: repo,
+	}))
+	if err != nil {
+		return err
+	}
+
+	if format := r.Msg.GetRepository().GetFormat(); !slices.Contains(formats, format) {
+		return fmt.Errorf("%s is a %s repository", repo, formatName(format))
+	}
+
+	return nil
+}
+
+var errHubRevisionNotFound = errors.New("revision not found")
+
+type hubSnapshot struct {
+	SHA      string `json:"sha"`
+	Siblings []struct {
+		Rfilename string `json:"rfilename"`
+	} `json:"siblings"`
+}
+
+func (c *client) hubRevision(ctx context.Context, hub, kind, id, revision string) (hubSnapshot, error) {
+	u := hub + "/api/" + kind + "/" + escapedSegments(id) + "/revision/" + url.PathEscape(revision)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return hubSnapshot{}, err
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return hubSnapshot{}, err
+	}
+
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	switch {
+	case resp.StatusCode == http.StatusOK:
+	case slices.Contains([]string{
+		"RevisionNotFound",
+		"RepoNotFound",
+	}, resp.Header.Get("X-Error-Code")):
+		return hubSnapshot{}, errHubRevisionNotFound
+	default:
+		return hubSnapshot{}, hubError(resp)
+	}
+
+	var snapshot hubSnapshot
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&snapshot); err != nil {
+		return hubSnapshot{}, fmt.Errorf("read the revision: %w", err)
+	}
+
+	if snapshot.SHA == "" {
+		return hubSnapshot{}, errHubRevisionNotFound
+	}
+
+	return snapshot, nil
+}
+
+func hubError(resp *http.Response) error {
+	if message := resp.Header.Get("X-Error-Message"); message != "" {
+		return fmt.Errorf("%s: %s", resp.Status, message)
+	}
+
+	return httpError(resp)
+}
+
+func escapedSegments(p string) string {
+	segments := strings.Split(p, "/")
+	for i, segment := range segments {
+		segments[i] = url.PathEscape(segment)
+	}
+
+	return strings.Join(segments, "/")
+}
+
+func (c *client) downloadURL(ctx context.Context, u, target string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return err
 	}
@@ -686,7 +782,7 @@ func (c *client) download(ctx context.Context, repo, p, target string) error {
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download %s/%s: %w", repo, p, httpError(resp))
+		return hubError(resp)
 	}
 
 	return writeFileAtomic(target, resp.Body, 0o644)
