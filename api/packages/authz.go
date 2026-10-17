@@ -38,6 +38,42 @@ func (h *Handler) CanRepo(r *http.Request, repoKey, itemPath string, a auth.Acti
 	}, itemPath, a), nil
 }
 
+// RepositoryPermits is CanRepo for paths in the given repositories,
+// answered without further lookups; it is nil for an administrator.
+func (h *Handler) RepositoryPermits(
+	r *http.Request,
+	repoKeys ...string,
+) (func(repoKey, path string, a auth.Action) bool, error) {
+	p := auth.FromContext(r.Context())
+	if p.Admin {
+		return nil, nil
+	}
+
+	perms, err := h.security.Permissions(r.Context())
+	if err != nil {
+		return nil, err
+	}
+
+	targets := make(map[string]auth.Repository, len(repoKeys))
+	for _, key := range repoKeys {
+		rp, err := h.repos.GetRepository(r.Context(), key)
+		if err != nil {
+			return nil, err
+		}
+
+		targets[key] = auth.Repository{
+			Name:  rp.Name,
+			Class: string(rp.Class),
+		}
+	}
+
+	return func(repoKey, path string, a auth.Action) bool {
+		target, ok := targets[repoKey]
+
+		return ok && perms.CanInRepository(p.Subject(), target, path, a)
+	}, nil
+}
+
 // CanRepoAnywhere is CanRepo for some path in the repository.
 func (h *Handler) CanRepoAnywhere(r *http.Request, repoKey string, a auth.Action) (bool, error) {
 	p := auth.FromContext(r.Context())

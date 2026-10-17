@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"relic/internal/access/auth"
 	"relic/internal/platform/database"
 )
 
@@ -27,6 +28,11 @@ type CopyInput struct {
 	// RefuseFile, when set, refuses the copy when it returns an error for a
 	// file under Source.
 	RefuseFile func(ctx context.Context, file Item) error
+	// Permits, when set, refuses the copy unless it allows every action the
+	// copy takes on a file: reading it (and deleting it, for a move) at the
+	// source, writing it at the destination and deleting the file it
+	// replaces there.
+	Permits func(repoKey, path string, action auth.Action) bool
 
 	// replace deletes what is at the destination first, and then runs in
 	// the same transaction after the copy.
@@ -220,6 +226,12 @@ func copyInTx(ctx context.Context, q database.Querier, plan *copyPlan, now time.
 			target += "/" + strings.TrimPrefix(it.Path(), src.Path()+"/")
 		}
 
+		if in.Permits != nil && !it.IsFolder() {
+			if err := permitFileCopy(ctx, q, in, it, destination.Name, target); err != nil {
+				return err
+			}
+		}
+
 		if err := copyItem(
 			ctx,
 			q,
@@ -269,6 +281,46 @@ func copyInTx(ctx context.Context, q database.Querier, plan *copyPlan, now time.
 }
 
 var errDryRun = errors.New("dry run")
+
+func permitFileCopy(ctx context.Context, q database.Querier, in CopyInput, file Item, repoKey, target string) error {
+	if !in.Permits(file.Repository, file.Path(), auth.ActionRead) {
+		return fmt.Errorf(
+			"%w: no read permission on everything under %s/%s",
+			ErrForbidden,
+			in.Source.Repository,
+			in.Source.Path(),
+		)
+	}
+
+	if in.Move && !in.Permits(file.Repository, file.Path(), auth.ActionDelete) {
+		return fmt.Errorf("%w: no delete permission on %s/%s", ErrForbidden, file.Repository, file.Path())
+	}
+
+	if !in.Permits(repoKey, target, auth.ActionWrite) {
+		return fmt.Errorf("%w: no write permission on %s/%s", ErrForbidden, repoKey, target)
+	}
+
+	parent, name := SplitPath(target)
+
+	existing, err := q.GetItem(ctx, database.GetItemParams{
+		RepoKey: repoKey,
+		Path:    parent,
+		Name:    name,
+	})
+	if database.IsNoRows(err) {
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("get %s/%s: %w", repoKey, target, err)
+	}
+
+	if existing.Type == TypeFile && !in.Permits(repoKey, target, auth.ActionDelete) {
+		return fmt.Errorf("%w: no delete permission on %s/%s", ErrForbidden, repoKey, target)
+	}
+
+	return nil
+}
 
 func copyItem(
 	ctx context.Context,

@@ -315,6 +315,12 @@ func (h *Handler) copyOrMove(w http.ResponseWriter, r *http.Request, move bool) 
 
 	dry := queryValue(q, "dry") == "1" || queryValue(q, "dry") == "true"
 
+	permits, err := h.packages.RepositoryPermits(r, srcRepo, destRepo)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+
 	err = h.repos.Copy(r.Context(), repository.CopyInput{
 		Source:                src,
 		DestinationRepository: destRepo,
@@ -323,6 +329,7 @@ func (h *Handler) copyOrMove(w http.ResponseWriter, r *http.Request, move bool) 
 		DryRun:                dry,
 		User:                  auth.FromContext(r.Context()).Name(),
 		RefuseFile:            h.packages.RefuseCopy,
+		Permits:               permits,
 	})
 	if err != nil {
 		h.writeError(w, r, err)

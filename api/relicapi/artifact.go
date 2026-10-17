@@ -447,7 +447,37 @@ func (s *artifactServer) copyOrMove(ctx context.Context, key, p, toKey, toPath s
 		in.RefuseFile = s.d.DownloadBlocker.RefuseCopy
 	}
 
+	if in.Permits, err = repositoryPermits(ctx, s.d, key, toKey); err != nil {
+		return err
+	}
+
 	return s.d.Repositories.Copy(ctx, in)
+}
+
+func repositoryPermits(
+	ctx context.Context,
+	d Dependencies,
+	repoKeys ...string,
+) (func(repoKey, path string, action auth.Action) bool, error) {
+	if auth.FromContext(ctx).Admin {
+		return nil, nil
+	}
+
+	checks := make(map[string]func(string, auth.Action) error, len(repoKeys))
+	for _, key := range repoKeys {
+		check, err := repositoryAccess(ctx, d, key)
+		if err != nil {
+			return nil, err
+		}
+
+		checks[key] = check
+	}
+
+	return func(repoKey, path string, action auth.Action) bool {
+		check, ok := checks[repoKey]
+
+		return ok && check(path, action) == nil
+	}, nil
 }
 
 func (s *artifactServer) CopyItem(
