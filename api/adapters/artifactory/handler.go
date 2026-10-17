@@ -310,7 +310,7 @@ var notProvided = map[string]string{
 func registerNotProvided(rt *httpserver.Router) {
 	for prefix, product := range notProvided {
 		rt.HandleFunc(prefix, auth.Authenticated, func(w http.ResponseWriter, _ *http.Request) {
-			wire.WriteError(w, http.StatusNotImplemented, "Relic does not provide "+product)
+			wire.WriteError(w, http.StatusNotFound, "Relic does not provide "+product)
 		})
 	}
 }

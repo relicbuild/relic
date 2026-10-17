@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -27,7 +28,7 @@ func TestProductsNotProvided(t *testing.T) {
 				method: method,
 				path:   path,
 			})
-			if resp.StatusCode != 501 || !strings.Contains(body, "Relic does not provide "+product) ||
+			if resp.StatusCode != http.StatusNotFound || !strings.Contains(body, "Relic does not provide "+product) ||
 				!strings.HasPrefix(resp.Header.Get("Content-Type"), "application/json") {
 				t.Errorf("%s %s = %d %s %q", method, path, resp.StatusCode, resp.Header.Get("Content-Type"), body)
 			}
@@ -46,7 +47,7 @@ func TestProductsNotProvided(t *testing.T) {
 		method: "GET",
 		path:   "/repositories",
 		noAuth: true,
-	}); resp.StatusCode == 501 || strings.Contains(body, "does not provide") {
+	}); strings.Contains(body, "does not provide") {
 		t.Errorf("the UI's path answered %d %s", resp.StatusCode, body)
 	}
 }
