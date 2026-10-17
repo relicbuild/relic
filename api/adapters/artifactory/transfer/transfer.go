@@ -123,6 +123,10 @@ func Import(ctx context.Context, src, dst Server, opts Options) (Report, error) 
 		return im.report, fmt.Errorf("list the source's repositories: %w", err)
 	}
 
+	if missing := missingRepositories(repos, opts.Repositories); len(missing) > 0 {
+		return im.report, fmt.Errorf("the source has no repository %s", strings.Join(missing, ", "))
+	}
+
 	repos = slices.DeleteFunc(repos, func(r repoSummary) bool {
 		return len(opts.Repositories) > 0 && !slices.Contains(opts.Repositories, r.Key)
 	})
@@ -145,6 +149,20 @@ type repoSummary struct {
 	Key         string `json:"key"`
 	Type        string `json:"type"`
 	PackageType string `json:"packageType"`
+}
+
+func missingRepositories(repos []repoSummary, names []string) []string {
+	var missing []string
+
+	for _, name := range names {
+		if !slices.ContainsFunc(repos, func(r repoSummary) bool {
+			return r.Key == name
+		}) && !slices.Contains(missing, name) {
+			missing = append(missing, name)
+		}
+	}
+
+	return missing
 }
 
 func calculated(packageType, name string) bool {
