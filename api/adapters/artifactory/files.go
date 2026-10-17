@@ -58,6 +58,12 @@ func (h *Handler) files(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// "api" is a reserved repository key: the path is a REST endpoint no route serves.
+	if t.Repo == "api" {
+		wire.WriteError(w, http.StatusNotFound, "no such endpoint")
+		return
+	}
+
 	if r.Method != http.MethodPut {
 		remote, ok, err := layout.RemoteOfCache(r.Context(), h.repos, t.Repo)
 		if err != nil {

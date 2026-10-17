@@ -5,6 +5,7 @@ package integration
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -55,6 +56,19 @@ func TestUnknownRoutesAnswerTheErrorEnvelope(t *testing.T) {
 			json.Unmarshal([]byte(body), &envelope) != nil || len(envelope.Errors) != 1 ||
 			envelope.Errors[0].Status != http.StatusNotFound {
 			t.Errorf("%s %s = %d %s %q", c.method, c.path, resp.StatusCode, resp.Header.Get("Content-Type"), body)
+		}
+	}
+
+	for _, method := range []string{
+		http.MethodGet,
+		http.MethodPut,
+	} {
+		resp, body := do(t, srv, call{
+			method: method,
+			path:   "/artifactory/api/storageinfo",
+		})
+		if resp.StatusCode != http.StatusNotFound || !strings.Contains(body, "no such endpoint") {
+			t.Errorf("%s an Artifactory endpoint Relic lacks = %d %s", method, resp.StatusCode, body)
 		}
 	}
 }
