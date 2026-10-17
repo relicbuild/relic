@@ -36,6 +36,9 @@ type CopyInput struct {
 	// CheckUploadLimit refuses the copy of a file larger than the
 	// destination accepts as an upload.
 	CheckUploadLimit bool
+	// RefuseOverwrite, when set, refuses the copy when it returns an error for
+	// a file at the destination that the copy would replace with other content.
+	RefuseOverwrite func(ctx context.Context, existing Item) error
 
 	// merge puts the copy into what is at the destination, replacing only
 	// an item of the other kind; before and then run in the same
@@ -258,6 +261,10 @@ func copyInTx(ctx context.Context, q database.Querier, plan *copyPlan, now time.
 			}
 		}
 
+		if err := refuseOverwrite(ctx, q, in, it, destination.Name, target); err != nil {
+			return err
+		}
+
 		if err := copyItem(
 			ctx,
 			q,
@@ -376,6 +383,34 @@ func permitFileCopy(ctx context.Context, q database.Querier, in CopyInput, file 
 	}
 
 	return nil
+}
+
+func refuseOverwrite(ctx context.Context, q database.Querier, in CopyInput, it Item, repoKey, target string) error {
+	if in.RefuseOverwrite == nil || it.IsFolder() {
+		return nil
+	}
+
+	parent, name := SplitPath(target)
+
+	existing, err := q.GetItem(ctx, database.GetItemParams{
+		RepoKey: repoKey,
+		Path:    parent,
+		Name:    name,
+	})
+	if database.IsNoRows(err) {
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("get %s/%s: %w", repoKey, target, err)
+	}
+
+	current := domainItem(existing)
+	if current.IsFolder() || current.Checksums.SHA256 == it.Checksums.SHA256 {
+		return nil
+	}
+
+	return in.RefuseOverwrite(ctx, current)
 }
 
 func copyItem(

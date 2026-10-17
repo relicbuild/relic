@@ -129,8 +129,33 @@ func (s *Service) Promote(
 					Move:                  !req.Copy,
 					DryRun:                req.DryRun,
 					User:                  user,
+					RefuseOverwrite: func(_ context.Context, existing repository.Item) error {
+						if check(existing, auth.ActionDelete) {
+							return nil
+						}
+
+						return repository.ErrForbidden
+					},
 				},
 			)
+			if errors.Is(err, repository.ErrForbidden) {
+				msgs = append(
+					msgs,
+					Message{
+						Level: LevelWarning,
+						Text: fmt.Sprintf(
+							"skipped %s/%s: permission denied: overwriting %s/%s needs delete permission",
+							it.Repository,
+							it.Path(),
+							req.TargetRepository,
+							it.Path(),
+						),
+					},
+				)
+
+				continue
+			}
+
 			if err == nil && !req.DryRun && len(req.Properties) > 0 {
 				var promoted repository.Item
 				if promoted, err = s.repos.Stat(ctx, req.TargetRepository, it.Path()); err == nil {

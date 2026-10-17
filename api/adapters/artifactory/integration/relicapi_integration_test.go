@@ -625,6 +625,40 @@ func TestRelicAPIArtifacts(t *testing.T) {
 		t.Errorf("overwrite without delete = %d, want 403", code)
 	}
 
+	if code, body := put(dev, "libs/app/2.0/app.bin", "other"); code != 201 {
+		t.Fatalf("upload = %d %s", code, body)
+	}
+
+	_, err := relicv1connect.NewArtifactServiceClient(&http.Client{
+		Transport: dev,
+	}, srv.URL+"/api").CopyItem(ctx, connect.NewRequest(&relicv1.CopyItemRequest{
+		Repository:   "libs",
+		Path:         "app/2.0/app.bin",
+		ToRepository: "libs",
+		ToPath:       "app/1.0/app.txt",
+	}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Errorf("copy over a file without delete = %v, want permission denied", err)
+	}
+
+	copyReq, _ := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		srv.URL+"/artifactory/api/copy/libs/app/2.0/app.bin?to=/libs/app/1.0/app.txt",
+		nil,
+	)
+	if resp, err := (&http.Client{
+		Transport: dev,
+	}).Do(copyReq); err != nil {
+		t.Fatal(err)
+	} else {
+		_ = resp.Body.Close()
+
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("adapter copy over a file without delete = %d, want 403", resp.StatusCode)
+		}
+	}
+
 	if code, _ := put(dev, "libs/secret/x.txt", "x"); code != 404 {
 		t.Errorf("upload outside the include pattern = %d, want 404", code)
 	}

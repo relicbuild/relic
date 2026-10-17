@@ -200,6 +200,49 @@ func producing(number string, started time.Time, path string, file repository.It
 	}
 }
 
+func TestPromoteNeedsDeleteToReplaceAFile(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	builds, repos, _ := newService(t)
+
+	built := deployFile(t, repos, "src", "ow/f.txt", "new")
+	deployFile(t, repos, "dst", "ow/f.txt", "original")
+	same := deployFile(t, repos, "src", "ow/same.txt", "same")
+	deployFile(t, repos, "dst", "ow/same.txt", "same")
+
+	doc := producing("1", time.Now(), "src/ow/f.txt", built)
+	doc.Modules[0].Artifacts = append(doc.Modules[0].Artifacts, buildinfo.Artifact{
+		Name: same.Name,
+		Path: "src/ow/same.txt",
+		SHA1: same.Checksums.SHA1,
+	})
+
+	if err := builds.PublishDocument(ctx, "", doc, "admin"); err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, err := builds.Promote(ctx, "", "app", "1", buildinfo.Promotion{
+		TargetRepository: "dst",
+		Copy:             true,
+	}, "dev", func(_ repository.Item, a auth.Action) bool {
+		return a != auth.ActionDelete
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(msgs) != 1 || msgs[0].Level != buildinfo.LevelWarning ||
+		!strings.Contains(msgs[0].Text, "skipped src/ow/f.txt: permission denied") {
+		t.Errorf("messages = %+v, want one skipped src/ow/f.txt", msgs)
+	}
+
+	kept, err := repos.Stat(ctx, "dst", "ow/f.txt")
+	if err != nil || kept.Checksums.SHA1 == built.Checksums.SHA1 {
+		t.Errorf("dst/ow/f.txt = %+v %v, want the original kept", kept.Checksums, err)
+	}
+}
+
 func TestDiscardDeletesOnlyTheRecordedArtifacts(t *testing.T) {
 	t.Parallel()
 
