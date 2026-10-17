@@ -33,8 +33,8 @@ type Config struct {
 	AdminPassword     string
 	Scan              Scan
 	GarbageCollection GarbageCollection
-	// AllowPrivateUpstreams lets remote repositories reach loopback and
-	// private addresses (RELIC_UPSTREAM_ALLOW_PRIVATE_ADDRESSES=true).
+	// AllowPrivateUpstreams lets remote repositories and replication reach
+	// loopback and private addresses (RELIC_UPSTREAM_ALLOW_PRIVATE_ADDRESSES=true).
 	AllowPrivateUpstreams bool
 	// AllowPrivateWebhooks lets webhooks reach loopback and private addresses
 	// (RELIC_WEBHOOK_ALLOW_PRIVATE_ADDRESSES=true).

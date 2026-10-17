@@ -305,13 +305,18 @@ func TestRelicVersionIsTheStampedRelease(t *testing.T) {
 	}
 }
 
-func TestWebhookClient(t *testing.T) {
+func TestOutboundClientsRefusePrivateAddresses(t *testing.T) {
 	t.Parallel()
 
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	t.Cleanup(target.Close)
+
+	clients := map[string]func(allowPrivate bool) *http.Client{
+		"webhook":     webhookClient,
+		"replication": replicationClient,
+	}
 
 	tests := []struct {
 		name         string
@@ -327,27 +332,29 @@ func TestWebhookClient(t *testing.T) {
 			allowPrivate: true,
 		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+	for client, newClient := range clients {
+		for _, tt := range tests {
+			t.Run(client+": "+tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, target.URL, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
+				req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, target.URL, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
 
-			resp, err := webhookClient(tt.allowPrivate).Do(req)
-			if err == nil {
-				_ = resp.Body.Close()
-			}
+				resp, err := newClient(tt.allowPrivate).Do(req)
+				if err == nil {
+					_ = resp.Body.Close()
+				}
 
-			if refused := errors.Is(err, repository.ErrEgressDenied); refused != tt.wantRefused {
-				t.Errorf("POST %s = %v, want refused %v", target.URL, err, tt.wantRefused)
-			}
+				if refused := errors.Is(err, repository.ErrEgressDenied); refused != tt.wantRefused {
+					t.Errorf("POST %s = %v, want refused %v", target.URL, err, tt.wantRefused)
+				}
 
-			if !tt.wantRefused && (err != nil || resp.StatusCode != http.StatusNoContent) {
-				t.Errorf("POST %s = %v, %v; want the target's 204", target.URL, resp, err)
-			}
-		})
+				if !tt.wantRefused && (err != nil || resp.StatusCode != http.StatusNoContent) {
+					t.Errorf("POST %s = %v, %v; want the target's 204", target.URL, resp, err)
+				}
+			})
+		}
 	}
 }

@@ -571,12 +571,12 @@ func startWorker(
 	repos.SetSecrets(box)
 	repos.SetTrash(cfg.Trash.Enabled)
 
-	pushClient := &http.Client{
-		Transport: telemetry.ClientTransport(&http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-		}),
-	}
-	pusher := replication.NewPusher(db, repos, adapter.ReplicationTargets(pushClient), log)
+	pusher := replication.NewPusher(
+		db,
+		repos,
+		adapter.ReplicationTargets(replicationClient(cfg.AllowPrivateUpstreams)),
+		log,
+	)
 	pusher.SetSecrets(box)
 
 	scanners := scanning(db, blobs, cfg.Scan, log)
@@ -664,7 +664,7 @@ func enqueueStorageCheck(queue Queue) func(context.Context) (int64, error) {
 
 const webhookTimeout = 10 * time.Second
 
-func webhookClient(allowPrivate bool) *http.Client {
+func outboundTransport(allowPrivate bool) *http.Transport {
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 	}
@@ -673,9 +673,19 @@ func webhookClient(allowPrivate bool) *http.Client {
 		transport.Proxy = nil
 	}
 
+	return transport
+}
+
+func replicationClient(allowPrivate bool) *http.Client {
+	return &http.Client{
+		Transport: telemetry.ClientTransport(outboundTransport(allowPrivate)),
+	}
+}
+
+func webhookClient(allowPrivate bool) *http.Client {
 	return &http.Client{
 		Timeout:   webhookTimeout,
-		Transport: telemetry.ClientTransport(transport),
+		Transport: telemetry.ClientTransport(outboundTransport(allowPrivate)),
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
