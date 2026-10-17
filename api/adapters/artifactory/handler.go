@@ -150,6 +150,7 @@ func (h *Handler) Register(rt *httpserver.Router) {
 	rt.HandleFunc("POST /artifactory/api/build/promote/{name}/{number}", auth.Authenticated, h.promoteBuild)
 	rt.HandleFunc("POST /artifactory/api/build/retention/{name...}", auth.Authenticated, h.discardBuilds)
 	rt.HandleFunc("POST /artifactory/api/build/delete", auth.Authenticated, h.deleteBuilds)
+	rt.HandleFunc("DELETE /artifactory/api/build/{name...}", auth.Authenticated, h.deleteBuildsByQuery)
 	rt.HandleFunc("GET /artifactory/api/builds/buildArtifacts/{rest...}", auth.Authenticated, h.buildArtifacts)
 
 	rt.HandleFunc("GET /artifactory/api/npm/auth", auth.Authenticated, h.npmAuth)

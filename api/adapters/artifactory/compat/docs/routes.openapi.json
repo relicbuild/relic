@@ -925,6 +925,32 @@
         "x-relic-access": "authenticated"
       }
     },
+    "/artifactory/api/build/{name}": {
+      "delete": {
+        "operationId": "deleteArtifactoryApiBuildName",
+        "parameters": [
+          {
+            "description": "The rest of the path; may contain slashes.",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "DELETE /artifactory/api/build/{name...}",
+        "tags": [
+          "Artifactory: build"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
     "/artifactory/api/build/{rest}": {
       "get": {
         "operationId": "getArtifactoryApiBuildRest",

@@ -249,6 +249,37 @@ func (h *Handler) deleteBuilds(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.deleteBuildRuns(w, r, req)
+}
+
+// deleteBuildsByQuery serves DELETE /api/build/{name}?buildNumbers=1,2&artifacts=0|1&deleteAll=0|1.
+func (h *Handler) deleteBuildsByQuery(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
+	req := deleteBuildsRequest{
+		BuildName:       strings.Trim(r.PathValue("name"), "/"),
+		Project:         project(r),
+		DeleteArtifacts: queryFlag(q.Get("artifacts")),
+		DeleteAll:       queryFlag(q.Get("deleteAll")),
+	}
+
+	for n := range strings.SplitSeq(q.Get("buildNumbers"), ",") {
+		if n = strings.TrimSpace(n); n != "" {
+			req.BuildNumbers = append(req.BuildNumbers, n)
+		}
+	}
+
+	if req.BuildName == "" || (!req.DeleteAll && len(req.BuildNumbers) == 0) {
+		wire.WriteError(w, http.StatusBadRequest, "expected buildNumbers or deleteAll=1")
+		return
+	}
+
+	h.deleteBuildRuns(w, r, req)
+}
+
+func queryFlag(v string) bool { return v == "1" || strings.EqualFold(v, "true") }
+
+func (h *Handler) deleteBuildRuns(w http.ResponseWriter, r *http.Request, req deleteBuildsRequest) {
 	if !h.requireBuild(w, r, req.Project, req.BuildName, auth.ActionDelete) {
 		return
 	}
