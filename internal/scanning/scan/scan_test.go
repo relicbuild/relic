@@ -97,6 +97,33 @@ func TestExecLimitsAndEnvironment(t *testing.T) { //nolint:paralleltest // uses 
 	}
 }
 
+func TestSyftCatalogsPackageManifestsOfExtractedArchives(t *testing.T) {
+	t.Parallel()
+
+	script := filepath.Join(t.TempDir(), "syft")
+	scripttest.Write(t, script, "#!/bin/sh\necho \"$@\"\n")
+
+	syft := Syft{
+		Exec: Exec{
+			Path: script,
+		},
+	}
+
+	for source, want := range map[string]bool{
+		"dir:/scan/extracted": true,
+		"file:/scan/a.jar":    false,
+	} {
+		out, err := syft.Catalog(t.Context(), source)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := strings.Contains(string(out), "--select-catalogers +javascript-package-cataloger"); got != want {
+			t.Errorf("%s: syft %s, want the npm package.json cataloger %v", source, out, want)
+		}
+	}
+}
+
 func TestCycloneDX(t *testing.T) {
 	t.Parallel()
 
