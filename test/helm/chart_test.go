@@ -653,27 +653,48 @@ func TestChartDependencies(t *testing.T) {
 func TestChartWorkerVulnerabilityDatabaseWithoutPersistence(t *testing.T) {
 	t.Parallel()
 
-	objs, stderr := render(t, append([]string{
-		"--set",
-		"worker.vulnerabilityDatabase.persistence=false",
-	}, external...)...)
-	if stderr != "" {
-		t.Fatal(stderr)
+	for _, tt := range []struct {
+		name       string
+		args       []string
+		deployment string
+	}{
+		{
+			"separate worker",
+			external,
+			"r-relic-worker",
+		},
+		{
+			"single node",
+			singleNode,
+			"r-relic-server",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			objs, stderr := render(t, append([]string{
+				"--set",
+				"worker.vulnerabilityDatabase.persistence=false",
+			}, tt.args...)...)
+			if stderr != "" {
+				t.Fatal(stderr)
+			}
+
+			for _, v := range find(objs, "Deployment", tt.deployment).Spec.Template.Spec.Volumes {
+				if v.Name != "vulnerability-database" {
+					continue
+				}
+
+				if v.EmptyDir == nil || v.EmptyDir.SizeLimit != "5Gi" {
+					t.Errorf("vulnerability-database = %+v, want an emptyDir limited to the volume's 5Gi", v)
+				}
+
+				return
+			}
+
+			t.Errorf("%s has no vulnerability-database volume", tt.deployment)
+		})
 	}
-
-	for _, v := range find(objs, "Deployment", "r-relic-worker").Spec.Template.Spec.Volumes {
-		if v.Name != "vulnerability-database" {
-			continue
-		}
-
-		if v.EmptyDir == nil || v.EmptyDir.SizeLimit != "5Gi" {
-			t.Errorf("vulnerability-database = %+v, want an emptyDir limited to the volume's 5Gi", v)
-		}
-
-		return
-	}
-
-	t.Error("the worker has no vulnerability-database volume")
 }
 
 func TestChartLDAPCA(t *testing.T) {
