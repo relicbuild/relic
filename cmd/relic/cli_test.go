@@ -249,6 +249,16 @@ func TestWithoutCredentials(t *testing.T) {
 			want:   "https://git.example/app.git",
 		},
 		{
+			name:   "numeric password part before a raw '#'",
+			remote: "https://u:123#secret@git.example/app.git",
+			want:   "https://git.example/app.git",
+		},
+		{
+			name:   "numeric password part before a raw '/'",
+			remote: "https://u:8080/secret@git.example/app.git",
+			want:   "https://git.example/app.git",
+		},
+		{
 			name:   "no credentials",
 			remote: "https://git.example/app.git",
 			want:   "https://git.example/app.git",

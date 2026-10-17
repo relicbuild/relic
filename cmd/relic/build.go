@@ -381,11 +381,7 @@ func buildAddGitCmd(g *globals) *cobra.Command {
 
 func withoutCredentials(s string) string {
 	u, err := url.Parse(s)
-	if err == nil && u.User == nil {
-		return s
-	}
-
-	if err == nil {
+	if err == nil && u.User != nil {
 		u.User = nil
 
 		return u.String()
