@@ -169,6 +169,76 @@ func TestSetupWritesWhereTheClientReads(t *testing.T) {
 	}
 }
 
+func TestHuggingFaceTokenGoesWhereHuggingFaceHubReadsIt(t *testing.T) {
+	t.Parallel()
+
+	own, other := userHome(), t.TempDir()
+	for _, tc := range []struct {
+		name string
+		home string
+		env  map[string]string
+		want string
+	}{
+		{
+			name: "the default",
+			home: own,
+			want: filepath.Join(own, ".cache", "huggingface", "token"),
+		},
+		{
+			name: "HF_TOKEN_PATH",
+			home: own,
+			//nolint:gosec // G101: file paths, no credentials
+			env: map[string]string{
+				"HF_TOKEN_PATH":  "/srv/hf/token",
+				"HF_HOME":        "/srv/hf-home",
+				"XDG_CACHE_HOME": "/srv/cache",
+			},
+			want: "/srv/hf/token",
+		},
+		{
+			name: "HF_HOME",
+			home: own,
+			env: map[string]string{
+				"HF_HOME":        "/srv/hf-home",
+				"XDG_CACHE_HOME": "/srv/cache",
+			},
+			want: "/srv/hf-home/token",
+		},
+		{
+			name: "XDG_CACHE_HOME",
+			home: own,
+			env: map[string]string{
+				"XDG_CACHE_HOME": "/srv/cache",
+			},
+			want: "/srv/cache/huggingface/token",
+		},
+		{
+			name: "another home than the user's",
+			home: other,
+			env: map[string]string{
+				"HF_HOME": "/srv/hf-home",
+			},
+			want: filepath.Join(other, ".cache", "huggingface", "token"),
+		},
+	} {
+		e := setupEnv{
+			home: tc.home,
+			getenv: func(name string) string {
+				return tc.env[name]
+			},
+		}
+
+		steps, err := setupClients["huggingface"].steps(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := stepPath(e, setupClients["huggingface"], steps[0].file); got != filepath.FromSlash(tc.want) {
+			t.Errorf("%s: token at %s, want %s", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestSetupCommandsRunUnderHome(t *testing.T) {
 	t.Parallel()
 

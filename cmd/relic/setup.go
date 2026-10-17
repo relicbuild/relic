@@ -36,6 +36,7 @@ type setupEnv struct {
 	contextToken bool
 	home, root   string
 	goos         string
+	getenv       func(string) string
 	publicKey    string
 	keyPair      string
 	flags        map[string]string
@@ -665,11 +666,11 @@ var setupClients = map[string]setupClient{
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_HUGGINGFACE,
 		},
-		short: "the token huggingface_hub reads; HF_ENDPOINT to export",
+		short: "the token, where huggingface_hub reads it (HF_TOKEN_PATH, HF_HOME, ~/.cache/huggingface); HF_ENDPOINT to export",
 		steps: func(e setupEnv) ([]setupStep, error) {
 			return []setupStep{
 				{
-					file:    ".cache/huggingface/token",
+					file:    huggingFaceTokenFile(e),
 					mode:    0o600,
 					content: e.token,
 				},
@@ -877,7 +878,7 @@ func packageSetupCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			e.home, e.root, e.goos = home, root, runtime.GOOS
+			e.home, e.root, e.goos, e.getenv = home, root, runtime.GOOS, g.getenv
 			e.flags = map[string]string{}
 
 			for k, v := range values {
@@ -1097,7 +1098,35 @@ func writeArgumentFile(arguments []string) (string, error) {
 	return f.Name(), nil
 }
 
+// huggingFaceTokenFile is the file huggingface_hub reads its token from:
+// HF_TOKEN_PATH, $HF_HOME/token, $XDG_CACHE_HOME/huggingface/token or
+// ~/.cache/huggingface/token. The variables describe the user's own home
+// only.
+func huggingFaceTokenFile(e setupEnv) string {
+	getenv := e.getenv
+	if getenv == nil || e.home != userHome() {
+		getenv = func(string) string {
+			return ""
+		}
+	}
+
+	switch {
+	case filepath.IsAbs(getenv("HF_TOKEN_PATH")):
+		return getenv("HF_TOKEN_PATH")
+	case filepath.IsAbs(getenv("HF_HOME")):
+		return filepath.Join(getenv("HF_HOME"), "token")
+	case filepath.IsAbs(getenv("XDG_CACHE_HOME")):
+		return filepath.Join(getenv("XDG_CACHE_HOME"), "huggingface", "token")
+	}
+
+	return ".cache/huggingface/token"
+}
+
 func stepPath(e setupEnv, client setupClient, file string) string {
+	if filepath.IsAbs(file) {
+		return file
+	}
+
 	if client.system {
 		return filepath.Join(e.root, file)
 	}
