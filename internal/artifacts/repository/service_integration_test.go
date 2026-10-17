@@ -704,6 +704,76 @@ func TestRepositoryValidate(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "local with remote settings",
+			r: Repository{
+				Name:  "libs",
+				Class: ClassLocal,
+				Config: Config{
+					Remote: &RemoteConfig{
+						URL: "https://example.invalid",
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "local with virtual settings",
+			r: Repository{
+				Name:  "libs",
+				Class: ClassLocal,
+				Config: Config{
+					Virtual: &VirtualConfig{},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "remote with virtual settings",
+			r: Repository{
+				Name:  "libs",
+				Class: ClassRemote,
+				Config: Config{
+					Virtual: &VirtualConfig{},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "virtual with remote settings",
+			r: Repository{
+				Name:  "libs",
+				Class: ClassVirtual,
+				Config: Config{
+					Remote: &RemoteConfig{
+						URL: "https://example.invalid",
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "negative upload limit",
+			r: Repository{
+				Name:  "libs",
+				Class: ClassLocal,
+				Config: Config{
+					MaxUploadSize: -5,
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "negative storage limit",
+			r: Repository{
+				Name:  "libs",
+				Class: ClassLocal,
+				Config: Config{
+					MaxStorage: -1,
+				},
+			},
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -723,15 +793,9 @@ func TestRepositoryValidate(t *testing.T) {
 	v := Repository{
 		Name:  "v",
 		Class: ClassVirtual,
-		Config: Config{
-			Remote: &RemoteConfig{
-				URL: "x",
-			},
-		},
 	}
-	if err := v.Validate(); err != nil || v.Config.Remote != nil || v.Config.Virtual == nil ||
-		v.Config.Virtual.Members == nil {
-		t.Errorf("virtual = %+v %v, want only a virtual block", v.Config, err)
+	if err := v.Validate(); err != nil || v.Config.Virtual == nil || v.Config.Virtual.Members == nil {
+		t.Errorf("virtual = %+v %v, want an empty virtual block", v.Config, err)
 	}
 }
 

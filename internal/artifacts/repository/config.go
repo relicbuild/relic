@@ -272,13 +272,23 @@ func (r *Repository) Validate() error {
 		return fmt.Errorf("%w: unknown format %q", ErrInvalidRepository, r.Format)
 	}
 
+	if r.Config.MaxUploadSize < 0 || r.Config.MaxStorage < 0 {
+		return fmt.Errorf("%w: maxUploadSize and maxStorage cannot be negative", ErrInvalidRepository)
+	}
+
+	if r.Config.Remote != nil && r.Class != ClassRemote {
+		return fmt.Errorf("%w: a %s repository takes no remote settings", ErrInvalidRepository, r.Class)
+	}
+
+	if r.Config.Virtual != nil && r.Class != ClassVirtual {
+		return fmt.Errorf("%w: a %s repository takes no virtual settings", ErrInvalidRepository, r.Class)
+	}
+
 	switch r.Class {
 	case ClassRemote:
 		if r.Config.Remote == nil {
 			r.Config.Remote = &RemoteConfig{}
 		}
-
-		r.Config.Virtual = nil
 	case ClassVirtual:
 		if r.Config.Virtual == nil {
 			r.Config.Virtual = &VirtualConfig{}
@@ -295,10 +305,7 @@ func (r *Repository) Validate() error {
 		if d := r.Config.Virtual.DeployTo; d != "" && !slices.Contains(r.Config.Virtual.Members, d) {
 			return fmt.Errorf("%w: deployTo %s is not a member of %s", ErrInvalidRepository, d, r.Name)
 		}
-
-		r.Config.Remote = nil
-	default:
-		r.Config.Remote, r.Config.Virtual = nil, nil
+	case ClassLocal:
 	}
 
 	return nil
