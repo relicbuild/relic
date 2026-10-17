@@ -67,7 +67,8 @@ func vexExportCmd(g *globals) *cobra.Command {
 			if r.Msg.GetSkipped() > 0 {
 				_, _ = fmt.Fprintf(
 					cmd.ErrOrStderr(),
-					"%d ignore rules left out: expired, or without both a vulnerability and a package\n",
+					"%d ignore rules left out: without both a vulnerability and a package, limited in scope, "+
+						"or expiring\n",
 					r.Msg.GetSkipped(),
 				)
 			}

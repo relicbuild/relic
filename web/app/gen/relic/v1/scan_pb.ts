@@ -2138,8 +2138,8 @@ export type ExportVexResponse = Message<"relic.v1.ExportVexResponse"> & {
   document: string;
 
   /**
-   * skipped counts the rules VEX cannot express (no vulnerability or no
-   * package), and expired ones.
+   * skipped counts the rules VEX cannot express: no vulnerability or no
+   * package, a license, watch, policy, path or build filter, or an expiry.
    *
    * @generated from field: int32 skipped = 2;
    */

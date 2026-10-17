@@ -2244,7 +2244,7 @@
             "type": "integer",
             "title": "skipped",
             "format": "int32",
-            "description": "skipped counts the rules VEX cannot express (no vulnerability or no\n package), and expired ones."
+            "description": "skipped counts the rules VEX cannot express: no vulnerability or no\n package, a license, watch, policy, path or build filter, or an expiry."
           }
         },
         "title": "ExportVexResponse",

@@ -4555,8 +4555,8 @@ type ExportVexResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// document is the VEX document (JSON) in the format asked for.
 	Document string `protobuf:"bytes,1,opt,name=document,proto3" json:"document,omitempty"`
-	// skipped counts the rules VEX cannot express (no vulnerability or no
-	// package), and expired ones.
+	// skipped counts the rules VEX cannot express: no vulnerability or no
+	// package, a license, watch, policy, path or build filter, or an expiry.
 	Skipped       int32 `protobuf:"varint,2,opt,name=skipped,proto3" json:"skipped,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

@@ -53,9 +53,11 @@ type VEXProduct struct {
 // ErrInvalidVEX is a document Relic cannot read as OpenVEX.
 var ErrInvalidVEX = errors.New("not an OpenVEX document")
 
-// ExportVEX writes the ignore rules that name vulnerabilities in packages as
-// OpenVEX not_affected statements, one per vulnerability, or one per rule
-// with its other IDs as aliases when the rule names both CVEs and others.
+// ExportVEX writes the ignore rules that name vulnerabilities in packages,
+// and nothing VEX cannot state (licenses, watches, policies, paths, builds or
+// an expiry), as OpenVEX not_affected statements, one per vulnerability, or
+// one per rule with its other IDs as aliases when the rule names both CVEs
+// and others.
 func ExportVEX(rules []IgnoreRule, id, author string, now time.Time) (VEXDocument, int) {
 	doc := VEXDocument{
 		Context:    OpenVEXContext,
@@ -81,7 +83,7 @@ func ExportVEX(rules []IgnoreRule, id, author string, now time.Time) (VEXDocumen
 			}
 		}
 
-		if (r.Expires != nil && !r.Expires.After(now)) || len(vulns) == 0 || len(products) == 0 {
+		if !r.statable() || len(vulns) == 0 || len(products) == 0 {
 			skipped++
 
 			continue
@@ -119,6 +121,11 @@ func ExportVEX(rules []IgnoreRule, id, author string, now time.Time) (VEXDocumen
 	}
 
 	return doc, skipped
+}
+
+func (r IgnoreRule) statable() bool {
+	return r.Expires == nil &&
+		len(r.Licenses)+len(r.Watches)+len(r.Policies)+len(r.ArtifactPaths)+len(r.Builds) == 0
 }
 
 var cveID = regexp.MustCompile(`(?i)^CVE-\d{4}-\d+$`)

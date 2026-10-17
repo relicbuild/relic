@@ -43,7 +43,7 @@ async function exportVex(format: VexFormat, includeUnreachable: boolean) {
     a.click()
     URL.revokeObjectURL(url)
     if (r.skipped) {
-      toast.add({ title: `${pluralize(r.skipped, 'rule')} left out`, description: 'Expired, or without both a vulnerability and a package: VEX cannot say those.', color: 'warning' })
+      toast.add({ title: `${pluralize(r.skipped, 'rule')} left out`, description: 'Without both a vulnerability and a package, limited in scope, or expiring: VEX cannot say those.', color: 'warning' })
     }
   } catch (err) {
     toast.add({ title: 'Could not export VEX', description: relicErrorMessage(err, ''), color: 'error' })

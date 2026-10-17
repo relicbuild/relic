@@ -13,6 +13,7 @@ func TestVEXRoundTrip(t *testing.T) {
 
 	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
 	past := now.Add(-time.Hour)
+	tomorrow := now.Add(24 * time.Hour)
 	rules := []IgnoreRule{
 		{
 			ID:    "r1",
@@ -52,10 +53,70 @@ func TestVEXRoundTrip(t *testing.T) {
 				"libs/app.jar",
 			},
 		},
+		{
+			ID: "until tomorrow",
+			CVEs: []string{
+				"CVE-3",
+			},
+			Packages: []string{
+				"pkg:npm/b@1",
+			},
+			Expires: &tomorrow,
+		},
+		{
+			ID: "one watch",
+			CVEs: []string{
+				"CVE-4",
+			},
+			Packages: []string{
+				"pkg:npm/c@1",
+			},
+			Watches: []string{
+				"prod",
+			},
+		},
+		{
+			ID: "one policy",
+			CVEs: []string{
+				"CVE-5",
+			},
+			Packages: []string{
+				"pkg:npm/d@1",
+			},
+			Policies: []string{
+				"critical",
+			},
+		},
+		{
+			ID: "one path",
+			CVEs: []string{
+				"CVE-6",
+			},
+			Packages: []string{
+				"pkg:npm/e@1",
+			},
+			ArtifactPaths: []string{
+				"libs/only-here/",
+			},
+		},
+		{
+			ID: "one build",
+			CVEs: []string{
+				"CVE-7",
+			},
+			Packages: []string{
+				"pkg:npm/f@1",
+			},
+			Builds: []Build{
+				{
+					Name: "app",
+				},
+			},
+		},
 	}
 
 	doc, skipped := ExportVEX(rules, "https://relic.example/vex/1", "relic.example", now)
-	if skipped != 3 || len(doc.Statements) != 1 || doc.Context != OpenVEXContext {
+	if skipped != 8 || len(doc.Statements) != 1 || doc.Context != OpenVEXContext {
 		t.Fatalf("export: %d statements, %d skipped: %+v", len(doc.Statements), skipped, doc)
 	}
 
