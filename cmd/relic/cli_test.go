@@ -233,6 +233,22 @@ func TestWithoutCredentials(t *testing.T) {
 			want:   "https://git.example/app.git",
 		},
 		{
+			name:   "password with a raw '#'",
+			remote: "https://ci:se#cret@git.example/app.git",
+			want:   "https://git.example/app.git",
+		},
+		//nolint:gosec // G101: a made-up remote
+		{
+			name:   "password with an invalid escape",
+			remote: "https://ci:se%cret@git.example/app.git",
+			want:   "https://git.example/app.git",
+		},
+		{
+			name:   "password with a raw '/'",
+			remote: "https://ci:se/cret@git.example/app.git",
+			want:   "https://git.example/app.git",
+		},
+		{
 			name:   "no credentials",
 			remote: "https://git.example/app.git",
 			want:   "https://git.example/app.git",

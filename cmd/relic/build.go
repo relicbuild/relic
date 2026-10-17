@@ -381,13 +381,24 @@ func buildAddGitCmd(g *globals) *cobra.Command {
 
 func withoutCredentials(s string) string {
 	u, err := url.Parse(s)
-	if err != nil || u.User == nil {
+	if err == nil && u.User == nil {
 		return s
 	}
 
-	u.User = nil
+	if err == nil {
+		u.User = nil
 
-	return u.String()
+		return u.String()
+	}
+
+	scheme, rest, ok := strings.Cut(s, "://")
+	at := strings.LastIndex(rest, "@")
+
+	if !ok || at < 0 {
+		return s
+	}
+
+	return scheme + "://" + rest[at+1:]
 }
 
 func buildAddDependenciesCmd(g *globals) *cobra.Command {
