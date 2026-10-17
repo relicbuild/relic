@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -153,7 +154,7 @@ func (s *Service) trash(
 			Move:                  true,
 			User:                  user,
 			RefuseFile:            refuseFile,
-			replace:               true,
+			merge:                 true,
 			then: func(q database.Querier) error {
 				trashed, err := q.GetItem(ctx, database.GetItemParams{
 					RepoKey: s.trashLayout.Repository,
@@ -358,15 +359,24 @@ func (s *Service) PurgeTrash(ctx context.Context, cutoff time.Time) (int, error)
 		return 0, fmt.Errorf("list trash: %w", err)
 	}
 
-	n := 0
+	var (
+		expired []Item
+		kept    []string
+	)
 
 	for _, r := range rows {
-		if !trashTime(r.PropertyValue).Before(cutoff) {
-			continue
-		}
-
 		item := domainItem(r.Item)
-		if err := s.Delete(ctx, s.trashLayout.Repository, item.Path()); err != nil && !errors.Is(err, ErrNotFound) {
+		if trashTime(r.PropertyValue).Before(cutoff) {
+			expired = append(expired, item)
+		} else {
+			kept = append(kept, item.Path())
+		}
+	}
+
+	n := 0
+
+	for _, item := range expired {
+		if err := s.purgeTrashEntry(ctx, item, kept); err != nil && !errors.Is(err, ErrNotFound) {
 			return n, err
 		}
 
@@ -374,6 +384,48 @@ func (s *Service) PurgeTrash(ctx context.Context, cutoff time.Time) (int, error)
 	}
 
 	return n, nil
+}
+
+func (s *Service) purgeTrashEntry(ctx context.Context, entry Item, kept []string) error {
+	nested := slices.ContainsFunc(kept, func(p string) bool {
+		return strings.HasPrefix(p, entry.Path()+"/")
+	})
+	if !nested {
+		return s.Delete(ctx, s.trashLayout.Repository, entry.Path())
+	}
+
+	if err := s.DeleteProperties(ctx, entry, s.trashLayout.keys(), false); err != nil {
+		return err
+	}
+
+	return s.deleteAllBut(ctx, entry, kept)
+}
+
+func (s *Service) deleteAllBut(ctx context.Context, folder Item, kept []string) error {
+	kids, err := s.Children(ctx, folder)
+	if err != nil {
+		return err
+	}
+
+	for _, k := range kids {
+		p := k.Path()
+
+		switch {
+		case slices.Contains(kept, p):
+		case slices.ContainsFunc(kept, func(keptPath string) bool {
+			return strings.HasPrefix(keptPath, p+"/")
+		}):
+			if err := s.deleteAllBut(ctx, k, kept); err != nil {
+				return err
+			}
+		default:
+			if err := s.Delete(ctx, k.Repository, p); err != nil && !errors.Is(err, ErrNotFound) {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func (s *Service) ensureTrashRepo(ctx context.Context) error {

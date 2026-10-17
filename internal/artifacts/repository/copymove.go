@@ -34,10 +34,11 @@ type CopyInput struct {
 	// replaces there.
 	Permits func(repoKey, path string, action auth.Action) bool
 
-	// replace deletes what is at the destination first, and then runs in
-	// the same transaction after the copy.
-	replace bool
-	then    func(q database.Querier) error
+	// merge puts the copy into what is at the destination, replacing only
+	// an item of the other kind, and then runs in the same transaction
+	// after the copy.
+	merge bool
+	then  func(q database.Querier) error
 }
 
 // Copy copies or moves an item.
@@ -209,21 +210,16 @@ func copyInTx(ctx context.Context, q database.Querier, plan *copyPlan, now time.
 		}
 	}
 
-	if in.replace {
-		parent, name := SplitPath(plan.path)
-		if _, err := deleteItem(ctx, q, Item{
-			Repository: destination.Name,
-			Parent:     parent,
-			Name:       name,
-		}); err != nil {
-			return err
-		}
-	}
-
 	for _, it := range items {
 		target := plan.path
 		if it.Path() != src.Path() {
 			target += "/" + strings.TrimPrefix(it.Path(), src.Path()+"/")
+		}
+
+		if in.merge {
+			if err := deleteOtherKind(ctx, q, destination.Name, target, it.IsFolder()); err != nil {
+				return err
+			}
 		}
 
 		if in.Permits != nil && !it.IsFolder() {
@@ -281,6 +277,35 @@ func copyInTx(ctx context.Context, q database.Querier, plan *copyPlan, now time.
 }
 
 var errDryRun = errors.New("dry run")
+
+func deleteOtherKind(ctx context.Context, q database.Querier, repoKey, target string, folder bool) error {
+	parent, name := SplitPath(target)
+
+	existing, err := q.GetItem(ctx, database.GetItemParams{
+		RepoKey: repoKey,
+		Path:    parent,
+		Name:    name,
+	})
+	if database.IsNoRows(err) {
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("get %s/%s: %w", repoKey, target, err)
+	}
+
+	if (existing.Type == TypeFolder) == folder {
+		return nil
+	}
+
+	_, err = deleteItem(ctx, q, Item{
+		Repository: repoKey,
+		Parent:     parent,
+		Name:       name,
+	})
+
+	return err
+}
 
 func permitFileCopy(ctx context.Context, q database.Querier, in CopyInput, file Item, repoKey, target string) error {
 	if !in.Permits(file.Repository, file.Path(), auth.ActionRead) {
