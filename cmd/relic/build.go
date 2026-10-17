@@ -494,8 +494,7 @@ func (f *buildRunFlag) String() string { return f.value }
 func (f *buildRunFlag) Type() string { return "name/number" }
 
 func (f *buildRunFlag) Set(s string) error {
-	name, number, ok := strings.Cut(s, "/")
-	if !ok || name == "" || number == "" {
+	if _, _, err := parseBuildRef(s); err != nil {
 		return fmt.Errorf("%q is not <name>/<number>", s)
 	}
 
@@ -504,10 +503,20 @@ func (f *buildRunFlag) Set(s string) error {
 	return nil
 }
 
+// parseBuildRef reads <name>/<number>; the name may itself contain '/'.
+func parseBuildRef(ref string) (name, number string, err error) {
+	i := strings.LastIndex(ref, "/")
+	if i <= 0 || i == len(ref)-1 {
+		return "", "", fmt.Errorf("--build %q is not <name>/<number>", ref)
+	}
+
+	return ref[:i], ref[i+1:], nil
+}
+
 func (g *globals) addArtifact(build, moduleID string, it *relicv1.Item) error {
-	name, number, ok := strings.Cut(build, "/")
-	if !ok || name == "" || number == "" {
-		return fmt.Errorf("--build %q is not <name>/<number>", build)
+	name, number, err := parseBuildRef(build)
+	if err != nil {
+		return err
 	}
 
 	return g.updateBuild(name, number, func(run *relicv1.PublishedBuildRun) error {

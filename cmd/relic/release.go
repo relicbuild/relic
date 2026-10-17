@@ -83,9 +83,9 @@ func (r *releaseSources) read(cmd *cobra.Command) ([]*relicv1.ReleaseSource, err
 		s := &relicv1.ReleaseSource{}
 
 		for _, b := range r.builds {
-			name, number, ok := strings.Cut(b, "/")
-			if !ok || name == "" || number == "" {
-				return nil, fmt.Errorf("--build %q is not <name>/<number>", b)
+			name, number, err := parseBuildRef(b)
+			if err != nil {
+				return nil, err
 			}
 
 			s.Builds = append(s.Builds, &relicv1.ReleaseBuildRef{
