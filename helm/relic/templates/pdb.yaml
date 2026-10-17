@@ -1,4 +1,6 @@
-{{- if and .Values.server.podDisruptionBudget.enabled (not (include "relic.singleNode" .)) }}
+{{- $fewestReplicas := ternary .Values.server.autoscaling.minReplicas .Values.server.replicas .Values.server.autoscaling.enabled }}
+{{- $drainable := gt (int $fewestReplicas) (int .Values.server.podDisruptionBudget.minAvailable) }}
+{{- if and .Values.server.podDisruptionBudget.enabled $drainable (not (include "relic.singleNode" .)) }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:

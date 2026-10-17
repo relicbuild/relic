@@ -467,6 +467,65 @@ func TestChartSingleNode(t *testing.T) {
 	}
 }
 
+func TestChartDisruptionBudgetLeavesADrainablePod(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{
+			"two replicas",
+			nil,
+			true,
+		},
+		{
+			"one replica",
+			[]string{
+				"--set",
+				"server.replicas=1",
+			},
+			false,
+		},
+		{
+			"autoscaling from one replica",
+			[]string{
+				"--set",
+				"server.replicas=2",
+				"--set",
+				"server.autoscaling.enabled=true",
+				"--set",
+				"server.autoscaling.minReplicas=1",
+			},
+			false,
+		},
+		{
+			"autoscaling from two replicas",
+			[]string{
+				"--set",
+				"server.replicas=1",
+				"--set",
+				"server.autoscaling.enabled=true",
+			},
+			true,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			objs, stderr := render(t, append(slices.Clone(external), tt.args...)...)
+			if stderr != "" {
+				t.Fatal(stderr)
+			}
+
+			if got := find(objs, "PodDisruptionBudget", "r-relic-server") != nil; got != tt.want {
+				t.Errorf("PodDisruptionBudget rendered = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestChartExternalStorage(t *testing.T) {
 	t.Parallel()
 
