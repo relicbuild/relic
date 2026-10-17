@@ -46,7 +46,8 @@ func parseLicenseTerm(l string) licenseTerm {
 
 var notLicenseRefByte = regexp.MustCompile(`[^A-Za-z0-9.]+`)
 
-// spdxTerm is the term as SPDX states it: a name as a LicenseRef.
+// spdxTerm is the term as SPDX states it: a name as a LicenseRef that ends
+// in a hash of the name, so that no two names share one.
 func (t licenseTerm) spdxTerm() string {
 	switch {
 	case t.listedID != "":
@@ -55,13 +56,15 @@ func (t licenseTerm) spdxTerm() string {
 		return t.expression
 	}
 
-	ref := strings.Trim(notLicenseRefByte.ReplaceAllString(t.name, "-"), "-")
-	if ref == "" {
-		sum := sha256.Sum256([]byte(t.name))
-		ref = hex.EncodeToString(sum[:8])
+	sum := sha256.Sum256([]byte(t.name))
+	nameHash := hex.EncodeToString(sum[:4])
+
+	readable := strings.Trim(notLicenseRefByte.ReplaceAllString(t.name, "-"), "-")
+	if readable == "" {
+		return "LicenseRef-" + nameHash
 	}
 
-	return "LicenseRef-" + ref
+	return "LicenseRef-" + readable + "-" + nameHash
 }
 
 // componentLicenses are the parsed terms of a component's licenses.

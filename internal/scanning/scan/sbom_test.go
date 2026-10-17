@@ -3,6 +3,7 @@ package scan
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -177,9 +178,9 @@ func TestExportedLicenses(t *testing.T) {
 				"The Apache Software License, Version 2.0",
 			},
 			cycloneDX: `[{"license":{"name":"The Apache Software License, Version 2.0"}}]`,
-			spdx:      "LicenseRef-The-Apache-Software-License-Version-2.0",
+			spdx:      "LicenseRef-The-Apache-Software-License-Version-2.0-56e46a44",
 			extracted: []string{
-				"LicenseRef-The-Apache-Software-License-Version-2.0=The Apache Software License, Version 2.0",
+				"LicenseRef-The-Apache-Software-License-Version-2.0-56e46a44=The Apache Software License, Version 2.0",
 			},
 		},
 		{
@@ -189,9 +190,9 @@ func TestExportedLicenses(t *testing.T) {
 				"MIT",
 			},
 			cycloneDX: `[{"license":{"name":"Custom, see LICENSE file"}},{"license":{"id":"MIT"}}]`,
-			spdx:      "LicenseRef-Custom-see-LICENSE-file AND MIT",
+			spdx:      "LicenseRef-Custom-see-LICENSE-file-dec874d5 AND MIT",
 			extracted: []string{
-				"LicenseRef-Custom-see-LICENSE-file=Custom, see LICENSE file",
+				"LicenseRef-Custom-see-LICENSE-file-dec874d5=Custom, see LICENSE file",
 			},
 		},
 		{
@@ -228,10 +229,10 @@ func TestExportedLicenses(t *testing.T) {
 				"MIT OR Apache-2.0",
 				"Custom",
 			},
-			cycloneDX: `[{"expression":"(MIT OR Apache-2.0) AND LicenseRef-Custom"}]`,
-			spdx:      "(MIT OR Apache-2.0) AND LicenseRef-Custom",
+			cycloneDX: `[{"expression":"(MIT OR Apache-2.0) AND LicenseRef-Custom-494ca78f"}]`,
+			spdx:      "(MIT OR Apache-2.0) AND LicenseRef-Custom-494ca78f",
 			extracted: []string{
-				"LicenseRef-Custom=Custom",
+				"LicenseRef-Custom-494ca78f=Custom",
 			},
 		},
 		{
@@ -301,6 +302,99 @@ func TestExportedLicenses(t *testing.T) {
 
 			if !slices.Equal(extracted, tt.extracted) {
 				t.Errorf("SPDX extracted licenses = %q, want %q", extracted, tt.extracted)
+			}
+		})
+	}
+}
+
+func TestExportedLicenseReferencesStayDistinct(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		licenses []string
+		texts    []string
+	}{
+		{
+			name: "names that differ only in punctuation",
+			licenses: []string{
+				"Foo Bar",
+				"Foo-Bar",
+				"Foo (Bar)",
+				"Foo/Bar",
+			},
+			texts: []string{
+				"Foo Bar",
+				"Foo-Bar",
+				"Foo (Bar)",
+				"Foo/Bar",
+			},
+		},
+		{
+			name: "a reference and a name it reads as",
+			licenses: []string{
+				"LicenseRef-Custom",
+				"Custom",
+			},
+			texts: []string{
+				"NOASSERTION",
+				"Custom",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			comps := make([]Component, 0, len(tt.licenses))
+			for i, l := range tt.licenses {
+				name := fmt.Sprintf("pkg%d", i)
+				comps = append(comps, newComponent(name, "1", "library", "pkg:npm/"+name+"@1", []string{
+					l,
+				}, nil))
+			}
+
+			spdxDoc, err := spdxDocument(comps, "libs/foo", time.Unix(1_800_000_000, 0))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var spdx struct {
+				Packages []struct {
+					Name            string `json:"name"`
+					LicenseDeclared string `json:"licenseDeclared"`
+				} `json:"packages"`
+				Extracted []struct {
+					LicenseID     string `json:"licenseId"`
+					ExtractedText string `json:"extractedText"`
+				} `json:"hasExtractedLicensingInfos"`
+			}
+			if err := json.Unmarshal(spdxDoc, &spdx); err != nil {
+				t.Fatal(err)
+			}
+
+			texts := map[string]string{}
+			for _, e := range spdx.Extracted {
+				if _, ok := texts[e.LicenseID]; ok {
+					t.Errorf("%s is defined twice", e.LicenseID)
+				}
+
+				texts[e.LicenseID] = e.ExtractedText
+			}
+
+			if len(texts) != len(tt.licenses) {
+				t.Errorf("defined %d license references, want %d: %v", len(texts), len(tt.licenses), texts)
+			}
+
+			for _, p := range spdx.Packages {
+				var i int
+				if _, err := fmt.Sscanf(p.Name, "pkg%d", &i); err != nil {
+					continue
+				}
+
+				if got := texts[p.LicenseDeclared]; got != tt.texts[i] {
+					t.Errorf("%s declares %s, defined as %q, want %q", p.Name, p.LicenseDeclared, got, tt.texts[i])
+				}
 			}
 		})
 	}
