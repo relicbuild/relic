@@ -142,3 +142,73 @@ func TestRelicAPIFindingsQueryIsALiteralSubstring(t *testing.T) {
 		}
 	}
 }
+
+func TestRelicAPIDashboardCountsTheFindingsTheVulnerabilitiesPageLists(t *testing.T) {
+	t.Parallel()
+	srv, db := serverDB(t)
+	do(
+		t,
+		srv,
+		call{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/libs",
+			body:   `{"rclass":"local","packageType":"generic"}`,
+		},
+	)
+	deployWithFindings(t, srv, db, "app.tgz", "first build", []seededFinding{
+		{
+			id:       "GHSA-old1",
+			severity: "critical",
+			pkg:      "left-pad",
+		},
+		{
+			id:       "GHSA-old2",
+			severity: "high",
+			pkg:      "left-pad",
+		},
+	})
+	deployWithFindings(t, srv, db, "app.tgz", "second build", []seededFinding{
+		{
+			id:       "GHSA-new1",
+			severity: "high",
+			pkg:      "right-pad",
+		},
+	})
+
+	admin := relicHTTP("admin", "password")
+	scans := relicv1connect.NewScanServiceClient(admin, srv.URL+"/api")
+	system := relicv1connect.NewSystemServiceClient(admin, srv.URL+"/api")
+
+	summary, err := system.GetDashboardSummary(t.Context(), connect.NewRequest(&relicv1.GetDashboardSummaryRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range []struct {
+		severity relicv1.Severity
+		name     string
+		want     int64
+	}{
+		{
+			severity: relicv1.Severity_SEVERITY_CRITICAL,
+			name:     "critical",
+			want:     0,
+		},
+		{
+			severity: relicv1.Severity_SEVERITY_HIGH,
+			name:     "high",
+			want:     1,
+		},
+	} {
+		listed := findingsTotal(t, scans, &relicv1.ListFindingsRequest{
+			Severity: tt.severity,
+			PageSize: 1,
+		})
+		counted := int64(summary.Msg.GetFindings()[tt.name])
+
+		if listed != tt.want || counted != tt.want {
+			t.Errorf("%s findings: the dashboard counts %d, the vulnerabilities page lists %d; want %d",
+				tt.name, counted, listed, tt.want)
+		}
+	}
+}

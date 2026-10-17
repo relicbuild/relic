@@ -128,7 +128,9 @@ func (q *Queries) DeleteOldGraphScans(ctx context.Context, before time.Time) err
 }
 
 const findingCounts = `-- name: FindingCounts :many
-SELECT severity, count(*) AS count FROM scan_findings GROUP BY severity
+SELECT f.severity, count(*) AS count FROM scan_findings f
+WHERE EXISTS (SELECT 1 FROM items i WHERE i.sha256 = f.sha256 AND i.type = 'file')
+GROUP BY f.severity
 `
 
 type FindingCountsRow struct {

@@ -476,7 +476,9 @@ WHERE i.type = 'file' AND i.sha1 IN (SELECT value FROM json_each(@sha1s))
 ORDER BY i.repo_key, i.path, i.name;`
 
 const sqliteFindingCounts = `-- name: FindingCounts :many
-SELECT severity, count(*) AS count FROM scan_findings GROUP BY severity;`
+SELECT f.severity, count(*) AS count FROM scan_findings f
+WHERE EXISTS (SELECT 1 FROM items i WHERE i.sha256 = f.sha256 AND i.type = 'file')
+GROUP BY f.severity;`
 
 const sqliteFinishGraphScan = `-- name: FinishGraphScan :exec
 UPDATE scan_graphs SET status = @status, result = CAST(@result AS TEXT), error = @error, updated = @now WHERE id = @id;`
