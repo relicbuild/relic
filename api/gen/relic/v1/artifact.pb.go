@@ -408,7 +408,8 @@ type SearchItemsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// name is matched against file names (substring, case-insensitive).
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// repository limits the search to one repository when set.
+	// repository limits the search to one repository when set; a virtual
+	// repository is searched through its members.
 	Repository string `protobuf:"bytes,2,opt,name=repository,proto3" json:"repository,omitempty"`
 	// limit caps the results per repository; 0 means 100.
 	Limit         int32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`

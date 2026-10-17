@@ -215,7 +215,8 @@ export type SearchItemsRequest = Message<"relic.v1.SearchItemsRequest"> & {
   name: string;
 
   /**
-   * repository limits the search to one repository when set.
+   * repository limits the search to one repository when set; a virtual
+   * repository is searched through its members.
    *
    * @generated from field: string repository = 2;
    */

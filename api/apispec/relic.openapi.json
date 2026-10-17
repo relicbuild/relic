@@ -8899,7 +8899,7 @@
           "repository": {
             "type": "string",
             "title": "repository",
-            "description": "repository limits the search to one repository when set."
+            "description": "repository limits the search to one repository when set; a virtual\n repository is searched through its members."
           },
           "limit": {
             "type": "integer",
@@ -11710,11 +11710,11 @@
           {
             "name": "repository",
             "in": "query",
-            "description": "repository limits the search to one repository when set.",
+            "description": "repository limits the search to one repository when set; a virtual\n repository is searched through its members.",
             "schema": {
               "type": "string",
               "title": "repository",
-              "description": "repository limits the search to one repository when set."
+              "description": "repository limits the search to one repository when set; a virtual\n repository is searched through its members."
             }
           },
           {

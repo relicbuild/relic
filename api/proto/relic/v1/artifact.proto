@@ -155,7 +155,8 @@ message ListChildrenResponse {
 message SearchItemsRequest {
   // name is matched against file names (substring, case-insensitive).
   string name = 1;
-  // repository limits the search to one repository when set.
+  // repository limits the search to one repository when set; a virtual
+  // repository is searched through its members.
   string repository = 2;
   // limit caps the results per repository; 0 means 100.
   int32 limit = 3;

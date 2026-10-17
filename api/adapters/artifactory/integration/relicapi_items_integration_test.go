@@ -592,6 +592,79 @@ func TestRelicAPIItemBuilds(t *testing.T) {
 	}
 }
 
+func TestRelicAPISearchItemsOfAVirtualRepository(t *testing.T) {
+	t.Parallel()
+	srv := server(t)
+	ctx := t.Context()
+
+	for _, repo := range []struct {
+		key  string
+		body string
+	}{
+		{
+			key:  "libs",
+			body: `{"rclass":"local","packageType":"generic"}`,
+		},
+		{
+			key:  "extras",
+			body: `{"rclass":"local","packageType":"generic"}`,
+		},
+		{
+			key:  "inner",
+			body: `{"rclass":"virtual","packageType":"generic","repositories":["extras"]}`,
+		},
+		{
+			key:  "all",
+			body: `{"rclass":"virtual","packageType":"generic","repositories":["libs","inner"]}`,
+		},
+	} {
+		do(
+			t,
+			srv,
+			call{
+				method: "PUT",
+				path:   "/artifactory/api/repositories/" + repo.key,
+				body:   repo.body,
+			},
+		)
+	}
+
+	for _, f := range []string{
+		"libs/org/app-1.0.jar",
+		"extras/tools/app-tool.sh",
+		"extras/tools/other.sh",
+	} {
+		do(t, srv, call{
+			method: "PUT",
+			path:   "/artifactory/" + f,
+			body:   "x",
+		})
+	}
+
+	admin := relicv1connect.NewArtifactServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+
+	r, err := admin.SearchItems(ctx, connect.NewRequest(&relicv1.SearchItemsRequest{
+		Repository: "all",
+		Name:       "app",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := make([]string, 0, len(r.Msg.GetItems()))
+	for _, it := range r.Msg.GetItems() {
+		got = append(got, it.GetRepository()+"/"+it.GetPath())
+	}
+
+	want := []string{
+		"libs/org/app-1.0.jar",
+		"extras/tools/app-tool.sh",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("search of the virtual repository = %v, want %v", got, want)
+	}
+}
+
 func TestRelicAPIItemBuildsNameTheirProject(t *testing.T) {
 	t.Parallel()
 	srv := server(t)

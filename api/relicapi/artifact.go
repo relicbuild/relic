@@ -259,22 +259,9 @@ func (s *artifactServer) SearchItems(
 		limit = defaultSearchLimit
 	}
 
-	keys := []string{
-		req.Msg.GetRepository(),
-	}
-	if keys[0] == "" {
-		all, err := s.d.Repositories.ListRepositories(ctx, "", "")
-		if err != nil {
-			return nil, err
-		}
-
-		keys = keys[:0]
-
-		for _, r := range all {
-			if r.Class != repository.ClassVirtual {
-				keys = append(keys, r.Name)
-			}
-		}
+	keys, err := s.searchedRepositories(ctx, req.Msg.GetRepository())
+	if err != nil {
+		return nil, err
 	}
 
 	out := &relicv1.SearchItemsResponse{}
@@ -310,6 +297,44 @@ func (s *artifactServer) SearchItems(
 	}
 
 	return connect.NewResponse(out), nil
+}
+
+func (s *artifactServer) searchedRepositories(ctx context.Context, key string) ([]string, error) {
+	if key == "" {
+		all, err := s.d.Repositories.ListRepositories(ctx, "", "")
+		if err != nil {
+			return nil, err
+		}
+
+		keys := make([]string, 0, len(all))
+
+		for _, r := range all {
+			if r.Class != repository.ClassVirtual {
+				keys = append(keys, r.Name)
+			}
+		}
+
+		return keys, nil
+	}
+
+	r, err := s.d.Repositories.GetRepository(ctx, key)
+	if errors.Is(err, repository.ErrRepositoryNotFound) {
+		return []string{
+			key,
+		}, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	if r.Class == repository.ClassVirtual {
+		return storingMembers(ctx, s.d, r)
+	}
+
+	return []string{
+		key,
+	}, nil
 }
 
 func (s *artifactServer) GetProperties(
