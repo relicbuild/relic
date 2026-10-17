@@ -407,6 +407,40 @@ func TestLoad(t *testing.T) {
 			wantErr: "RELIC_TLS_KEY_FILE",
 		},
 		{
+			name: "TLS: a URL among the names",
+			env: with(map[string]string{
+				"RELIC_TLS_HOSTNAMES": "relic.example.com, https://relic.example.com",
+			}),
+			wantErr: "RELIC_TLS_HOSTNAMES",
+		},
+		{
+			name: "TLS: a name with a space",
+			env: with(map[string]string{
+				"RELIC_TLS_HOSTNAMES": "bad name",
+			}),
+			wantErr: "RELIC_TLS_HOSTNAMES",
+		},
+		{
+			name: "TLS: a name with a label that starts with a hyphen",
+			env: with(map[string]string{
+				"RELIC_TLS_HOSTNAMES": "-relic.example.com",
+			}),
+			wantErr: "RELIC_TLS_HOSTNAMES",
+		},
+		{
+			name: "TLS: wildcard names and IPv6 addresses",
+			env: with(map[string]string{
+				"RELIC_TLS_HOSTNAMES": "*.relic.example.com,fd00::5,relic-1.internal",
+			}),
+			check: func(t *testing.T, c Config) {
+				t.Helper()
+
+				if len(c.TLS.Hostnames) != 3 {
+					t.Errorf("hostnames = %v", c.TLS.Hostnames)
+				}
+			},
+		},
+		{
 			name: "TLS: a relative directory",
 			env: with(map[string]string{
 				"RELIC_TLS_DIRECTORY": "tls",

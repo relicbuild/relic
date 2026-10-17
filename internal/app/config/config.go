@@ -466,9 +466,17 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 
 	for hostname := range strings.SplitSeq(getenv("RELIC_TLS_HOSTNAMES"), ",") {
-		if hostname = strings.TrimSpace(hostname); hostname != "" {
-			cfg.TLS.Hostnames = append(cfg.TLS.Hostnames, hostname)
+		if hostname = strings.TrimSpace(hostname); hostname == "" {
+			continue
 		}
+
+		if _, err := netip.ParseAddr(hostname); err != nil && !isHostname(hostname) {
+			errs = append(errs, fmt.Errorf("RELIC_TLS_HOSTNAMES %q must be a host name or an IP address", hostname))
+
+			continue
+		}
+
+		cfg.TLS.Hostnames = append(cfg.TLS.Hostnames, hostname)
 	}
 
 	if v := getenv("RELIC_ENCRYPTION_KEY"); v != "" {
@@ -510,6 +518,29 @@ func (t TLS) validate() []error {
 	}
 
 	return errs
+}
+
+// isHostname reports whether name is a DNS name a certificate can hold,
+// optionally a wildcard one such as *.example.com.
+func isHostname(name string) bool {
+	name = strings.TrimPrefix(name, "*.")
+	if name == "" || len(name) > 253 {
+		return false
+	}
+
+	for label := range strings.SplitSeq(name, ".") {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+
+		for _, r := range label {
+			if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '-' {
+				return false
+			}
+		}
+	}
+
+	return true
 }
 
 func defaultTLSDirectory(getenv func(string) string) string {
