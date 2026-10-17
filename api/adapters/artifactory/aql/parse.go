@@ -342,19 +342,45 @@ func comparisons(field string, v any) ([]Node, error) {
 			return nil, fmt.Errorf("field %q: unknown operator %q", field, m.key)
 		}
 
-		switch m.value.(type) {
-		case object, []any:
+		op, value := m.key, m.value
+
+		switch nested := m.value.(type) {
+		case object:
+			var err error
+			if op, value, err = nestedMatch(field, m.key, nested); err != nil {
+				return nil, err
+			}
+		case []any:
 			return nil, fmt.Errorf("field %q: %s takes a literal", field, m.key)
 		}
 
 		out = append(out, Compare{
 			Field: field,
-			Op:    m.key,
-			Value: m.value,
+			Op:    op,
+			Value: value,
 		})
 	}
 
 	return out, nil
+}
+
+// nestedMatch folds $eq or $ne of a {"$match":pattern} or {"$nmatch":pattern} object into one match operator.
+func nestedMatch(field, outer string, nested object) (string, Value, error) {
+	if len(nested) != 1 || (outer != OpEq && outer != OpNe) ||
+		(nested[0].key != OpMatch && nested[0].key != OpNmatch) {
+		return "", nil, fmt.Errorf("field %q: %s takes a literal", field, outer)
+	}
+
+	pattern, ok := nested[0].value.(string)
+	if !ok {
+		return "", nil, fmt.Errorf("field %q: %s takes a pattern", field, nested[0].key)
+	}
+
+	if (outer == OpNe) != (nested[0].key == OpNmatch) {
+		return OpNmatch, pattern, nil
+	}
+
+	return OpMatch, pattern, nil
 }
 
 func (p *parser) skipSpace() {
