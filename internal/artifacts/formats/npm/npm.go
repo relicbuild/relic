@@ -806,9 +806,7 @@ func searchPatterns(text string) []string {
 	return patterns
 }
 
-// searchResult reads what npm search shows from a version's manifest. npm
-// search lists maintainers for every hit, so a version without any names
-// its publisher.
+// searchResult is the search hit of a version's manifest.
 func searchResult(name, version string, manifest []byte, created time.Time, publisher string) SearchResult {
 	var m struct {
 		Description string            `json:"description"`
