@@ -6603,7 +6603,7 @@
           },
           "minSeverity": {
             "title": "min_severity",
-            "description": "Security rules: min_severity or a CVSS range.",
+            "description": "Security rules: min_severity or a CVSS range from 0 to 10; an unset\n cvss_from is 0 and an unset cvss_to is 10.",
             "$ref": "#/components/schemas/relic.v1.Severity"
           },
           "cvssFrom": {

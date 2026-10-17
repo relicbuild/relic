@@ -74,6 +74,9 @@ type Rule struct {
 	BlockUnscanned bool `json:"blockUnscanned,omitempty"`
 }
 
+// MaxCVSS is the highest CVSS score.
+const MaxCVSS = 10
+
 // CVSSRange is an inclusive CVSS score range.
 type CVSSRange struct {
 	From float64 `json:"from"`
@@ -160,13 +163,14 @@ func (p Policy) Validate() error {
 				return fmt.Errorf("%w: rule %s: unknown severity %q", ErrInvalid, r.Name, r.MinSeverity)
 			}
 
-			if c := r.CVSS; c != nil && (c.From < 0 || c.To > 10 || c.From > c.To) {
+			if c := r.CVSS; c != nil && (c.From < 0 || c.From > c.To || c.To > MaxCVSS) {
 				return fmt.Errorf(
-					"%w: rule %s: the CVSS range %g to %g must lie within 0 to 10, its start not above its end",
+					"%w: rule %s: the CVSS range %g to %g must lie within 0 to %g, its start not above its end",
 					ErrInvalid,
 					r.Name,
 					c.From,
 					c.To,
+					float64(MaxCVSS),
 				)
 			}
 		case KindLicense:

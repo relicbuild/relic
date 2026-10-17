@@ -74,6 +74,27 @@ spec:
 			},
 		},
 		{
+			name: "an open CVSS bound reads as the server stores it",
+			in: `apiVersion: relic.build/v1
+kind: Policy
+metadata: {name: cvss}
+spec:
+  kind: security
+  rules:
+    - {name: high, cvssFrom: 7}
+    - {name: low, cvss_to: 4}
+`,
+			check: func(t *testing.T, docs []document) {
+				t.Helper()
+
+				rules := docs[0].msg.(*relicv1.Policy).GetRules()
+				if rules[0].CvssTo == nil || rules[0].GetCvssTo() != 10 ||
+					rules[1].CvssFrom == nil || rules[1].GetCvssFrom() != 0 {
+					t.Errorf("rules = %v", rules)
+				}
+			},
+		},
+		{
 			name:    "wrong apiVersion",
 			in:      "apiVersion: v1\nkind: Group\nmetadata: {name: g}\n",
 			wantErr: "apiVersion",

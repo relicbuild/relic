@@ -2634,7 +2634,8 @@ type PolicyRule struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Name     string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Priority int32                  `protobuf:"varint,2,opt,name=priority,proto3" json:"priority,omitempty"`
-	// Security rules: min_severity or a CVSS range.
+	// Security rules: min_severity or a CVSS range from 0 to 10; an unset
+	// cvss_from is 0 and an unset cvss_to is 10.
 	MinSeverity    Severity `protobuf:"varint,3,opt,name=min_severity,json=minSeverity,proto3,enum=relic.v1.Severity" json:"min_severity,omitempty"`
 	CvssFrom       *float64 `protobuf:"fixed64,4,opt,name=cvss_from,json=cvssFrom,proto3,oneof" json:"cvss_from,omitempty"`
 	CvssTo         *float64 `protobuf:"fixed64,5,opt,name=cvss_to,json=cvssTo,proto3,oneof" json:"cvss_to,omitempty"`

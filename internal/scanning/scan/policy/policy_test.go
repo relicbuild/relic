@@ -509,6 +509,45 @@ func TestValidate(t *testing.T) {
 				},
 			},
 		},
+		{
+			Name: "x",
+			Kind: KindSecurity,
+			Rules: []Rule{
+				{
+					Name: "inverted",
+					CVSS: &CVSSRange{
+						From: 9,
+						To:   2,
+					},
+				},
+			},
+		},
+		{
+			Name: "x",
+			Kind: KindSecurity,
+			Rules: []Rule{
+				{
+					Name: "above ten",
+					CVSS: &CVSSRange{
+						From: 7,
+						To:   50,
+					},
+				},
+			},
+		},
+		{
+			Name: "x",
+			Kind: KindSecurity,
+			Rules: []Rule{
+				{
+					Name: "negative",
+					CVSS: &CVSSRange{
+						From: -1,
+						To:   5,
+					},
+				},
+			},
+		},
 	}
 	for i, p := range bad {
 		if err := p.Validate(); !errors.Is(err, ErrInvalid) {

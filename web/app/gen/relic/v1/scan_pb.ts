@@ -1244,7 +1244,8 @@ export type PolicyRule = Message<"relic.v1.PolicyRule"> & {
   priority: number;
 
   /**
-   * Security rules: min_severity or a CVSS range.
+   * Security rules: min_severity or a CVSS range from 0 to 10; an unset
+   * cvss_from is 0 and an unset cvss_to is 10.
    *
    * @generated from field: relic.v1.Severity min_severity = 3;
    */

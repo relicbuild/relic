@@ -506,6 +506,7 @@ var kinds = []*kind{
 
 			return err
 		},
+		prepare: closeCVSSRanges,
 	},
 	{
 		name: "Watch",
@@ -844,6 +845,38 @@ func putPolicy(ctx context.Context, c *client, m proto.Message) error {
 	}))
 
 	return err
+}
+
+const maxCVSS = 10
+
+func closeCVSSRanges(spec map[string]any) {
+	rules, _ := spec["rules"].([]any)
+	for _, r := range rules {
+		rule, ok := r.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		from := hasAnyKey(rule, "cvssFrom", "cvss_from")
+		to := hasAnyKey(rule, "cvssTo", "cvss_to")
+
+		switch {
+		case from && !to:
+			rule["cvssTo"] = maxCVSS
+		case to && !from:
+			rule["cvssFrom"] = 0
+		}
+	}
+}
+
+func hasAnyKey(m map[string]any, keys ...string) bool {
+	for _, k := range keys {
+		if _, ok := m[k]; ok {
+			return true
+		}
+	}
+
+	return false
 }
 
 func listWatches(ctx context.Context, c *client) ([]proto.Message, error) {
