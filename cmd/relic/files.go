@@ -173,6 +173,12 @@ func downloadCmd(g *globals) *cobra.Command {
 				return err
 			}
 
+			if output != "-" {
+				if output, err = downloadPath(output, path.Base(p)); err != nil {
+					return fmt.Errorf("download %s/%s: %w", repo, p, err)
+				}
+			}
+
 			c, err := g.dial()
 			if err != nil {
 				return err
@@ -201,10 +207,6 @@ func downloadCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			if output == "" {
-				output = path.Base(p)
-			}
-
 			tmp, err := os.CreateTemp(filepath.Dir(output), ".relic-download-*")
 			if err != nil {
 				return err
@@ -227,13 +229,44 @@ func downloadCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			return os.Rename(tmp.Name(), output)
+			if err := os.Rename(tmp.Name(), output); err != nil {
+				return fmt.Errorf("download %s/%s: cannot write %s", repo, p, output)
+			}
+
+			return nil
 		},
 	}
 	cmd.Flags().
-		StringVarP(&output, "output", "o", "", "file to write (default: the file's name; - for standard output)")
+		StringVarP(
+			&output,
+			"output",
+			"o",
+			"",
+			"file to write, or a directory to write it into (default: the file's name; - for standard output)",
+		)
 
 	return cmd
+}
+
+// downloadPath is the file a download of name writes for -o output: output
+// itself, or name inside it when it is a directory or ends in a separator.
+func downloadPath(output, name string) (string, error) {
+	switch {
+	case output == "":
+		return name, nil
+	case strings.HasSuffix(output, "/") || strings.HasSuffix(output, string(filepath.Separator)):
+		output = filepath.Join(output, name)
+	default:
+		if st, err := os.Stat(output); err == nil && st.IsDir() {
+			output = filepath.Join(output, name)
+		}
+	}
+
+	if st, err := os.Stat(filepath.Dir(output)); err != nil || !st.IsDir() {
+		return "", fmt.Errorf("no directory %s to write %s into", filepath.Dir(output), filepath.Base(output))
+	}
+
+	return output, nil
 }
 
 func searchCmd(g *globals) *cobra.Command {
