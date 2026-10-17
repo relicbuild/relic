@@ -137,6 +137,7 @@ var notFound = []error{
 	workload.ErrNotFound,
 	webhook.ErrNotFound,
 	project.ErrNotFound,
+	project.ErrMemberNotFound,
 	agentregistry.ErrNotFound,
 }
 

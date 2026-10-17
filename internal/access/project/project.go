@@ -17,8 +17,9 @@ import (
 
 // Errors.
 var (
-	ErrNotFound = errors.New("project not found")
-	ErrInvalid  = errors.New("invalid project")
+	ErrNotFound       = errors.New("project not found")
+	ErrMemberNotFound = errors.New("project member not found")
+	ErrInvalid        = errors.New("invalid project")
 )
 
 // Role is what a member may do.
@@ -205,35 +206,41 @@ func (s *Service) Put(ctx context.Context, p Project) (Project, error) {
 
 // SetMembers replaces a project's members.
 func (s *Service) SetMembers(ctx context.Context, key string, members []Member) (Project, error) {
-	return s.changeMembers(ctx, key, func([]Member) []Member {
-		return members
+	return s.changeMembers(ctx, key, func([]Member) ([]Member, error) {
+		return members, nil
 	})
 }
 
 // AddMember adds m to a project, or changes the role of the member it
 // names, and leaves the other members as they are.
 func (s *Service) AddMember(ctx context.Context, key string, m Member) (Project, error) {
-	return s.changeMembers(ctx, key, func(members []Member) []Member {
+	return s.changeMembers(ctx, key, func(members []Member) ([]Member, error) {
 		i := slices.IndexFunc(members, func(existing Member) bool {
 			return existing.Name == m.Name && existing.Group == m.Group
 		})
 		if i < 0 {
-			return append(members, m)
+			return append(members, m), nil
 		}
 
 		members[i] = m
 
-		return members
+		return members, nil
 	})
 }
 
 // RemoveMember removes the user, or the group, name from a project, and
-// leaves the other members as they are.
+// leaves the other members as they are; it fails with ErrMemberNotFound when
+// name is not such a member.
 func (s *Service) RemoveMember(ctx context.Context, key, name string, group bool) (Project, error) {
-	return s.changeMembers(ctx, key, func(members []Member) []Member {
-		return slices.DeleteFunc(members, func(existing Member) bool {
+	return s.changeMembers(ctx, key, func(members []Member) ([]Member, error) {
+		kept := slices.DeleteFunc(members, func(existing Member) bool {
 			return existing.Name == name && existing.Group == group
 		})
+		if len(kept) == len(members) {
+			return nil, fmt.Errorf("%w: %s has no %s member %s", ErrMemberNotFound, key, memberKind(group), name)
+		}
+
+		return kept, nil
 	})
 }
 
@@ -277,10 +284,18 @@ func (s *Service) RemoveMemberships(ctx context.Context, q database.Querier, nam
 	return nil
 }
 
+func memberKind(group bool) string {
+	if group {
+		return "group"
+	}
+
+	return "user"
+}
+
 func (s *Service) changeMembers(
 	ctx context.Context,
 	key string,
-	change func([]Member) []Member,
+	change func([]Member) ([]Member, error),
 ) (Project, error) {
 	if err := s.db.WithLock(ctx, projectLock(key), func() error {
 		p, err := s.Get(ctx, key)
@@ -288,7 +303,10 @@ func (s *Service) changeMembers(
 			return err
 		}
 
-		p.Members = change(p.Members)
+		if p.Members, err = change(p.Members); err != nil {
+			return err
+		}
+
 		if err := validate(&p); err != nil {
 			return err
 		}
