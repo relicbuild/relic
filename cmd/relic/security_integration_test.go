@@ -154,6 +154,11 @@ spec: {active: true, scopes: [{kind: repository, names: [npm-remote]}], policies
 		t.Errorf("scan --watch = %q %v", out, err)
 	}
 
+	if _, err := relic(t, config, "", "security", "scan", "app.jar", "--syft", syft, "--watch", "s-cii"); err == nil ||
+		!strings.Contains(err.Error(), `watch "s-cii" does not exist`) {
+		t.Errorf("scan with an unknown watch = %v", err)
+	}
+
 	project := filepath.Join(dir, "project")
 
 	out, err = relic(t, config, "", "security", "audit", project, "--syft", syft)

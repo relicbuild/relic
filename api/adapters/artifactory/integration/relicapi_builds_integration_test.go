@@ -320,15 +320,28 @@ func TestRelicAPIPackageScan(t *testing.T) {
 		}
 	}
 
-	for name, purls := range map[string][]string{
-		"none": nil,
+	lodash := []string{
+		"pkg:npm/lodash@4.17.15",
+	}
+	for name, req := range map[string]*relicv1.ScanPackagesRequest{
+		"none": {},
 		"invalid": {
-			"lodash@4",
+			Purls: []string{
+				"lodash@4",
+			},
+		},
+		"unknown watch": {
+			Purls: lodash,
+			Watches: []string{
+				"remote-wach",
+			},
+		},
+		"unknown repository": {
+			Purls:      lodash,
+			Repository: "npm-remot",
 		},
 	} {
-		if _, err := dev.ScanPackages(ctx, connect.NewRequest(&relicv1.ScanPackagesRequest{
-			Purls: purls,
-		})); code(err) != connect.CodeInvalidArgument {
+		if _, err := dev.ScanPackages(ctx, connect.NewRequest(req)); code(err) != connect.CodeInvalidArgument {
 			t.Errorf("%s: %v", name, err)
 		}
 	}

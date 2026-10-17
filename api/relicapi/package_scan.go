@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"uuid"
 
@@ -12,6 +13,7 @@ import (
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/internal/access/auth"
+	"relic/internal/artifacts/repository"
 	"relic/internal/scanning/scan"
 	"relic/internal/scanning/scan/policy"
 )
@@ -46,6 +48,10 @@ func (s *scanServer) ScanPackages(
 		return nil, connect.NewError(connect.CodeUnavailable, errors.New("scanning is not available"))
 	}
 
+	if err := s.existingScope(ctx, m.GetWatches(), m.GetRepository()); err != nil {
+		return nil, err
+	}
+
 	scope, err := json.Marshal(packageScanScope{
 		Watches:    m.GetWatches(),
 		Repository: m.GetRepository(),
@@ -71,6 +77,30 @@ func (s *scanServer) ScanPackages(
 	return connect.NewResponse(&relicv1.ScanPackagesResponse{
 		Id: id.String(),
 	}), nil
+}
+
+func (s *scanServer) existingScope(ctx context.Context, watches []string, repo string) error {
+	for _, name := range watches {
+		_, err := s.d.ScanPolicies.Watch(ctx, name)
+		if errors.Is(err, policy.ErrNotFound) {
+			return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("watch %q does not exist", name))
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+
+	if repo == "" {
+		return nil
+	}
+
+	_, err := s.d.Repositories.GetRepository(ctx, repo)
+	if errors.Is(err, repository.ErrRepositoryNotFound) {
+		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("repository %q does not exist", repo))
+	}
+
+	return err
 }
 
 func (s *scanServer) GetPackagesScan(
