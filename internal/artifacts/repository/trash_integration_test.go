@@ -110,6 +110,79 @@ func TestPurgeTrashKeepsNewerEntriesBelowAnExpiredOne(t *testing.T) {
 	}
 }
 
+func TestTrashingAFolderAgainReplacesItsEarlierEntry(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	s, _, _ := newTestService(t)
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	clock := start
+	s.now = func() time.Time {
+		return clock
+	}
+
+	deploy(t, s, "r/x/old.txt", "old")
+	deploy(t, s, "r/x/kept.txt", "trashed on its own")
+
+	if err := s.DeleteToTrash(ctx, "generic-local", "r/x/kept.txt", "alice"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.DeleteToTrash(ctx, "generic-local", "r/x", "alice"); err != nil {
+		t.Fatal(err)
+	}
+
+	clock = start.Add(48 * time.Hour)
+
+	deploy(t, s, "r/x/new.txt", "new")
+
+	if err := s.DeleteToTrash(ctx, "generic-local", "r/x", "alice"); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, _, err := s.TrashEntries(
+		ctx,
+		TrashQuery{
+			Max: 10,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deleted := map[string]time.Time{}
+	for _, e := range entries {
+		deleted[e.Item.Path()] = e.Deleted
+	}
+
+	if len(deleted) != 2 ||
+		!deleted["generic-local/r/x"].Equal(clock) ||
+		!deleted["generic-local/r/x/kept.txt"].Equal(start) {
+		t.Errorf("trash entries = %v; want the folder deleted again and the file trashed on its own", deleted)
+	}
+
+	if _, err := s.Stat(ctx, s.TrashRepository(), "generic-local/r/x/old.txt"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("file of the earlier folder entry in the trash = %v, want ErrNotFound", err)
+	}
+
+	if err := s.RestoreFromTrash(ctx, "generic-local/r/x", "", "", "alice"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{
+		"r/x/new.txt",
+		"r/x/kept.txt",
+	} {
+		if _, err := s.Stat(ctx, "generic-local", path); err != nil {
+			t.Errorf("%s after restoring its folder: %v", path, err)
+		}
+	}
+
+	if _, err := s.Stat(ctx, "generic-local", "r/x/old.txt"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("file of the earlier folder entry after the restore = %v, want ErrNotFound", err)
+	}
+}
+
 func TestMoveAndRestoreKeepWhenAndByWhomAFileWasCreated(t *testing.T) {
 	t.Parallel()
 

@@ -155,6 +155,9 @@ func (s *Service) trash(
 			User:                  user,
 			RefuseFile:            refuseFile,
 			merge:                 true,
+			before: func(q database.Querier) error {
+				return s.clearEarlierEntry(ctx, q, dest)
+			},
 			then: func(q database.Querier) error {
 				trashed, err := q.GetItem(ctx, database.GetItemParams{
 					RepoKey: s.trashLayout.Repository,
@@ -176,6 +179,97 @@ func (s *Service) trash(
 	s.publishDeleted(ctx, item)
 
 	return nil
+}
+
+// clearEarlierEntry deletes what an earlier trash entry at path holds,
+// except the entries trashed on their own below it.
+func (s *Service) clearEarlierEntry(ctx context.Context, q database.Querier, path string) error {
+	parent, name := SplitPath(path)
+
+	_, err := q.GetItem(ctx, database.GetItemParams{
+		RepoKey: s.trashLayout.Repository,
+		Path:    parent,
+		Name:    name,
+	})
+	if database.IsNoRows(err) {
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("get trash item %s: %w", path, err)
+	}
+
+	rows, err := q.ListItemsWithProperty(
+		ctx,
+		database.ListItemsWithPropertyParams{
+			RepoKey: s.trashLayout.Repository,
+			Key:     s.trashLayout.Time,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("list trash: %w", err)
+	}
+
+	var (
+		isEntry bool
+		nested  []string
+	)
+
+	for _, r := range rows {
+		switch entry := domainItem(r.Item).Path(); {
+		case entry == path:
+			isEntry = true
+		case strings.HasPrefix(entry, path+"/"):
+			nested = append(nested, entry)
+		}
+	}
+
+	if !isEntry {
+		return nil
+	}
+
+	held, err := q.ListSubtree(
+		ctx,
+		database.ListSubtreeParams{
+			RepoKey:  s.trashLayout.Repository,
+			Path:     parent,
+			Name:     name,
+			FullPath: path,
+			Prefix:   likePrefix(path),
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("list trash subtree %s: %w", path, err)
+	}
+
+	var deleted []string
+
+	for _, it := range itemsFromRows(held) {
+		p := it.Path()
+		if p == path || withinAny(p, deleted) || withinAny(p, nested) || holdsAny(p, nested) {
+			continue
+		}
+
+		if _, err := deleteItem(ctx, q, it); err != nil {
+			return err
+		}
+
+		deleted = append(deleted, p)
+	}
+
+	return nil
+}
+
+func withinAny(path string, folders []string) bool {
+	return slices.ContainsFunc(folders, func(folder string) bool {
+		return path == folder || strings.HasPrefix(path, folder+"/")
+	})
+}
+
+func holdsAny(folder string, paths []string) bool {
+	return slices.ContainsFunc(paths, func(p string) bool {
+		return strings.HasPrefix(p, folder+"/")
+	})
 }
 
 // TrashEntry is one deleted item in the trash can.

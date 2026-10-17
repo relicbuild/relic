@@ -38,10 +38,11 @@ type CopyInput struct {
 	CheckUploadLimit bool
 
 	// merge puts the copy into what is at the destination, replacing only
-	// an item of the other kind, and then runs in the same transaction
-	// after the copy.
-	merge bool
-	then  func(q database.Querier) error
+	// an item of the other kind; before and then run in the same
+	// transaction before and after the copy.
+	merge  bool
+	before func(q database.Querier) error
+	then   func(q database.Querier) error
 }
 
 // Copy copies or moves an item.
@@ -219,6 +220,12 @@ func copyInTx(ctx context.Context, q database.Querier, plan *copyPlan, now time.
 			if err := in.RefuseFile(ctx, it); err != nil {
 				return err
 			}
+		}
+	}
+
+	if in.before != nil {
+		if err := in.before(q); err != nil {
+			return err
 		}
 	}
 
