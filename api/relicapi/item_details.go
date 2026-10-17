@@ -5,6 +5,7 @@ import (
 	"errors"
 	"maps"
 	"path"
+	"regexp"
 	"slices"
 	"time"
 
@@ -45,6 +46,8 @@ func scanStatusMessage(status string) relicv1.ScanStatus {
 	return relicv1.ScanStatus(n)
 }
 
+var scannable = regexp.MustCompile(`(?i)` + scan.ScannablePattern)
+
 func itemScan(ctx context.Context, d Dependencies, it repository.Item) (*relicv1.ItemScan, error) {
 	out := &relicv1.ItemScan{
 		Status: relicv1.ScanStatus_SCAN_STATUS_NONE,
@@ -58,6 +61,10 @@ func itemScan(ctx context.Context, d Dependencies, it repository.Item) (*relicv1
 
 	a, err := d.ScanResults.Artifact(ctx, target.Checksums.SHA256)
 	if errors.Is(err, scan.ErrNoScan) {
+		if scannable.MatchString(target.Name) {
+			out.Status, out.Reason = relicv1.ScanStatus_SCAN_STATUS_QUEUED, "not picked up by the scanner yet"
+		}
+
 		return out, nil
 	}
 

@@ -25,7 +25,7 @@ func reportCmd(g *globals) *cobra.Command {
 			"misconfigurations, operational risks",
 		Long: "Prints the stored scan of a file (for an image folder, its manifest's). --fail-on exits with " +
 			"status 1 when a finding, issue or operational risk is at least that severe (critical, high, " +
-			"medium, low), so a " +
+			"medium, low), and fails while the file's scan is queued or has failed, so a " +
 			"pipeline can gate on what is already in Relic.",
 		Example:           "  relic security report libs-local/org/app/1.0/app.jar\n  relic security report charts/demo-0.1.0.tgz --fail-on high -o json",
 		Args:              cobra.ExactArgs(1),
@@ -140,7 +140,25 @@ func reportCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			if threshold != relicv1.Severity_SEVERITY_UNSPECIFIED && severeEnough(s, threshold) {
+			if threshold == relicv1.Severity_SEVERITY_UNSPECIFIED {
+				return nil
+			}
+
+			switch s.GetStatus() {
+			case relicv1.ScanStatus_SCAN_STATUS_DONE,
+				relicv1.ScanStatus_SCAN_STATUS_PARTIAL,
+				relicv1.ScanStatus_SCAN_STATUS_NONE,
+				relicv1.ScanStatus_SCAN_STATUS_SKIPPED:
+			default:
+				return fmt.Errorf(
+					"--fail-on %s: %s is not scanned yet (%s)",
+					failOn,
+					args[0],
+					strings.TrimPrefix(strings.ToLower(s.GetStatus().String()), "scan_status_"),
+				)
+			}
+
+			if severeEnough(s, threshold) {
 				return exitCode1
 			}
 

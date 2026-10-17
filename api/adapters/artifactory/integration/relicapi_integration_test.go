@@ -1610,7 +1610,7 @@ func TestRelicAPIScan(t *testing.T) {
 			Path:       "app.jar",
 		}),
 	)
-	if err != nil || s.Msg.GetScan().GetStatus() != relicv1.ScanStatus_SCAN_STATUS_NONE {
+	if err != nil || s.Msg.GetScan().GetStatus() != relicv1.ScanStatus_SCAN_STATUS_QUEUED {
 		t.Errorf("unscanned = %v %v", s, err)
 	}
 
@@ -1882,7 +1882,7 @@ func TestRelicAPIUIParity(t *testing.T) {
 	)
 	if err != nil || !det.Msg.GetCanDelete() || !det.Msg.GetCanAnnotate() ||
 		det.Msg.GetProperties()["qa"].GetValues()[0] != "passed" ||
-		det.Msg.GetScan().GetStatus() != relicv1.ScanStatus_SCAN_STATUS_NONE ||
+		det.Msg.GetScan().GetStatus() != relicv1.ScanStatus_SCAN_STATUS_QUEUED ||
 		det.Msg.GetFormat() != relicv1.Format_FORMAT_GENERIC {
 		t.Fatalf("details = %v %v", det, err)
 	}

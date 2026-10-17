@@ -87,9 +87,10 @@ type ScanStatus int32
 
 const (
 	ScanStatus_SCAN_STATUS_UNSPECIFIED ScanStatus = 0
-	// SCAN_STATUS_NONE: the file was never queued (not a scannable type, or
-	// deployed before scanning was on).
-	ScanStatus_SCAN_STATUS_NONE   ScanStatus = 1
+	// SCAN_STATUS_NONE: the file is not a type Relic Scan reads.
+	ScanStatus_SCAN_STATUS_NONE ScanStatus = 1
+	// SCAN_STATUS_QUEUED: the file waits for the scanner, which may not have
+	// picked it up yet.
 	ScanStatus_SCAN_STATUS_QUEUED ScanStatus = 2
 	ScanStatus_SCAN_STATUS_DONE   ScanStatus = 3
 	// SCAN_STATUS_PARTIAL: some content could not be cataloged.

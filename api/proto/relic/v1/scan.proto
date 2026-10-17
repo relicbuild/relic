@@ -207,9 +207,10 @@ enum Severity {
 // ScanStatus is where a file's scan stands.
 enum ScanStatus {
   SCAN_STATUS_UNSPECIFIED = 0;
-  // SCAN_STATUS_NONE: the file was never queued (not a scannable type, or
-  // deployed before scanning was on).
+  // SCAN_STATUS_NONE: the file is not a type Relic Scan reads.
   SCAN_STATUS_NONE = 1;
+  // SCAN_STATUS_QUEUED: the file waits for the scanner, which may not have
+  // picked it up yet.
   SCAN_STATUS_QUEUED = 2;
   SCAN_STATUS_DONE = 3;
   // SCAN_STATUS_PARTIAL: some content could not be cataloged.

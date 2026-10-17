@@ -2410,14 +2410,16 @@ export enum ScanStatus {
   UNSPECIFIED = 0,
 
   /**
-   * SCAN_STATUS_NONE: the file was never queued (not a scannable type, or
-   * deployed before scanning was on).
+   * SCAN_STATUS_NONE: the file is not a type Relic Scan reads.
    *
    * @generated from enum value: SCAN_STATUS_NONE = 1;
    */
   NONE = 1,
 
   /**
+   * SCAN_STATUS_QUEUED: the file waits for the scanner, which may not have
+   * picked it up yet.
+   *
    * @generated from enum value: SCAN_STATUS_QUEUED = 2;
    */
   QUEUED = 2,
