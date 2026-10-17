@@ -330,7 +330,18 @@ func (s *Service) Package(ctx context.Context, r repository.Repository, p string
 	var upstreamErr error
 
 	for _, m := range s.repos.Flatten(ctx, r, projectOf(path.Base(p))) {
-		item, err := s.repos.Resolve(ctx, m.Name, p)
+		var (
+			item repository.Item
+			err  error
+		)
+
+		if files := filesURL(m); m.Class == repository.ClassRemote &&
+			files != strings.TrimSuffix(m.Upstream().URL, "/") {
+			item, err = s.repos.ResolveURL(ctx, m, files+"/"+escapePath(p), p)
+		} else {
+			item, err = s.repos.Resolve(ctx, m.Name, p)
+		}
+
 		switch {
 		case err == nil && !item.IsFolder():
 			return item, nil
@@ -378,7 +389,7 @@ func (s *Service) remoteLinks(ctx context.Context, r repository.Repository, norm
 		return nil, fmt.Errorf("%w: index URL of %s: %w", repository.ErrInvalidRepository, r.Name, err)
 	}
 
-	files, _ := url.Parse(s.repos.UpstreamOf(r).URL)
+	files, _ := url.Parse(filesURL(r))
 
 	links := parseSimple(string(body), base, files)
 
@@ -443,6 +454,17 @@ func registryURL(r repository.Repository, repos *repository.Service) string {
 	}
 
 	return "https://pypi.org"
+}
+
+// filesURL is where remote r fetches distribution files from: its URL, or
+// PyPI's file host when the URL names the PyPI registry, which serves no files.
+func filesURL(r repository.Repository) string {
+	upstream := strings.TrimSuffix(r.Upstream().URL, "/")
+	if u, err := url.Parse(upstream); err == nil && u.Host == "pypi.org" {
+		return "https://files.pythonhosted.org"
+	}
+
+	return upstream
 }
 
 func parseSimple(page string, base, files *url.URL) []Link {

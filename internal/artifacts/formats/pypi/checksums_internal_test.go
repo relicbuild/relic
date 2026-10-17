@@ -1,9 +1,52 @@
 package pypi
 
 import (
+	"net/url"
 	"slices"
 	"testing"
+
+	"relic/internal/artifacts/repository"
 )
+
+func pypiRemote(upstream string) repository.Repository {
+	return repository.Repository{
+		Name:   "pypi-remote",
+		Class:  repository.ClassRemote,
+		Format: Format,
+		Config: repository.Config{
+			Remote: &repository.RemoteConfig{
+				URL: upstream,
+			},
+		},
+	}
+}
+
+func TestRemoteOnTheRegistryHostServesFiles(t *testing.T) {
+	t.Parallel()
+
+	for upstream, want := range map[string]string{
+		"https://pypi.org":                 "https://files.pythonhosted.org",
+		"https://pypi.org/":                "https://files.pythonhosted.org",
+		"https://files.pythonhosted.org":   "https://files.pythonhosted.org",
+		"https://mirror.example.com/pypi/": "https://mirror.example.com/pypi",
+	} {
+		if got := filesURL(pypiRemote(upstream)); got != want {
+			t.Errorf("filesURL(%s) = %s, want %s", upstream, got, want)
+		}
+	}
+
+	base, _ := url.Parse("https://pypi.org/simple/six/")
+	files, _ := url.Parse(filesURL(pypiRemote("https://pypi.org")))
+
+	links := parseSimple(
+		`<a href="https://files.pythonhosted.org/packages/d9/5a/six-1.16.0-py2.py3-none-any.whl#sha256=ab">six</a>`,
+		base,
+		files,
+	)
+	if len(links) != 1 || links[0].Href != "packages/packages/d9/5a/six-1.16.0-py2.py3-none-any.whl" {
+		t.Errorf("links = %+v, want a link through Relic", links)
+	}
+}
 
 func TestProjectOf(t *testing.T) {
 	t.Parallel()
