@@ -5814,7 +5814,7 @@
           "username": {
             "type": "string",
             "title": "username",
-            "description": "username limits an administrator's list to one user; others always see\n their own tokens."
+            "description": "username limits an administrator's or a viewer's list to one user; others\n always see their own tokens."
           },
           "includeRevoked": {
             "type": "boolean",
@@ -15636,17 +15636,17 @@
           "SecurityService"
         ],
         "summary": "ListTokens",
-        "description": "ListTokens returns access tokens without their secrets: the caller's\n own, or for an administrator everyone's (or one user's).",
+        "description": "ListTokens returns access tokens without their secrets: the caller's\n own, or for an administrator or a viewer everyone's (or one user's).",
         "operationId": "SecurityService_ListTokens",
         "parameters": [
           {
             "name": "username",
             "in": "query",
-            "description": "username limits an administrator's list to one user; others always see\n their own tokens.",
+            "description": "username limits an administrator's or a viewer's list to one user; others\n always see their own tokens.",
             "schema": {
               "type": "string",
               "title": "username",
-              "description": "username limits an administrator's list to one user; others always see\n their own tokens."
+              "description": "username limits an administrator's or a viewer's list to one user; others\n always see their own tokens."
             }
           },
           {

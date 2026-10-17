@@ -816,8 +816,8 @@ export const AccessTokenSchema: GenMessage<AccessToken> = /*@__PURE__*/
  */
 export type ListTokensRequest = Message<"relic.v1.ListTokensRequest"> & {
   /**
-   * username limits an administrator's list to one user; others always see
-   * their own tokens.
+   * username limits an administrator's or a viewer's list to one user; others
+   * always see their own tokens.
    *
    * @generated from field: string username = 1;
    */
@@ -1215,7 +1215,7 @@ export const SecurityService: GenService<{
   },
   /**
    * ListTokens returns access tokens without their secrets: the caller's
-   * own, or for an administrator everyone's (or one user's).
+   * own, or for an administrator or a viewer everyone's (or one user's).
    *
    * @generated from rpc relic.v1.SecurityService.ListTokens
    */

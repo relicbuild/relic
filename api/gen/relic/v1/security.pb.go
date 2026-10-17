@@ -2111,8 +2111,8 @@ func (x *AccessToken) GetRefreshable() bool {
 
 type ListTokensRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// username limits an administrator's list to one user; others always see
-	// their own tokens.
+	// username limits an administrator's or a viewer's list to one user; others
+	// always see their own tokens.
 	Username string `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
 	// include_revoked lists revoked tokens too.
 	IncludeRevoked bool `protobuf:"varint,2,opt,name=include_revoked,json=includeRevoked,proto3" json:"include_revoked,omitempty"`

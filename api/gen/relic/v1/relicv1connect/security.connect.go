@@ -100,7 +100,7 @@ type SecurityServiceClient interface {
 	// permissions. It is returned once.
 	CreateToken(context.Context, *connect.Request[v1.CreateTokenRequest]) (*connect.Response[v1.CreateTokenResponse], error)
 	// ListTokens returns access tokens without their secrets: the caller's
-	// own, or for an administrator everyone's (or one user's).
+	// own, or for an administrator or a viewer everyone's (or one user's).
 	ListTokens(context.Context, *connect.Request[v1.ListTokensRequest]) (*connect.Response[v1.ListTokensResponse], error)
 	// RevokeToken revokes a token at once on every replica: the caller's own,
 	// or any token for an administrator.
@@ -327,7 +327,7 @@ type SecurityServiceHandler interface {
 	// permissions. It is returned once.
 	CreateToken(context.Context, *connect.Request[v1.CreateTokenRequest]) (*connect.Response[v1.CreateTokenResponse], error)
 	// ListTokens returns access tokens without their secrets: the caller's
-	// own, or for an administrator everyone's (or one user's).
+	// own, or for an administrator or a viewer everyone's (or one user's).
 	ListTokens(context.Context, *connect.Request[v1.ListTokensRequest]) (*connect.Response[v1.ListTokensResponse], error)
 	// RevokeToken revokes a token at once on every replica: the caller's own,
 	// or any token for an administrator.

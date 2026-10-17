@@ -122,7 +122,7 @@ func tokenListCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "list",
 		Short:   "List access tokens (without their secrets)",
-		Long:    "Lists your tokens; administrators may name another user with --user.",
+		Long:    "Lists your tokens; administrators and viewers see everyone's, or one user's with --user.",
 		Example: "  relic auth token list\n  relic auth token list --user ci-bot -o yaml",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -162,7 +162,7 @@ func tokenListCmd(g *globals) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&user, "user", "", "list this user's tokens (administrators)")
+	cmd.Flags().StringVar(&user, "user", "", "list this user's tokens (administrators and viewers)")
 	cmd.Flags().BoolVar(&revoked, "include-revoked", false, "list revoked tokens too")
 	outputFlag(cmd, &output)
 
