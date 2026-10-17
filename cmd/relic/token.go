@@ -153,24 +153,9 @@ func tokenListCmd(g *globals) *cobra.Command {
 					},
 				}
 
+				now := time.Now()
 				for _, t := range r.Msg.GetTokens() {
-					expires := "never"
-					if t.GetExpires() != nil {
-						expires = t.GetExpires().AsTime().Local().Format(time.DateOnly)
-					}
-
-					state := "active"
-					if t.GetRevoked() {
-						state = "revoked"
-					}
-
-					table.Rows = append(table.Rows, []string{
-						t.GetId(),
-						t.GetUsername(),
-						expires,
-						state,
-						tableCell(t.GetDescription()),
-					})
+					table.Rows = append(table.Rows, tokenRow(t, now))
 				}
 
 				return table.Print(w)
@@ -182,6 +167,30 @@ func tokenListCmd(g *globals) *cobra.Command {
 	outputFlag(cmd, &output)
 
 	return cmd
+}
+
+const tokenExpiresLayout = "2006-01-02 15:04"
+
+func tokenRow(t *relicv1.AccessToken, now time.Time) []string {
+	expires, state := "never", "active"
+	if e := t.GetExpires(); e != nil {
+		expires = localTime(e, tokenExpiresLayout)
+		if !e.AsTime().After(now) {
+			state = "expired"
+		}
+	}
+
+	if t.GetRevoked() {
+		state = "revoked"
+	}
+
+	return []string{
+		t.GetId(),
+		t.GetUsername(),
+		expires,
+		state,
+		tableCell(t.GetDescription()),
+	}
 }
 
 func tokenRevokeCmd(g *globals) *cobra.Command {
