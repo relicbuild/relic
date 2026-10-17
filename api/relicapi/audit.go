@@ -149,6 +149,7 @@ var targetFields = []protoreflect.Name{
 	"repository",
 	"kid",
 	"description",
+	"path",
 }
 
 // carriedTargetFields name the message a request carries (a project by its

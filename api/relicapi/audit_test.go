@@ -81,6 +81,20 @@ func TestAuditTarget(t *testing.T) {
 			},
 		},
 		{
+			name: "restored trash entry",
+			msg: &relicv1.RestoreTrashRequest{
+				Path: "libs/org/app/1.3/app-1.3.jar",
+			},
+			want: "libs/org/app/1.3/app-1.3.jar",
+		},
+		{
+			name: "purged trash entry",
+			msg: &relicv1.DeleteTrashEntryRequest{
+				Path: "libs/org/app/1.3/app-1.3.jar",
+			},
+			want: "libs/org/app/1.3/app-1.3.jar",
+		},
+		{
 			name: "nothing",
 			msg:  &relicv1.CollectGarbageRequest{},
 		},
