@@ -871,7 +871,7 @@ func newRouter(
 	keySvc := signingkey.New(db, opts.Secrets)
 	blocker := blocking.New(db)
 	blocker.SetAudit(auditLog)
-	blocker.SetQuarantine(repos.QuarantinedRepositories)
+	blocker.SetQuarantine(repos)
 
 	agentRegistry := agentregistry.New(db, repos)
 	blocker.SetRegistryApprovals(agentRegistry)

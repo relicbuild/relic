@@ -20,6 +20,61 @@ import (
 	"relic/internal/scanning/scan"
 )
 
+func TestQuarantineAppliesAsSoonAsItIsTurnedOn(t *testing.T) {
+	t.Parallel()
+
+	srv := server(t)
+	ctx := t.Context()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "jar "+html.EscapeString(r.URL.Path))
+	}))
+	t.Cleanup(upstream.Close)
+
+	remote := &relicv1.Repository{
+		Name:   "late-remote",
+		Class:  relicv1.RepositoryClass_REPOSITORY_CLASS_REMOTE,
+		Format: relicv1.Format_FORMAT_MAVEN,
+		Remote: &relicv1.RemoteRepositorySettings{
+			Url: upstream.URL,
+		},
+	}
+
+	repos := relicv1connect.NewRepositoryServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	if _, err := repos.CreateRepository(ctx, connect.NewRequest(&relicv1.CreateRepositoryRequest{
+		Repository: remote,
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	get := func(p string) (int, string) {
+		resp, body := do(t, srv, call{
+			method: http.MethodGet,
+			path:   "/artifactory/late-remote/" + p,
+		})
+
+		return resp.StatusCode, body
+	}
+
+	if status, body := get("g/a/1.0/a-1.0.jar"); status != http.StatusOK {
+		t.Fatalf("a file of a repository without quarantine = %d %s", status, body)
+	}
+
+	remote.Remote.Quarantine = true
+	if _, err := repos.UpdateRepository(ctx, connect.NewRequest(&relicv1.UpdateRepositoryRequest{
+		Repository: remote,
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	if status, body := get(
+		"g/b/1.0/b-1.0.jar",
+	); status != http.StatusForbidden ||
+		!strings.Contains(body, "quarantined") {
+		t.Errorf("a fresh file right after quarantine was turned on = %d %s, want held", status, body)
+	}
+}
+
 func TestQuarantine(t *testing.T) {
 	t.Parallel()
 	srv, db := serverDB(t)

@@ -166,6 +166,21 @@ func (s *Service) GetRepository(ctx context.Context, key string) (Repository, er
 	return s.repositoryFromRow(row), nil
 }
 
+// Quarantines reports whether repository key is a remote repository that
+// quarantines what it caches.
+func (s *Service) Quarantines(ctx context.Context, key string) (bool, error) {
+	r, err := s.GetRepository(ctx, key)
+	if errors.Is(err, ErrRepositoryNotFound) {
+		return false, nil
+	}
+
+	if err != nil {
+		return false, err
+	}
+
+	return r.Class == ClassRemote && r.Upstream().Quarantine, nil
+}
+
 // QuarantinedRepositories names the remote repositories that quarantine
 // what they cache.
 func (s *Service) QuarantinedRepositories(ctx context.Context) ([]string, error) {

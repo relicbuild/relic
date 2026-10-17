@@ -37,13 +37,11 @@ type Blocker struct {
 	quarantined QuarantinedRepositories
 	registry    RegistryApprovals
 
-	mu               sync.Mutex
-	quarantineKeys   []string
-	quarantineLoaded time.Time
-	loaded           time.Time
-	watches          []policy.Watch
-	policies         map[string]policy.Policy
-	ignores          []policy.IgnoreRule
+	mu       sync.Mutex
+	loaded   time.Time
+	watches  []policy.Watch
+	policies map[string]policy.Policy
+	ignores  []policy.IgnoreRule
 }
 
 // New returns a Blocker.
@@ -473,7 +471,7 @@ func (b *Blocker) checkLicenses(
 // Invalidate forgets cached watches and policies.
 func (b *Blocker) Invalidate() {
 	b.mu.Lock()
-	b.loaded, b.quarantineLoaded = time.Time{}, time.Time{}
+	b.loaded = time.Time{}
 	b.mu.Unlock()
 }
 
