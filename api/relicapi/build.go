@@ -165,6 +165,10 @@ func (s *buildServer) ApplyBuildRetention(
 		return nil, err
 	}
 
+	if _, err := s.d.Builds.Runs(ctx, m.GetProject(), m.GetName()); err != nil {
+		return nil, err
+	}
+
 	ret := buildinfo.Retention{
 		MaxRuns:         int(m.GetMaxRuns()),
 		Keep:            m.GetKeep(),

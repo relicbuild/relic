@@ -56,6 +56,15 @@ func TestPublishBuildRun(t *testing.T) {
 	}
 
 	if resp, b := do(t, srv, call{
+		method:  http.MethodPost,
+		path:    "/api/v1/builds/missing:applyRetention",
+		body:    `{"maxRuns":1}`,
+		headers: json,
+	}); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("retention of a build without runs = %d %s, want 404", resp.StatusCode, b)
+	}
+
+	if resp, b := do(t, srv, call{
 		method: http.MethodGet,
 		path:   "/api/v1/builds/team%2Fapp%20x/runs/7",
 	}); resp.StatusCode != http.StatusOK || !strings.Contains(b, `"name":"team/app x"`) {

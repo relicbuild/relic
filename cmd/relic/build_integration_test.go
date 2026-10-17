@@ -417,6 +417,14 @@ spec: {active: true, scopes: [{kind: build, names: [app]}], policies: [b-sec]}
 		t.Error("discard without a limit succeeded")
 	}
 
+	if out, err := relic(t, config, "", "build", "discard", "app", "--max-days", "-5"); err == nil {
+		t.Errorf("discard with a negative --max-days = %q, want an error", out)
+	}
+
+	if out, err := relic(t, config, "", "build", "discard", "missing", "--max-runs", "1"); err == nil {
+		t.Errorf("discard of a build without runs = %q, want an error", out)
+	}
+
 	if _, err := relic(t, config, "", "build", "discard", "app", "--max-runs", "1"); err != nil {
 		t.Fatal(err)
 	}

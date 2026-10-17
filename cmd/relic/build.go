@@ -838,6 +838,10 @@ func buildDiscardCmd(g *globals) *cobra.Command {
 		Example: "  relic build discard app --max-runs 20 --keep 1.0.0\n  relic build discard app --max-days 90 --delete-artifacts",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if maxRuns < 0 || maxAge < 0 {
+				return errors.New("discard: --max-runs and --max-days cannot be negative")
+			}
+
 			if maxRuns == 0 && maxAge == 0 {
 				return errors.New("discard: give --max-runs, --max-days or both")
 			}
