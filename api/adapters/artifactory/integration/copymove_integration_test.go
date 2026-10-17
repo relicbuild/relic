@@ -257,6 +257,39 @@ func TestCopyAndMoveCheckEveryFile(t *testing.T) {
 	})
 }
 
+func TestChecksumFileUploadedBeforeItsArtifact(t *testing.T) {
+	t.Parallel()
+
+	srv := guardedRepository(t)
+	body := "hello world\n"
+
+	for _, upload := range []call{
+		{
+			method: "PUT",
+			path:   "/artifactory/other-local/y/nothere.bin.sha1",
+			body:   "abc",
+		},
+		{
+			method: "PUT",
+			path:   "/artifactory/other-local/y/nothere.bin",
+			body:   body,
+		},
+	} {
+		if resp, reply := do(t, srv, upload); resp.StatusCode != 201 {
+			t.Fatalf("PUT %s = %d %s", upload.path, resp.StatusCode, reply)
+		}
+	}
+
+	if status, got := adminContent(t, srv, "other-local/y/nothere.bin.sha1"); status != 200 ||
+		got != "22596363b3de40b06f981fb85d82312e8c0ed511" {
+		t.Errorf("GET nothere.bin.sha1 = %d %q, want the artifact's SHA-1", status, got)
+	}
+
+	if status, got := adminContent(t, srv, "other-local/y/alone.bin.sha1"); status != 404 {
+		t.Errorf("GET a checksum of nothing = %d %q, want 404", status, got)
+	}
+}
+
 func TestFolderDeleteChecksEveryFile(t *testing.T) {
 	t.Parallel()
 

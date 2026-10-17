@@ -96,6 +96,21 @@ func (h *Handler) ServeFile(w http.ResponseWriter, r *http.Request, m Mount, t T
 		return
 	}
 
+	if base, _, ok := checksumOf(t.Path); ok {
+		rp, err := h.repos.GetRepository(ctx, t.Repo)
+		if err == nil && rp.Class == repository.ClassLocal {
+			readable, err := h.CanRepo(r, t.Repo, base, auth.ActionRead)
+			if err != nil {
+				h.writeError(w, r, err)
+				return
+			}
+
+			if readable && h.checksumFile(w, r, t) {
+				return
+			}
+		}
+	}
+
 	item, err := h.repos.Resolve(ctx, t.Repo, t.Path)
 	if errors.Is(err, repository.ErrNotFound) {
 		if h.checksumFile(w, r, t) {
