@@ -231,6 +231,8 @@ func (s *Service) ScanArtifact(ctx context.Context, sha256Hex, fileName string) 
 		return s.finish(ctx, sha256Hex, since, StatusFailed, "catalog: "+err.Error(), nil, nil)
 	}
 
+	sbom = withArchivePackage(sbom, name, source)
+
 	rep, err := s.matchSBOM(ctx, dir, sbom)
 	if err != nil {
 		return err
