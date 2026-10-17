@@ -58,6 +58,12 @@ func TestRESTRoutes(t *testing.T) {
 			want:   http.StatusUnauthorized,
 		},
 		{
+			name:   "REST route with an encoded slash in a name, anonymous",
+			method: http.MethodGet,
+			path:   "/api/v1/builds/team%2Fapp/runs",
+			want:   http.StatusUnauthorized,
+		},
+		{
 			name:   "unknown REST route",
 			method: http.MethodGet,
 			path:   "/api/v1/nope",

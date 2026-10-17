@@ -47,6 +47,26 @@ func TestPublishBuildRun(t *testing.T) {
 		srv,
 		call{
 			method:  http.MethodPost,
+			path:    "/api/v1/builds/team%2Fapp%20x/runs",
+			body:    strings.ReplaceAll(run, `"name":"app"`, `"name":"team/app x"`),
+			headers: json,
+		},
+	); resp.StatusCode != http.StatusOK {
+		t.Fatalf("publish team/app x = %d %s", resp.StatusCode, b)
+	}
+
+	if resp, b := do(t, srv, call{
+		method: http.MethodGet,
+		path:   "/api/v1/builds/team%2Fapp%20x/runs/7",
+	}); resp.StatusCode != http.StatusOK || !strings.Contains(b, `"name":"team/app x"`) {
+		t.Errorf("run of a build named with a slash = %d %s", resp.StatusCode, b)
+	}
+
+	if resp, b := do(
+		t,
+		srv,
+		call{
+			method:  http.MethodPost,
 			path:    "/api/v1/builds/app/runs",
 			body:    `{"run":{"name":"app","number":"8"}}`,
 			headers: json,
