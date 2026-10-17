@@ -69,11 +69,13 @@ func sbomComponents(raw []byte) ([]Component, error) {
 }
 
 type cdxLicense struct {
-	License *struct {
-		ID   string `json:"id,omitempty"`
-		Name string `json:"name,omitempty"`
-	} `json:"license,omitempty"`
-	Expression string `json:"expression,omitempty"`
+	License    *cdxLicenseChoice `json:"license,omitempty"`
+	Expression string            `json:"expression,omitempty"`
+}
+
+type cdxLicenseChoice struct {
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
 }
 
 type cdxComponent struct {
@@ -209,30 +211,6 @@ func ExportSBOM(stored []byte, format SBOMFormat, subject string, now time.Time)
 	}
 }
 
-func licenseChoices(c Component) []cdxLicense {
-	out := make([]cdxLicense, 0, len(c.Licenses))
-	for _, l := range c.Licenses {
-		if ids := LicenseIDs(l); len(ids) == 1 && ids[0] == l {
-			out = append(out, cdxLicense{
-				License: &struct {
-					ID   string `json:"id,omitempty"`
-					Name string `json:"name,omitempty"`
-				}{
-					ID: l,
-				},
-			})
-
-			continue
-		}
-
-		out = append(out, cdxLicense{
-			Expression: l,
-		})
-	}
-
-	return out
-}
-
 // cycloneDXDocument writes components as a CycloneDX 1.6 JSON document.
 func cycloneDXDocument(comps []Component, subject string, now time.Time) ([]byte, error) {
 	type metadata struct {
@@ -284,7 +262,7 @@ func cycloneDXDocument(comps []Component, subject string, now time.Time) ([]byte
 			Name:     c.Name,
 			Version:  c.Version,
 			PURL:     c.PURL,
-			Licenses: licenseChoices(c),
+			Licenses: parseComponentLicenses(c.Licenses).cycloneDXLicenses(),
 		})
 	}
 
@@ -327,8 +305,9 @@ func spdxDocument(comps []Component, subject string, now time.Time) ([]byte, err
 			Created  string   `json:"created"`
 			Creators []string `json:"creators"`
 		} `json:"creationInfo"`
-		Packages      []pkg          `json:"packages"`
-		Relationships []relationship `json:"relationships"`
+		Packages          []pkg                  `json:"packages"`
+		Relationships     []relationship         `json:"relationships"`
+		LicenseReferences []spdxLicenseReference `json:"hasExtractedLicensingInfos,omitempty"`
 	}{
 		SPDXVersion:       "SPDX-2.3",
 		DataLicense:       "CC0-1.0",
@@ -343,13 +322,12 @@ func spdxDocument(comps []Component, subject string, now time.Time) ([]byte, err
 		"Tool: relic",
 	}
 
+	defined := map[string]bool{}
+
 	for i, c := range comps {
 		id := fmt.Sprintf("SPDXRef-Package-%d", i+1)
-		license := "NOASSERTION"
-
-		if len(c.Licenses) > 0 {
-			license = strings.Join(c.Licenses, " AND ")
-		}
+		licenses := parseComponentLicenses(c.Licenses)
+		doc.LicenseReferences = append(doc.LicenseReferences, licenses.spdxLicenseReferences(defined)...)
 
 		p := pkg{
 			SPDXID:           id,
@@ -357,7 +335,7 @@ func spdxDocument(comps []Component, subject string, now time.Time) ([]byte, err
 			VersionInfo:      c.Version,
 			DownloadLocation: "NOASSERTION",
 			LicenseConcluded: "NOASSERTION",
-			LicenseDeclared:  license,
+			LicenseDeclared:  licenses.spdxExpression(),
 		}
 		if c.Type == "operating-system" {
 			p.PrimaryPurpose = "OPERATING-SYSTEM"

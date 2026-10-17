@@ -152,6 +152,175 @@ func TestImportedSBOMs(t *testing.T) {
 	}
 }
 
+func TestExportedLicenses(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		licenses  []string
+		cycloneDX string
+		spdx      string
+		extracted []string
+	}{
+		{
+			name: "a listed license",
+			licenses: []string{
+				"mit",
+			},
+			cycloneDX: `[{"license":{"id":"MIT"}}]`,
+			spdx:      "MIT",
+		},
+		{
+			name: "a license name",
+			licenses: []string{
+				"The Apache Software License, Version 2.0",
+			},
+			cycloneDX: `[{"license":{"name":"The Apache Software License, Version 2.0"}}]`,
+			spdx:      "LicenseRef-The-Apache-Software-License-Version-2.0",
+			extracted: []string{
+				"LicenseRef-The-Apache-Software-License-Version-2.0=The Apache Software License, Version 2.0",
+			},
+		},
+		{
+			name: "a listed license and a name",
+			licenses: []string{
+				"Custom, see LICENSE file",
+				"MIT",
+			},
+			cycloneDX: `[{"license":{"name":"Custom, see LICENSE file"}},{"license":{"id":"MIT"}}]`,
+			spdx:      "LicenseRef-Custom-see-LICENSE-file AND MIT",
+			extracted: []string{
+				"LicenseRef-Custom-see-LICENSE-file=Custom, see LICENSE file",
+			},
+		},
+		{
+			name: "an expression and a listed license",
+			licenses: []string{
+				"MIT OR Apache-2.0",
+				"BSD-3-Clause",
+			},
+			cycloneDX: `[{"expression":"(MIT OR Apache-2.0) AND BSD-3-Clause"}]`,
+			spdx:      "(MIT OR Apache-2.0) AND BSD-3-Clause",
+		},
+		{
+			name: "a license reference",
+			licenses: []string{
+				"LicenseRef-Custom",
+			},
+			cycloneDX: `[{"expression":"LicenseRef-Custom"}]`,
+			spdx:      "LicenseRef-Custom",
+			extracted: []string{
+				"LicenseRef-Custom=NOASSERTION",
+			},
+		},
+		{
+			name: "a license with an exception",
+			licenses: []string{
+				"GPL-2.0-or-later WITH Classpath-exception-2.0",
+			},
+			cycloneDX: `[{"expression":"GPL-2.0-or-later WITH Classpath-exception-2.0"}]`,
+			spdx:      "GPL-2.0-or-later WITH Classpath-exception-2.0",
+		},
+		{
+			name: "an expression and a name",
+			licenses: []string{
+				"MIT OR Apache-2.0",
+				"Custom",
+			},
+			cycloneDX: `[{"expression":"(MIT OR Apache-2.0) AND LicenseRef-Custom"}]`,
+			spdx:      "(MIT OR Apache-2.0) AND LicenseRef-Custom",
+			extracted: []string{
+				"LicenseRef-Custom=Custom",
+			},
+		},
+		{
+			name:      "no license",
+			cycloneDX: `null`,
+			spdx:      "NOASSERTION",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			comps := []Component{
+				newComponent("foo", "1", "library", "pkg:npm/foo@1", tt.licenses, nil),
+			}
+			now := time.Unix(1_800_000_000, 0)
+
+			cdxDoc, err := cycloneDXDocument(comps, "libs/foo", now)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var bom struct {
+				Components []struct {
+					Licenses json.RawMessage `json:"licenses"`
+				} `json:"components"`
+			}
+			if err := json.Unmarshal(cdxDoc, &bom); err != nil {
+				t.Fatal(err)
+			}
+
+			got := string(bom.Components[0].Licenses)
+			if got == "" {
+				got = "null"
+			}
+
+			if compact(t, got) != compact(t, tt.cycloneDX) {
+				t.Errorf("CycloneDX licenses = %s, want %s", got, tt.cycloneDX)
+			}
+
+			spdxDoc, err := spdxDocument(comps, "libs/foo", now)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var spdx struct {
+				Packages []struct {
+					LicenseDeclared string `json:"licenseDeclared"`
+				} `json:"packages"`
+				Extracted []struct {
+					LicenseID     string `json:"licenseId"`
+					ExtractedText string `json:"extractedText"`
+				} `json:"hasExtractedLicensingInfos"`
+			}
+			if err := json.Unmarshal(spdxDoc, &spdx); err != nil {
+				t.Fatal(err)
+			}
+
+			if spdx.Packages[0].LicenseDeclared != tt.spdx {
+				t.Errorf("SPDX licenseDeclared = %q, want %q", spdx.Packages[0].LicenseDeclared, tt.spdx)
+			}
+
+			extracted := make([]string, 0, len(spdx.Extracted))
+			for _, e := range spdx.Extracted {
+				extracted = append(extracted, e.LicenseID+"="+e.ExtractedText)
+			}
+
+			if !slices.Equal(extracted, tt.extracted) {
+				t.Errorf("SPDX extracted licenses = %q, want %q", extracted, tt.extracted)
+			}
+		})
+	}
+}
+
+func compact(t *testing.T, s string) string {
+	t.Helper()
+
+	var v any
+	if err := json.Unmarshal([]byte(s), &v); err != nil {
+		t.Fatal(err)
+	}
+
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return string(b)
+}
+
 func TestSPDXExportOfNoComponentsHasEmptyRelationships(t *testing.T) {
 	t.Parallel()
 
