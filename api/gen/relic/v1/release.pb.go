@@ -1505,7 +1505,8 @@ type PromoteReleaseRequest struct {
 	Include []string `protobuf:"bytes,5,rep,name=include,proto3" json:"include,omitempty"`
 	// exclude leaves these repositories out.
 	Exclude []string `protobuf:"bytes,6,rep,name=exclude,proto3" json:"exclude,omitempty"`
-	// move removes the files from the previous environment.
+	// move asks for a move; the server performs it as a copy, so the files
+	// stay in the repositories of the previous environment.
 	Move          bool `protobuf:"varint,7,opt,name=move,proto3" json:"move,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

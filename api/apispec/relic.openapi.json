@@ -7188,7 +7188,7 @@
           "move": {
             "type": "boolean",
             "title": "move",
-            "description": "move removes the files from the previous environment."
+            "description": "move asks for a move; the server performs it as a copy, so the files\n stay in the repositories of the previous environment."
           }
         },
         "title": "PromoteReleaseRequest",
@@ -13207,7 +13207,7 @@
           "ReleaseService"
         ],
         "summary": "PromoteRelease",
-        "description": "PromoteRelease copies (or moves) a completed version's artifacts into\n an environment's repositories. Every target must be writable by the\n caller.",
+        "description": "PromoteRelease copies a completed version's artifacts into an\n environment's repositories. Every target must be writable by the\n caller.",
         "operationId": "ReleaseService_PromoteRelease",
         "parameters": [
           {
@@ -13262,7 +13262,7 @@
                   "move": {
                     "type": "boolean",
                     "title": "move",
-                    "description": "move removes the files from the previous environment."
+                    "description": "move asks for a move; the server performs it as a copy, so the files\n stay in the repositories of the previous environment."
                   }
                 },
                 "title": "PromoteReleaseRequest",

@@ -722,7 +722,8 @@ export type PromoteReleaseRequest = Message<"relic.v1.PromoteReleaseRequest"> & 
   exclude: string[];
 
   /**
-   * move removes the files from the previous environment.
+   * move asks for a move; the server performs it as a copy, so the files
+   * stay in the repositories of the previous environment.
    *
    * @generated from field: bool move = 7;
    */
@@ -1020,8 +1021,8 @@ export const ReleaseService: GenService<{
     output: typeof SetReleaseTagResponseSchema;
   },
   /**
-   * PromoteRelease copies (or moves) a completed version's artifacts into
-   * an environment's repositories. Every target must be writable by the
+   * PromoteRelease copies a completed version's artifacts into an
+   * environment's repositories. Every target must be writable by the
    * caller.
    *
    * @generated from rpc relic.v1.ReleaseService.PromoteRelease

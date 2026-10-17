@@ -77,8 +77,8 @@ service ReleaseService {
       body: "*"
     };
   }
-  // PromoteRelease copies (or moves) a completed version's artifacts into
-  // an environment's repositories. Every target must be writable by the
+  // PromoteRelease copies a completed version's artifacts into an
+  // environment's repositories. Every target must be writable by the
   // caller.
   rpc PromoteRelease(PromoteReleaseRequest) returns (PromoteReleaseResponse) {
     option (relic.v1.access) = ACCESS_AUTHENTICATED;
@@ -292,7 +292,8 @@ message PromoteReleaseRequest {
   repeated string include = 5;
   // exclude leaves these repositories out.
   repeated string exclude = 6;
-  // move removes the files from the previous environment.
+  // move asks for a move; the server performs it as a copy, so the files
+  // stay in the repositories of the previous environment.
   bool move = 7;
 }
 
