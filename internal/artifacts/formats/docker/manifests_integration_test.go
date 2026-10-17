@@ -167,3 +167,43 @@ func TestPromotingATagLeavesTheImageNamedAfterIt(t *testing.T) {
 		t.Errorf("app/b:latest in the target = %v, want ErrManifestUnknown", err)
 	}
 }
+
+func TestManifestDigestsBelongToOneImage(t *testing.T) {
+	t.Parallel()
+
+	reg := newRegistry(t, "docker-local")
+	manifest := reg.pushImage("docker-local", "app/b", "latest", "a shared layer")
+	reg.pushImage("docker-local", "app/c", "only", "a shared layer")
+
+	digest := "sha256:" + sha256Hex(manifest)
+
+	if err := reg.manifestErr("docker-local", "app", digest); !errors.Is(err, docker.ErrManifestUnknown) {
+		t.Errorf("app@digest held only by app/b and app/c = %v, want ErrManifestUnknown", err)
+	}
+
+	if err := reg.svc.DeleteManifest(t.Context(), "docker-local", "app", digest); !errors.Is(
+		err,
+		docker.ErrManifestUnknown,
+	) {
+		t.Errorf("deleting app@digest = %v, want ErrManifestUnknown", err)
+	}
+
+	for _, image := range []string{
+		"app/b",
+		"app/c",
+	} {
+		if err := reg.manifestErr("docker-local", image, digest); err != nil {
+			t.Errorf("%s@digest: %v", image, err)
+		}
+	}
+
+	if err := reg.svc.DeleteManifest(t.Context(), "docker-local", "app/b", digest); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := reg.tags("docker-local", "app/c"); !slices.Equal(got, []string{
+		"only",
+	}) {
+		t.Errorf("tags of app/c after deleting app/b@digest = %v, want [only]", got)
+	}
+}

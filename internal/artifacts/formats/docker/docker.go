@@ -448,22 +448,16 @@ func (s *Service) GetManifest(ctx context.Context, repoKey, image, ref string) (
 	var item repository.Item
 
 	if h, ok := ParseDigest(ref); ok {
-		items, err := s.repos.FindBySHA256(ctx, repoKey, image, h)
+		items, err := s.manifestsWithDigest(ctx, repoKey, image, h)
 		if err != nil {
 			return Manifest{}, err
 		}
 
-		i := slices.IndexFunc(
-			items,
-			func(it repository.Item) bool {
-				return it.Name == ManifestFile || it.Name == ListFile
-			},
-		)
-		if i < 0 {
+		if len(items) == 0 {
 			return Manifest{}, ErrManifestUnknown
 		}
 
-		item = items[i]
+		item = items[0]
 	} else {
 		var err error
 		for _, name := range []string{
@@ -531,33 +525,36 @@ func (s *Service) DeleteManifest(ctx context.Context, repoKey, image, ref string
 
 	h, _ := ParseDigest(ref)
 
-	items, err := s.repos.FindBySHA256(ctx, repoKey, image, h)
+	items, err := s.manifestsWithDigest(ctx, repoKey, image, h)
 	if err != nil {
 		return err
 	}
 
-	found := false
-
-	for _, it := range items {
-		if it.Name == ManifestFile || it.Name == ListFile {
-			found = true
-
-			if err := s.deleteTagFolder(
-				ctx,
-				repoKey,
-				it.Parent,
-			); err != nil &&
-				!errors.Is(err, repository.ErrNotFound) {
-				return err
-			}
-		}
-	}
-
-	if !found {
+	if len(items) == 0 {
 		return ErrManifestUnknown
 	}
 
+	for _, it := range items {
+		err := s.deleteTagFolder(ctx, repoKey, it.Parent)
+		if err != nil && !errors.Is(err, repository.ErrNotFound) {
+			return err
+		}
+	}
+
 	return nil
+}
+
+// manifestsWithDigest returns image's manifests with the hex digest h,
+// leaving out those of the images nested under image.
+func (s *Service) manifestsWithDigest(ctx context.Context, repoKey, image, h string) ([]repository.Item, error) {
+	items, err := s.repos.FindBySHA256(ctx, repoKey, image, h)
+	if err != nil {
+		return nil, err
+	}
+
+	return slices.DeleteFunc(items, func(it repository.Item) bool {
+		return path.Dir(it.Parent) != image || it.Name != ManifestFile && it.Name != ListFile
+	}), nil
 }
 
 // deleteTagFolder deletes the manifest and blobs of a tag folder, which is
