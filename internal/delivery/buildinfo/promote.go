@@ -82,7 +82,10 @@ func (s *Service) Promote(
 		return nil, fmt.Errorf("%w: targetRepo or status is required", ErrInvalid)
 	}
 
-	items, err := s.buildItems(ctx, b, req.SourceRepository, req.Dependencies)
+	items, err := s.buildItems(ctx, b, itemQuery{
+		sourceRepository: req.SourceRepository,
+		dependencies:     req.Dependencies,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -175,24 +178,49 @@ func (s *Service) Promote(
 	return msgs, nil
 }
 
-func (s *Service) buildItems(
-	ctx context.Context,
-	b database.Build,
-	sourceRepo string,
-	withDeps bool,
-) ([]repository.Item, error) {
+// itemQuery selects the stored files of a build run.
+type itemQuery struct {
+	// sourceRepository limits the files to one repository; empty for all.
+	sourceRepository string
+	// dependencies adds the run's dependencies to its artifacts.
+	dependencies bool
+	// recordedOnly leaves out files that only share a recorded file's content.
+	recordedOnly bool
+}
+
+// recordedFile is a file a build run lists: its content and, for an
+// artifact, the path it was deployed to.
+type recordedFile struct {
+	sha1 string
+	path string
+}
+
+// match says how surely a stored file is one a build run recorded.
+type match int
+
+const (
+	matchContent match = iota
+	matchBuildName
+	matchPath
+	matchBuildRun
+)
+
+func (s *Service) buildItems(ctx context.Context, b database.Build, query itemQuery) ([]repository.Item, error) {
 	arts, err := s.db.ListBuildArtifacts(ctx, b.ID)
 	if err != nil {
 		return nil, fmt.Errorf("list build artifacts: %w", err)
 	}
 
-	sha1s := make([]string, 0, len(arts))
+	files := make([]recordedFile, 0, len(arts))
 	for _, a := range arts {
-		sha1s = append(sha1s, a.Sha1)
+		files = append(files, recordedFile{
+			sha1: a.Sha1,
+			path: a.Path,
+		})
 	}
 
-	items, err := s.itemsBySHA1(ctx, b, sha1s, sourceRepo, true)
-	if err != nil || !withDeps {
+	items, err := s.recordedItems(ctx, b, files, query, true)
+	if err != nil || !query.dependencies {
 		return items, err
 	}
 
@@ -201,25 +229,37 @@ func (s *Service) buildItems(
 		return nil, fmt.Errorf("list build dependencies: %w", err)
 	}
 
-	depSHA1s := make([]string, 0, len(deps))
+	depFiles := make([]recordedFile, 0, len(deps))
 	for _, d := range deps {
-		depSHA1s = append(depSHA1s, d.Sha1)
+		depFiles = append(depFiles, recordedFile{
+			sha1: d.Sha1,
+		})
 	}
 
-	depItems, err := s.itemsBySHA1(ctx, b, depSHA1s, sourceRepo, false)
+	depItems, err := s.recordedItems(ctx, b, depFiles, query, false)
 
 	return append(items, depItems...), err
 }
 
-func (s *Service) itemsBySHA1(
+func (s *Service) recordedItems(
 	ctx context.Context,
 	b database.Build,
-	sha1s []string,
-	sourceRepo string,
+	files []recordedFile,
+	query itemQuery,
 	all bool,
 ) ([]repository.Item, error) {
-	if len(sha1s) == 0 {
+	if len(files) == 0 {
 		return nil, nil
+	}
+
+	sha1s := make([]string, 0, len(files))
+	paths := map[string][]string{}
+
+	for _, f := range files {
+		sha1s = append(sha1s, f.sha1)
+		if f.path != "" {
+			paths[f.sha1] = append(paths[f.sha1], f.path)
+		}
 	}
 
 	rows, err := s.db.FindItemsBySHA1(
@@ -228,49 +268,54 @@ func (s *Service) itemsBySHA1(
 			BuildName:   b.Name,
 			BuildNumber: b.Number,
 			Sha1s:       sha1s,
-			SourceRepo:  sourceRepo,
+			SourceRepo:  query.sourceRepository,
 		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("find build items: %w", err)
 	}
 
-	type tiered struct {
-		tier  int
+	type ranked struct {
+		match match
 		items []database.Item
 	}
 
-	best := map[string]*tiered{}
+	best := map[string]*ranked{}
 
 	var order []string
 
 	for _, r := range rows {
-		tier := 0
+		sha := *r.Item.Sha1
+		m := matchContent
 
 		switch {
 		case r.HasBuildName && r.HasBuildNumber:
-			tier = 2
+			m = matchBuildRun
+		case recordedAt(paths[sha], r.Item):
+			m = matchPath
 		case r.HasBuildName:
-			tier = 1
+			m = matchBuildName
 		}
 
-		sha := *r.Item.Sha1
+		if query.recordedOnly && m == matchContent {
+			continue
+		}
 
 		t, ok := best[sha]
 		switch {
 		case !ok:
-			best[sha] = &tiered{
-				tier: tier,
+			best[sha] = &ranked{
+				match: m,
 				items: []database.Item{
 					r.Item,
 				},
 			}
 			order = append(order, sha)
-		case tier > t.tier:
-			t.tier, t.items = tier, []database.Item{
+		case m > t.match:
+			t.match, t.items = m, []database.Item{
 				r.Item,
 			}
-		case tier == t.tier && all && tier > 0:
+		case m == t.match && all && m > matchContent:
 			t.items = append(t.items, r.Item)
 		}
 	}
@@ -291,6 +336,16 @@ func (s *Service) itemsBySHA1(
 	return out, nil
 }
 
+// recordedAt reports whether it is at one of the recorded paths, which name
+// the file inside its repository or start with the repository.
+func recordedAt(paths []string, it database.Item) bool {
+	full := repository.JoinPath(it.Path, it.Name)
+
+	return slices.ContainsFunc(paths, func(p string) bool {
+		return p == full || p == it.RepoKey+"/"+full
+	})
+}
+
 // Artifacts returns the stored files of a build's artifacts.
 func (s *Service) Artifacts(
 	ctx context.Context,
@@ -302,7 +357,7 @@ func (s *Service) Artifacts(
 		return nil, err
 	}
 
-	items, err := s.buildItems(ctx, b, "", false)
+	items, err := s.buildItems(ctx, b, itemQuery{})
 	if err != nil {
 		return nil, err
 	}
@@ -425,7 +480,9 @@ func (s *Service) deleteRunFiles(
 			return err
 		}
 
-		items, err := s.buildItems(ctx, b, "", false)
+		items, err := s.buildItems(ctx, b, itemQuery{
+			recordedOnly: true,
+		})
 		if err != nil {
 			return err
 		}
@@ -485,5 +542,7 @@ func (s *Service) Items(ctx context.Context, project, name, number string, withD
 		return nil, err
 	}
 
-	return s.buildItems(ctx, b, "", withDeps)
+	return s.buildItems(ctx, b, itemQuery{
+		dependencies: withDeps,
+	})
 }
