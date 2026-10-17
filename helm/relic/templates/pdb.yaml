@@ -1,6 +1,11 @@
-{{- $fewestReplicas := ternary .Values.server.autoscaling.minReplicas .Values.server.replicas .Values.server.autoscaling.enabled }}
-{{- $drainable := gt (int $fewestReplicas) (int .Values.server.podDisruptionBudget.minAvailable) }}
-{{- if and .Values.server.podDisruptionBudget.enabled $drainable (not (include "relic.singleNode" .)) }}
+{{- $fewestReplicas := int (ternary .Values.server.autoscaling.minReplicas .Values.server.replicas .Values.server.autoscaling.enabled) }}
+{{- $minAvailable := toString .Values.server.podDisruptionBudget.minAvailable }}
+{{- $requiredReplicas := int $minAvailable }}
+{{- if hasSuffix "%" $minAvailable }}
+{{- $percent := trimSuffix "%" $minAvailable | int }}
+{{- $requiredReplicas = div (add (mul $fewestReplicas $percent) 99) 100 }}
+{{- end }}
+{{- if and .Values.server.podDisruptionBudget.enabled (gt $fewestReplicas (int $requiredReplicas)) (not (include "relic.singleNode" .)) }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:

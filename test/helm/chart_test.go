@@ -510,6 +510,34 @@ func TestChartDisruptionBudgetLeavesADrainablePod(t *testing.T) {
 			},
 			true,
 		},
+		{
+			"half of one replica",
+			[]string{
+				"--set",
+				"server.replicas=1",
+				"--set",
+				"server.podDisruptionBudget.minAvailable=50%",
+			},
+			false,
+		},
+		{
+			"half of two replicas",
+			[]string{
+				"--set",
+				"server.podDisruptionBudget.minAvailable=50%",
+			},
+			true,
+		},
+		{
+			"all of three replicas",
+			[]string{
+				"--set",
+				"server.replicas=3",
+				"--set",
+				"server.podDisruptionBudget.minAvailable=100%",
+			},
+			false,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
