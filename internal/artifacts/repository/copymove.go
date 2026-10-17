@@ -260,6 +260,7 @@ func copyInTx(ctx context.Context, q database.Querier, plan *copyPlan, now time.
 			in.User,
 			now,
 			destination.Config.Immutable,
+			in.Move,
 		); err != nil {
 			return err
 		}
@@ -376,10 +377,23 @@ func copyItem(
 	it Item,
 	repoKey, target, user string,
 	now time.Time,
-	immutable bool,
+	immutable, move bool,
 ) error {
 	parent, name := SplitPath(target)
+	keepCreated := move
+
 	if it.IsFolder() {
+		_, err := q.GetItem(ctx, database.GetItemParams{
+			RepoKey: repoKey,
+			Path:    parent,
+			Name:    name,
+		})
+		if err != nil && !database.IsNoRows(err) {
+			return fmt.Errorf("get %s/%s: %w", repoKey, target, err)
+		}
+
+		keepCreated = move && err != nil
+
 		if err := ensureFolders(ctx, q, repoKey, target, user, now); err != nil {
 			return err
 		}
@@ -411,6 +425,16 @@ func copyItem(
 	})
 	if err != nil {
 		return fmt.Errorf("get %s/%s: %w", it.Repository, it.Path(), err)
+	}
+
+	if keepCreated {
+		if err := q.SetItemCreated(ctx, database.SetItemCreatedParams{
+			ID:        id.ID,
+			Created:   srcRow.Created,
+			CreatedBy: srcRow.CreatedBy,
+		}); err != nil {
+			return fmt.Errorf("keep the creation of %s/%s: %w", repoKey, target, err)
+		}
 	}
 
 	rows, err := q.GetItemProperties(ctx, srcRow.ID)

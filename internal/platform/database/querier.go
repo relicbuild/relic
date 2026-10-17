@@ -354,6 +354,7 @@ type Querier interface {
 	SearchNpmVersions(ctx context.Context, arg SearchNpmVersionsParams) ([]SearchNpmVersionsRow, error)
 	SetCVEEPSS(ctx context.Context, arg SetCVEEPSSParams) error
 	SetCVEKEV(ctx context.Context, arg SetCVEKEVParams) error
+	SetItemCreated(ctx context.Context, arg SetItemCreatedParams) error
 	SetMaliciousChecked(ctx context.Context, arg SetMaliciousCheckedParams) error
 	SetNpmDeprecated(ctx context.Context, arg SetNpmDeprecatedParams) (int64, error)
 	SetNpmDistTag(ctx context.Context, arg SetNpmDistTagParams) error

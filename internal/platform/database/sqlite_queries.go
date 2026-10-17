@@ -1523,6 +1523,9 @@ UPDATE cves SET
     kev_action = coalesce((SELECT e.action FROM entries e WHERE e.id = cves.id), '')
 WHERE kev_added IS NOT NULL OR id IN (SELECT id FROM entries);`
 
+const sqliteSetItemCreated = `-- name: SetItemCreated :exec
+UPDATE items SET created = @created, created_by = @created_by WHERE id = @id;`
+
 const sqliteSetMaliciousChecked = `-- name: SetMaliciousChecked :exec
 UPDATE scan_artifacts SET malicious_checked = @checked WHERE sha256 = @sha256;`
 
@@ -7162,6 +7165,12 @@ func (q *sqliteQueries) SetCVEEPSS(ctx context.Context, arg SetCVEEPSSParams) er
 
 func (q *sqliteQueries) SetCVEKEV(ctx context.Context, arg SetCVEKEVParams) error {
 	_, err := q.db.ExecContext(ctx, sqliteSetCVEKEV, sql.Named("ids", sqliteJSON(arg.Ids)), sql.Named("added", sqliteTimes(arg.Added)), sql.Named("due", sqliteTimes(arg.Due)), sql.Named("ransomware", sqliteJSON(arg.Ransomware)), sql.Named("actions", sqliteJSON(arg.Actions)))
+
+	return err
+}
+
+func (q *sqliteQueries) SetItemCreated(ctx context.Context, arg SetItemCreatedParams) error {
+	_, err := q.db.ExecContext(ctx, sqliteSetItemCreated, sql.Named("created", sqliteTime(arg.Created)), sql.Named("created_by", arg.CreatedBy), sql.Named("id", arg.ID.String()))
 
 	return err
 }

@@ -869,3 +869,18 @@ func (q *Queries) SearchItemsByName(ctx context.Context, arg SearchItemsByNamePa
 	}
 	return items, nil
 }
+
+const setItemCreated = `-- name: SetItemCreated :exec
+UPDATE items SET created = $1, created_by = $2 WHERE id = $3
+`
+
+type SetItemCreatedParams struct {
+	Created   time.Time
+	CreatedBy string
+	ID        uuid.UUID
+}
+
+func (q *Queries) SetItemCreated(ctx context.Context, arg SetItemCreatedParams) error {
+	_, err := q.db.Exec(ctx, setItemCreated, arg.Created, arg.CreatedBy, arg.ID)
+	return err
+}

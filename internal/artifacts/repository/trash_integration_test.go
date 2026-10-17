@@ -110,6 +110,73 @@ func TestPurgeTrashKeepsNewerEntriesBelowAnExpiredOne(t *testing.T) {
 	}
 }
 
+func TestMoveAndRestoreKeepWhenAndByWhomAFileWasCreated(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	s, _, _ := newTestService(t)
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	clock := start
+	s.now = func() time.Time {
+		return clock
+	}
+
+	original := deploy(t, s, "dk/keep/k.txt", "keep")
+
+	clock = start.Add(time.Hour)
+
+	src, err := s.Stat(ctx, "generic-local", "dk")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Copy(ctx, CopyInput{
+		Source:                src,
+		DestinationRepository: "generic-local",
+		DestinationPath:       "moved",
+		Move:                  true,
+		User:                  "mover",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	check := func(when, path string) {
+		t.Helper()
+
+		it, err := s.Stat(ctx, "generic-local", path)
+		if err != nil {
+			t.Fatalf("%s: %v", when, err)
+		}
+
+		if !it.Created.Equal(original.Created) || it.CreatedBy != original.CreatedBy {
+			t.Errorf(
+				"%s: created %v by %q, want %v by %q",
+				when,
+				it.Created,
+				it.CreatedBy,
+				original.Created,
+				original.CreatedBy,
+			)
+		}
+	}
+
+	check("after the move", "moved/keep/k.txt")
+
+	clock = start.Add(2 * time.Hour)
+
+	if err := s.DeleteToTrash(ctx, "generic-local", "moved/keep/k.txt", "mover"); err != nil {
+		t.Fatal(err)
+	}
+
+	clock = start.Add(3 * time.Hour)
+
+	if err := s.RestoreFromTrash(ctx, "generic-local/moved/keep/k.txt", "", "", "mover"); err != nil {
+		t.Fatal(err)
+	}
+
+	check("after a trip through the trash", "moved/keep/k.txt")
+}
+
 func TestRestoreDropsTrashPropertiesOfNestedEntries(t *testing.T) {
 	t.Parallel()
 
