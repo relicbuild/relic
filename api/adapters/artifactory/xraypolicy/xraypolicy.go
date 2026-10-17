@@ -223,10 +223,7 @@ func PolicyFromXray(p Policy) policy.Policy {
 }
 
 // KeepRelicCriteria copies onto updated's rules the criteria a policy
-// document cannot carry (conditions, malicious packages, secrets,
-// misconfigurations, operational risks, reachability) from the stored
-// rules of the same name, so that updating a policy through a document
-// read from GET leaves them as they were.
+// document cannot carry from the stored rules of the same name.
 func KeepRelicCriteria(updated, stored policy.Policy) policy.Policy {
 	byName := make(map[string]policy.Rule, len(stored.Rules))
 	for _, r := range stored.Rules {
@@ -240,17 +237,32 @@ func KeepRelicCriteria(updated, stored policy.Policy) policy.Policy {
 		}
 
 		r.Condition = s.Condition
-		r.Malicious = s.Malicious
-		r.Secrets = s.Secrets
-		r.LiveSecrets = s.LiveSecrets
-		r.Misconfigurations = s.Misconfigurations
-		r.EndOfLife = s.EndOfLife
-		r.Unmaintained = s.Unmaintained
 		r.IgnoreUnreachable = s.IgnoreUnreachable
+
+		if keepsSelection(r, s) {
+			r.Malicious = s.Malicious
+			r.Secrets = s.Secrets
+			r.LiveSecrets = s.LiveSecrets
+			r.Misconfigurations = s.Misconfigurations
+			r.EndOfLife = s.EndOfLife
+			r.Unmaintained = s.Unmaintained
+		}
+
 		updated.Rules[i] = r
 	}
 
 	return updated
+}
+
+// keepsSelection reports whether updated still selects findings the way
+// stored does: it sets no CVSS range, and a minimum severity only where
+// stored grades its findings by severity.
+func keepsSelection(updated, stored policy.Rule) bool {
+	if updated.CVSS != nil {
+		return false
+	}
+
+	return updated.MinSeverity == "" || stored.Misconfigurations || stored.EndOfLife
 }
 
 // PolicyToXray renders a policy as a policy document.

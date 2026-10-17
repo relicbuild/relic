@@ -50,8 +50,14 @@ func (h *Handler) putPolicy(w http.ResponseWriter, r *http.Request) {
 
 	if !create {
 		stored, err := h.admin.Policy(r.Context(), p.Name)
-		if err == nil {
+
+		switch {
+		case err == nil:
 			p = xraypolicy.KeepRelicCriteria(p, stored)
+		case !errors.Is(err, policy.ErrNotFound):
+			h.adminError(w, r, err)
+
+			return
 		}
 	}
 

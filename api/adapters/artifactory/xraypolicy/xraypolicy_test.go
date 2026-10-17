@@ -220,3 +220,155 @@ func same(t *testing.T, name string, got any, want string) {
 		t.Errorf("%s:\ngot  %s\nwant %s", name, b, want)
 	}
 }
+
+func TestKeepRelicCriteria(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		stored  policy.Rule
+		updated policy.Rule
+		want    policy.Rule
+	}{
+		"a malicious rule sent back unchanged stays malicious": {
+			stored: policy.Rule{
+				Name:      "r",
+				Malicious: true,
+			},
+			updated: policy.Rule{
+				Name: "r",
+			},
+			want: policy.Rule{
+				Name:      "r",
+				Malicious: true,
+			},
+		},
+		"a malicious rule given a minimum severity becomes a severity rule": {
+			stored: policy.Rule{
+				Name:      "r",
+				Malicious: true,
+			},
+			updated: policy.Rule{
+				Name:        "r",
+				MinSeverity: scan.SeverityHigh,
+			},
+			want: policy.Rule{
+				Name:        "r",
+				MinSeverity: scan.SeverityHigh,
+			},
+		},
+		"a secrets rule given a CVSS range becomes a CVSS rule": {
+			stored: policy.Rule{
+				Name:    "r",
+				Secrets: true,
+			},
+			updated: policy.Rule{
+				Name: "r",
+				CVSS: &policy.CVSSRange{
+					From: 7,
+					To:   10,
+				},
+			},
+			want: policy.Rule{
+				Name: "r",
+				CVSS: &policy.CVSSRange{
+					From: 7,
+					To:   10,
+				},
+			},
+		},
+		"a misconfiguration rule keeps its kind under a new minimum severity": {
+			stored: policy.Rule{
+				Name:              "r",
+				MinSeverity:       scan.SeverityHigh,
+				Misconfigurations: true,
+			},
+			updated: policy.Rule{
+				Name:        "r",
+				MinSeverity: scan.SeverityCritical,
+			},
+			want: policy.Rule{
+				Name:              "r",
+				MinSeverity:       scan.SeverityCritical,
+				Misconfigurations: true,
+			},
+		},
+		"a severity rule keeps its condition and reachability": {
+			stored: policy.Rule{
+				Name:              "r",
+				MinSeverity:       scan.SeverityHigh,
+				Condition:         `package_name == "x"`,
+				IgnoreUnreachable: true,
+			},
+			updated: policy.Rule{
+				Name:        "r",
+				MinSeverity: scan.SeverityCritical,
+			},
+			want: policy.Rule{
+				Name:              "r",
+				MinSeverity:       scan.SeverityCritical,
+				Condition:         `package_name == "x"`,
+				IgnoreUnreachable: true,
+			},
+		},
+		"a malicious rule given a CVSS range keeps its condition": {
+			stored: policy.Rule{
+				Name:      "r",
+				Malicious: true,
+				Condition: `package_name == "x"`,
+			},
+			updated: policy.Rule{
+				Name: "r",
+				CVSS: &policy.CVSSRange{
+					From: 9,
+					To:   10,
+				},
+			},
+			want: policy.Rule{
+				Name:      "r",
+				Condition: `package_name == "x"`,
+				CVSS: &policy.CVSSRange{
+					From: 9,
+					To:   10,
+				},
+			},
+		},
+		"a new rule takes nothing from another": {
+			stored: policy.Rule{
+				Name:      "old",
+				Malicious: true,
+				Condition: `package_name == "x"`,
+			},
+			updated: policy.Rule{
+				Name:        "new",
+				MinSeverity: scan.SeverityLow,
+			},
+			want: policy.Rule{
+				Name:        "new",
+				MinSeverity: scan.SeverityLow,
+			},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got := KeepRelicCriteria(
+				policy.Policy{
+					Rules: []policy.Rule{
+						tt.updated,
+					},
+				},
+				policy.Policy{
+					Rules: []policy.Rule{
+						tt.stored,
+					},
+				},
+			)
+
+			if !reflect.DeepEqual(got.Rules[0], tt.want) {
+				t.Errorf("rule = %+v, want %+v", got.Rules[0], tt.want)
+			}
+		})
+	}
+}
