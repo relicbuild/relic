@@ -207,3 +207,69 @@ func TestManifestDigestsBelongToOneImage(t *testing.T) {
 		t.Errorf("tags of app/c after deleting app/b@digest = %v, want [only]", got)
 	}
 }
+
+func TestMovingOneTagOfAnIndexKeepsTheOtherTagsPullable(t *testing.T) {
+	t.Parallel()
+
+	reg := newRegistry(t, "docker-local", "docker-prod")
+	amd64 := reg.imageManifest("docker-local", "multi", "the amd64 layer")
+	arm64 := reg.imageManifest("docker-local", "multi", "the arm64 layer")
+
+	children := []string{
+		"sha256:" + sha256Hex(amd64),
+		"sha256:" + sha256Hex(arm64),
+	}
+	reg.putManifest("docker-local", "multi", children[0], docker.MediaTypeOCIManifest, amd64)
+	reg.putManifest("docker-local", "multi", children[1], docker.MediaTypeOCIManifest, arm64)
+
+	index := fmt.Sprintf(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[`+
+		`{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":%q,"size":%d,`+
+		`"platform":{"os":"linux","architecture":"amd64"}},`+
+		`{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":%q,"size":%d,`+
+		`"platform":{"os":"linux","architecture":"arm64"}}]}`,
+		children[0], len(amd64), children[1], len(arm64))
+	for _, tag := range []string{
+		"1",
+		"latest",
+	} {
+		reg.putManifest("docker-local", "multi", tag, docker.MediaTypeOCIIndex, index)
+	}
+
+	promote := func(tag string) {
+		t.Helper()
+
+		if err := reg.svc.Promote(t.Context(), docker.PromoteInput{
+			SourceRepository: "docker-local",
+			TargetRepository: "docker-prod",
+			Image:            "multi",
+			Tag:              tag,
+			User:             "admin",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	promote("1")
+
+	for _, child := range children {
+		if err := reg.manifestErr("docker-local", "multi", child); err != nil {
+			t.Errorf("platform manifest %s of latest after moving tag 1: %v", child, err)
+		}
+
+		if err := reg.manifestErr("docker-prod", "multi", child); err != nil {
+			t.Errorf("platform manifest %s of the moved tag 1: %v", child, err)
+		}
+	}
+
+	promote("latest")
+
+	for _, child := range children {
+		if err := reg.manifestErr("docker-local", "multi", child); !errors.Is(err, docker.ErrManifestUnknown) {
+			t.Errorf("platform manifest %s after moving every tag of it = %v, want ErrManifestUnknown", child, err)
+		}
+
+		if err := reg.manifestErr("docker-prod", "multi", child); err != nil {
+			t.Errorf("platform manifest %s in the target: %v", child, err)
+		}
+	}
+}

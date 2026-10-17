@@ -958,10 +958,11 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) error {
 		}
 
 		targetTag := cmp.Or(in.TargetTag, tag)
-		folders := [][2]string{
+		folders := []promotedFolder{
 			{
-				in.Image + "/" + tag,
-				in.TargetImage + "/" + targetTag,
+				source: in.Image + "/" + tag,
+				target: in.TargetImage + "/" + targetTag,
+				move:   !in.Copy,
 			},
 		}
 
@@ -971,10 +972,18 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) error {
 				return err
 			}
 
+			kept := map[string]bool{}
+			if !in.Copy {
+				if kept, err = s.childFoldersOfOtherTags(ctx, in.SourceRepository, in.Image, tag); err != nil {
+					return err
+				}
+			}
+
 			for _, c := range children {
-				folders = append(folders, [2]string{
-					in.Image + "/" + c,
-					in.TargetImage + "/" + c,
+				folders = append(folders, promotedFolder{
+					source: in.Image + "/" + c,
+					target: in.TargetImage + "/" + c,
+					move:   !in.Copy && !kept[c],
 				})
 			}
 		}
@@ -985,7 +994,7 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) error {
 		)
 
 		for i, f := range folders {
-			src, err := s.repos.Stat(ctx, in.SourceRepository, f[0])
+			src, err := s.repos.Stat(ctx, in.SourceRepository, f.source)
 			if errors.Is(err, repository.ErrNotFound) && i > 0 {
 				continue
 			}
@@ -995,10 +1004,10 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) error {
 			}
 
 			if i > 0 {
-				childTargets = append(childTargets, f[1])
+				childTargets = append(childTargets, f.target)
 			}
 
-			folderCopies, err := s.tagFolderCopies(ctx, src, in.TargetRepository, f[1], !in.Copy, in.User)
+			folderCopies, err := s.tagFolderCopies(ctx, src, in.TargetRepository, f.target, f.move, in.User)
 			if err != nil {
 				return err
 			}
@@ -1048,6 +1057,45 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) error {
 	}
 
 	return nil
+}
+
+type promotedFolder struct {
+	source string
+	target string
+	move   bool
+}
+
+// childFoldersOfOtherTags returns the platform manifest folders that the
+// indexes of image's other tags and digests reference: a move of tag leaves
+// them in place.
+func (s *Service) childFoldersOfOtherTags(ctx context.Context, repoKey, image, tag string) (map[string]bool, error) {
+	indexes, err := s.repos.FilesNamed(ctx, repoKey, image, ListFile)
+	if err != nil {
+		return nil, err
+	}
+
+	folders := map[string]bool{}
+
+	for _, index := range indexes {
+		if path.Dir(index.Parent) != image || index.Parent == image+"/"+tag {
+			continue
+		}
+
+		children, err := s.childFolders(ctx, index)
+		if errors.Is(err, ErrManifestInvalid) {
+			continue
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		for _, c := range children {
+			folders[c] = true
+		}
+	}
+
+	return folders, nil
 }
 
 func (s *Service) childFolders(ctx context.Context, index repository.Item) ([]string, error) {
