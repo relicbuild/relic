@@ -205,13 +205,14 @@ func (g *globals) target() (serverTarget, error) {
 		}
 
 		if ctx, ok := c.find(name); ok {
-			if url == "" && g.url == "" {
+			chosen := cmp.Or(g.url, url)
+			if chosen == "" || strings.TrimRight(chosen, "/") == strings.TrimRight(ctx.URL, "/") {
 				url = ctx.URL
 				certificateAuthority = ctx.CertificateAuthority
-			}
 
-			if token == "" {
-				token = ctx.Token
+				if token == "" {
+					token = ctx.Token
+				}
 			}
 		} else if g.context != "" {
 			return serverTarget{}, fmt.Errorf("no context %q in the config file", g.context)

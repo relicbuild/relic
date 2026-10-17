@@ -490,13 +490,29 @@ func TestConfigAndTarget(t *testing.T) {
 			wantCertificateAuthority: "PEM-B",
 		},
 		{
-			name:    "a context's certificate authority stays with its server",
+			name:    "a context's token and certificate authority stay with its server",
 			context: "b",
 			env: map[string]string{
 				"RELIC_URL": "https://e.example",
 			},
+			wantURL: "https://e.example",
+		},
+		{
+			name:                     "--url naming the context's own server",
+			context:                  "b",
+			url:                      "https://b.example/",
+			wantURL:                  "https://b.example",
+			wantToken:                "tb",
+			wantCertificateAuthority: "PEM-B",
+		},
+		{
+			name: "a token with another server",
+			env: map[string]string{
+				"RELIC_URL":   "https://e.example",
+				"RELIC_TOKEN": "te",
+			},
 			wantURL:   "https://e.example",
-			wantToken: "tb",
+			wantToken: "te",
 		},
 		{
 			name: "environment over context",
