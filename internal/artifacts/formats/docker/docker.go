@@ -92,8 +92,11 @@ var (
 // repository key).
 func ValidImage(name string) bool { return len(name) <= 255 && imageName.MatchString(name) }
 
-// ValidTag reports whether tag is a valid tag.
-func ValidTag(tag string) bool { return tagName.MatchString(tag) }
+// ValidTag reports whether tag is a valid tag whose folder is not one the
+// layout reserves for uploads or manifests pushed by digest.
+func ValidTag(tag string) bool {
+	return tagName.MatchString(tag) && tag != uploadsDir && !strings.HasPrefix(tag, "sha256__")
+}
 
 // ParseDigest returns the hex of a "sha256:<hex>" digest.
 func ParseDigest(d string) (string, bool) {
@@ -663,7 +666,7 @@ func (s *Service) Tags(ctx context.Context, repoKey, image string) ([]string, er
 
 	for _, it := range items {
 		dir, tag := path.Split(it.Parent)
-		if strings.TrimSuffix(dir, "/") == image && ValidTag(tag) && !strings.HasPrefix(tag, "sha256__") {
+		if strings.TrimSuffix(dir, "/") == image && ValidTag(tag) {
 			tags = append(tags, tag)
 		}
 	}
