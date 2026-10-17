@@ -54,6 +54,26 @@ func TestAuditTarget(t *testing.T) {
 			want: "bob",
 		},
 		{
+			name: "carried project by its key",
+			msg: &relicv1.PutProjectRequest{
+				Project: &relicv1.Project{
+					Key:  "web",
+					Name: "Web storefront",
+				},
+			},
+			want: "web",
+		},
+		{
+			name: "carried replication by its repository",
+			msg: &relicv1.PutReplicationRequest{
+				Replication: &relicv1.Replication{
+					Repository: "libs",
+					Username:   "replicator",
+				},
+			},
+			want: "libs",
+		},
+		{
 			name: "sign-in session is not named",
 			msg: &relicv1.ApproveLoginRequest{
 				Session: "0b7e4c1e-5d2f-4c55-9d0e-1a2b3c4d5e6f",

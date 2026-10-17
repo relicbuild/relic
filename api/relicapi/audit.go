@@ -151,6 +151,15 @@ var targetFields = []protoreflect.Name{
 	"description",
 }
 
+// carriedTargetFields name the message a request carries (a project by its
+// key, a replication by its repository), in order of preference.
+var carriedTargetFields = []protoreflect.Name{
+	"key",
+	"name",
+	"repository",
+	"id",
+}
+
 // auditTarget names what msg acts on: its repository and path, a naming
 // field, or the name of the message it carries (a user, group, policy, …).
 func auditTarget(msg proto.Message) string {
@@ -176,8 +185,11 @@ func auditTarget(msg proto.Message) string {
 			continue
 		}
 
-		if v := stringField(m.Get(f).Message(), "name"); v != "" {
-			return v
+		carried := m.Get(f).Message()
+		for _, name := range carriedTargetFields {
+			if v := stringField(carried, name); v != "" {
+				return v
+			}
 		}
 	}
 
