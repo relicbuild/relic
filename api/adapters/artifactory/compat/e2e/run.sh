@@ -50,7 +50,7 @@ own_daemon=()
 for d in docker native-docker; do
   if is_selected "$d"; then own_daemon+=("$d"); fi
 done
-daemons=(shared "${own_daemon[@]}")
+daemons=(shared ${own_daemon[@]+"${own_daemon[@]}"})
 dind_name() { echo "$project-e2e-dind-$1"; }
 dind_alias() { if [[ $1 == shared ]]; then echo relic-e2e-dind; else echo "relic-e2e-dind-$1"; fi; }
 
@@ -69,8 +69,8 @@ client_images=(alpine:3.21 debian:bookworm-slim mono:6.12 nixos/nix:2.35.2 osixi
   ghcr.io/opencontainers/distribution-spec/conformance:v1.1.1)
 prepare_daemon() {
   local c; c="$(dind_name "$1")"
-  for _ in $(seq 60); do docker exec "$c" docker info >/dev/null 2>&1 && break; sleep 1; done
-  docker exec "$c" docker info >/dev/null 2>&1 || { echo "docker daemon $1 ($c) not ready after 60 s" >&2; return 1; }
+  for _ in $(seq 180); do docker exec "$c" docker info >/dev/null 2>&1 && break; sleep 1; done
+  docker exec "$c" docker info >/dev/null 2>&1 || { echo "docker daemon $1 ($c) not ready after 180 s" >&2; return 1; }
   local kept=()
   [[ $1 == shared ]] && kept=("${client_images[@]}")
   docker exec "$c" sh -c 'docker rm -f $(docker ps -aq) >/dev/null 2>&1; docker volume prune -af >/dev/null 2>&1
@@ -80,7 +80,7 @@ prepare_daemon() {
     docker images -qa | sort -u | grep -vxFf /tmp/kept-ids | xargs -r docker rmi -f >/dev/null 2>&1
     docker builder prune -af >/dev/null 2>&1
     for i in "$@"; do docker image inspect "$i" >/dev/null 2>&1 || docker pull -q "$i" >/dev/null 2>&1 & done
-    wait; true' sh "${kept[@]}"
+    wait; true' sh ${kept[@]+"${kept[@]}"}
 }
 prepared=()
 for d in "${daemons[@]}"; do prepare_daemon "$d" & prepared+=($!); done
