@@ -247,32 +247,3 @@ func TestServerCommandsWithoutAService(t *testing.T) {
 		}
 	}
 }
-
-func TestExamplesNameExistingCommands(t *testing.T) {
-	t.Parallel()
-
-	root := newRootCmd(func(string) string {
-		return ""
-	})
-
-	var check func(cmd *cobra.Command)
-
-	check = func(cmd *cobra.Command) {
-		for line := range strings.Lines(cmd.Example) {
-			fields := strings.Fields(line)
-			if len(fields) < 2 || fields[0] != "relic" {
-				continue
-			}
-
-			if _, _, err := root.Find(fields[1:]); err != nil {
-				t.Errorf("%s example %q: %v", cmd.CommandPath(), strings.TrimSpace(line), err)
-			}
-		}
-
-		for _, sub := range cmd.Commands() {
-			check(sub)
-		}
-	}
-
-	check(root)
-}

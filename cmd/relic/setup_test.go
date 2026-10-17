@@ -107,6 +107,68 @@ func TestPrintedSetupCommandsAreShell(t *testing.T) {
 	}
 }
 
+func TestSetupWritesWhereTheClientReads(t *testing.T) {
+	t.Parallel()
+
+	withPipDirectory := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(withPipDirectory, "Library", "Application Support", "pip"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		client, goos, home, want string
+	}{
+		{
+			client: "pip",
+			goos:   "linux",
+			home:   t.TempDir(),
+			want:   ".config/pip/pip.conf",
+		},
+		{
+			client: "pip",
+			goos:   "darwin",
+			home:   t.TempDir(),
+			want:   ".config/pip/pip.conf",
+		},
+		{
+			client: "pip",
+			goos:   "darwin",
+			home:   withPipDirectory,
+			want:   "Library/Application Support/pip/pip.conf",
+		},
+		{
+			client: "pip",
+			goos:   "windows",
+			home:   t.TempDir(),
+			want:   "AppData/Roaming/pip/pip.ini",
+		},
+		{
+			client: "terraform",
+			goos:   "linux",
+			home:   t.TempDir(),
+			want:   ".terraformrc",
+		},
+		{
+			client: "terraform",
+			goos:   "windows",
+			home:   t.TempDir(),
+			want:   "AppData/Roaming/terraform.rc",
+		},
+	} {
+		steps, err := setupClients[tc.client].steps(setupEnv{
+			goos: tc.goos,
+			home: tc.home,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if steps[0].file != tc.want {
+			t.Errorf("%s on %s writes %s, want %s", tc.client, tc.goos, steps[0].file, tc.want)
+		}
+	}
+}
+
 func TestSetupCommandsRunUnderHome(t *testing.T) {
 	t.Parallel()
 

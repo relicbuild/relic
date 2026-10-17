@@ -35,6 +35,7 @@ type setupEnv struct {
 	// contextToken reports whether token is the saved context's own, which only the CLI holds.
 	contextToken bool
 	home, root   string
+	goos         string
 	publicKey    string
 	keyPair      string
 	flags        map[string]string
@@ -225,7 +226,7 @@ var setupClients = map[string]setupClient{
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_PYPI,
 		},
-		short: "~/.config/pip/pip.conf: the index URL, and ~/.netrc credentials",
+		short: "pip.conf (pip.ini on Windows), where pip reads it: the index URL, and ~/.netrc credentials",
 		steps: pipSteps,
 	},
 	"pipenv": {
@@ -437,11 +438,11 @@ var setupClients = map[string]setupClient{
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_TERRAFORM,
 		},
-		short: "~/.terraformrc: credentials for modules, and the repository as the providers' network mirror",
+		short: "~/.terraformrc (terraform.rc on Windows): credentials for modules, and the repository as the providers' network mirror",
 		steps: func(e setupEnv) ([]setupStep, error) {
 			return []setupStep{
 				{
-					file:  ".terraformrc",
+					file:  terraformConfigFile(e),
 					block: true,
 					mode:  0o600,
 					content: "credentials \"" + e.host + "\" {\n  token = \"" + e.token + "\"\n}\n" +
@@ -680,10 +681,36 @@ var setupClients = map[string]setupClient{
 	},
 }
 
+// pipConfigFile is the user configuration file pip reads on e.goos.
+func pipConfigFile(e setupEnv) string {
+	switch e.goos {
+	case "windows":
+		return "AppData/Roaming/pip/pip.ini"
+	case "darwin":
+		if st, err := os.Stat(
+			filepath.Join(e.home, "Library", "Application Support", "pip"),
+		); err == nil &&
+			st.IsDir() {
+			return "Library/Application Support/pip/pip.conf"
+		}
+	}
+
+	return ".config/pip/pip.conf"
+}
+
+// terraformConfigFile is the CLI configuration file terraform reads on e.goos.
+func terraformConfigFile(e setupEnv) string {
+	if e.goos == "windows" {
+		return "AppData/Roaming/terraform.rc"
+	}
+
+	return ".terraformrc"
+}
+
 func pipSteps(e setupEnv) ([]setupStep, error) {
 	return []setupStep{
 		{
-			file:    ".config/pip/pip.conf",
+			file:    pipConfigFile(e),
 			mode:    0o644,
 			content: "[global]\nindex-url = " + e.url + "\n",
 		},
@@ -850,7 +877,7 @@ func packageSetupCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			e.home, e.root = home, root
+			e.home, e.root, e.goos = home, root, runtime.GOOS
 			e.flags = map[string]string{}
 
 			for k, v := range values {
