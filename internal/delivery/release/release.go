@@ -630,7 +630,8 @@ func (s *Service) Delete(ctx context.Context, project, name, version string) (er
 		b.Folder(),
 		exportFolder(b),
 	} {
-		if err := s.repos.Delete(ctx, b.Repository, p); err != nil && !errors.Is(err, repository.ErrNotFound) {
+		err := s.repos.Delete(ctx, b.Repository, p)
+		if err != nil && !errors.Is(err, repository.ErrNotFound) && !errors.Is(err, repository.ErrRepositoryNotFound) {
 			return fmt.Errorf("delete %s: %w", p, err)
 		}
 	}
