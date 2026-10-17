@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"connectrpc.com/connect"
+	"connectrpc.com/vanguard"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -53,4 +54,11 @@ func (strictJSON) Unmarshal(data []byte, m any) error {
 	}
 
 	return nil
+}
+
+func strictRESTJSON(resolver vanguard.TypeResolver) vanguard.Codec {
+	codec := vanguard.NewJSONCodec(resolver)
+	codec.UnmarshalOptions.DiscardUnknown = false
+
+	return codec
 }

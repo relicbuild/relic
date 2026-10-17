@@ -224,7 +224,7 @@ func Handler(d Dependencies) http.Handler {
 		d,
 	}, opts))
 
-	api, err := vanguard.NewTranscoder(services)
+	api, err := vanguard.NewTranscoder(services, vanguard.WithCodec(strictRESTJSON))
 	if err != nil {
 		panic(fmt.Sprintf("relic api: %v", err))
 	}
@@ -241,7 +241,7 @@ func Handler(d Dependencies) http.Handler {
 	mux.HandleFunc("GET "+SSOPath+"{provider}/callback", d.ssoCallback)
 	mux.HandleFunc("POST "+SSOPath+"{provider}/acs", d.ssoAssertion)
 	mux.HandleFunc("GET "+SSOPath+"{provider}/metadata", d.ssoMetadata)
-	mux.Handle(Prefix, connectPaths(api))
+	mux.Handle(Prefix, restDecodeErrors(connectPaths(api)))
 
 	return withRequest(mux)
 }
