@@ -197,7 +197,7 @@ func tokenRevokeCmd(g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:     "revoke <id>...",
 		Short:   "Revoke access tokens",
-		Example: "  relic auth token revoke 3f1c2a",
+		Example: "  relic auth token revoke 01a14acc-9a25-73a0-b25c-c7f3bb3ab7a5",
 		Args:    cobra.MinimumNArgs(1),
 		ValidArgsFunction: func(cmd *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 			c, err := g.dial()
