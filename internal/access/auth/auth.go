@@ -275,8 +275,8 @@ func (a *Authenticator) Authenticate(r *http.Request) (Principal, error) {
 		return a.cookie(r)
 	}
 
-	if token, ok := strings.CutPrefix(header, "Bearer "); ok {
-		p, err := a.bearer(r.Context(), strings.TrimSpace(token))
+	if token, ok := BearerToken(header); ok {
+		p, err := a.bearer(r.Context(), token)
 		telemetry.AuthAttempt("bearer", attemptResult(err))
 
 		return p, err
@@ -289,6 +289,17 @@ func (a *Authenticator) Authenticate(r *http.Request) (Principal, error) {
 	}
 
 	return a.Password(r, username, password)
+}
+
+// BearerToken returns the token of an Authorization header that uses the
+// Bearer scheme, whose name ignores case.
+func BearerToken(header string) (string, bool) {
+	scheme, token, ok := strings.Cut(header, " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") {
+		return "", false
+	}
+
+	return strings.TrimSpace(token), true
 }
 
 func attemptResult(err error) string {
@@ -513,8 +524,10 @@ func (a *Authenticator) remember(key [32]byte) {
 func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, err := a.Authenticate(r)
+
+		_, hasBearer := BearerToken(r.Header.Get("Authorization"))
 		if errors.Is(err, ErrBadCredentials) && r.Method == http.MethodPost && a.expiredBearers[r.URL.Path] &&
-			strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+			hasBearer {
 			p, err = Principal{}, nil
 		}
 

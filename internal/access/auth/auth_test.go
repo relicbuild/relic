@@ -950,3 +950,37 @@ func TestGroupScopedTokensDropTheUsersOwnGrants(t *testing.T) {
 		}
 	}
 }
+
+func TestBearerSchemeIgnoresCase(t *testing.T) {
+	t.Parallel()
+	a := newTestAuthenticator(t)
+	a.AllowExpiredBearer("/refresh")
+	h := a.Middleware(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		}),
+	)
+
+	for _, scheme := range []string{
+		"Bearer",
+		"bearer",
+		"BEARER",
+	} {
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+		r.Header.Set("Authorization", scheme+" good-bob")
+
+		if p, err := a.Authenticate(r); err != nil || p.Username != "bob" {
+			t.Errorf("%s token = %+v, %v", scheme, p, err)
+		}
+
+		r = httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/refresh", nil)
+		r.Header.Set("Authorization", scheme+" expired.token.value")
+
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, r)
+
+		if rec.Code != http.StatusNoContent {
+			t.Errorf("%s expired token on the refresh route = %d", scheme, rec.Code)
+		}
+	}
+}

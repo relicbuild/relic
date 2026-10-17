@@ -53,8 +53,8 @@ func (h *Handler) npmAuth(w http.ResponseWriter, r *http.Request) {
 	secret := ""
 	if _, password, ok := r.BasicAuth(); ok {
 		secret = password
-	} else if token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
-		secret = strings.TrimSpace(token)
+	} else if token, ok := auth.BearerToken(r.Header.Get("Authorization")); ok {
+		secret = token
 	}
 
 	cred := base64.StdEncoding.EncodeToString([]byte(p.Username + ":" + secret))
