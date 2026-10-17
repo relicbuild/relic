@@ -115,8 +115,11 @@ func (s *Service) FilesWithPropertyKey(ctx context.Context, repoKey, key string)
 	return out, nil
 }
 
-// FilesWithContent returns up to 100 files, in any repository, whose
-// content has the SHA-256 (preferred) or SHA-1 in sums.
+// FilesWithContentLimit is the most files FilesWithContent returns.
+const FilesWithContentLimit = 100
+
+// FilesWithContent returns up to FilesWithContentLimit files, in any
+// repository, whose content has the SHA-256 (preferred) or SHA-1 in sums.
 func (s *Service) FilesWithContent(ctx context.Context, sums Checksums) ([]Item, error) {
 	rows, err := s.db.FindFilesByContent(
 		ctx,

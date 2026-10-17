@@ -1,6 +1,7 @@
 package relicapi
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,7 +12,9 @@ import (
 
 	"connectrpc.com/connect"
 
+	"relic/internal/access/audit"
 	"relic/internal/access/auth"
+	"relic/internal/artifacts/repository"
 	"relic/internal/scanning/scan"
 )
 
@@ -132,57 +135,116 @@ func (d Dependencies) exportSBOM(w http.ResponseWriter, r *http.Request, key, p 
 }
 
 func (d Dependencies) importSBOM(w http.ResponseWriter, r *http.Request, key, p string) {
+	err := d.storeSBOM(w, r, key, p)
+	d.recordSBOMImport(r.Context(), key+"/"+p, err)
+
+	if err != nil {
+		writeHTTPError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (d Dependencies) storeSBOM(w http.ResponseWriter, r *http.Request, key, p string) *connect.Error {
 	ctx := r.Context()
 	if err := can(ctx, d, key, p, auth.ActionWrite); err != nil {
-		writeHTTPError(w, codeOf(err))
-		return
+		return codeOf(err)
 	}
 
 	it, err := d.Repositories.Stat(ctx, key, p)
 	if err != nil {
-		writeHTTPError(w, d.logged(r, err))
-		return
+		return d.logged(r, err)
 	}
 
 	target, _, found, err := scanTarget(ctx, d, it)
 	if err != nil {
-		writeHTTPError(w, d.logged(r, err))
-		return
+		return d.logged(r, err)
 	}
 
 	if !found {
-		writeHTTPError(w, connect.NewError(connect.CodeInvalidArgument, errors.New(key+"/"+p+" is a folder")))
-		return
+		return connect.NewError(connect.CodeInvalidArgument, errors.New(key+"/"+p+" is a folder"))
+	}
+
+	if err := canDeployEveryCopy(ctx, d, target.Checksums.SHA256); err != nil {
+		return d.logged(r, err)
 	}
 
 	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, scan.MaxSBOMSize))
 	if err != nil {
-		writeHTTPError(w, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("read the SBOM: %w", err)))
-		return
+		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("read the SBOM: %w", err))
 	}
 
 	err = d.ScanResults.ImportSBOM(ctx, target.Checksums.SHA256, target.Name, raw)
 	if errors.Is(err, scan.ErrSBOM) {
-		writeHTTPError(w, connect.NewError(connect.CodeInvalidArgument, err))
-		return
+		return connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
 	if err != nil {
-		writeHTTPError(w, d.logged(r, err))
-		return
+		return d.logged(r, err)
 	}
 
 	if d.QueueRematch != nil {
 		if err := d.QueueRematch(ctx, target.Checksums.SHA256); err != nil {
 			d.Log.ErrorContext(ctx, "imported SBOM not queued for matching", "item", key+"/"+p, "error", err)
-			writeHTTPError(w, connect.NewError(
+
+			return connect.NewError(
 				connect.CodeUnavailable,
 				errors.New("the SBOM is stored but not matched yet: import it again"),
-			))
-
-			return
+			)
 		}
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+func canDeployEveryCopy(ctx context.Context, d Dependencies, sha256Hex string) error {
+	if auth.FromContext(ctx).Admin {
+		return nil
+	}
+
+	copies, err := d.Repositories.FilesWithContent(ctx, repository.Checksums{
+		SHA256: sha256Hex,
+	})
+	if err != nil {
+		return err
+	}
+
+	denied := connect.NewError(
+		connect.CodePermissionDenied,
+		errors.New("this content is also stored where you may not deploy: ask an administrator to import its SBOM"),
+	)
+	if len(copies) >= repository.FilesWithContentLimit {
+		return denied
+	}
+
+	for _, it := range copies {
+		if err := can(ctx, d, it.Repository, cleanPath(it.Path()), auth.ActionWrite); err != nil {
+			if errors.Is(err, repository.ErrNotFound) || codeOf(err).Code() == connect.CodePermissionDenied {
+				return denied
+			}
+
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (d Dependencies) recordSBOMImport(ctx context.Context, target string, err *connect.Error) {
+	if d.Audit == nil {
+		return
+	}
+
+	e := audit.Event{
+		Actor:   auth.FromContext(ctx).Name(),
+		Action:  "sbom.import",
+		Target:  target,
+		Outcome: audit.Success,
+	}
+	if err != nil {
+		e.Outcome, e.Detail = rpcOutcome(err), err.Message()
+	}
+
+	d.Audit.Record(ctx, e)
 }

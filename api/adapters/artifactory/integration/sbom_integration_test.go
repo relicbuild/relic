@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"encoding/base64"
 	"net/http"
 	"strings"
 	"testing"
@@ -175,5 +176,147 @@ func TestSBOMExportAndImport(t *testing.T) {
 
 	if got := asReader(http.MethodPut, importedCycloneDX); got != http.StatusForbidden && got != http.StatusNotFound {
 		t.Errorf("a reader imports = %d", got)
+	}
+}
+
+func TestSBOMImportNeedsDeployOnEveryCopyOfTheContent(t *testing.T) {
+	t.Parallel()
+	srv := server(t)
+	ctx := t.Context()
+
+	for _, key := range []string{
+		"sbom-mine",
+		"sbom-theirs",
+	} {
+		do(t, srv, call{
+			method: http.MethodPut,
+			path:   "/artifactory/api/repositories/" + key,
+			body:   `{"rclass":"local","packageType":"generic"}`,
+		})
+	}
+
+	for path, body := range map[string]string{
+		"/artifactory/sbom-theirs/prod/app.jar": "shared bytes",
+		"/artifactory/sbom-mine/copy/app.jar":   "shared bytes",
+		"/artifactory/sbom-mine/own/app.jar":    "bytes stored only here",
+	} {
+		do(t, srv, call{
+			method: http.MethodPut,
+			path:   path,
+			body:   body,
+		})
+	}
+
+	if resp, body := do(t, srv, call{
+		method: http.MethodPut,
+		path:   "/api/v1/sbom/sbom-theirs/prod/app.jar",
+		body:   importedCycloneDX,
+	}); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("an administrator imports = %d %s", resp.StatusCode, body)
+	}
+
+	security := relicv1connect.NewSecurityServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	//nolint:gosec // G101: a test user's password
+	if _, err := security.PutUser(ctx, connect.NewRequest(&relicv1.PutUserRequest{
+		User: &relicv1.User{
+			Name:     "deployer",
+			Email:    "deployer@example.com",
+			Password: "Deployer-pw-1",
+		},
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := security.PutPermission(ctx, connect.NewRequest(&relicv1.PutPermissionRequest{
+		Permission: &relicv1.Permission{
+			Name: "sbom-mine-deploy",
+			Rules: []*relicv1.PermissionRule{
+				{
+					Resource: relicv1.ResourceKind_RESOURCE_KIND_REPOSITORY,
+					Selector: &relicv1.RepositorySelector{
+						Repositories: []string{
+							"sbom-mine",
+						},
+					},
+					Include: []string{
+						"**",
+					},
+					Grants: []*relicv1.PermissionGrant{
+						{
+							Principal: &relicv1.PermissionGrant_User{
+								User: "deployer",
+							},
+							Actions: []relicv1.Action{
+								relicv1.Action_ACTION_READ,
+								relicv1.Action_ACTION_WRITE,
+							},
+						},
+					},
+				},
+			},
+		},
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	deployer := map[string]string{
+		"Authorization": "Basic " + base64.StdEncoding.EncodeToString([]byte("deployer:Deployer-pw-1")),
+	}
+
+	tests := []struct {
+		name, path string
+		status     int
+	}{
+		{
+			name:   "content also stored where the deployer may not deploy",
+			path:   "/api/v1/sbom/sbom-mine/copy/app.jar",
+			status: http.StatusForbidden,
+		},
+		{
+			name:   "content stored only where the deployer may deploy",
+			path:   "/api/v1/sbom/sbom-mine/own/app.jar",
+			status: http.StatusNoContent,
+		},
+	}
+	for _, tt := range tests {
+		if resp, body := do(t, srv, call{
+			method:  http.MethodPut,
+			path:    tt.path,
+			body:    `{"bomFormat": "CycloneDX", "specVersion": "1.6", "version": 1, "components": []}`,
+			headers: deployer,
+			noAuth:  true,
+		}); resp.StatusCode != tt.status {
+			t.Errorf("%s: import = %d %s, want %d", tt.name, resp.StatusCode, body, tt.status)
+		}
+	}
+
+	scans := relicv1connect.NewScanServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+
+	sbom, err := scans.GetItemSbom(ctx, connect.NewRequest(&relicv1.GetItemSbomRequest{
+		Repository: "sbom-theirs",
+		Path:       "prod/app.jar",
+	}))
+	if err != nil || len(sbom.Msg.GetComponents()) != 1 {
+		t.Errorf("components of the copy the deployer may not deploy to = %v, %v", sbom, err)
+	}
+
+	audits := relicv1connect.NewAuditServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+
+	events, err := audits.ListAuditEvents(ctx, connect.NewRequest(&relicv1.ListAuditEventsRequest{
+		Actor:  "deployer",
+		Action: "sbom.import",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	outcomes := map[string]relicv1.AuditOutcome{}
+	for _, e := range events.Msg.GetEvents() {
+		outcomes[e.GetTarget()] = e.GetOutcome()
+	}
+
+	if outcomes["sbom-mine/copy/app.jar"] != relicv1.AuditOutcome_AUDIT_OUTCOME_DENIED ||
+		outcomes["sbom-mine/own/app.jar"] != relicv1.AuditOutcome_AUDIT_OUTCOME_SUCCESS {
+		t.Errorf("audited SBOM imports = %v", outcomes)
 	}
 }

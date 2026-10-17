@@ -79,7 +79,8 @@ func sbomImportCmd(g *globals) *cobra.Command {
 		Use:   "import <repository>/<path> <document>",
 		Short: "Replace an item's SBOM with a CycloneDX, SPDX or Syft JSON document",
 		Long: "Replaces the SBOM of an item's content with a document you made, for example in your build, and\n" +
-			"has Relic Scan match it for vulnerabilities. Needs deploy permission on the item.",
+			"has Relic Scan match it for vulnerabilities. Every file with the same content shares the SBOM, so\n" +
+			"this needs deploy permission on each of them.",
 		Example: "  relic security sbom import libs-local/app/app-1.4.0.jar build/bom.json",
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
