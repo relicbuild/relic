@@ -1154,6 +1154,68 @@ func TestTrashKeepsTheItemsPropertiesAndReplacesAnOlderEntry(t *testing.T) {
 	}
 }
 
+func TestRestoreFromTrashRefusesToReplaceAFileDeployedSince(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		deleted string
+		files   []string
+		reused  string
+	}{
+		{
+			name:    "a file",
+			deleted: "r/f.txt",
+			files: []string{
+				"r/f.txt",
+			},
+			reused: "r/f.txt",
+		},
+		{
+			name:    "a folder with a file deployed again",
+			deleted: "d",
+			files: []string{
+				"d/a.txt",
+				"d/b.txt",
+			},
+			reused: "d/b.txt",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			s, _, _ := newTestService(t)
+
+			for _, f := range tt.files {
+				deploy(t, s, f, "deleted "+f)
+			}
+
+			if err := s.DeleteToTrash(ctx, "generic-local", tt.deleted, "alice"); err != nil {
+				t.Fatal(err)
+			}
+
+			newer := deploy(t, s, tt.reused, "deployed after the delete")
+
+			err := s.RestoreFromTrash(ctx, "generic-local/"+tt.deleted, "", "", "alice")
+			if !errors.Is(err, ErrConflict) {
+				t.Errorf("RestoreFromTrash = %v, want ErrConflict", err)
+			}
+
+			kept, err := s.Stat(ctx, "generic-local", tt.reused)
+			if err != nil || kept.Checksums.SHA256 != newer.Checksums.SHA256 {
+				t.Errorf("%s after the refused restore = %+v, %v; want the newer file", tt.reused, kept, err)
+			}
+
+			if _, err := s.Stat(ctx, s.TrashRepository(), "generic-local/"+tt.deleted); err != nil {
+				t.Errorf("trash entry after the refused restore: %v", err)
+			}
+		})
+	}
+}
+
 func TestSHA256OfSHA1(t *testing.T) {
 	t.Parallel()
 

@@ -46,6 +46,9 @@ type CopyInput struct {
 	merge  bool
 	before func(q database.Querier) error
 	then   func(q database.Querier) error
+	// keepFiles refuses the copy when a file it would write is already at
+	// the destination.
+	keepFiles bool
 }
 
 // Copy copies or moves an item.
@@ -255,6 +258,12 @@ func copyInTx(ctx context.Context, q database.Querier, plan *copyPlan, now time.
 			}
 		}
 
+		if in.keepFiles && !it.IsFolder() {
+			if err := checkVacant(ctx, q, destination.Name, target); err != nil {
+				return err
+			}
+		}
+
 		if in.Permits != nil && !it.IsFolder() {
 			if err := permitFileCopy(ctx, q, in, it, destination.Name, target); err != nil {
 				return err
@@ -411,6 +420,25 @@ func refuseOverwrite(ctx context.Context, q database.Querier, in CopyInput, it I
 	}
 
 	return in.RefuseOverwrite(ctx, current)
+}
+
+func checkVacant(ctx context.Context, q database.Querier, repoKey, path string) error {
+	parent, name := SplitPath(path)
+
+	_, err := q.GetItem(ctx, database.GetItemParams{
+		RepoKey: repoKey,
+		Path:    parent,
+		Name:    name,
+	})
+	if database.IsNoRows(err) {
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("get %s/%s: %w", repoKey, path, err)
+	}
+
+	return fmt.Errorf("%w: %s/%s already exists", ErrConflict, repoKey, path)
 }
 
 func copyItem(

@@ -386,6 +386,7 @@ var ErrNoRestoreTarget = errors.New("no restore destination")
 
 // RestoreFromTrash moves a trash entry (a path inside the trash can) back
 // to toRepo/toPath, or to where it was deleted from when those are empty.
+// It returns ErrConflict when a file it would restore is there already.
 func (s *Service) RestoreFromTrash(ctx context.Context, trashPath, toRepo, toPath, user string) error {
 	item, err := s.Stat(ctx, s.trashLayout.Repository, trashPath)
 	if err != nil {
@@ -416,6 +417,7 @@ func (s *Service) RestoreFromTrash(ctx context.Context, trashPath, toRepo, toPat
 			DestinationPath:       toPath,
 			Move:                  true,
 			User:                  user,
+			keepFiles:             true,
 		},
 	); err != nil {
 		return err

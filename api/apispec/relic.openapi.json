@@ -15883,7 +15883,7 @@
           "TrashService"
         ],
         "summary": "RestoreTrash",
-        "description": "RestoreTrash puts an item back, where it was or at another place.",
+        "description": "RestoreTrash puts an item back, where it was or at another place. It\n fails with FAILED_PRECONDITION when a file it would restore is there.",
         "operationId": "TrashService_RestoreTrash",
         "requestBody": {
           "content": {
