@@ -173,12 +173,12 @@ spec:
 		},
 		Notes: "kept",
 	}
-	if !proto.Equal(restrict(live, d.owned, d.kind.ignored), restrict(d.msg, d.owned, d.kind.ignored)) {
+	if !proto.Equal(restrict(live, d.owned, d.kind), restrict(d.msg, d.owned, d.kind)) {
 		t.Error("an unchanged resource compares different (the password is write-only)")
 	}
 
 	d.msg.(*relicv1.Repository).Description = "changed"
-	if proto.Equal(restrict(live, d.owned, d.kind.ignored), restrict(d.msg, d.owned, d.kind.ignored)) {
+	if proto.Equal(restrict(live, d.owned, d.kind), restrict(d.msg, d.owned, d.kind)) {
 		t.Error("a changed description compares equal")
 	}
 
@@ -190,6 +190,77 @@ spec:
 
 	if live.GetDescription() != "maven central" {
 		t.Error("merged changed the live message")
+	}
+}
+
+func TestRestrictComparesSetsWithoutOrderOrRepeats(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		live proto.Message
+	}{
+		{
+			name: "group members",
+			in:   "apiVersion: relic.build/v1\nkind: Group\nmetadata: {name: devs}\nspec: {members: [temp, alice]}\n",
+			live: &relicv1.Group{
+				Name: "devs",
+				Members: []string{
+					"alice",
+					"temp",
+				},
+			},
+		},
+		{
+			name: "user groups",
+			in:   "apiVersion: relic.build/v1\nkind: User\nmetadata: {name: temp}\nspec: {groups: [developers, Ops]}\n",
+			live: &relicv1.User{
+				Name: "temp",
+				Groups: []string{
+					"Ops",
+					"developers",
+				},
+			},
+		},
+		{
+			name: "webhook events",
+			in: "apiVersion: relic.build/v1\nkind: Webhook\nmetadata: {name: hook}\n" +
+				"spec: {events: [scan.finished, artifact.deployed, artifact.deployed]}\n",
+			live: &relicv1.Webhook{
+				Name: "hook",
+				Events: []string{
+					"scan.finished",
+					"artifact.deployed",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			docs, err := decodeDocuments(strings.NewReader(tt.in))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			d := docs[0]
+			if live, want := restrict(
+				tt.live,
+				d.owned,
+				d.kind,
+			), restrict(
+				d.msg,
+				d.owned,
+				d.kind,
+			); !proto.Equal(
+				live,
+				want,
+			) {
+				t.Errorf("server %v and file %v compare different", live, want)
+			}
+		})
 	}
 }
 
@@ -211,7 +282,7 @@ func TestUnifiedDiff(t *testing.T) {
 		Description: "old",
 	}
 
-	got, err := unifiedDiff(d, restrict(live, d.owned, nil), restrict(d.msg, d.owned, nil))
+	got, err := unifiedDiff(d, restrict(live, d.owned, d.kind), restrict(d.msg, d.owned, d.kind))
 	if err != nil {
 		t.Fatal(err)
 	}

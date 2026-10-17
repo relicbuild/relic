@@ -66,7 +66,7 @@ func applyCmd(g *globals) *cobra.Command {
 				case err != nil:
 					return printCompleted(out, applied, fmt.Errorf("get %s: %w", d, err))
 				case !force &&
-					proto.Equal(restrict(live, d.owned, d.kind.ignored), restrict(d.msg, d.owned, d.kind.ignored)):
+					proto.Equal(restrict(live, d.owned, d.kind), restrict(d.msg, d.owned, d.kind)):
 					result = "unchanged"
 				default:
 					if err := d.kind.update(ctx, c, merged(live, d)); err != nil {
@@ -122,10 +122,10 @@ func diffCmd(g *globals) *cobra.Command {
 
 				var from proto.Message
 				if err == nil {
-					from = restrict(live, d.owned, d.kind.ignored)
+					from = restrict(live, d.owned, d.kind)
 				}
 
-				text, err := unifiedDiff(d, from, restrict(d.msg, d.owned, d.kind.ignored))
+				text, err := unifiedDiff(d, from, restrict(d.msg, d.owned, d.kind))
 				if err != nil {
 					return err
 				}

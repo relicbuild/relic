@@ -24,6 +24,9 @@ type kind struct {
 	update  func(context.Context, *client, proto.Message) error
 	delete  func(context.Context, *client, string) error
 	ignored []string
+	// sets are top-level lists of strings the server keeps sorted and
+	// without repeats, compared regardless of order and repeats.
+	sets    []string
 	prepare func(map[string]any)
 }
 
@@ -123,6 +126,9 @@ var kinds = []*kind{
 		ignored: []string{
 			"password",
 		},
+		sets: []string{
+			"groups",
+		},
 	},
 	{
 		name: "Group",
@@ -153,6 +159,9 @@ var kinds = []*kind{
 			}))
 
 			return err
+		},
+		sets: []string{
+			"members",
 		},
 	},
 	{
@@ -361,6 +370,9 @@ var kinds = []*kind{
 			"hasSecret",
 			"created",
 			"updated",
+		},
+		sets: []string{
+			"events",
 		},
 	},
 	{

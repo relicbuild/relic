@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -167,7 +168,7 @@ func nameOf(m proto.Message, field string) string {
 	return r.Get(r.Descriptor().Fields().ByName(protoreflect.Name(field))).String()
 }
 
-func restrict(m proto.Message, owned map[string]bool, ignored []string) proto.Message {
+func restrict(m proto.Message, owned map[string]bool, k *kind) proto.Message {
 	c := proto.Clone(m)
 	r := c.ProtoReflect()
 
@@ -178,11 +179,35 @@ func restrict(m proto.Message, owned map[string]bool, ignored []string) proto.Me
 		}
 	}
 
-	for _, p := range ignored {
+	for _, p := range k.ignored {
 		clearPath(r, strings.Split(p, "."))
 	}
 
+	for _, name := range k.sets {
+		if f := fields.ByJSONName(name); f != nil && f.IsList() && r.Has(f) {
+			r.Set(f, sortedSet(r, f))
+		}
+	}
+
 	return c
+}
+
+func sortedSet(r protoreflect.Message, f protoreflect.FieldDescriptor) protoreflect.Value {
+	list := r.Get(f).List()
+
+	values := make([]string, 0, list.Len())
+	for i := range list.Len() {
+		values = append(values, list.Get(i).String())
+	}
+
+	slices.Sort(values)
+
+	out := r.NewField(f).List()
+	for _, v := range slices.Compact(values) {
+		out.Append(protoreflect.ValueOfString(v))
+	}
+
+	return protoreflect.ValueOfList(out)
 }
 
 func clearPath(r protoreflect.Message, path []string) {
