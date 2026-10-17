@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http/httptest"
 	"slices"
@@ -126,5 +127,68 @@ func TestNpmLoginStaysWithinTheCredential(t *testing.T) {
 
 	if scope := logins[1].GetScope(); scope.GetKind() != relicv1.TokenScopeKind_TOKEN_SCOPE_KIND_USER {
 		t.Errorf("npm login with a password = %v, want the user scope", scope)
+	}
+}
+
+func basicHeaders(credentials string) map[string]string {
+	return map[string]string{
+		"Authorization": "Basic " + base64.StdEncoding.EncodeToString([]byte(credentials)),
+		"Content-Type":  "application/json",
+	}
+}
+
+func TestAccessTokensRefuseUnsupportedScopes(t *testing.T) {
+	t.Parallel()
+
+	srv := server(t)
+	createTokenUser(t, srv, "erin", "Erin-pass-1")
+
+	tests := []struct {
+		name        string
+		credentials string
+		scope       string
+		status      int
+	}{
+		{
+			name:        "an administrator asking for a metrics scope",
+			credentials: "admin:password",
+			scope:       "system:metrics:r",
+			status:      400,
+		},
+		{
+			name:        "an administrator asking for a project role",
+			credentials: "admin:password",
+			scope:       "applied-permissions/roles:web:Viewer",
+			status:      400,
+		},
+		{
+			name:        "a user asking for a metrics scope",
+			credentials: "erin:Erin-pass-1",
+			scope:       "system:metrics:r",
+			status:      400,
+		},
+		{
+			name:        "an administrator asking for their own permissions",
+			credentials: "admin:password",
+			scope:       "applied-permissions/user",
+			status:      200,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resp, body := do(t, srv, call{
+				method:  "POST",
+				path:    "/access/api/v1/tokens",
+				body:    `{"scope":"` + tt.scope + `","expires_in":300}`,
+				noAuth:  true,
+				headers: basicHeaders(tt.credentials),
+			})
+			if resp.StatusCode != tt.status {
+				t.Errorf("scope %q = %d %s, want %d", tt.scope, resp.StatusCode, body, tt.status)
+			}
+		})
 	}
 }

@@ -112,7 +112,17 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	scope, known := ParseScope(req.Scope)
-	if !caller.Admin && (username != caller.Username || !known || !caller.MayGrant(scope)) {
+	if !known {
+		wire.WriteError(
+			w,
+			http.StatusBadRequest,
+			"unsupported scope: use applied-permissions/user, applied-permissions/admin or applied-permissions/groups",
+		)
+
+		return
+	}
+
+	if !caller.Admin && (username != caller.Username || !caller.MayGrant(scope)) {
 		wire.WriteError(
 			w,
 			http.StatusForbidden,
