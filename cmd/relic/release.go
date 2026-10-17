@@ -536,8 +536,10 @@ func releasePromoteCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "promote <name> <version> <environment>",
 		Short: "Promote a release version into an environment's repositories",
-		Long: "Copies (or with --move moves, out of the previous environment) the version's artifacts into " +
-			"the repositories whose environments setting names the environment.",
+		Long: "Copies each of the version's artifacts into one of the local repositories whose environments " +
+			"setting names the environment: the only one, or else the first by name of the artifact's " +
+			"source format, or else the first generic one. A promotion always copies; --move is accepted " +
+			"and performed as a copy.",
 		Example: "  relic release promote app 1.4.0 PROD\n  relic release promote app 1.4.0 QA --include qa-generic --move",
 		Args:    cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
