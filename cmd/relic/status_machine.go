@@ -215,9 +215,34 @@ func databaseStatus(dsn string) storageStatus {
 		return storageStatus{}
 	}
 
+	if u.Scheme == "" {
+		return connectionStringStatus(dsn)
+	}
+
 	return storageStatus{
 		Kind:     "postgresql",
 		Location: u.Host + u.Path,
+	}
+}
+
+func connectionStringStatus(dsn string) storageStatus {
+	parameters := map[string]string{}
+	for _, p := range connectionParameters(dsn) {
+		parameters[p.name] = p.value
+	}
+
+	if len(parameters) == 0 {
+		return storageStatus{}
+	}
+
+	location := parameters["host"]
+	if port := parameters["port"]; port != "" {
+		location += ":" + port
+	}
+
+	return storageStatus{
+		Kind:     "postgresql",
+		Location: location + "/" + parameters["dbname"],
 	}
 }
 

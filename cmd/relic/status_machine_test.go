@@ -243,6 +243,15 @@ func TestPostgreSQLStatusHidesThePassword(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLStatusOfAConnectionStringHidesThePassword(t *testing.T) {
+	t.Parallel()
+
+	st := databaseStatus("host=db port=5432 user=relic password=Sup3rSecretDbPw dbname=relic")
+	if st.Kind != "postgresql" || strings.Contains(st.Location, "Sup3rSecretDbPw") || st.Location != "db:5432/relic" {
+		t.Errorf("status = %+v", st)
+	}
+}
+
 func TestMachineStatusProbesTheDefaultAddress(t *testing.T) {
 	t.Parallel()
 
