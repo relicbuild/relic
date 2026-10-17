@@ -33,6 +33,9 @@ type CopyInput struct {
 	// source, writing it at the destination and deleting the file it
 	// replaces there.
 	Permits func(repoKey, path string, action auth.Action) bool
+	// CheckUploadLimit refuses the copy of a file larger than the
+	// destination accepts as an upload.
+	CheckUploadLimit bool
 
 	// merge puts the copy into what is at the destination, replacing only
 	// an item of the other kind, and then runs in the same transaction
@@ -56,6 +59,7 @@ type copyPlan struct {
 	destination  Repository
 	path         string
 	projectQuota int64
+	uploadLimit  int64
 	files        []string
 }
 
@@ -177,11 +181,19 @@ func (s *Service) planCopy(ctx context.Context, in CopyInput) (copyPlan, error) 
 		return copyPlan{}, err
 	}
 
+	var uploadLimit int64
+	if in.CheckUploadLimit {
+		if uploadLimit, err = s.UploadLimit(ctx, destination.Name); err != nil {
+			return copyPlan{}, err
+		}
+	}
+
 	return copyPlan{
 		in:           in,
 		destination:  destination,
 		path:         dest.Path,
 		projectQuota: projectQuota,
+		uploadLimit:  uploadLimit,
 	}, nil
 }
 
@@ -214,6 +226,17 @@ func copyInTx(ctx context.Context, q database.Querier, plan *copyPlan, now time.
 		target := plan.path
 		if it.Path() != src.Path() {
 			target += "/" + strings.TrimPrefix(it.Path(), src.Path()+"/")
+		}
+
+		if plan.uploadLimit > 0 && !it.IsFolder() && it.Size > plan.uploadLimit {
+			return fmt.Errorf(
+				"%w: %s/%s has %d bytes, the limit is %d",
+				ErrTooLarge,
+				it.Repository,
+				it.Path(),
+				it.Size,
+				plan.uploadLimit,
+			)
 		}
 
 		if in.merge {

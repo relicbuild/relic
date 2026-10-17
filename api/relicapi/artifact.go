@@ -442,6 +442,7 @@ func (s *artifactServer) copyOrMove(ctx context.Context, key, p, toKey, toPath s
 		Move:                  move,
 		DryRun:                dryRun,
 		User:                  auth.FromContext(ctx).Name(),
+		CheckUploadLimit:      true,
 	}
 	if s.d.DownloadBlocker != nil {
 		in.RefuseFile = s.d.DownloadBlocker.RefuseCopy

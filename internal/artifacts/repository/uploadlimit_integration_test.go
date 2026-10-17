@@ -100,6 +100,50 @@ func TestDeployEnforcesTheUploadLimit(t *testing.T) {
 	}
 }
 
+func TestStoredContentHonoursTheUploadLimit(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	s, _, _ := newTestService(t)
+	big := deploy(t, s, "big.bin", "0123456789abcdef")
+
+	if err := s.CreateRepository(ctx, Repository{
+		Name:   "small-local",
+		Class:  ClassLocal,
+		Format: "generic",
+		Config: Config{
+			MaxUploadSize: 10,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.DeployByChecksum(ctx, DeployInput{
+		Repository: "small-local",
+		Path:       "by-checksum.bin",
+		Expected: Checksums{
+			SHA256: big.Checksums.SHA256,
+		},
+	}); !errors.Is(err, ErrTooLarge) {
+		t.Errorf("DeployByChecksum over the limit = %v, want ErrTooLarge", err)
+	}
+
+	for _, move := range []bool{
+		false,
+		true,
+	} {
+		if err := s.Copy(ctx, CopyInput{
+			Source:                big,
+			DestinationRepository: "small-local",
+			DestinationPath:       "copied.bin",
+			Move:                  move,
+			CheckUploadLimit:      true,
+		}); !errors.Is(err, ErrTooLarge) {
+			t.Errorf("Copy (move %v) over the limit = %v, want ErrTooLarge", move, err)
+		}
+	}
+}
+
 func setQuota(t *testing.T, s *Service, quota int64) {
 	t.Helper()
 

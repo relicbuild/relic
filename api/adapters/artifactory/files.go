@@ -362,6 +362,7 @@ func (h *Handler) copyOrMove(w http.ResponseWriter, r *http.Request, move bool) 
 		User:                  auth.FromContext(r.Context()).Name(),
 		RefuseFile:            h.packages.RefuseCopy,
 		Permits:               permits,
+		CheckUploadLimit:      true,
 	})
 	if err != nil {
 		h.writeError(w, r, err)
