@@ -679,6 +679,56 @@ func TestChartExistingSecret(t *testing.T) {
 	}
 }
 
+func TestChartGeneratedCredentialsAreStableAcrossRenders(t *testing.T) {
+	t.Parallel()
+
+	type rendered struct {
+		adminPassword  string
+		serverChecksum string
+		workerChecksum string
+	}
+
+	renderOnce := func() rendered {
+		objs, stderr := render(t, external...)
+		if stderr != "" {
+			t.Fatal(stderr)
+		}
+
+		sec := find(objs, "Secret", "r-relic-credentials")
+		if sec == nil {
+			t.Fatal("no credentials Secret")
+		}
+
+		return rendered{
+			adminPassword:  sec.StringData["adminPassword"],
+			serverChecksum: find(objs, "Deployment", "r-relic-server").Spec.Template.Metadata.Annotations["checksum/secret"],
+			workerChecksum: find(objs, "Deployment", "r-relic-worker").Spec.Template.Metadata.Annotations["checksum/secret"],
+		}
+	}
+
+	first, second := renderOnce(), renderOnce()
+
+	if first.adminPassword != second.adminPassword {
+		t.Error("the generated admin password changes between renders, so every Argo CD sync rewrites it")
+	}
+
+	if first.serverChecksum != second.serverChecksum {
+		t.Error("checksum/secret changes between renders, so every sync rolls the pods")
+	}
+
+	if first.serverChecksum != first.workerChecksum {
+		t.Errorf(
+			"checksum/secret: server %s, worker %s, want the same Secret's",
+			first.serverChecksum,
+			first.workerChecksum,
+		)
+	}
+
+	if len(first.adminPassword) != 24 {
+		t.Errorf("the generated admin password has %d characters, want 24", len(first.adminPassword))
+	}
+}
+
 func TestChartIngressAndAutoscaling(t *testing.T) {
 	t.Parallel()
 
