@@ -1,6 +1,7 @@
 package artifactory
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -242,7 +243,38 @@ func firstNonEmpty(vals ...string) string {
 }
 
 func (h *Handler) remove(w http.ResponseWriter, r *http.Request, t packages.Target) {
-	if err := h.repos.DeleteToTrash(r.Context(), t.Repo, t.Path, auth.FromContext(r.Context()).Name()); err != nil {
+	permits, err := h.packages.RepositoryPermits(r, t.Repo)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+
+	var refuseFile func(context.Context, repository.Item) error
+	if permits != nil {
+		refuseFile = func(_ context.Context, file repository.Item) error {
+			switch {
+			case !permits(file.Repository, file.Path(), auth.ActionRead):
+				return fmt.Errorf(
+					"%w: missing 'delete' permission on everything under %s/%s",
+					repository.ErrForbidden,
+					t.Repo,
+					t.Path,
+				)
+			case !permits(file.Repository, file.Path(), auth.ActionDelete):
+				return fmt.Errorf(
+					"%w: missing 'delete' permission on %s/%s",
+					repository.ErrForbidden,
+					file.Repository,
+					file.Path(),
+				)
+			}
+
+			return nil
+		}
+	}
+
+	user := auth.FromContext(r.Context()).Name()
+	if err := h.repos.DeleteToTrashChecked(r.Context(), t.Repo, t.Path, user, refuseFile); err != nil {
 		h.writeError(w, r, err)
 		return
 	}

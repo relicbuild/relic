@@ -240,3 +240,36 @@ func TestCopyAndMoveCheckEveryFile(t *testing.T) {
 		}
 	})
 }
+
+func TestFolderDeleteChecksEveryFile(t *testing.T) {
+	t.Parallel()
+
+	deleter := restrictedUser{
+		name:     "deleter",
+		password: "Deleter-pass-1",
+		actions:  `["read","write","delete"]`,
+	}
+	srv := guardedRepository(t, deleter)
+
+	if resp, body := do(t, srv, call{
+		method:  "DELETE",
+		path:    "/artifactory/guarded-local/src",
+		noAuth:  true,
+		headers: basicAuthHeader(deleter.name, deleter.password),
+	}); resp.StatusCode != 403 {
+		t.Errorf("folder delete = %d %s, want 403", resp.StatusCode, body)
+	}
+
+	if status, body := adminContent(t, srv, "guarded-local/src/secret/s.txt"); status != 200 || body != "secret" {
+		t.Errorf("protected file after a refused delete = %d %q, want 200 secret", status, body)
+	}
+
+	if resp, body := do(t, srv, call{
+		method:  "DELETE",
+		path:    "/artifactory/guarded-local/dst",
+		noAuth:  true,
+		headers: basicAuthHeader(deleter.name, deleter.password),
+	}); resp.StatusCode != 204 {
+		t.Errorf("delete of a deletable folder = %d %s, want 204", resp.StatusCode, body)
+	}
+}
