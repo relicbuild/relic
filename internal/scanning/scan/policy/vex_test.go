@@ -198,7 +198,9 @@ func TestImportVEX(t *testing.T) {
     {"vulnerability": {"name": "CVE-2023-1"}, "products": [{"@id": "pkg:oci/app@sha256%3Aabc", "subcomponents": [{"@id": "pkg:golang/golang.org/x/net@v0.10.0"}]}],
      "status": "not_affected", "justification": "vulnerable_code_not_in_execute_path"},
     {"vulnerability": {"name": "CVE-2023-2"}, "products": [{"@id": "pkg:npm/a@1"}], "status": "affected"},
-    {"vulnerability": {"name": "CVE-2023-3"}, "products": [{"@id": "https://example.com/not-a-purl"}], "status": "not_affected"}
+    {"vulnerability": {"name": "CVE-2023-3"}, "products": [{"@id": "https://example.com/not-a-purl"}], "status": "not_affected"},
+    {"vulnerability": {"name": "CVE-2020-7598"}, "products": [{"@id": "https://example.com/product", "identifiers": {"purl": "pkg:npm/minimist@0.0.8"}}],
+     "status": "not_affected", "justification": "vulnerable_code_not_in_execute_path"}
   ]
 }`))
 	if err != nil {
@@ -206,7 +208,7 @@ func TestImportVEX(t *testing.T) {
 	}
 
 	rules, skipped := ImportVEX(doc)
-	if len(rules) != 1 || skipped != 2 {
+	if len(rules) != 2 || skipped != 2 {
 		t.Fatalf("rules %+v, skipped %d", rules, skipped)
 	}
 
@@ -214,6 +216,12 @@ func TestImportVEX(t *testing.T) {
 		"pkg:golang/golang.org/x/net@v0.10.0",
 	}) || !strings.Contains(rules[0].Notes, "vulnerable_code_not_in_execute_path") {
 		t.Errorf("rule = %+v", rules[0])
+	}
+
+	if !slices.Equal(rules[1].Packages, []string{
+		"pkg:npm/minimist@0.0.8",
+	}) {
+		t.Errorf("rule of a product named by identifiers.purl = %+v", rules[1])
 	}
 
 	if _, err := ParseVEX([]byte(`{"@context": "https://cyclonedx.org"}`)); err == nil {

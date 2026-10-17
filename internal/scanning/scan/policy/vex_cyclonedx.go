@@ -8,7 +8,6 @@ import (
 	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
-	packageurl "github.com/package-url/packageurl-go"
 )
 
 // VEX formats.
@@ -136,8 +135,8 @@ func statementPackages(s VEXStatement) []string {
 		}
 
 		for _, t := range targets {
-			if _, err := packageurl.FromString(t.ID); err == nil && !slices.Contains(out, t.ID) {
-				out = append(out, t.ID)
+			if purl, ok := t.packageURL(); ok && !slices.Contains(out, purl) {
+				out = append(out, purl)
 			}
 		}
 	}
