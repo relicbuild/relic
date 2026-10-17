@@ -4,7 +4,9 @@
 package xraypolicy
 
 import (
+	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -112,15 +114,58 @@ type IgnoreFilters struct {
 	Builds          []IgnoreBuild     `json:"builds,omitempty"`
 }
 
+var ignoreFilterNames = []string{
+	"vulnerabilities",
+	"cves",
+	"licenses",
+	"watches",
+	"policies",
+	"components",
+	"artifacts",
+	"builds",
+}
+
+// UnmarshalJSON reads ignore filters and refuses, with policy.ErrInvalid, a
+// filter Relic does not evaluate: dropping it would ignore more than the
+// rule names.
+func (f *IgnoreFilters) UnmarshalJSON(b []byte) error {
+	var named map[string]json.RawMessage
+	if err := json.Unmarshal(b, &named); err != nil {
+		return err
+	}
+
+	for name, value := range named {
+		if !slices.Contains(ignoreFilterNames, name) && !emptyJSON(value) {
+			return fmt.Errorf("%w: the ignore filter %s is not supported", policy.ErrInvalid, name)
+		}
+	}
+
+	type filters IgnoreFilters
+
+	return json.Unmarshal(b, (*filters)(f))
+}
+
+func emptyJSON(value json.RawMessage) bool {
+	switch strings.TrimSpace(string(value)) {
+	case "null", "[]", "{}", `""`:
+		return true
+	}
+
+	return false
+}
+
 // IgnoreComponent is "<type>://<name>" with an optional version.
 type IgnoreComponent struct {
 	Name    string `json:"name"`
 	Version string `json:"version,omitempty"`
 }
 
-// IgnoreArtifact matches an artifact path ("repo/path/"), as a prefix.
+// IgnoreArtifact matches an artifact path ("repo/path/"), as a prefix. Name
+// and Version are read only to refuse them.
 type IgnoreArtifact struct {
-	Path string `json:"path,omitempty"`
+	Name    string `json:"name,omitempty"`
+	Version string `json:"version,omitempty"`
+	Path    string `json:"path,omitempty"`
 }
 
 // IgnoreBuild matches a build, with an optional number.
@@ -369,6 +414,13 @@ func IgnoreRuleFromXray(r IgnoreRule) (policy.IgnoreRule, error) {
 	}
 
 	for _, a := range f.Artifacts {
+		if a.Name != "" || a.Version != "" {
+			return policy.IgnoreRule{}, fmt.Errorf(
+				"%w: an ignored artifact is matched by its path only, not by name or version",
+				policy.ErrInvalid,
+			)
+		}
+
 		out.ArtifactPaths = append(out.ArtifactPaths, a.Path)
 	}
 

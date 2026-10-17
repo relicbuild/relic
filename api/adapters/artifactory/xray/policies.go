@@ -176,7 +176,13 @@ func (h *Handler) deleteWatch(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) createIgnoreRule(w http.ResponseWriter, r *http.Request) {
 	var doc xraypolicy.IgnoreRule
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&doc); err != nil {
+		if errors.Is(err, policy.ErrInvalid) {
+			h.adminError(w, r, err)
+			return
+		}
+
 		writeError(w, http.StatusBadRequest, "invalid ignore rule JSON")
+
 		return
 	}
 

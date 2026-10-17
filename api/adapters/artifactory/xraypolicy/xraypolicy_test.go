@@ -75,6 +75,54 @@ func TestRoundTrip(t *testing.T) {
 	}
 }
 
+func TestIgnoreRuleRefusesFiltersItCannotEvaluate(t *testing.T) {
+	t.Parallel()
+
+	for name, tt := range map[string]struct {
+		filters string
+		refused bool
+	}{
+		"docker layers": {
+			filters: `{"watches":["w"],"docker-layers":["sha256:0000"]}`,
+			refused: true,
+		},
+		"release bundles": {
+			filters: `{"watches":["w"],"release-bundles":[{"name":"rb","version":"1"}]}`,
+			refused: true,
+		},
+		"operational risks": {
+			filters: `{"operational_risk":["any"]}`,
+			refused: true,
+		},
+		"exposures": {
+			filters: `{"exposures":{"scanners":["EXP-1"]}}`,
+			refused: true,
+		},
+		"an unknown filter": {
+			filters: `{"watches":["w"],"bogus":1}`,
+			refused: true,
+		},
+		"an artifact by name": {
+			filters: `{"artifacts":[{"name":"other.jar","version":"9.9","path":"libs/u/"}]}`,
+			refused: true,
+		},
+		"an artifact by path, as jfrog-client-go sends it": {
+			filters: `{"watches":["w"],"artifacts":[{"name":"","path":"libs/u/"}],"docker-layers":[],"exposures":null}`,
+		},
+	} {
+		var r IgnoreRule
+
+		err := json.Unmarshal([]byte(`{"notes":"n","ignore_filters":`+tt.filters+`}`), &r)
+		if err == nil {
+			_, err = IgnoreRuleFromXray(r)
+		}
+
+		if refused := errors.Is(err, policy.ErrInvalid); refused != tt.refused {
+			t.Errorf("%s: err = %v, want refused %v", name, err, tt.refused)
+		}
+	}
+}
+
 func TestNative(t *testing.T) {
 	t.Parallel()
 
