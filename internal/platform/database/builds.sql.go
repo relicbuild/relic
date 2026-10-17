@@ -204,7 +204,7 @@ func (q *Queries) FindItemsBySHA1(ctx context.Context, arg FindItemsBySHA1Params
 const getBuildRun = `-- name: GetBuildRun :one
 SELECT id, project, name, number, started, started_ms, info, created, created_by FROM builds
 WHERE project = $1 AND name = $2 AND number = $3
-ORDER BY started DESC LIMIT 1
+ORDER BY started DESC, id DESC LIMIT 1
 `
 
 type GetBuildRunParams struct {
@@ -478,6 +478,43 @@ func (q *Queries) ListBuildPromotions(ctx context.Context, buildID uuid.UUID) ([
 	return items, nil
 }
 
+const listBuildRunIDsStartedAt = `-- name: ListBuildRunIDsStartedAt :many
+SELECT id FROM builds
+WHERE project = $1 AND name = $2 AND number = $3 AND started_ms = $4
+`
+
+type ListBuildRunIDsStartedAtParams struct {
+	Project   string
+	Name      string
+	Number    string
+	StartedMs int64
+}
+
+func (q *Queries) ListBuildRunIDsStartedAt(ctx context.Context, arg ListBuildRunIDsStartedAtParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listBuildRunIDsStartedAt,
+		arg.Project,
+		arg.Name,
+		arg.Number,
+		arg.StartedMs,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listBuildRuns = `-- name: ListBuildRuns :many
 SELECT id, number, started FROM builds
 WHERE project = $1 AND name = $2 ORDER BY started DESC
@@ -512,4 +549,18 @@ func (q *Queries) ListBuildRuns(ctx context.Context, arg ListBuildRunsParams) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const moveBuildPromotions = `-- name: MoveBuildPromotions :exec
+UPDATE build_promotions SET build_id = $1 WHERE build_id = ANY($2::uuid[])
+`
+
+type MoveBuildPromotionsParams struct {
+	ToBuildID    uuid.UUID
+	FromBuildIds []uuid.UUID
+}
+
+func (q *Queries) MoveBuildPromotions(ctx context.Context, arg MoveBuildPromotionsParams) error {
+	_, err := q.db.Exec(ctx, moveBuildPromotions, arg.ToBuildID, arg.FromBuildIds)
+	return err
 }

@@ -515,7 +515,7 @@ SELECT * FROM blobs WHERE sha1 = @sha1 ORDER BY created LIMIT 1;`
 const sqliteGetBuildRun = `-- name: GetBuildRun :one
 SELECT * FROM builds
 WHERE project = @project AND name = @name AND number = @number
-ORDER BY started DESC LIMIT 1;`
+ORDER BY started DESC, id DESC LIMIT 1;`
 
 const sqliteGetCVE = `-- name: GetCVE :one
 SELECT * FROM cves WHERE id = @id;`
@@ -858,6 +858,10 @@ WHERE project = @project GROUP BY name ORDER BY name;`
 
 const sqliteListBuildPromotions = `-- name: ListBuildPromotions :many
 SELECT * FROM build_promotions WHERE build_id = @build_id ORDER BY created;`
+
+const sqliteListBuildRunIDsStartedAt = `-- name: ListBuildRunIDsStartedAt :many
+SELECT id FROM builds
+WHERE project = @project AND name = @name AND number = @number AND started_ms = @started_ms;`
 
 const sqliteListBuildRuns = `-- name: ListBuildRuns :many
 SELECT id, number, started FROM builds
@@ -1293,6 +1297,10 @@ WHERE sha256 IN (SELECT b.sha256 FROM blobs b
                  ORDER BY b.unreferenced_since
                  LIMIT @max)
 RETURNING sha256;`
+
+const sqliteMoveBuildPromotions = `-- name: MoveBuildPromotions :exec
+UPDATE build_promotions SET build_id = @to_build_id
+WHERE build_id IN (SELECT value FROM json_each(@from_build_ids));`
 
 const sqliteNpmVersionExists = `-- name: NpmVersionExists :one
 SELECT EXISTS (SELECT 1 FROM npm_versions WHERE repo_key = @repo_key AND name = @name AND version = @version);`
@@ -4705,6 +4713,36 @@ func (q *sqliteQueries) ListBuildPromotions(ctx context.Context, arg uuid.UUID) 
 	return items, nil
 }
 
+func (q *sqliteQueries) ListBuildRunIDsStartedAt(ctx context.Context, arg ListBuildRunIDsStartedAtParams) ([]uuid.UUID, error) {
+	rows, err := q.query(ctx, "ListBuildRunIDsStartedAt", nil, sqliteListBuildRunIDsStartedAt, sql.Named("project", arg.Project), sql.Named("name", arg.Name), sql.Named("number", arg.Number), sql.Named("started_ms", arg.StartedMs))
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	items := []uuid.UUID{}
+
+	for rows.Next() {
+		var i uuid.UUID
+		if err := rows.Scan(sqliteUUIDScanner{&i}); err != nil {
+			return nil, err
+		}
+
+		items = append(items, i)
+	}
+
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
+
 func (q *sqliteQueries) ListBuildRuns(ctx context.Context, arg ListBuildRunsParams) ([]ListBuildRunsRow, error) {
 	rows, err := q.query(ctx, "ListBuildRuns", []string{"id", "number", "started"}, sqliteListBuildRuns, sql.Named("project", arg.Project), sql.Named("name", arg.Name))
 	if err != nil {
@@ -6778,6 +6816,12 @@ func (q *sqliteQueries) MarkCollectableBlobs(ctx context.Context, arg MarkCollec
 	}
 
 	return items, nil
+}
+
+func (q *sqliteQueries) MoveBuildPromotions(ctx context.Context, arg MoveBuildPromotionsParams) error {
+	_, err := q.db.ExecContext(ctx, sqliteMoveBuildPromotions, sql.Named("to_build_id", arg.ToBuildID.String()), sql.Named("from_build_ids", sqliteJSON(arg.FromBuildIds)))
+
+	return err
 }
 
 func (q *sqliteQueries) NpmVersionExists(ctx context.Context, arg NpmVersionExistsParams) (bool, error) {

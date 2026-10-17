@@ -200,6 +200,63 @@ func producing(number string, started time.Time, path string, file repository.It
 	}
 }
 
+func TestRepublishReplacesTheRun(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	builds, repos, _ := newService(t)
+	started := time.Now().Truncate(time.Millisecond)
+
+	first := deployFile(t, repos, "src", "re/a1.txt", "a1")
+	second := deployFile(t, repos, "src", "re/a2.txt", "a2")
+
+	doc := producing("1", started, "src/re/a1.txt", first)
+	if err := builds.PublishDocument(ctx, "", doc, "admin"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := builds.Promote(ctx, "", "app", "1", buildinfo.Promotion{
+		Status: "tested",
+	}, "admin", buildinfo.AllowAll); err != nil {
+		t.Fatal(err)
+	}
+
+	doc.Modules[0].Artifacts = append(doc.Modules[0].Artifacts, buildinfo.Artifact{
+		Name: second.Name,
+		Path: "src/re/a2.txt",
+		SHA1: second.Checksums.SHA1,
+	})
+
+	for range 2 {
+		if err := builds.PublishDocument(ctx, "", doc, "admin"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	runs, err := builds.Runs(ctx, "", "app")
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("runs = %+v %v, want one", runs, err)
+	}
+
+	run, err := builds.Run(ctx, "", "app", "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := len(run.Document.Modules[0].Artifacts); got != 2 {
+		t.Errorf("artifacts of the republished run = %d, want 2", got)
+	}
+
+	if len(run.Statuses) != 1 || run.Statuses[0].Status != "tested" {
+		t.Errorf("statuses = %+v, want the promotion of the replaced run", run.Statuses)
+	}
+
+	items, err := builds.Items(ctx, "", "app", "1", false)
+	if err != nil || len(items) != 2 {
+		t.Errorf("items = %+v %v, want both artifacts", items, err)
+	}
+}
+
 func TestPromoteNeedsDeleteToReplaceAFile(t *testing.T) {
 	t.Parallel()
 

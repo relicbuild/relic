@@ -26,7 +26,14 @@ WHERE project = @project AND name = @name ORDER BY started DESC;
 -- name: GetBuildRun :one
 SELECT * FROM builds
 WHERE project = @project AND name = @name AND number = @number
-ORDER BY started DESC LIMIT 1;
+ORDER BY started DESC, id DESC LIMIT 1;
+
+-- name: ListBuildRunIDsStartedAt :many
+SELECT id FROM builds
+WHERE project = @project AND name = @name AND number = @number AND started_ms = @started_ms;
+
+-- name: MoveBuildPromotions :exec
+UPDATE build_promotions SET build_id = @to_build_id WHERE build_id = ANY(@from_build_ids::uuid[]);
 
 -- name: ListBuildArtifacts :many
 SELECT * FROM build_artifacts WHERE build_id = @build_id;

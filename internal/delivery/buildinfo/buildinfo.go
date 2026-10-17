@@ -231,7 +231,17 @@ func (s *Service) Publish(ctx context.Context, project string, raw []byte, user 
 	art.BuildID, dep.BuildID = id, id
 
 	err = s.db.WithTx(ctx, func(q database.Querier) error {
-		err := q.InsertBuild(ctx, database.InsertBuildParams{
+		replaced, err := q.ListBuildRunIDsStartedAt(ctx, database.ListBuildRunIDsStartedAtParams{
+			Project:   project,
+			Name:      bi.Name,
+			Number:    bi.Number,
+			StartedMs: started.UnixMilli(),
+		})
+		if err != nil {
+			return fmt.Errorf("find the run to replace: %w", err)
+		}
+
+		err = q.InsertBuild(ctx, database.InsertBuildParams{
 			ID:        id,
 			Project:   project,
 			Name:      bi.Name,
@@ -257,7 +267,7 @@ func (s *Service) Publish(ctx context.Context, project string, raw []byte, user 
 			}
 		}
 
-		return nil
+		return replaceRuns(ctx, q, replaced, id)
 	})
 	if err != nil {
 		return err
@@ -284,6 +294,28 @@ func (s *Service) Publish(ctx context.Context, project string, raw []byte, user 
 				id,
 			}),
 		)
+	}
+
+	return nil
+}
+
+// replaceRuns hands the promotions of the replaced runs to the run that
+// replaces them, and deletes the replaced runs.
+func replaceRuns(ctx context.Context, q database.Querier, replaced []uuid.UUID, replacement uuid.UUID) error {
+	if len(replaced) == 0 {
+		return nil
+	}
+
+	err := q.MoveBuildPromotions(ctx, database.MoveBuildPromotionsParams{
+		ToBuildID:    replacement,
+		FromBuildIds: replaced,
+	})
+	if err != nil {
+		return fmt.Errorf("keep the promotions of the replaced run: %w", err)
+	}
+
+	if err := q.DeleteBuilds(ctx, replaced); err != nil {
+		return fmt.Errorf("delete the replaced run: %w", err)
 	}
 
 	return nil
