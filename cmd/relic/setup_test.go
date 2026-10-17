@@ -43,6 +43,40 @@ func applySetupSteps(t *testing.T, client string, e setupEnv) error {
 	return nil
 }
 
+func TestSetupCommandsRunUnderHome(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("the command is a shell script")
+	}
+
+	home, seen := t.TempDir(), t.TempDir()
+	cmd, _ := setupTestCommand(t)
+
+	err := applySetupStep(cmd, setupEnv{
+		home: home,
+	}, setupClient{}, setupStep{
+		command: []string{
+			"sh",
+			"-c",
+			`printf %s "$HOME" > "$0/home"; printf %s "${XDG_CONFIG_HOME-unset}" > "$0/config"`,
+			seen,
+		},
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for file, want := range map[string]string{
+		"home":   home,
+		"config": "unset",
+	} {
+		if b, err := os.ReadFile(filepath.Join(seen, file)); err != nil || string(b) != want {
+			t.Errorf("%s = %q %v, want %q", file, b, err, want)
+		}
+	}
+}
+
 func TestNuGetSetupRunsAgain(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the stand-in dotnet is a shell script")

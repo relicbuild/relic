@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -904,7 +905,8 @@ func packageSetupCmd(g *globals) *cobra.Command {
 	cmd.Flags().StringVar(&project, "project", ".", "the project directory --agent writes AGENTS.md and .mcp.json into")
 	cmd.Flags().BoolVar(&force, "force", false, "replace files relic does not write a block into")
 	cmd.Flags().BoolVar(&showToken, "show-token", false, "print the token instead of <token>")
-	cmd.Flags().StringVar(&home, "home", userHome(), "the home directory user files go under")
+	cmd.Flags().
+		StringVar(&home, "home", userHome(), "the home directory user files go under, and the client commands run with")
 	cmd.Flags().StringVar(&root, "root", "/", "the root directory system files go under")
 	cmd.Flags().Int32Var(&expiresDays, "expires-days", 90, "lifetime in days of the token issued for the client; "+
 		"0 never expires for administrators and is 365 for other users")
@@ -1126,6 +1128,46 @@ func withBlock(old, repo, content string) (string, error) {
 	return old + block, nil
 }
 
+var homeVariables = []string{
+	"HOME",
+	"USERPROFILE",
+	"APPDATA",
+	"LOCALAPPDATA",
+	"XDG_CONFIG_HOME",
+	"XDG_CACHE_HOME",
+	"XDG_DATA_HOME",
+	"XDG_STATE_HOME",
+}
+
+// setupCommandEnvironment is the environment client commands run in: this
+// process's, or, for another home than the user's, one in which every
+// per-user location the clients read is under home.
+func setupCommandEnvironment(home string) []string {
+	if home == "" || home == userHome() {
+		return os.Environ()
+	}
+
+	env := slices.DeleteFunc(os.Environ(), func(variable string) bool {
+		name, _, _ := strings.Cut(variable, "=")
+
+		return slices.ContainsFunc(homeVariables, func(homeVariable string) bool {
+			return strings.EqualFold(name, homeVariable)
+		})
+	})
+
+	env = append(env, "HOME="+home)
+	if runtime.GOOS == "windows" {
+		env = append(
+			env,
+			"USERPROFILE="+home,
+			"APPDATA="+filepath.Join(home, "AppData", "Roaming"),
+			"LOCALAPPDATA="+filepath.Join(home, "AppData", "Local"),
+		)
+	}
+
+	return env
+}
+
 func applySetupStep(cmd *cobra.Command, e setupEnv, client setupClient, s setupStep, force bool) error {
 	out := cmd.OutOrStdout()
 
@@ -1148,7 +1190,7 @@ func applySetupStep(cmd *cobra.Command, e setupEnv, client setupClient, s setupS
 		//nolint:gosec // G204: the client's own command, arguments not parsed by a shell
 		c := exec.CommandContext(cmd.Context(), s.command[0], args...)
 		c.Stdin = strings.NewReader(s.stdin)
-		c.Env = append(os.Environ(), s.env...)
+		c.Env = append(setupCommandEnvironment(e.home), s.env...)
 		c.Stdout, c.Stderr = cmd.ErrOrStderr(), cmd.ErrOrStderr()
 
 		if s.undo {
