@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,15 +15,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var secretSetting = regexp.MustCompile(`(KEY|PASSWORD|SECRET|TOKEN)$`)
+const maskedValue = "********"
+
+var (
+	secretSetting   = regexp.MustCompile(`(KEY|PASSWORD|SECRET|TOKEN|CONNECTION_STRING|HEADERS)$`)
+	secretParameter = regexp.MustCompile(`(?i)(key|password|secret|token)$`)
+)
 
 func serverConfigCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Show the settings of the Relic service on this machine, secrets masked",
 		Long: "Prints the settings file relic server setup wrote (server.env, or /etc/relic/relic.env for a system " +
-			"service), with keys, passwords, secrets and tokens masked. relic server config set changes one " +
-			"setting and restarts the service.",
+			"service), with keys, passwords, secrets, tokens, connection strings, headers and the passwords in " +
+			"URLs masked. relic server config set changes one setting and restarts the service.",
 		Example: "  relic server config\n" +
 			"  relic server config set RELIC_HTTP_LISTEN_ADDRESS=0.0.0.0:8090",
 		Args: cobra.NoArgs,
@@ -38,12 +44,7 @@ func serverConfigCmd(g *globals) *cobra.Command {
 			}
 
 			for l := range strings.Lines(string(b)) {
-				key, _, ok := strings.Cut(strings.TrimSpace(l), "=")
-				if ok && !strings.HasPrefix(key, "#") && secretSetting.MatchString(key) {
-					l = key + "=********\n"
-				}
-
-				_, _ = fmt.Fprint(cmd.OutOrStdout(), l)
+				_, _ = fmt.Fprint(cmd.OutOrStdout(), maskedSettingsLine(l))
 			}
 
 			return nil
@@ -52,6 +53,53 @@ func serverConfigCmd(g *globals) *cobra.Command {
 	cmd.AddCommand(serverConfigSetCmd(g))
 
 	return cmd
+}
+
+func maskedSettingsLine(line string) string {
+	key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
+	if !ok || strings.HasPrefix(key, "#") {
+		return line
+	}
+
+	if secretSetting.MatchString(key) {
+		return key + "=" + maskedValue + "\n"
+	}
+
+	if masked := withoutURLCredentials(value); masked != value {
+		return key + "=" + masked + "\n"
+	}
+
+	return line
+}
+
+func withoutURLCredentials(value string) string {
+	u, err := url.Parse(value)
+	if err != nil || u.Scheme == "" {
+		return value
+	}
+
+	masked := false
+
+	parameters := strings.Split(u.RawQuery, "&")
+	for i, p := range parameters {
+		if name, _, ok := strings.Cut(p, "="); ok && secretParameter.MatchString(name) {
+			parameters[i], masked = name+"="+maskedValue, true
+		}
+	}
+
+	u.RawQuery = strings.Join(parameters, "&")
+
+	if _, ok := u.User.Password(); ok {
+		u.User = url.User(u.User.Username())
+
+		return strings.Replace(u.String(), "@", ":"+maskedValue+"@", 1)
+	}
+
+	if !masked {
+		return value
+	}
+
+	return u.String()
 }
 
 func serverConfigSetCmd(g *globals) *cobra.Command {
