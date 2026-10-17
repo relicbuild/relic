@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"encoding/json"
 	"errors"
 	"slices"
 	"testing"
@@ -148,6 +149,32 @@ func TestImportedSBOMs(t *testing.T) {
 		if _, err := DetectSBOM([]byte(bad)); !errors.Is(err, ErrSBOM) {
 			t.Errorf("DetectSBOM(%q) = %v", bad, err)
 		}
+	}
+}
+
+func TestSPDXExportOfNoComponentsHasEmptyRelationships(t *testing.T) {
+	t.Parallel()
+
+	stored, err := gzipBytes([]byte(`{"bomFormat":"CycloneDX","specVersion":"1.6","version":1,"components":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	doc, err := ExportSBOM(stored, SPDXJSON, "libs/empty", time.Unix(1_800_000_000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got struct {
+		Packages      []json.RawMessage `json:"packages"`
+		Relationships []json.RawMessage `json:"relationships"`
+	}
+	if err := json.Unmarshal(doc, &got); err != nil {
+		t.Fatal(err)
+	}
+
+	if got.Packages == nil || got.Relationships == nil {
+		t.Errorf("SPDX export of no components = %s, want empty packages and relationships arrays", doc)
 	}
 }
 

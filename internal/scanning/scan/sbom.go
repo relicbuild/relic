@@ -336,6 +336,7 @@ func spdxDocument(comps []Component, subject string, now time.Time) ([]byte, err
 		Name:              subject,
 		DocumentNamespace: "https://relic.build/spdx/" + uuid.New().String(),
 		Packages:          make([]pkg, 0, len(comps)),
+		Relationships:     make([]relationship, 0, len(comps)),
 	}
 	doc.CreationInfo.Created = now.UTC().Format(time.RFC3339)
 	doc.CreationInfo.Creators = []string{
