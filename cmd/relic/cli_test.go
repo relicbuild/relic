@@ -897,8 +897,9 @@ func TestTargetUsesTheLocalServiceWithoutAContext(t *testing.T) {
 			userSettings: "RELIC_ADMIN_PASSWORD=first\n",
 			contexts:     contexts,
 			want: serverTarget{
-				url:   "https://a.example",
-				token: "ta",
+				url:          "https://a.example",
+				token:        "ta",
+				contextToken: true,
 			},
 		},
 		{
