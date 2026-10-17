@@ -75,6 +75,50 @@ func TestQuarantineAppliesAsSoonAsItIsTurnedOn(t *testing.T) {
 	}
 }
 
+func TestReleaseBundleRefusesQuarantinedFiles(t *testing.T) {
+	t.Parallel()
+
+	srv := server(t)
+	ctx := t.Context()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "jar "+html.EscapeString(r.URL.Path))
+	}))
+	t.Cleanup(upstream.Close)
+
+	repos := relicv1connect.NewRepositoryServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	if _, err := repos.CreateRepository(ctx, connect.NewRequest(&relicv1.CreateRepositoryRequest{
+		Repository: &relicv1.Repository{
+			Name:   "bundled-remote",
+			Class:  relicv1.RepositoryClass_REPOSITORY_CLASS_REMOTE,
+			Format: relicv1.Format_FORMAT_MAVEN,
+			Remote: &relicv1.RemoteRepositorySettings{
+				Url:        upstream.URL,
+				Quarantine: true,
+			},
+		},
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	if resp, body := do(t, srv, call{
+		method: http.MethodGet,
+		path:   "/artifactory/bundled-remote/g/a/1.0/a-1.0.jar",
+	}); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("a fresh file = %d %s, want held", resp.StatusCode, body)
+	}
+
+	resp, body := do(t, srv, call{
+		method: http.MethodPost,
+		path:   "/lifecycle/api/v2/release_bundle?async=false",
+		body: `{"release_bundle_name":"held","release_bundle_version":"1.0.0","source_type":"artifacts",
+			"source":{"artifacts":[{"path":"bundled-remote/g/a/1.0/a-1.0.jar"}]}}`,
+	})
+	if resp.StatusCode != http.StatusForbidden || !strings.Contains(body, "quarantined") {
+		t.Errorf("a release bundle holding a quarantined file = %d %s, want 403", resp.StatusCode, body)
+	}
+}
+
 func TestQuarantine(t *testing.T) {
 	t.Parallel()
 	srv, db := serverDB(t)
