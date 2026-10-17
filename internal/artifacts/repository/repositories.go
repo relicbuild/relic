@@ -122,6 +122,10 @@ func (s *Service) UpdateRepository(ctx context.Context, r Repository) error {
 		return fmt.Errorf("%w: cannot change the class from %s to %s", ErrInvalidRepository, existing.Class, r.Class)
 	}
 
+	if existing.Format != r.Format {
+		return fmt.Errorf("%w: cannot change the format from %s to %s", ErrInvalidRepository, existing.Format, r.Format)
+	}
+
 	if r.Config.Remote != nil && r.Config.Remote.Password == "" && existing.Config.Remote != nil {
 		stored, err := s.storedPassword(ctx, r.Name)
 		if err != nil {

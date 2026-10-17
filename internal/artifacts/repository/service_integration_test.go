@@ -407,6 +407,64 @@ func TestRepositoryLifecycle(t *testing.T) {
 	}
 }
 
+func TestUpdateRepositoryKeepsTheClassAndFormat(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		update  Repository
+		wantErr bool
+	}{
+		{
+			name: "same class and format",
+			update: Repository{
+				Name:   "generic-local",
+				Class:  ClassLocal,
+				Format: FormatGeneric,
+			},
+		},
+		{
+			name: "another format",
+			update: Repository{
+				Name:   "generic-local",
+				Class:  ClassLocal,
+				Format: FormatNpm,
+			},
+			wantErr: true,
+		},
+		{
+			name: "another class",
+			update: Repository{
+				Name:   "generic-local",
+				Class:  ClassRemote,
+				Format: FormatGeneric,
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			s, _, _ := newTestService(t)
+
+			err := s.UpdateRepository(t.Context(), tt.update)
+			if tt.wantErr != errors.Is(err, ErrInvalidRepository) {
+				t.Fatalf("UpdateRepository = %v, want an invalid repository error: %v", err, tt.wantErr)
+			}
+
+			got, err := s.GetRepository(t.Context(), "generic-local")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if got.Format != FormatGeneric || got.Class != ClassLocal {
+				t.Errorf("stored class %s, format %s; want local, generic", got.Class, got.Format)
+			}
+		})
+	}
+}
+
 func TestConcurrentDeploysToOnePath(t *testing.T) {
 	t.Parallel()
 	s, _, db := newTestService(t)

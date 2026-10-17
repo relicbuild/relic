@@ -321,6 +321,15 @@ func Merge(existing repository.Repository, patch []byte) (repository.Repository,
 		)
 	}
 
+	if r.Format != existing.Format {
+		return repository.Repository{}, fmt.Errorf(
+			"%w: cannot change packageType from %s to %s",
+			repository.ErrInvalidRepository,
+			existing.Format,
+			r.Format,
+		)
+	}
+
 	if r.Config.Remote != nil && r.Config.Remote.Password == "" && existing.Config.Remote != nil {
 		r.Config.Remote.Password = existing.Config.Remote.Password
 	}

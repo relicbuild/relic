@@ -322,6 +322,11 @@ func TestMerge(t *testing.T) {
 	if _, err := Merge(existing, []byte(`{"rclass":"local"}`)); !errors.Is(err, repository.ErrInvalidRepository) {
 		t.Errorf("class change: err = %v", err)
 	}
+
+	if _, err := Merge(existing, []byte(`{"packageType":"maven"}`)); !errors.Is(err, repository.ErrInvalidRepository) ||
+		!strings.Contains(err.Error(), "packageType") {
+		t.Errorf("package type change: err = %v", err)
+	}
 }
 
 func TestFormatOf(t *testing.T) {
