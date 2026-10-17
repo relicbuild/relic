@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
@@ -697,11 +698,11 @@ func TestPromoteNeedsDeletePermissionToOverwrite(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			failed := slices.ContainsFunc(msgs, func(m buildinfo.Message) bool {
-				return m.Level == buildinfo.LevelError && strings.HasPrefix(m.Text, "failed to promote libs/app.bin")
+			skipped := slices.ContainsFunc(msgs, func(m buildinfo.Message) bool {
+				return m.Level == buildinfo.LevelWarning && strings.HasPrefix(m.Text, "skipped libs/app.bin")
 			})
-			if failed != tt.wantError {
-				t.Errorf("Promote reported %+v; want a failure %t", msgs, tt.wantError)
+			if skipped != tt.wantError {
+				t.Errorf("Promote reported %+v; want libs/app.bin skipped %t", msgs, tt.wantError)
 			}
 
 			got, err := repos.Stat(ctx, "prod", "app.bin")
@@ -713,5 +714,97 @@ func TestPromoteNeedsDeletePermissionToOverwrite(t *testing.T) {
 				t.Errorf("prod/app.bin has SHA-256 %s; want %s", got.Checksums.SHA256, tt.wantSHA)
 			}
 		})
+	}
+}
+
+func TestPromoteRefusesBlockedFiles(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	builds, repos, _ := newService(t)
+
+	for _, name := range []string{
+		"libs",
+		"prod",
+	} {
+		if err := repos.CreateRepository(ctx, repository.Repository{
+			Name:   name,
+			Class:  repository.ClassLocal,
+			Format: "generic",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	artifacts := make([]buildinfo.Artifact, 0, 2)
+
+	for _, name := range []string{
+		"app.bin",
+		"blocked.bin",
+	} {
+		item, err := repos.Deploy(ctx, repository.DeployInput{
+			Repository: "libs",
+			Path:       name,
+			Body:       strings.NewReader("content of " + name),
+			User:       "admin",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		artifacts = append(artifacts, buildinfo.Artifact{
+			Name: name,
+			SHA1: item.Checksums.SHA1,
+		})
+	}
+
+	doc := run("1", time.Now())
+	doc.Modules[0].Artifacts = artifacts
+
+	if err := builds.PublishDocument(ctx, "", doc, "admin"); err != nil {
+		t.Fatal(err)
+	}
+
+	builds.SetDownloadBlocker(func(_ context.Context, file repository.Item) error {
+		if file.Name == "blocked.bin" {
+			return fmt.Errorf("%w: %s is blocked", repository.ErrForbidden, file.Name)
+		}
+
+		return nil
+	})
+
+	msgs, err := builds.Promote(ctx, "", "app", "1", buildinfo.Promotion{
+		TargetRepository: "prod",
+		Copy:             true,
+	}, "admin", buildinfo.AllowAll)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	errs := slices.DeleteFunc(slices.Clone(msgs), func(m buildinfo.Message) bool {
+		return m.Level != buildinfo.LevelError
+	})
+	if len(errs) != 1 || !strings.Contains(errs[0].Text, "blocked.bin") {
+		t.Errorf("Promote report = %+v; want one error, for blocked.bin", msgs)
+	}
+
+	if _, err := repos.Stat(ctx, "prod", "blocked.bin"); !errors.Is(err, repository.ErrNotFound) {
+		t.Errorf("Stat of the promoted blocked file = %v; want ErrNotFound", err)
+	}
+
+	if _, err := repos.Stat(ctx, "prod", "app.bin"); err != nil {
+		t.Errorf("Stat of the promoted file = %v", err)
+	}
+
+	_, err = builds.Promote(ctx, "", "app", "1", buildinfo.Promotion{
+		TargetRepository: "prod",
+		FailFast:         true,
+	}, "admin", buildinfo.AllowAll)
+	if !errors.Is(err, repository.ErrForbidden) {
+		t.Errorf("Promote with fail fast = %v; want ErrForbidden", err)
+	}
+
+	if _, err := repos.Stat(ctx, "libs", "blocked.bin"); err != nil {
+		t.Errorf("Stat of the blocked file after a refused move = %v", err)
 	}
 }

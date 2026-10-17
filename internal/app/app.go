@@ -932,6 +932,7 @@ func newRouter(
 	bundles.SetProjects(projects)
 	repos.ReserveStorage(bundles.StorageOwner)
 	bundles.SetDownloadBlocker(blocker.RefuseCopy)
+	builds.SetDownloadBlocker(blocker.RefuseCopy)
 	lifecycleapi.New(bundles, sec, log).Register(rt)
 	evidenceSvc := evidence.New(db, repos, log)
 	bundles.SetEvidence(evidenceSvc)

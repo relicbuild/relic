@@ -102,6 +102,8 @@ type Service struct {
 	layout Layout
 	log    *slog.Logger
 	now    func() time.Time
+	// refuseFile refuses a file whose download is blocked; nil refuses none.
+	refuseFile func(ctx context.Context, file repository.Item) error
 }
 
 // NewService returns a Service.
@@ -179,6 +181,12 @@ func (l Layout) Project(repository string) string {
 
 // SetLayout sets the build-info repository names.
 func (s *Service) SetLayout(l Layout) { s.layout = l }
+
+// SetDownloadBlocker keeps files out of promotions when refuse returns an
+// error for them, as it does for a blocked download.
+func (s *Service) SetDownloadBlocker(refuse func(ctx context.Context, file repository.Item) error) {
+	s.refuseFile = refuse
+}
 
 // Repository is the repository holding a project's build-info documents.
 func (s *Service) Repository(project string) string { return s.layout.Repository(project) }

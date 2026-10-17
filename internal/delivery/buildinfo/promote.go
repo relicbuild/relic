@@ -58,6 +58,8 @@ type Message struct {
 	Text  string
 }
 
+var errOverwriteNeedsDelete = fmt.Errorf("%w: overwriting needs delete permission", repository.ErrForbidden)
+
 // Promote copies or moves a build's artifacts (and optionally dependencies)
 // to the target repository, sets properties on them, and records the status.
 func (s *Service) Promote(
@@ -130,16 +132,17 @@ func (s *Service) Promote(
 					Move:                  !req.Copy,
 					DryRun:                req.DryRun,
 					User:                  user,
+					RefuseFile:            s.refuseFile,
 					RefuseOverwrite: func(_ context.Context, existing repository.Item) error {
 						if check(existing, auth.ActionDelete) {
 							return nil
 						}
 
-						return repository.ErrForbidden
+						return errOverwriteNeedsDelete
 					},
 				},
 			)
-			if errors.Is(err, repository.ErrForbidden) {
+			if errors.Is(err, errOverwriteNeedsDelete) {
 				msgs = append(
 					msgs,
 					Message{
