@@ -10,7 +10,7 @@ const emit = defineEmits<{ deleted: [path: string] }>()
 
 const { artifacts, scans } = useRelic()
 const copy = useCopy()
-const { me } = useSession()
+const { views } = useSession()
 const toast = useToast()
 const overlay = useOverlay()
 const confirm = overlay.create(ConfirmModal)
@@ -151,7 +151,7 @@ const tabs = computed<TabsItem[]>(() => {
   if (b && (b.producedBy.length || b.usedBy.length)) {
     items.push({ label: 'Builds', icon: 'i-lucide-hammer', slot: 'builds', value: 'builds', badge: b.producedBy.length + b.usedBy.length })
   }
-  if (me.value?.admin) {
+  if (views.value) {
     items.push({ label: 'Permissions', icon: 'i-lucide-key-round', slot: 'permissions', value: 'permissions' })
   }
   if (hasSbom.value) {
