@@ -409,6 +409,55 @@ func (s *artifactServer) annotatable(ctx context.Context, key, p string, recursi
 	return it, nil
 }
 
+func canWriteDestination(ctx context.Context, d Dependencies, repoKey, path string) error {
+	err := can(ctx, d, repoKey, path, auth.ActionWrite)
+
+	switch {
+	case errors.Is(err, repository.ErrRepositoryNotFound):
+	case errors.Is(err, repository.ErrNotFound):
+		readable, err := canReadSomewhere(ctx, d, repoKey)
+		if err != nil {
+			return err
+		}
+
+		if readable {
+			return connect.NewError(
+				connect.CodePermissionDenied,
+				errors.New("no write permission on "+repoKey+"/"+path),
+			)
+		}
+	default:
+		return err
+	}
+
+	return connect.NewError(
+		connect.CodeNotFound,
+		errors.New("destination "+repoKey+"/"+path+" not found"),
+	)
+}
+
+func canReadSomewhere(ctx context.Context, d Dependencies, repoKey string) (bool, error) {
+	p := auth.FromContext(ctx)
+	if p.Admin || p.Viewer {
+		return true, nil
+	}
+
+	r, err := d.Repositories.GetRepository(ctx, repoKey)
+	if err != nil {
+		return false, err
+	}
+
+	perms, err := d.Security.Permissions(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	return perms.CanReadRepository(p.Subject(), auth.Repository{
+		Name:  r.Name,
+		Class: string(r.Class),
+	}), nil
+}
+
 func (s *artifactServer) copyOrMove(ctx context.Context, key, p, toKey, toPath string, move, dryRun bool) error {
 	p, toPath = cleanPath(p), cleanPath(toPath)
 
@@ -421,15 +470,7 @@ func (s *artifactServer) copyOrMove(ctx context.Context, key, p, toKey, toPath s
 		return err
 	}
 
-	err := can(ctx, s.d, toKey, toPath, auth.ActionWrite)
-	if errors.Is(err, repository.ErrNotFound) {
-		return connect.NewError(
-			connect.CodePermissionDenied,
-			errors.New("no write permission on "+toKey+"/"+toPath),
-		)
-	}
-
-	if err != nil {
+	if err := canWriteDestination(ctx, s.d, toKey, toPath); err != nil {
 		return err
 	}
 

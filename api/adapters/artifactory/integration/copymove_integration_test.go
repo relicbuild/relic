@@ -26,6 +26,7 @@ func guardedRepository(t *testing.T, users ...restrictedUser) *httptest.Server {
 	for _, key := range []string{
 		"guarded-local",
 		"other-local",
+		"hidden-local",
 	} {
 		if resp, body := do(t, srv, call{
 			method: "PUT",
@@ -224,6 +225,37 @@ func TestCopyAndMoveCheckEveryFile(t *testing.T) {
 		if code(err) != connect.CodePermissionDenied ||
 			!strings.Contains(err.Error(), "guarded-local/src/secret/open.txt") {
 			t.Errorf("Relic API copy to an unwritable destination = %v, want PermissionDenied naming it", err)
+		}
+	})
+
+	t.Run("a destination repository the caller cannot read stays hidden", func(t *testing.T) {
+		t.Parallel()
+
+		for _, key := range []string{
+			"hidden-local",
+			"missing-local",
+		} {
+			_, err := artifacts(copier).CopyItem(t.Context(), connect.NewRequest(&relicv1.CopyItemRequest{
+				Repository:   "guarded-local",
+				Path:         "dst/open.txt",
+				ToRepository: key,
+				ToPath:       "open.txt",
+			}))
+			if code(err) != connect.CodeNotFound ||
+				!strings.Contains(err.Error(), "destination "+key+"/open.txt not found") {
+				t.Errorf("Relic API copy to %s = %v, want NotFound naming the destination", key, err)
+			}
+
+			_, err = artifacts(mover).MoveItem(t.Context(), connect.NewRequest(&relicv1.MoveItemRequest{
+				Repository:   "guarded-local",
+				Path:         "dst/open.txt",
+				ToRepository: key,
+				ToPath:       "open.txt",
+			}))
+			if code(err) != connect.CodeNotFound ||
+				!strings.Contains(err.Error(), "destination "+key+"/open.txt not found") {
+				t.Errorf("Relic API move to %s = %v, want NotFound naming the destination", key, err)
+			}
 		}
 	})
 
