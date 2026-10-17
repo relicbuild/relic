@@ -209,7 +209,7 @@ spec: {class: local, format: gomod}
 
 	out, err = setup("go", "go-local", "--private", "git.example.com/*")
 	if err != nil || !strings.Contains(out, "$ go env -w GOPROXY="+srv.URL) ||
-		!strings.Contains(out, "$ go env -w GONOSUMDB=git.example.com/*") || !strings.Contains(out, ".netrc") {
+		!strings.Contains(out, "$ go env -w GONOSUMDB='git.example.com/*'") || !strings.Contains(out, ".netrc") {
 		t.Errorf("go = %q %v", out, err)
 	}
 }

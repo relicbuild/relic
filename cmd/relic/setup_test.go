@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -41,6 +42,69 @@ func applySetupSteps(t *testing.T, client string, e setupEnv) error {
 	}
 
 	return nil
+}
+
+func TestPrintedSetupCommandsAreShell(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("checks the commands with sh")
+	}
+
+	e := setupEnv{
+		repo:  "gems-local",
+		url:   "https://relic.example.com/gems/gems-local/",
+		user:  "ci",
+		token: "<token>",
+		home:  t.TempDir(),
+		flags: map[string]string{
+			"private": "git.example.com/*",
+		},
+	}
+
+	for _, client := range []string{
+		"ruby",
+		"go",
+		"conan",
+		"nuget",
+	} {
+		steps, err := setupClients[client].steps(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var out bytes.Buffer
+		for _, s := range steps {
+			printSetupStep(&out, e, setupClients[client], s)
+		}
+
+		for line := range strings.Lines(out.String()) {
+			command, ok := strings.CutPrefix(strings.TrimSuffix(line, "\n"), "$ ")
+			if !ok {
+				continue
+			}
+
+			if err := exec.CommandContext(t.Context(), "sh", "-n", "-c", command).Run(); err != nil {
+				t.Errorf("%s: %q is not a shell command: %v", client, command, err)
+				continue
+			}
+
+			_, last, _ := strings.Cut(command, "| ")
+			if client != "ruby" || !strings.HasPrefix(last, "ruby ") {
+				continue
+			}
+
+			words, err := exec.CommandContext(t.Context(), "sh", "-c", `set -f; printf '%s\n' `+last).Output()
+			if err != nil ||
+				!strings.Contains(string(words), "\nBundler.settings.set_global(ARGV[0], $stdin.read.chomp)\n") {
+				t.Errorf("ruby: %q does not pass the script as one word: %q %v", command, words, err)
+			}
+		}
+	}
+
+	if note := setupClients["ruby"].notes(e); !strings.Contains(note, "https://ci:<token>@relic.example.com/") {
+		t.Errorf("gem note = %q", note)
+	}
 }
 
 func TestSetupCommandsRunUnderHome(t *testing.T) {

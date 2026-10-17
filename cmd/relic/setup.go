@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -423,12 +424,13 @@ var setupClients = map[string]setupClient{
 			}, nil
 		},
 		notes: func(e setupEnv) string {
-			source, err := withUserinfo(e.url, e.user, "<token>")
+			u, err := url.Parse(e.url)
 			if err != nil {
-				source = e.url
+				return "For gem: gem sources --add " + e.url
 			}
 
-			return "For gem: gem sources --add " + source
+			return "For gem: gem sources --add " + u.Scheme + "://" + url.User(e.user).String() + ":<token>@" +
+				u.Host + u.EscapedPath()
 		},
 	},
 	"terraform": {
@@ -1076,11 +1078,35 @@ func stepPath(e setupEnv, client setupClient, file string) string {
 	return filepath.Join(e.home, file)
 }
 
+var (
+	plainShellWord  = regexp.MustCompile(`^[A-Za-z0-9@%+=:,./_-]+$`)
+	shellAssignment = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
+)
+
+// shellWord is word as a POSIX shell reads it back unchanged: quoted unless
+// it is plain, with only the value of a NAME=value assignment quoted.
+func shellWord(word string) string {
+	if plainShellWord.MatchString(word) {
+		return word
+	}
+
+	if name := shellAssignment.FindString(word); name != "" {
+		return name + shellWord(strings.TrimPrefix(word, name))
+	}
+
+	return "'" + strings.ReplaceAll(word, "'", `'\''`) + "'"
+}
+
 func printSetupStep(w io.Writer, e setupEnv, client setupClient, s setupStep) {
 	if s.command != nil {
-		cmdline := strings.Join(append(append(slices.Clone(s.env), s.command...), s.argumentFile...), " ")
+		words := make([]string, 0, len(s.env)+len(s.command)+len(s.argumentFile))
+		for _, word := range append(append(slices.Clone(s.env), s.command...), s.argumentFile...) {
+			words = append(words, shellWord(word))
+		}
+
+		cmdline := strings.Join(words, " ")
 		if s.stdin != "" {
-			cmdline = "echo " + strings.TrimSuffix(s.stdin, "\n") + " | " + cmdline
+			cmdline = "echo " + shellWord(strings.TrimSuffix(s.stdin, "\n")) + " | " + cmdline
 		}
 
 		if s.undo {
