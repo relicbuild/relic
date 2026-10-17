@@ -5,9 +5,11 @@ package security_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"uuid"
@@ -571,5 +573,84 @@ func TestPutUserRefusesNamesThatCannotSignIn(t *testing.T) {
 				t.Fatalf("PutUser(%q) = %v, want %v", tt.user, err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestConcurrentCreationsOfCaseVariantsLeaveOneUser(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db := databasetest.NewDB(t)
+	s := security.NewService(db, slog.New(slog.DiscardHandler))
+
+	for round := range 5 {
+		base := fmt.Sprintf("user%d", round)
+		variants := []string{
+			base,
+			strings.ToUpper(base),
+			"U" + base[1:],
+			"uSER" + base[4:],
+			"usEr" + base[4:],
+			"uSer" + base[4:],
+			"useR" + base[4:],
+			"UsEr" + base[4:],
+		}
+		start := make(chan struct{})
+		results := make(chan error, len(variants))
+
+		var creates sync.WaitGroup
+		for _, name := range variants {
+			creates.Go(func() {
+				<-start
+
+				results <- s.CreateUser(ctx, security.User{
+					Name:     name,
+					Email:    name + "@example.com",
+					Password: "User-pass-12345",
+				})
+			})
+		}
+
+		close(start)
+		creates.Wait()
+		close(results)
+
+		created := 0
+
+		for err := range results {
+			switch {
+			case err == nil:
+				created++
+			case !errors.Is(err, security.ErrExists):
+				t.Errorf("create a variant of %s: %v", base, err)
+			}
+		}
+
+		if created != 1 {
+			t.Errorf("%d concurrent creations of variants of %s succeeded, want 1", created, base)
+		}
+	}
+}
+
+func TestPutUserReplacesAUserWhoseNameIsNoLongerAccepted(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db := databasetest.NewDB(t)
+
+	if err := db.CreateUser(ctx, database.CreateUserParams{
+		ID:           uuid.NewV7(),
+		Username:     "build bot",
+		PasswordHash: "x",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	s := security.NewService(db, slog.New(slog.DiscardHandler))
+	if _, err := s.PutUser(ctx, security.User{
+		Name:  "build bot",
+		Email: "build@example.com",
+	}); err != nil {
+		t.Errorf("PutUser of an existing user = %v, want it accepted", err)
 	}
 }

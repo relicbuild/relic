@@ -133,7 +133,7 @@ func (d *Directory) CreateUser(ctx context.Context, u DirectoryUser) (DirectoryU
 		return DirectoryUser{}, err
 	}
 
-	if err := createUser(
+	err := createUser(
 		ctx,
 		d.db,
 		identity{
@@ -142,7 +142,12 @@ func (d *Directory) CreateUser(ctx context.Context, u DirectoryUser) (DirectoryU
 		},
 		"",
 		!u.Active,
-	); err != nil {
+	)
+	if errors.Is(err, security.ErrExists) {
+		return DirectoryUser{}, fmt.Errorf("%w: %w", ErrConflict, err)
+	}
+
+	if err != nil {
 		return DirectoryUser{}, err
 	}
 

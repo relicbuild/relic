@@ -1293,6 +1293,10 @@ func BootstrapAdmin(ctx context.Context, db *database.DB, username, password str
 		return errors.New("no users exist: set RELIC_ADMIN_PASSWORD to create the first administrator")
 	}
 
+	if !security.ValidUsername(username) {
+		return fmt.Errorf("RELIC_ADMIN_USERNAME: %w", security.InvalidUsername(username))
+	}
+
 	hash, err := auth.HashPassword(password)
 	if err != nil {
 		return err

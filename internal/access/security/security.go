@@ -95,19 +95,30 @@ var username = regexp.MustCompile(`^[\w.@-]{1,64}$`)
 // ValidUsername reports whether name can be a Relic username: 1 to 64 letters, digits or . @ _ -.
 func ValidUsername(name string) bool { return username.MatchString(name) }
 
-func (s *Service) refuseCaseVariant(ctx context.Context, name string) error {
-	users, err := s.db.ListUsers(ctx)
-	if err != nil {
-		return fmt.Errorf("list users: %w", err)
-	}
+// InvalidUsername is the ErrInvalid that refuses name as a new username.
+func InvalidUsername(name string) error {
+	return fmt.Errorf("%w: username %q must be 1 to 64 letters, digits or the characters . @ _ -", ErrInvalid, name)
+}
 
-	for _, u := range users {
-		if strings.EqualFold(u.Username, name) {
-			return fmt.Errorf("%w: user %q differs from %q only by case", ErrExists, u.Username, name)
+const usernamesLock = "security:usernames"
+
+// WithNewUsername runs create, which adds the user name, under the usernames lock, and refuses it with ErrExists
+// when another user's name differs from name only by case.
+func WithNewUsername(ctx context.Context, db *database.DB, name string, create func() error) error {
+	return db.WithLock(ctx, usernamesLock, func() error {
+		users, err := db.ListUsers(ctx)
+		if err != nil {
+			return fmt.Errorf("list users: %w", err)
 		}
-	}
 
-	return nil
+		for _, u := range users {
+			if u.Username != name && strings.EqualFold(u.Username, name) {
+				return fmt.Errorf("%w: user %q differs from %q only by case", ErrExists, u.Username, name)
+			}
+		}
+
+		return create()
+	})
 }
 
 type userWrite struct {
@@ -116,14 +127,6 @@ type userWrite struct {
 }
 
 func (s *Service) putUser(ctx context.Context, u User, w userWrite) (created bool, err error) {
-	if !ValidUsername(u.Name) {
-		return false, fmt.Errorf(
-			"%w: username %q must be 1 to 64 letters, digits or the characters . @ _ -",
-			ErrInvalid,
-			u.Name,
-		)
-	}
-
 	existing, err := s.db.GetUserByUsername(ctx, u.Name)
 
 	exists := err == nil
@@ -135,10 +138,8 @@ func (s *Service) putUser(ctx context.Context, u User, w userWrite) (created boo
 		return false, fmt.Errorf("%w: user %q", ErrExists, u.Name)
 	}
 
-	if !exists {
-		if err := s.refuseCaseVariant(ctx, u.Name); err != nil {
-			return false, err
-		}
+	if !exists && !ValidUsername(u.Name) {
+		return false, InvalidUsername(u.Name)
 	}
 
 	hash := existing.PasswordHash
@@ -164,48 +165,57 @@ func (s *Service) putUser(ctx context.Context, u User, w userWrite) (created boo
 
 	removesAdministrator := exists && existing.Admin && !existing.Disabled && (!u.Admin || disabled)
 
-	err = s.withAdministratorKept(ctx, removesAdministrator, func() error {
-		return s.db.WithTx(ctx, func(q database.Querier) error {
-			created, err = q.UpsertUser(ctx, database.UpsertUserParams{
-				ID:           uuid.NewV7(),
-				Username:     u.Name,
-				Email:        u.Email,
-				PasswordHash: hash,
-				Admin:        u.Admin,
-				Viewer:       u.Viewer,
-				Extensions:   extensions,
-			})
-			if err != nil {
-				return fmt.Errorf("save user: %w", err)
-			}
-
-			if w.createOnly && !created {
-				return fmt.Errorf("%w: user %q", ErrExists, u.Name)
-			}
-
-			if w.withDisabled {
-				if err := q.SetUserDisabled(ctx, database.SetUserDisabledParams{
-					Username: u.Name,
-					Disabled: u.Disabled,
-				}); err != nil {
+	save := func() error {
+		return s.withAdministratorKept(ctx, removesAdministrator, func() error {
+			return s.db.WithTx(ctx, func(q database.Querier) error {
+				created, err = q.UpsertUser(ctx, database.UpsertUserParams{
+					ID:           uuid.NewV7(),
+					Username:     u.Name,
+					Email:        u.Email,
+					PasswordHash: hash,
+					Admin:        u.Admin,
+					Viewer:       u.Viewer,
+					Extensions:   extensions,
+				})
+				if err != nil {
 					return fmt.Errorf("save user: %w", err)
 				}
-			}
 
-			groups := u.Groups
-			if groups == nil && created {
-				if groups, err = q.DefaultGroups(ctx); err != nil {
-					return err
+				if w.createOnly && !created {
+					return fmt.Errorf("%w: user %q", ErrExists, u.Name)
 				}
-			}
 
-			if groups == nil {
-				return nil
-			}
+				if w.withDisabled {
+					if err := q.SetUserDisabled(ctx, database.SetUserDisabledParams{
+						Username: u.Name,
+						Disabled: u.Disabled,
+					}); err != nil {
+						return fmt.Errorf("save user: %w", err)
+					}
+				}
 
-			return setUserGroups(ctx, q, u.Name, groups)
+				groups := u.Groups
+				if groups == nil && created {
+					if groups, err = q.DefaultGroups(ctx); err != nil {
+						return err
+					}
+				}
+
+				if groups == nil {
+					return nil
+				}
+
+				return setUserGroups(ctx, q, u.Name, groups)
+			})
 		})
-	})
+	}
+
+	if exists {
+		err = save()
+	} else {
+		err = WithNewUsername(ctx, s.db, u.Name, save)
+	}
+
 	s.invalidate()
 
 	return created, err
