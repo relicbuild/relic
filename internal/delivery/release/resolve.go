@@ -62,7 +62,7 @@ func (s *Service) resolve(ctx context.Context, project string, sources []Source,
 		case SourceArtifacts:
 			err = s.fromArtifacts(ctx, src.Artifacts, fromItem)
 		case SourceBuilds:
-			err = s.fromBuilds(ctx, src.Builds, fromItem)
+			err = s.fromBuilds(ctx, src.Builds, access, fromItem)
 		case SourceReleases:
 			err = s.fromReleases(ctx, project, src.Releases, add)
 		default:
@@ -146,11 +146,21 @@ func (s *Service) fromArtifacts(ctx context.Context, arts []ArtifactRef, fn func
 	return nil
 }
 
-func (s *Service) fromBuilds(ctx context.Context, builds []BuildRef, fn func(repository.Item) error) error {
+func (s *Service) fromBuilds(
+	ctx context.Context,
+	builds []BuildRef,
+	access Access,
+	fn func(repository.Item) error,
+) error {
 	for _, b := range builds {
+		notFound := fmt.Errorf("%w: build %s/%s not found", ErrInvalid, b.Name, b.Number)
+		if !access.canReadBuild(s.builds.Repository(b.Project), b.Name) {
+			return notFound
+		}
+
 		items, err := s.builds.Items(ctx, b.Project, b.Name, b.Number, b.Dependencies)
 		if errors.Is(err, buildinfo.ErrNotFound) {
-			return fmt.Errorf("%w: build %s/%s not found", ErrInvalid, b.Name, b.Number)
+			return notFound
 		}
 
 		if err != nil {

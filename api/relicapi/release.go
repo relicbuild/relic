@@ -79,6 +79,9 @@ func (s *releaseServer) access(ctx context.Context) (release.Access, error) {
 		CanDelete: func(r, path string) bool {
 			return perms.CanInRepository(p.Subject(), local(r), path, auth.ActionDelete)
 		},
+		CanReadBuild: func(r, name string) bool {
+			return perms.CanBuild(p.Subject(), r, name, auth.ActionRead)
+		},
 	}, nil
 }
 

@@ -217,6 +217,9 @@ type Access struct {
 	CanRead   func(repository, path string) bool
 	CanWrite  func(repository, path string) bool
 	CanDelete func(repository, path string) bool
+	// CanReadBuild says whether the caller may read the build name stored
+	// in the build-info repository.
+	CanReadBuild func(repository, name string) bool
 }
 
 func (a Access) canRead(repository, path string) bool {
@@ -229,6 +232,10 @@ func (a Access) canWrite(repository, path string) bool {
 
 func (a Access) canDelete(repository, path string) bool {
 	return a.CanDelete == nil || a.CanDelete(repository, path)
+}
+
+func (a Access) canReadBuild(repository, name string) bool {
+	return a.CanReadBuild == nil || a.CanReadBuild(repository, name)
 }
 
 // Create resolves the request's sources and stores the new bundle version.

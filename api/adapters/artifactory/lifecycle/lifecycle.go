@@ -166,6 +166,9 @@ func (h *Handler) access(r *http.Request) (rb.Access, error) {
 		CanDelete: func(repository, path string) bool {
 			return perms.CanInRepository(p.Subject(), class(repository), path, auth.ActionDelete)
 		},
+		CanReadBuild: func(repository, name string) bool {
+			return perms.CanBuild(p.Subject(), repository, name, auth.ActionRead)
+		},
 	}, nil
 }
 
