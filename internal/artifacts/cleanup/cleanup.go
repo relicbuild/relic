@@ -120,11 +120,19 @@ func (s *Service) removeRepository(ctx context.Context, q database.Querier, key 
 var namePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 func (s *Service) validate(ctx context.Context, p Policy) error {
-	switch {
-	case !namePattern.MatchString(p.Name):
+	if !namePattern.MatchString(p.Name) {
 		return fmt.Errorf("%w: name %q: letters, digits, dot, dash and underscore, up to 64", ErrInvalid, p.Name)
-	case len(p.Repositories) == 0 && p.Enabled:
+	}
+
+	if len(p.Repositories) == 0 && p.Enabled {
 		return fmt.Errorf("%w: an enabled policy names at least one repository", ErrInvalid)
+	}
+
+	return s.validateSelection(ctx, p)
+}
+
+func (s *Service) validateSelection(ctx context.Context, p Policy) error {
+	switch {
 	case p.OlderThanDays < 0 || p.NotDownloadedDays < 0 || p.KeepLatest < 0:
 		return fmt.Errorf("%w: days and counts cannot be negative", ErrInvalid)
 	case p.OlderThanDays == 0 && p.NotDownloadedDays == 0 && p.KeepLatest == 0:
@@ -234,8 +242,32 @@ func (s *Service) Delete(ctx context.Context, name string) error {
 	return nil
 }
 
-// Preview returns what p selects now, without moving anything.
+// Preview returns what p, a policy that need not be stored, selects now,
+// without moving anything.
 func (s *Service) Preview(ctx context.Context, p Policy) ([]Candidate, error) {
+	if len(p.Repositories) == 0 {
+		return nil, fmt.Errorf("%w: name at least one repository", ErrInvalid)
+	}
+
+	if err := s.validateSelection(ctx, p); err != nil {
+		return nil, err
+	}
+
+	return s.candidates(ctx, p)
+}
+
+// PreviewByName returns what the stored policy name selects now, without
+// moving anything.
+func (s *Service) PreviewByName(ctx context.Context, name string) ([]Candidate, error) {
+	p, err := s.Get(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.candidates(ctx, p)
+}
+
+func (s *Service) candidates(ctx context.Context, p Policy) ([]Candidate, error) {
 	p.PathPattern = cmp.Or(strings.Trim(p.PathPattern, "/"), "**")
 
 	holds, err := s.repos.Holds(ctx)
@@ -307,7 +339,7 @@ func (s *Service) Run(ctx context.Context, name string) (moved int, err error) {
 }
 
 func (s *Service) run(ctx context.Context, p Policy) (int, error) {
-	found, err := s.Preview(ctx, p)
+	found, err := s.candidates(ctx, p)
 	if err != nil {
 		return 0, err
 	}
@@ -381,7 +413,7 @@ func literalPrefix(pattern string) string {
 	return strings.Join(segs, "/")
 }
 
-// selectIn is Preview for one repository.
+// selectIn is candidates for one repository.
 func (s *Service) selectIn(ctx context.Context, p Policy, repoKey string) ([]Candidate, error) {
 	root, err := s.repos.Stat(ctx, repoKey, literalPrefix(p.PathPattern))
 	if errors.Is(err, repository.ErrNotFound) {

@@ -7,6 +7,7 @@ import (
 	"connectrpc.com/connect"
 
 	relicv1 "relic/api/gen/relic/v1"
+	"relic/internal/access/auth"
 	"relic/internal/artifacts/cleanup"
 )
 
@@ -143,26 +144,30 @@ func (s *cleanupServer) PreviewCleanupPolicy(
 		return nil, err
 	}
 
-	p := domainCleanupPolicy(req.Msg.GetPolicy())
+	var found []cleanup.Candidate
 
 	switch name := req.Msg.GetName(); {
 	case name != "":
-		if p, err = svc.Get(ctx, name); err != nil {
-			return nil, err
-		}
-	case req.Msg.GetPolicy() == nil:
+		found, err = svc.PreviewByName(ctx, name)
+	case req.Msg.GetPolicy() != nil:
+		found, err = svc.Preview(ctx, domainCleanupPolicy(req.Msg.GetPolicy()))
+	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("give a policy or the name of one"))
 	}
 
-	found, err := svc.Preview(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+
+	readable, err := s.readableCandidates(ctx, found)
 	if err != nil {
 		return nil, err
 	}
 
 	out := &relicv1.PreviewCleanupPolicyResponse{
-		Candidates: make([]*relicv1.CleanupCandidate, 0, len(found)),
+		Candidates: make([]*relicv1.CleanupCandidate, 0, len(readable)),
 	}
-	for _, c := range found {
+	for _, c := range readable {
 		out.Candidates = append(out.Candidates, &relicv1.CleanupCandidate{
 			Repository:     c.Repository,
 			Path:           c.Path,
@@ -173,6 +178,32 @@ func (s *cleanupServer) PreviewCleanupPolicy(
 	}
 
 	return connect.NewResponse(out), nil
+}
+
+func (s *cleanupServer) readableCandidates(
+	ctx context.Context,
+	found []cleanup.Candidate,
+) ([]cleanup.Candidate, error) {
+	checks := map[string]func(string, auth.Action) error{}
+	readable := make([]cleanup.Candidate, 0, len(found))
+
+	for _, c := range found {
+		check, ok := checks[c.Repository]
+		if !ok {
+			var err error
+			if check, err = repositoryAccess(ctx, s.d, c.Repository); err != nil {
+				return nil, err
+			}
+
+			checks[c.Repository] = check
+		}
+
+		if check(c.Path, auth.ActionRead) == nil {
+			readable = append(readable, c)
+		}
+	}
+
+	return readable, nil
 }
 
 func (s *cleanupServer) RunCleanupPolicy(
