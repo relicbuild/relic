@@ -38,7 +38,7 @@ func authStatusCmd(g *globals) *cobra.Command {
 		Use:   "status",
 		Short: "Check the server you are signed in to: reachable, its version, who you are and its health",
 		Long: "Calls the server and reports its version, the round trip, the user your credentials sign in as " +
-			"and, for administrators, the health checks of its database, object storage and scanner. " +
+			"and, for administrators, the health checks of its database and object storage. " +
 			"Exits with status 1 when a health check fails.",
 		Example: "  relic auth status\n  relic auth status -o json",
 		Args:    cobra.NoArgs,
