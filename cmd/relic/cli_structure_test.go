@@ -163,6 +163,20 @@ func TestAuthContextShowAndLogout(t *testing.T) {
 		t.Fatalf("show = %q, %v", out, err)
 	}
 
+	if _, err := runRelic(
+		t,
+		nil,
+		"--config",
+		path,
+		"--context",
+		"staging",
+		"auth",
+		"context",
+		"show",
+	); err == nil || !strings.Contains(err.Error(), `no context "staging"`) {
+		t.Errorf("show of a missing context = %v", err)
+	}
+
 	if _, err := runRelic(t, nil, "--config", path, "auth", "logout"); err != nil {
 		t.Fatal(err)
 	}

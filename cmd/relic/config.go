@@ -373,7 +373,10 @@ func contextCmd(g *globals) *cobra.Command {
 			name := cmp.Or(g.context, c.Current)
 
 			x, ok := c.find(name)
-			if !ok {
+			switch {
+			case !ok && g.context != "":
+				return fmt.Errorf("no context %q in the config file", g.context)
+			case !ok:
 				return errors.New("no current context: run relic auth login <url>")
 			}
 
