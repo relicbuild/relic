@@ -64,6 +64,20 @@ func TestPublishBuildRun(t *testing.T) {
 		t.Errorf("retention of a build without runs = %d %s, want 404", resp.StatusCode, b)
 	}
 
+	for _, retention := range []string{
+		`{"maxRuns":-1}`,
+		`{"keep":["7"]}`,
+	} {
+		if resp, b := do(t, srv, call{
+			method:  http.MethodPost,
+			path:    "/api/v1/builds/app:applyRetention",
+			body:    retention,
+			headers: json,
+		}); resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("retention %s = %d %s, want 400", retention, resp.StatusCode, b)
+		}
+	}
+
 	if resp, b := do(t, srv, call{
 		method: http.MethodGet,
 		path:   "/api/v1/builds/team%2Fapp%20x/runs/7",

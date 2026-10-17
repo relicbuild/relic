@@ -165,6 +165,10 @@ func (s *buildServer) ApplyBuildRetention(
 		return nil, err
 	}
 
+	if m.GetMaxRuns() == 0 && m.GetMinStarted() == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("set max_runs, min_started or both"))
+	}
+
 	if _, err := s.d.Builds.Runs(ctx, m.GetProject(), m.GetName()); err != nil {
 		return nil, err
 	}
