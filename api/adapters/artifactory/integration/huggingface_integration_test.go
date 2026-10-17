@@ -358,7 +358,8 @@ func TestHuggingFaceRepository(t *testing.T) {
 		case "/org/up/resolve/" + upSHA + "/config.json":
 			_, _ = w.Write([]byte(`{"up": true}`))
 		case "/api/models/org/up/tree/" + upSHA:
-			_, _ = w.Write([]byte(`[{"type":"file","path":"config.json","size":12,"oid":"abc"}]`))
+			_, _ = w.Write([]byte(`[{"type":"file","path":"config.json","size":12,"oid":"abc",` +
+				`"xetHash":"75402e74462600f62ca4a08b91c9218f36075860d5f6d7eb07f4c29ed7fa4ad6"}]`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -404,7 +405,8 @@ func TestHuggingFaceRepository(t *testing.T) {
 	if resp, tree := do(t, srv, call{
 		method: "GET",
 		path:   REP + "/api/models/org/up/tree/main?recursive=true",
-	}); resp.StatusCode != 200 || !strings.Contains(tree, `"path": "config.json"`) {
+	}); resp.StatusCode != 200 || !strings.Contains(tree, `"path": "config.json"`) ||
+		strings.Contains(tree, "xetHash") {
 		t.Errorf("remote tree = %d %s", resp.StatusCode, tree)
 	}
 
