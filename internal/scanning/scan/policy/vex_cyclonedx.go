@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"slices"
+	"strings"
 	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -171,6 +173,20 @@ func ParseAnyVEX(b []byte) (VEXDocument, error) {
 		return doc, fmt.Errorf("%w: a CycloneDX document without vulnerabilities", ErrInvalidVEX)
 	}
 
+	refs := bomRefs{
+		serialNumber: bom.SerialNumber,
+		purls:        map[string]string{},
+	}
+	if bom.Metadata != nil && bom.Metadata.Component != nil {
+		refs.add(*bom.Metadata.Component)
+	}
+
+	if bom.Components != nil {
+		for _, c := range *bom.Components {
+			refs.add(c)
+		}
+	}
+
 	for _, v := range *bom.Vulnerabilities {
 		s := VEXStatement{
 			Vulnerability: VEXVulnerability{
@@ -188,9 +204,16 @@ func ParseAnyVEX(b []byte) (VEXDocument, error) {
 
 		if v.Affects != nil {
 			for _, a := range *v.Affects {
-				s.Products = append(s.Products, VEXProduct{
+				product := VEXProduct{
 					ID: a.Ref,
-				})
+				}
+				if purl := refs.packageURL(a.Ref); purl != "" {
+					product.Identifiers = &VEXIdentifiers{
+						PURL: purl,
+					}
+				}
+
+				s.Products = append(s.Products, product)
 			}
 		}
 
@@ -212,6 +235,48 @@ func ParseAnyVEX(b []byte) (VEXDocument, error) {
 	}
 
 	return doc, nil
+}
+
+// bomRefs are the package URLs of a CycloneDX document's components by
+// bom-ref.
+type bomRefs struct {
+	serialNumber string
+	purls        map[string]string
+}
+
+func (b bomRefs) add(c cdx.Component) {
+	if c.BOMRef != "" && c.PackageURL != "" {
+		b.purls[c.BOMRef] = c.PackageURL
+	}
+
+	if c.Components != nil {
+		for _, sub := range *c.Components {
+			b.add(sub)
+		}
+	}
+}
+
+// packageURL is the package URL of the component ref names: a bom-ref, or
+// a BOM-Link (urn:cdx:<serial>/<version>#<bom-ref>) into this document.
+func (b bomRefs) packageURL(ref string) string {
+	if purl, ok := b.purls[ref]; ok {
+		return purl
+	}
+
+	link, found := strings.CutPrefix(ref, "urn:cdx:")
+	if !found {
+		return ""
+	}
+
+	document, fragment, found := strings.Cut(link, "#")
+	serial, _, _ := strings.Cut(document, "/")
+
+	bomRef, err := url.PathUnescape(fragment)
+	if !found || err != nil || !strings.EqualFold("urn:uuid:"+serial, b.serialNumber) {
+		return ""
+	}
+
+	return b.purls[bomRef]
 }
 
 func cycloneDXAuthor(bom cdx.BOM) string {

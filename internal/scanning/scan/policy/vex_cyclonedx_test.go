@@ -124,6 +124,52 @@ func TestParseCycloneDXVEXStates(t *testing.T) {
 		t.Errorf("rules = %+v, skipped %d; want the resolved one only", rules, skipped)
 	}
 
+	refs, err := ParseAnyVEX([]byte(`{"bomFormat":"CycloneDX","specVersion":"1.6",
+		"serialNumber":"urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79","version":1,
+		"components":[
+		 {"type":"library","bom-ref":"component-1","name":"minimist","version":"0.0.8","purl":"pkg:npm/minimist@0.0.8"},
+		 {"type":"application","bom-ref":"app","name":"app","components":[
+		  {"type":"library","bom-ref":"nested lib","name":"a","version":"1","purl":"pkg:npm/a@1"}]}],
+		"vulnerabilities":[
+		 {"id":"CVE-1","analysis":{"state":"not_affected"},"affects":[{"ref":"component-1"}]},
+		 {"id":"CVE-2","analysis":{"state":"not_affected"},
+		  "affects":[{"ref":"urn:cdx:3e671687-395b-41f5-a30f-a58921a69b79/1#component-1"}]},
+		 {"id":"CVE-3","analysis":{"state":"not_affected"},"affects":[{"ref":"urn:cdx:3e671687-395b-41f5-a30f-a58921a69b79/1#nested%20lib"}]},
+		 {"id":"CVE-4","analysis":{"state":"not_affected"},
+		  "affects":[{"ref":"urn:cdx:00000000-0000-0000-0000-000000000000/1#component-1"}]},
+		 {"id":"CVE-5","analysis":{"state":"not_affected"},"affects":[{"ref":"app"}]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rules, skipped = ImportVEX(refs)
+
+	packages := map[string][]string{}
+	for _, r := range rules {
+		packages[r.Vulnerabilities[0]] = r.Packages
+	}
+
+	want := map[string][]string{
+		"CVE-1": {
+			"pkg:npm/minimist@0.0.8",
+		},
+		"CVE-2": {
+			"pkg:npm/minimist@0.0.8",
+		},
+		"CVE-3": {
+			"pkg:npm/a@1",
+		},
+	}
+	if skipped != 2 || len(packages) != len(want) {
+		t.Errorf("rules from references = %+v, skipped %d; want %v and 2 skipped", packages, skipped, want)
+	}
+
+	for id, purls := range want {
+		if !slices.Equal(packages[id], purls) {
+			t.Errorf("%s affects %v, want %v", id, packages[id], purls)
+		}
+	}
+
 	if _, err := ParseAnyVEX([]byte(`{"@context":"https://example.com"}`)); err == nil {
 		t.Error("a document that is neither format was read")
 	}
