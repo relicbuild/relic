@@ -14,7 +14,6 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
-	"google.golang.org/protobuf/encoding/protojson"
 
 	relicv1 "relic/api/gen/relic/v1"
 
@@ -108,39 +107,17 @@ func uploadCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			req, err := http.NewRequestWithContext(cmd.Context(), http.MethodPut, c.fileURL(repo, p), f)
+			var props url.Values
+			if build.value != "" {
+				if props, err = g.buildProperties(build.value); err != nil {
+					return err
+				}
+			}
+
+			item, err := c.put(cmd.Context(), repo, p, f, st.Size(), props)
 			if err != nil {
 				return err
 			}
-
-			req.ContentLength = st.Size()
-
-			resp, err := c.http.Do(req)
-			if err != nil {
-				return err
-			}
-
-			defer func() {
-				_ = resp.Body.Close()
-			}()
-
-			if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-				return fmt.Errorf("upload %s/%s: %w", repo, p, httpError(resp))
-			}
-
-			body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-			if err != nil {
-				return err
-			}
-
-			item := &relicv1.Item{}
-			if err := (protojson.UnmarshalOptions{
-				DiscardUnknown: true,
-			}).Unmarshal(body, item); err != nil {
-				return fmt.Errorf("upload %s/%s: read the answer: %w", repo, p, err)
-			}
-
-			item.Name = path.Base(p)
 
 			if build.value != "" {
 				if err := g.addArtifact(build.value, moduleID, item); err != nil {

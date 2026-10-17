@@ -9920,7 +9920,7 @@
           "Files"
         ],
         "summary": "Upload a file",
-        "description": "Stores the body as the file, creating missing folders. Replacing a file needs delete permission.",
+        "description": "Stores the body as the file, creating missing folders. Replacing a file needs delete permission. Each query parameter sets a property on the file (`?build.name=app\u0026build.number=42`); a repeated parameter gives the property several values.",
         "requestBody": {
           "required": true,
           "content": {
@@ -9935,6 +9935,9 @@
         "responses": {
           "201": {
             "description": "Stored; the body is the item as JSON (relic.v1.Item)."
+          },
+          "400": {
+            "description": "A property key or value is not valid."
           },
           "403": {
             "description": "You may not deploy here."

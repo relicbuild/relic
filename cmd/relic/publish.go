@@ -13,6 +13,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -30,8 +31,19 @@ import (
 	relicv1 "relic/api/gen/relic/v1"
 )
 
-func (c *client) put(ctx context.Context, repo, p string, body io.Reader, size int64) (*relicv1.Item, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.fileURL(repo, p), body)
+func (c *client) put(
+	ctx context.Context,
+	repo, p string,
+	body io.Reader,
+	size int64,
+	props url.Values,
+) (*relicv1.Item, error) {
+	target := c.fileURL(repo, p)
+	if len(props) > 0 {
+		target += "?" + props.Encode()
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, target, body)
 	if err != nil {
 		return nil, err
 	}
@@ -72,13 +84,22 @@ func unmarshalItem(b []byte, it *relicv1.Item) error {
 	}.Unmarshal(b, it)
 }
 
-func (c *client) putBytes(ctx context.Context, repo, p string, b []byte) (*relicv1.Item, error) {
-	return c.put(ctx, repo, p, bytes.NewReader(b), int64(len(b)))
+func (c *client) putBytes(ctx context.Context, repo, p string, b []byte, props url.Values) (*relicv1.Item, error) {
+	return c.put(ctx, repo, p, bytes.NewReader(b), int64(len(b)), props)
 }
 
 type publishFlags struct {
 	build  buildRunFlag
 	module string
+}
+
+// properties are the properties of the files published, none without --build.
+func (f *publishFlags) properties(g *globals) (url.Values, error) {
+	if f.build.value == "" {
+		return nil, nil
+	}
+
+	return g.buildProperties(f.build.value)
 }
 
 func (f *publishFlags) register(cmd *cobra.Command) {
@@ -165,6 +186,11 @@ func goPublishCmd(g *globals) *cobra.Command {
 
 			base := modPath + "/@v/" + version
 
+			props, err := pf.properties(g)
+			if err != nil {
+				return err
+			}
+
 			var items []*relicv1.Item
 
 			for _, f := range []struct {
@@ -184,7 +210,7 @@ func goPublishCmd(g *globals) *cobra.Command {
 					body: zipped.Bytes(),
 				},
 			} {
-				it, err := c.putBytes(cmd.Context(), repo, base+f.ext, f.body)
+				it, err := c.putBytes(cmd.Context(), repo, base+f.ext, f.body, props)
 				if err != nil {
 					return fmt.Errorf("go publish: %w", err)
 				}
@@ -250,7 +276,12 @@ func terraformPublishCmd(g *globals) *cobra.Command {
 
 			p := namespace + "/" + name + "/" + provider + "/v" + version + ".zip"
 
-			it, err := c.putBytes(cmd.Context(), repo, p, archive)
+			props, err := pf.properties(g)
+			if err != nil {
+				return err
+			}
+
+			it, err := c.putBytes(cmd.Context(), repo, p, archive, props)
 			if err != nil {
 				return fmt.Errorf("terraform publish: %w", err)
 			}
@@ -487,6 +518,11 @@ func huggingFaceUploadCmd(g *globals) *cobra.Command {
 
 			base := hfKind(dataset) + "/" + id
 
+			props, err := pf.properties(g)
+			if err != nil {
+				return err
+			}
+
 			prev, hasPrev, err := c.latestCommit(ctx, repo, base, revision)
 			if err != nil {
 				return fmt.Errorf("huggingface upload: %w", err)
@@ -546,7 +582,7 @@ func huggingFaceUploadCmd(g *globals) *cobra.Command {
 					return discard(err)
 				}
 
-				it, err := c.put(ctx, repo, commit+"/"+f, fh, st.Size())
+				it, err := c.put(ctx, repo, commit+"/"+f, fh, st.Size(), props)
 				_ = fh.Close()
 
 				if err != nil {

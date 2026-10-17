@@ -18,6 +18,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -511,6 +512,39 @@ func parseBuildRef(ref string) (name, number string, err error) {
 	}
 
 	return ref[:i], ref[i+1:], nil
+}
+
+// buildProperties are the build.name, build.number and build.timestamp
+// properties of a file uploaded for a build run; the run's file is saved so
+// its start is fixed.
+func (g *globals) buildProperties(ref string) (url.Values, error) {
+	name, number, err := parseBuildRef(ref)
+	if err != nil {
+		return nil, err
+	}
+
+	var started time.Time
+
+	err = g.updateBuild(name, number, func(run *relicv1.PublishedBuildRun) error {
+		started = run.GetStarted().AsTime()
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return url.Values{
+		"build.name": {
+			name,
+		},
+		"build.number": {
+			number,
+		},
+		"build.timestamp": {
+			strconv.FormatInt(started.UnixMilli(), 10),
+		},
+	}, nil
 }
 
 func (g *globals) addArtifact(build, moduleID string, it *relicv1.Item) error {

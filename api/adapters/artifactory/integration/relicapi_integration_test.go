@@ -625,11 +625,30 @@ func TestRelicAPIArtifacts(t *testing.T) {
 		t.Errorf("overwrite without delete = %d, want 403", code)
 	}
 
-	if code, body := put(dev, "libs/app/2.0/app.bin", "other"); code != 201 {
+	if code, body := put(dev, "libs/app/2.0/app.bin?build.name=team/app&build.number=7", "other"); code != 201 {
 		t.Fatalf("upload = %d %s", code, body)
 	}
 
-	_, err := relicv1connect.NewArtifactServiceClient(&http.Client{
+	if code, _ := put(dev, "libs/app/2.0/bad.bin?bad%3Dkey=x", "x"); code != 400 {
+		t.Errorf("upload with an invalid property key = %d, want 400", code)
+	}
+
+	uploaded, err := relicv1connect.NewArtifactServiceClient(&http.Client{
+		Transport: dev,
+	}, srv.URL+"/api").GetProperties(ctx, connect.NewRequest(&relicv1.GetPropertiesRequest{
+		Repository: "libs",
+		Path:       "app/2.0/app.bin",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := uploaded.Msg.GetProperties(); strings.Join(got["build.name"].GetValues(), ",") != "team/app" ||
+		strings.Join(got["build.number"].GetValues(), ",") != "7" {
+		t.Errorf("properties set by the upload = %v", got)
+	}
+
+	_, err = relicv1connect.NewArtifactServiceClient(&http.Client{
 		Transport: dev,
 	}, srv.URL+"/api").CopyItem(ctx, connect.NewRequest(&relicv1.CopyItemRequest{
 		Repository:   "libs",

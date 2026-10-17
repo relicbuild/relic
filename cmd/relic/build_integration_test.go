@@ -170,6 +170,12 @@ func TestBuildCommands(t *testing.T) {
 		}
 	}
 
+	if out, err := relic(t, config, "", "artifact", "props", "get", "b-dev/org/app/1.0/app.jar"); err != nil ||
+		!hasTableRow(out, "build.name", "app") || !hasTableRow(out, "build.number", "7") ||
+		!strings.Contains(out, "build.timestamp") {
+		t.Errorf("properties of the file uploaded for app/7 = %q %v", out, err)
+	}
+
 	run, err := (&globals{
 		getenv: func(string) string {
 			return ""
