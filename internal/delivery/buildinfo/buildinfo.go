@@ -341,6 +341,17 @@ func (s *Service) ensureRepo(ctx context.Context, project string) error {
 		return err
 	}
 
+	if key != s.layout.DefaultRepository {
+		_, err := s.db.GetProject(ctx, project)
+		if errors.Is(database.NotFound(err), database.ErrNotFound) {
+			return fmt.Errorf("%w: project %q does not exist", ErrInvalid, project)
+		}
+
+		if err != nil {
+			return fmt.Errorf("get project %s: %w", project, err)
+		}
+	}
+
 	r := repository.Repository{
 		Name:    key,
 		Class:   repository.ClassLocal,

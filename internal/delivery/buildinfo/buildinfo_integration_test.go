@@ -201,6 +201,35 @@ func producing(number string, started time.Time, path string, file repository.It
 	}
 }
 
+func TestPublishNeedsAnExistingProject(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	builds, repos, db := newService(t)
+
+	err := builds.PublishDocument(ctx, "nope", run("1", time.Now()), "admin")
+	if !errors.Is(err, buildinfo.ErrInvalid) {
+		t.Errorf("publish to a missing project = %v, want ErrInvalid", err)
+	}
+
+	_, err = repos.GetRepository(ctx, builds.Repository("nope"))
+	if !errors.Is(err, repository.ErrRepositoryNotFound) {
+		t.Errorf("build-info repository of the missing project: %v, want none", err)
+	}
+
+	if err := db.UpsertProject(ctx, database.UpsertProjectParams{
+		Key:    "acme",
+		Config: []byte(`{}`),
+		Now:    time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := builds.PublishDocument(ctx, "acme", run("1", time.Now()), "admin"); err != nil {
+		t.Errorf("publish to an existing project = %v", err)
+	}
+}
+
 func TestRepublishReplacesTheRun(t *testing.T) {
 	t.Parallel()
 
