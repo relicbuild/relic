@@ -22,14 +22,14 @@ const links: ButtonProps[] = [
 </script>
 
 <template>
-  <UMain class="flex flex-col justify-center">
+  <UMain class="flex flex-col justify-center lg:min-h-0 lg:flex-1">
     <UPageHero
       description="Relic keeps your packages and images in any S3-compatible storage and scans everything it stores with Relic Scan: npm, Maven, PyPI, Go, NuGet, Docker, Helm and more, from one binary and one PostgreSQL. MIT licensed."
       orientation="horizontal"
-      :ui="{ title: 'text-4xl sm:text-5xl font-medium tracking-tight text-highlighted text-pretty', container: 'lg:py-28' }"
+      :ui="{ title: 'text-4xl sm:text-5xl font-medium tracking-tight text-highlighted text-pretty', container: 'lg:py-6', headline: 'lg:mb-3', description: 'lg:mt-4', footer: 'lg:mt-7' }"
     >
       <template #headline>
-        <div class="flex flex-col gap-6">
+        <div class="flex flex-col gap-6 lg:gap-4">
           <span class="inline-flex items-center gap-4 text-6xl sm:text-7xl font-semibold tracking-tight text-highlighted">
             <UIcon name="i-lucide-package" class="size-14 sm:size-16 shrink-0 text-primary" />
             Relic
@@ -51,7 +51,7 @@ const links: ButtonProps[] = [
           :items="connectCommands"
           variant="link"
           size="sm"
-          class="mt-8 max-w-xl gap-0 overflow-hidden rounded-md border border-default bg-elevated/50"
+          class="mt-8 lg:mt-6 max-w-xl gap-0 overflow-hidden rounded-md border border-default bg-elevated/50"
           :ui="{ list: 'border-b border-default px-2', trigger: 'font-mono' }"
         >
           <template #content="{ item }">

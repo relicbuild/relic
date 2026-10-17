@@ -10,15 +10,15 @@ const links: NavigationMenuItem[] = [
 </script>
 
 <template>
-  <UFooter :ui="{ root: 'border-t border-default' }">
+  <UFooter :ui="{ root: 'border-t border-default', container: 'py-4 lg:py-2' }">
     <template #left>
-      <UIcon name="i-lucide-package" class="size-5 shrink-0 text-primary" />
-      <p class="text-sm text-muted">
+      <UIcon name="i-lucide-package" class="size-4 shrink-0 text-primary" />
+      <p class="text-xs text-muted">
         © {{ year }} The Relic Authors · MIT licensed
       </p>
     </template>
 
-    <UNavigationMenu :items="links" variant="link" />
+    <UNavigationMenu :items="links" variant="link" :ui="{ link: 'text-xs' }" />
 
     <template #right>
       <UButton
@@ -26,6 +26,7 @@ const links: NavigationMenuItem[] = [
         target="_blank"
         color="neutral"
         variant="ghost"
+        size="sm"
         icon="i-simple-icons-github"
         aria-label="Relic on GitHub"
       />

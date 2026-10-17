@@ -81,7 +81,7 @@ const delay = (index: number) => `${(-1.7 * index).toFixed(1)}s`
 </script>
 
 <template>
-  <div class="relative mx-auto aspect-square w-(--orbit) [--orbit:34rem] xl:[--orbit:41rem]" aria-hidden="true">
+  <div class="relative mx-auto aspect-square w-(--orbit) [--orbit:min(34rem,calc(100dvh-15rem))] xl:[--orbit:min(41rem,calc(100dvh-15rem))]" aria-hidden="true">
     <div
       v-for="circle in circles"
       :key="circle.size"
