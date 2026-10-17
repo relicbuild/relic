@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"relic/internal/access/project"
@@ -90,19 +91,46 @@ func (s *Service) CreateRepository(ctx context.Context, r Repository) error {
 		return err
 	}
 
-	err = s.db.CreateRepository(ctx, database.CreateRepositoryParams{
-		Key:     r.Name,
-		Class:   string(r.Class),
-		Format:  string(r.Format),
-		Project: r.Project,
-		Config:  config,
+	err = s.db.WithLock(ctx, repositoryKeysLock, func() error {
+		if err := s.refuseCaseVariant(ctx, r.Name); err != nil {
+			return err
+		}
+
+		return s.db.CreateRepository(ctx, database.CreateRepositoryParams{
+			Key:     r.Name,
+			Class:   string(r.Class),
+			Format:  string(r.Format),
+			Project: r.Project,
+			Config:  config,
+		})
 	})
+	if errors.Is(err, ErrRepositoryExists) {
+		return err
+	}
+
 	if database.IsUniqueViolation(err) {
 		return ErrRepositoryExists
 	}
 
 	if err != nil {
 		return fmt.Errorf("create repository %s: %w", r.Name, err)
+	}
+
+	return nil
+}
+
+const repositoryKeysLock = "repository:keys"
+
+func (s *Service) refuseCaseVariant(ctx context.Context, key string) error {
+	repos, err := s.ListRepositories(ctx, "", "")
+	if err != nil {
+		return err
+	}
+
+	for _, rp := range repos {
+		if rp.Name != key && strings.EqualFold(rp.Name, key) {
+			return fmt.Errorf("%w: case insensitive repository key %s already exists", ErrRepositoryExists, rp.Name)
+		}
 	}
 
 	return nil
