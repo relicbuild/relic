@@ -743,16 +743,34 @@ func writeBlobCreated(w http.ResponseWriter, req dockerReq, digest string) {
 }
 
 func (h *Handler) dockerTags(w http.ResponseWriter, r *http.Request, req dockerReq, rp repository.Repository) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		RegistryError(w, http.StatusMethodNotAllowed, "UNSUPPORTED", "the operation is unsupported")
+		return
+	}
+
 	if !h.dockerAllowed(w, r, req.repo, req.image, auth.ActionRead) {
 		return
 	}
 
 	var tags []string
 
+	known := false
+
 	for _, member := range h.ReadRepos(r.Context(), rp) {
 		image := req.image
 		if member.Class == "remote" {
 			image = docker.UpstreamImage(h.repos.UpstreamOf(member).URL, image)
+		}
+
+		_, err := h.repos.Stat(r.Context(), member.Name, image)
+		switch {
+		case err == nil:
+			known = true
+		case errors.Is(err, repository.ErrNotFound):
+			continue
+		default:
+			h.dockerFail(w, r, err)
+			return
 		}
 
 		t, err := h.docker.Tags(r.Context(), member.Name, image)
@@ -762,6 +780,11 @@ func (h *Handler) dockerTags(w http.ResponseWriter, r *http.Request, req dockerR
 		}
 
 		tags = append(tags, t...)
+	}
+
+	if !known {
+		RegistryError(w, http.StatusNotFound, "NAME_UNKNOWN", "repository name not known to registry")
+		return
 	}
 
 	slices.Sort(tags)
