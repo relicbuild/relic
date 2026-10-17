@@ -165,6 +165,21 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
+			name: "transitive changes nothing: virtual repositories always cover their members",
+			src:  `items.find({"repo":"libs"}).include("name").transitive()`,
+			want: &Query{
+				Domain: "items",
+				Criteria: Compare{
+					Field: "repo",
+					Op:    OpEq,
+					Value: "libs",
+				},
+				Include: []string{
+					"name",
+				},
+			},
+		},
+		{
 			name: "not equal to a wildcard is a negated match",
 			src:  `items.find({"@release":{"$ne":{"$match":"1.*"}}})`,
 			want: &Query{
@@ -251,6 +266,7 @@ func TestParseErrors(t *testing.T) {
 		`items.find().limit(1.5)`,
 		`items.find().sort({"$up":["a"]})`,
 		`items.find().frobnicate()`,
+		`items.find().transitive(true)`,
 		`items.find({"name":"unterminated})`,
 		`items.find({"name":"\q"})`,
 		`items.find() trailing`,

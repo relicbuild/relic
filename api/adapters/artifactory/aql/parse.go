@@ -163,6 +163,11 @@ func (q *Query) apply(method string, args []any) error {
 		}
 
 		q.Distinct = &b
+	case "transitive":
+		// Searches of a virtual repository always cover all of its members.
+		if len(args) != 0 {
+			return errors.New("transitive() takes no arguments")
+		}
 	default:
 		return fmt.Errorf("unknown method %q", method)
 	}
