@@ -29,6 +29,8 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	relicv1 "relic/api/gen/relic/v1"
+
+	hf "relic/internal/artifacts/formats/huggingface"
 )
 
 func (c *client) put(
@@ -494,6 +496,17 @@ func huggingFaceUploadCmd(g *globals) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir, repo, id := args[0], args[1], strings.Trim(args[2], "/")
 			ctx := cmd.Context()
+
+			if !hf.ValidID(id) {
+				return fmt.Errorf("huggingface upload: %q is not a model or dataset id (<name> or <owner>/<name>)", id)
+			}
+
+			if !hf.ValidRevision(revision) {
+				return fmt.Errorf(
+					"huggingface upload: %q is not a revision: letters, digits, '.', '_' and '-', with no '/'",
+					revision,
+				)
+			}
 
 			var files []string
 

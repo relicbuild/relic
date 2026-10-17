@@ -271,6 +271,36 @@ spec: {class: local, format: huggingface}
 	if _, err := relic(t, config, "", "package", "hf", "download", "hf-local", "acme/none", out); err == nil {
 		t.Error("download of a missing model succeeded")
 	}
+
+	for _, args := range [][]string{
+		{
+			"acme/slash",
+			"--revision",
+			"feature/x",
+		},
+		{
+			"acme/a/b",
+		},
+		{
+			"acme/x y",
+		},
+		{
+			"acme/t1",
+			"--revision",
+			"v 1",
+		},
+	} {
+		upload := append([]string{
+			"package",
+			"hf",
+			"upload",
+			v1,
+			"hf-local",
+		}, args...)
+		if _, err := relic(t, config, "", upload...); err == nil {
+			t.Errorf("upload %v succeeded, though the Hub API cannot read it back", args)
+		}
+	}
 }
 
 func TestHuggingFaceDownloadFromRemote(t *testing.T) {
