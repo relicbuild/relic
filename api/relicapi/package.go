@@ -241,7 +241,12 @@ func (s *packageServer) PromoteContainerImage(
 		return nil, err
 	}
 
-	err := s.d.ContainerImages.Promote(ctx, docker.PromoteInput{
+	permits, err := repositoryPermits(ctx, s.d, m.GetRepository(), m.GetTargetRepository())
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.d.ContainerImages.Promote(ctx, docker.PromoteInput{
 		SourceRepository: m.GetRepository(),
 		TargetRepository: m.GetTargetRepository(),
 		Image:            image,
@@ -250,6 +255,7 @@ func (s *packageServer) PromoteContainerImage(
 		TargetTag:        m.GetTargetTag(),
 		Copy:             m.GetCopy(),
 		User:             auth.FromContext(ctx).Name(),
+		Permits:          permits,
 	})
 	if errors.Is(err, docker.ErrManifestUnknown) {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such image tag"))

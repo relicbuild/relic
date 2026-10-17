@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"relic/internal/access/auth"
 	"relic/internal/artifacts/formats/docker"
 	"relic/internal/artifacts/repository"
 	"relic/internal/platform/database/databasetest"
@@ -63,8 +64,6 @@ func TestPromoteAsksBeforeOverwritingATag(t *testing.T) {
 	promoted := pushImage("docker-dev", "arm64")
 	original := pushImage("docker-prod", "amd64")
 
-	errOverwriteRefused := errors.New("overwrite refused")
-
 	tests := []struct {
 		name         string
 		canOverwrite bool
@@ -73,7 +72,7 @@ func TestPromoteAsksBeforeOverwritingATag(t *testing.T) {
 	}{
 		{
 			name:       "overwrite refused",
-			wantErr:    errOverwriteRefused,
+			wantErr:    repository.ErrForbidden,
 			wantDigest: original,
 		},
 		{
@@ -91,12 +90,8 @@ func TestPromoteAsksBeforeOverwritingATag(t *testing.T) {
 				Tag:              "1.0",
 				Copy:             true,
 				User:             "dev",
-				Authorize: func(_ string, overwrite bool) error {
-					if overwrite && !tt.canOverwrite {
-						return errOverwriteRefused
-					}
-
-					return nil
+				Permits: func(_, _ string, action auth.Action) bool {
+					return action != auth.ActionDelete || tt.canOverwrite
 				},
 			})
 			if !errors.Is(err, tt.wantErr) {

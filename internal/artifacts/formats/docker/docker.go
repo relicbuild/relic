@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"relic/internal/access/auth"
 	"relic/internal/artifacts/repository"
 	"relic/internal/platform/objectstore"
 )
@@ -969,6 +970,9 @@ type PromoteInput struct {
 	Tag, TargetTag                     string
 	Copy                               bool
 	User                               string
+	// Permits, when set, is the caller's permission check for every file
+	// the promotion reads, moves and replaces; see repository.CopyInput.
+	Permits func(repoKey, path string, action auth.Action) bool
 }
 
 // Promote copies or moves a tag (or, with no tag, every tag) of an image to
@@ -1056,6 +1060,10 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) error {
 			}
 
 			copies = append(copies, folderCopies...)
+		}
+
+		for i := range copies {
+			copies[i].Permits = in.Permits
 		}
 
 		if err := s.repos.CopyAll(ctx, copies); err != nil {

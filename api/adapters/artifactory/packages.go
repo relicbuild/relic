@@ -133,7 +133,13 @@ func (h *Handler) dockerPromote(w http.ResponseWriter, r *http.Request, source s
 		return
 	}
 
-	err := h.docker.Promote(r.Context(), docker.PromoteInput{
+	permits, err := h.packages.RepositoryPermits(r, source, req.TargetRepo)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+
+	err = h.docker.Promote(r.Context(), docker.PromoteInput{
 		SourceRepository: source,
 		TargetRepository: req.TargetRepo,
 		Image:            req.DockerRepository,
@@ -142,6 +148,7 @@ func (h *Handler) dockerPromote(w http.ResponseWriter, r *http.Request, source s
 		TargetTag:        req.TargetTag,
 		Copy:             req.Copy,
 		User:             auth.FromContext(r.Context()).Name(),
+		Permits:          permits,
 	})
 	switch {
 	case errors.Is(err, docker.ErrManifestUnknown):
