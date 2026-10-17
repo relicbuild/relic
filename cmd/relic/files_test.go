@@ -1,8 +1,58 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestBuildFlagIsCheckedBeforeAnyUpload(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	f := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(f, []byte("a"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, args := range [][]string{
+		{
+			"artifact",
+			"upload",
+			f,
+			"libs-local/a.txt",
+			"--build",
+			"badformat",
+		},
+		{
+			"package",
+			"publish",
+			"go",
+			"go-local",
+			"v1.0.0",
+			"--dir",
+			dir,
+			"--build",
+			"badformat",
+		},
+	} {
+		_, err := runRelic(
+			t,
+			map[string]string{
+				"RELIC_CONFIG": filepath.Join(dir, "missing.yaml"),
+			},
+			append([]string{
+				"--config",
+				filepath.Join(dir, "missing.yaml"),
+			}, args...)...,
+		)
+		if err == nil || !strings.Contains(err.Error(), "<name>/<number>") {
+			t.Errorf("relic %s = %v, want the --build format refused", strings.Join(args, " "), err)
+		}
+	}
+}
 
 func TestSplitTarget(t *testing.T) {
 	t.Parallel()

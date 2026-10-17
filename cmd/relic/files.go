@@ -63,7 +63,10 @@ func httpError(resp *http.Response) error {
 }
 
 func uploadCmd(g *globals) *cobra.Command {
-	var build, moduleID string
+	var (
+		build    buildRunFlag
+		moduleID string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "upload <file> <repository>/<path>",
@@ -139,8 +142,8 @@ func uploadCmd(g *globals) *cobra.Command {
 
 			item.Name = path.Base(p)
 
-			if build != "" {
-				if err := g.addArtifact(build, moduleID, item); err != nil {
+			if build.value != "" {
+				if err := g.addArtifact(build.value, moduleID, item); err != nil {
 					return err
 				}
 			}
@@ -150,7 +153,7 @@ func uploadCmd(g *globals) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&build, "build", "", "record the file as an artifact of this build run, <name>/<number>")
+	cmd.Flags().Var(&build, "build", "record the file as an artifact of this build run, <name>/<number>")
 	cmd.Flags().StringVar(&moduleID, "module", "", "the build module it belongs to (default: the build's name)")
 
 	return cmd

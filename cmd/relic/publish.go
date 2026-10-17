@@ -77,21 +77,22 @@ func (c *client) putBytes(ctx context.Context, repo, p string, b []byte) (*relic
 }
 
 type publishFlags struct {
-	build, module string
+	build  buildRunFlag
+	module string
 }
 
 func (f *publishFlags) register(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&f.build, "build", "", "record the files as artifacts of this build run, <name>/<number>")
+	cmd.Flags().Var(&f.build, "build", "record the files as artifacts of this build run, <name>/<number>")
 	cmd.Flags().StringVar(&f.module, "module", "", "the build module they belong to (default: the build's name)")
 }
 
 func (f *publishFlags) record(g *globals, items ...*relicv1.Item) error {
-	if f.build == "" {
+	if f.build.value == "" {
 		return nil
 	}
 
 	for _, it := range items {
-		if err := g.addArtifact(f.build, f.module, it); err != nil {
+		if err := g.addArtifact(f.build.value, f.module, it); err != nil {
 			return err
 		}
 	}

@@ -483,6 +483,27 @@ func buildAddDependenciesCmd(g *globals) *cobra.Command {
 	return cmd
 }
 
+// buildRunFlag is a --build value, <name>/<number>, checked when the flag
+// is parsed.
+type buildRunFlag struct {
+	value string
+}
+
+func (f *buildRunFlag) String() string { return f.value }
+
+func (f *buildRunFlag) Type() string { return "name/number" }
+
+func (f *buildRunFlag) Set(s string) error {
+	name, number, ok := strings.Cut(s, "/")
+	if !ok || name == "" || number == "" {
+		return fmt.Errorf("%q is not <name>/<number>", s)
+	}
+
+	f.value = s
+
+	return nil
+}
+
 func (g *globals) addArtifact(build, moduleID string, it *relicv1.Item) error {
 	name, number, ok := strings.Cut(build, "/")
 	if !ok || name == "" || number == "" {
