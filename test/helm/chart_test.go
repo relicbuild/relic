@@ -173,6 +173,8 @@ func render(t *testing.T, args ...string) ([]object, string) {
 		chart,
 		"--set",
 		"credentials.encryptionKey=" + testEncryptionKey,
+		"--set",
+		"credentials.adminPassword=" + testAdminPassword,
 	}, args...)...)
 
 	cmd.Stdout, cmd.Stderr = &out, &stderr
@@ -218,7 +220,10 @@ var (
 	depsErr  error
 )
 
-const testEncryptionKey = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+const (
+	testEncryptionKey = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+	testAdminPassword = "chart-test-admin-password"
+)
 
 func find(objs []object, kind, name string) *object {
 	for i := range objs {
@@ -581,9 +586,9 @@ func TestChartExternalStorage(t *testing.T) {
 	}
 
 	sec := find(objs, "Secret", "r-relic-credentials")
-	if sec == nil || len(sec.StringData["adminPassword"]) != 24 ||
+	if sec == nil || sec.StringData["adminPassword"] != testAdminPassword ||
 		sec.StringData["encryptionKey"] != testEncryptionKey {
-		t.Errorf("generated admin password and the given encryption key: %+v", sec)
+		t.Errorf("the given admin password and encryption key: %+v", sec)
 	}
 
 	if sec != nil && sec.Metadata.Annotations["helm.sh/resource-policy"] != "keep" {
@@ -598,6 +603,13 @@ func TestChartExternalStorage(t *testing.T) {
 		"credentials.encryptionKey (or existingCredentialsSecret) is required",
 	) {
 		t.Errorf("rendering without an encryption key: %q, want it refused", stderr)
+	}
+
+	if _, stderr := render(t, append(external, "--set", "credentials.adminPassword=")...); !strings.Contains(
+		stderr,
+		"credentials.adminPassword (or existingCredentialsSecret) is required",
+	) {
+		t.Errorf("rendering without an admin password: %q, want it refused", stderr)
 	}
 
 	if find(objs, "PodDisruptionBudget", "r-relic-server") == nil {
@@ -647,7 +659,7 @@ func TestChartDependencies(t *testing.T) {
 
 	sec := find(objs, "Secret", "r-relic-credentials")
 	if sec == nil || sec.StringData["databaseURL"] != "" || sec.StringData["objectStorageAccessKey"] != "" ||
-		len(sec.StringData["adminPassword"]) != 24 {
+		sec.StringData["adminPassword"] != testAdminPassword {
 		t.Errorf("Relic's Secret = %+v", sec)
 	}
 
@@ -787,7 +799,7 @@ func TestChartExistingSecret(t *testing.T) {
 	}
 }
 
-func TestChartGeneratedCredentialsAreStableAcrossRenders(t *testing.T) {
+func TestChartCredentialsAreStableAcrossRenders(t *testing.T) {
 	t.Parallel()
 
 	type rendered struct {
@@ -817,7 +829,7 @@ func TestChartGeneratedCredentialsAreStableAcrossRenders(t *testing.T) {
 	first, second := renderOnce(), renderOnce()
 
 	if first.adminPassword != second.adminPassword {
-		t.Error("the generated admin password changes between renders, so every Argo CD sync rewrites it")
+		t.Error("the admin password changes between renders, so every Argo CD sync rewrites it")
 	}
 
 	if first.serverChecksum != second.serverChecksum {
@@ -830,10 +842,6 @@ func TestChartGeneratedCredentialsAreStableAcrossRenders(t *testing.T) {
 			first.serverChecksum,
 			first.workerChecksum,
 		)
-	}
-
-	if len(first.adminPassword) != 24 {
-		t.Errorf("the generated admin password has %d characters, want 24", len(first.adminPassword))
 	}
 }
 
