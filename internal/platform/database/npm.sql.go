@@ -134,27 +134,29 @@ func (q *Queries) NpmVersionExists(ctx context.Context, arg NpmVersionExistsPara
 }
 
 const searchNpmPackages = `-- name: SearchNpmPackages :many
-SELECT DISTINCT ON (v.name) v.name, v.version, v.manifest
-FROM npm_versions v
-WHERE v.repo_key = ANY($1::text[]) AND v.name ILIKE $2::text ESCAPE '\'
+SELECT DISTINCT ON (v.name) v.name, v.version, v.manifest, v.created, i.created_by AS publisher
+FROM npm_versions v JOIN items i ON i.id = v.item_id
+WHERE v.repo_key = ANY($1::text[]) AND v.name ILIKE ALL($2::text[])
 ORDER BY v.name, v.created DESC
 LIMIT $3
 `
 
 type SearchNpmPackagesParams struct {
 	RepoKeys []string
-	Pattern  string
+	Patterns []string
 	Max      int32
 }
 
 type SearchNpmPackagesRow struct {
-	Name     string
-	Version  string
-	Manifest []byte
+	Name      string
+	Version   string
+	Manifest  []byte
+	Created   time.Time
+	Publisher string
 }
 
 func (q *Queries) SearchNpmPackages(ctx context.Context, arg SearchNpmPackagesParams) ([]SearchNpmPackagesRow, error) {
-	rows, err := q.db.Query(ctx, searchNpmPackages, arg.RepoKeys, arg.Pattern, arg.Max)
+	rows, err := q.db.Query(ctx, searchNpmPackages, arg.RepoKeys, arg.Patterns, arg.Max)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +164,13 @@ func (q *Queries) SearchNpmPackages(ctx context.Context, arg SearchNpmPackagesPa
 	items := []SearchNpmPackagesRow{}
 	for rows.Next() {
 		var i SearchNpmPackagesRow
-		if err := rows.Scan(&i.Name, &i.Version, &i.Manifest); err != nil {
+		if err := rows.Scan(
+			&i.Name,
+			&i.Version,
+			&i.Manifest,
+			&i.Created,
+			&i.Publisher,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -174,30 +182,33 @@ func (q *Queries) SearchNpmPackages(ctx context.Context, arg SearchNpmPackagesPa
 }
 
 const searchNpmVersions = `-- name: SearchNpmVersions :many
-SELECT v.name, v.version, v.manifest, v.repo_key, i.path AS item_path, i.name AS item_name
+SELECT v.name, v.version, v.manifest, v.created, i.created_by AS publisher, v.repo_key,
+       i.path AS item_path, i.name AS item_name
 FROM npm_versions v JOIN items i ON i.id = v.item_id
-WHERE v.repo_key = ANY($1::text[]) AND v.name ILIKE $2::text ESCAPE '\'
+WHERE v.repo_key = ANY($1::text[]) AND v.name ILIKE ALL($2::text[])
 ORDER BY v.name, v.created DESC
 LIMIT $3
 `
 
 type SearchNpmVersionsParams struct {
 	RepoKeys []string
-	Pattern  string
+	Patterns []string
 	Max      int32
 }
 
 type SearchNpmVersionsRow struct {
-	Name     string
-	Version  string
-	Manifest []byte
-	RepoKey  string
-	ItemPath string
-	ItemName string
+	Name      string
+	Version   string
+	Manifest  []byte
+	Created   time.Time
+	Publisher string
+	RepoKey   string
+	ItemPath  string
+	ItemName  string
 }
 
 func (q *Queries) SearchNpmVersions(ctx context.Context, arg SearchNpmVersionsParams) ([]SearchNpmVersionsRow, error) {
-	rows, err := q.db.Query(ctx, searchNpmVersions, arg.RepoKeys, arg.Pattern, arg.Max)
+	rows, err := q.db.Query(ctx, searchNpmVersions, arg.RepoKeys, arg.Patterns, arg.Max)
 	if err != nil {
 		return nil, err
 	}
@@ -209,6 +220,8 @@ func (q *Queries) SearchNpmVersions(ctx context.Context, arg SearchNpmVersionsPa
 			&i.Name,
 			&i.Version,
 			&i.Manifest,
+			&i.Created,
+			&i.Publisher,
 			&i.RepoKey,
 			&i.ItemPath,
 			&i.ItemName,

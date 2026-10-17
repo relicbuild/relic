@@ -24,20 +24,23 @@ ON CONFLICT (repo_key, name, tag) DO UPDATE SET version = excluded.version;
 DELETE FROM npm_dist_tags WHERE repo_key = @repo_key AND name = @name AND tag = @tag;
 
 -- name: SearchNpmPackages :many
-SELECT name, version, manifest FROM (
-    SELECT v.name, v.version, v.manifest,
+SELECT name, version, manifest, created, publisher FROM (
+    SELECT v.name, v.version, v.manifest, v.created, i.created_by AS publisher,
            row_number() OVER (PARTITION BY v.name ORDER BY v.created DESC) AS rn
-    FROM npm_versions v
-    WHERE v.repo_key IN (SELECT value FROM json_each(@repo_keys)) AND lower(v.name) LIKE lower(@pattern) ESCAPE '\'
+    FROM npm_versions v JOIN items i ON i.id = v.item_id
+    WHERE v.repo_key IN (SELECT value FROM json_each(@repo_keys))
+      AND NOT EXISTS (SELECT 1 FROM json_each(@patterns) p WHERE lower(v.name) NOT LIKE lower(p.value) ESCAPE '\')
 )
 WHERE rn = 1
 ORDER BY name
 LIMIT @max;
 
 -- name: SearchNpmVersions :many
-SELECT v.name, v.version, v.manifest, v.repo_key, i.path AS item_path, i.name AS item_name
+SELECT v.name, v.version, v.manifest, v.created, i.created_by AS publisher, v.repo_key,
+       i.path AS item_path, i.name AS item_name
 FROM npm_versions v JOIN items i ON i.id = v.item_id
-WHERE v.repo_key IN (SELECT value FROM json_each(@repo_keys)) AND lower(v.name) LIKE lower(@pattern) ESCAPE '\'
+WHERE v.repo_key IN (SELECT value FROM json_each(@repo_keys))
+  AND NOT EXISTS (SELECT 1 FROM json_each(@patterns) p WHERE lower(v.name) NOT LIKE lower(p.value) ESCAPE '\')
 ORDER BY v.name, v.created DESC
 LIMIT @max;
 

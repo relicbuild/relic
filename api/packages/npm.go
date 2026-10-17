@@ -289,11 +289,7 @@ func (h *Handler) npmSearch(w http.ResponseWriter, r *http.Request, req npmReque
 	objects := make([]map[string]any, len(hits))
 	for i, hit := range hits {
 		objects[i] = map[string]any{
-			"package": map[string]any{
-				"name":        hit.Name,
-				"version":     hit.Version,
-				"description": hit.Description,
-			},
+			"package": npmSearchPackage(hit),
 			"score": map[string]any{
 				"final": 1,
 				"detail": map[string]any{
@@ -314,6 +310,37 @@ func (h *Handler) npmSearch(w http.ResponseWriter, r *http.Request, req npmReque
 			"time":    time.Now().UTC().Format(time.RFC1123),
 		},
 	)
+}
+
+type npmPerson struct {
+	Username string `json:"username"`
+	Email    string `json:"email,omitempty"`
+}
+
+func npmSearchPackage(hit npm.SearchResult) map[string]any {
+	maintainers := make([]npmPerson, 0, len(hit.Maintainers))
+	for _, m := range hit.Maintainers {
+		maintainers = append(maintainers, npmPerson{
+			Username: m.Name,
+			Email:    m.Email,
+		})
+	}
+
+	pkg := map[string]any{
+		"name":        hit.Name,
+		"version":     hit.Version,
+		"description": hit.Description,
+		"keywords":    hit.Keywords,
+		"maintainers": maintainers,
+		"date":        hit.Date.UTC().Format(time.RFC3339),
+	}
+	if hit.Publisher != "" {
+		pkg["publisher"] = npmPerson{
+			Username: hit.Publisher,
+		}
+	}
+
+	return pkg
 }
 
 func (h *Handler) npmLogin(w http.ResponseWriter, r *http.Request) {

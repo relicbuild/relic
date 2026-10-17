@@ -726,22 +726,33 @@ type SearchResult struct {
 	Name        string
 	Version     string
 	Description string
+	Keywords    []string
+	Maintainers []Person
+	Publisher   string
+	Date        time.Time
 }
 
-// Search finds packages whose name contains text in the given repositories.
+// Person is an npm user a package's metadata names.
+type Person struct {
+	Name  string
+	Email string
+}
+
+// Search finds packages whose name contains every word of text in the
+// given repositories.
 func (s *Service) Search(ctx context.Context, repoKeys []string, text string, limit int32) ([]SearchResult, error) {
-	pattern := "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(text) + "%"
+	patterns := searchPatterns(text)
 	if slices.ContainsFunc(repoKeys, func(k string) bool {
 		return repository.Restricted(ctx, k)
 	}) {
-		return s.searchVisible(ctx, repoKeys, pattern, limit)
+		return s.searchVisible(ctx, repoKeys, patterns, limit)
 	}
 
 	rows, err := s.db.SearchNpmPackages(
 		ctx,
 		database.SearchNpmPackagesParams{
 			RepoKeys: repoKeys,
-			Pattern:  pattern,
+			Patterns: patterns,
 			Max:      limit,
 		},
 	)
@@ -751,19 +762,101 @@ func (s *Service) Search(ctx context.Context, repoKeys []string, text string, li
 
 	out := make([]SearchResult, len(rows))
 	for i, r := range rows {
-		var m struct {
-			Description string `json:"description"`
-		}
-
-		_ = json.Unmarshal(r.Manifest, &m)
-		out[i] = SearchResult{
-			Name:        r.Name,
-			Version:     r.Version,
-			Description: m.Description,
-		}
+		out[i] = searchResult(r.Name, r.Version, r.Manifest, r.Created, r.Publisher)
 	}
 
 	return out, nil
+}
+
+func searchPatterns(text string) []string {
+	escape := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	words := strings.Fields(text)
+
+	patterns := make([]string, 0, len(words))
+	for _, w := range words {
+		patterns = append(patterns, "%"+escape.Replace(w)+"%")
+	}
+
+	return patterns
+}
+
+// searchResult reads what npm search shows from a version's manifest. npm
+// search lists maintainers for every hit, so a version without any names
+// its publisher.
+func searchResult(name, version string, manifest []byte, created time.Time, publisher string) SearchResult {
+	var m struct {
+		Description string            `json:"description"`
+		Keywords    json.RawMessage   `json:"keywords"`
+		Maintainers []json.RawMessage `json:"maintainers"`
+		NpmUser     json.RawMessage   `json:"_npmUser"`
+	}
+
+	_ = json.Unmarshal(manifest, &m)
+
+	r := SearchResult{
+		Name:        name,
+		Version:     version,
+		Description: m.Description,
+		Keywords:    parseKeywords(m.Keywords),
+		Publisher:   publisher,
+		Date:        created,
+	}
+
+	for _, raw := range m.Maintainers {
+		if p, ok := parsePerson(raw); ok {
+			r.Maintainers = append(r.Maintainers, p)
+		}
+	}
+
+	if p, ok := parsePerson(m.NpmUser); ok {
+		r.Publisher = p.Name
+	}
+
+	if r.Publisher == repository.SystemUser {
+		r.Publisher = ""
+	}
+
+	if len(r.Maintainers) == 0 && r.Publisher != "" {
+		r.Maintainers = []Person{
+			{
+				Name: r.Publisher,
+			},
+		}
+	}
+
+	return r
+}
+
+var personText = regexp.MustCompile(`^\s*([^<(]*?)\s*(?:<([^>]*)>)?\s*(?:\([^)]*\))?\s*$`)
+
+// parsePerson reads a person in either form package.json allows: an
+// object with a name and an email, or "Name <email> (url)".
+func parsePerson(raw json.RawMessage) (Person, bool) {
+	var p struct {
+		Name  string `json:"name"`
+		Email string `json:"email"`
+	}
+	if json.Unmarshal(raw, &p) == nil && p.Name != "" {
+		return Person{
+			Name:  p.Name,
+			Email: p.Email,
+		}, true
+	}
+
+	var text string
+	if json.Unmarshal(raw, &text) != nil {
+		return Person{}, false
+	}
+
+	match := personText.FindStringSubmatch(text)
+	if match == nil || match[1] == "" {
+		return Person{}, false
+	}
+
+	return Person{
+		Name:  match[1],
+		Email: match[2],
+	}, true
 }
 
 const maxSearchVersions = 10_000
@@ -771,14 +864,14 @@ const maxSearchVersions = 10_000
 func (s *Service) searchVisible(
 	ctx context.Context,
 	repoKeys []string,
-	pattern string,
+	patterns []string,
 	limit int32,
 ) ([]SearchResult, error) {
 	rows, err := s.db.SearchNpmVersions(
 		ctx,
 		database.SearchNpmVersionsParams{
 			RepoKeys: repoKeys,
-			Pattern:  pattern,
+			Patterns: patterns,
 			Max:      maxSearchVersions,
 		},
 	)
@@ -797,16 +890,7 @@ func (s *Service) searchVisible(
 			break
 		}
 
-		var m struct {
-			Description string `json:"description"`
-		}
-
-		_ = json.Unmarshal(r.Manifest, &m)
-		out = append(out, SearchResult{
-			Name:        r.Name,
-			Version:     r.Version,
-			Description: m.Description,
-		})
+		out = append(out, searchResult(r.Name, r.Version, r.Manifest, r.Created, r.Publisher))
 	}
 
 	return out, nil

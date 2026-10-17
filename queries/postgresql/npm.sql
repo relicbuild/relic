@@ -24,16 +24,17 @@ ON CONFLICT (repo_key, name, tag) DO UPDATE SET version = EXCLUDED.version;
 DELETE FROM npm_dist_tags WHERE repo_key = @repo_key AND name = @name AND tag = @tag;
 
 -- name: SearchNpmPackages :many
-SELECT DISTINCT ON (v.name) v.name, v.version, v.manifest
-FROM npm_versions v
-WHERE v.repo_key = ANY(@repo_keys::text[]) AND v.name ILIKE @pattern::text ESCAPE '\'
+SELECT DISTINCT ON (v.name) v.name, v.version, v.manifest, v.created, i.created_by AS publisher
+FROM npm_versions v JOIN items i ON i.id = v.item_id
+WHERE v.repo_key = ANY(@repo_keys::text[]) AND v.name ILIKE ALL(@patterns::text[])
 ORDER BY v.name, v.created DESC
 LIMIT @max;
 
 -- name: SearchNpmVersions :many
-SELECT v.name, v.version, v.manifest, v.repo_key, i.path AS item_path, i.name AS item_name
+SELECT v.name, v.version, v.manifest, v.created, i.created_by AS publisher, v.repo_key,
+       i.path AS item_path, i.name AS item_name
 FROM npm_versions v JOIN items i ON i.id = v.item_id
-WHERE v.repo_key = ANY(@repo_keys::text[]) AND v.name ILIKE @pattern::text ESCAPE '\'
+WHERE v.repo_key = ANY(@repo_keys::text[]) AND v.name ILIKE ALL(@patterns::text[])
 ORDER BY v.name, v.created DESC
 LIMIT @max;
 
