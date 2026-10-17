@@ -4,6 +4,7 @@ package repository
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -23,7 +24,7 @@ func TestCreateRepositoryRefusesKeysThatDifferOnlyByCase(t *testing.T) {
 		{
 			name:    "key in other case",
 			key:     "Generic-Local",
-			wantErr: ErrRepositoryExists,
+			wantErr: ErrRepositoryKeyCaseConflict,
 		},
 		{
 			name: "another key",
@@ -45,5 +46,23 @@ func TestCreateRepositoryRefusesKeysThatDifferOnlyByCase(t *testing.T) {
 				t.Errorf("CreateRepository(%q) = %v, want %v", tt.key, err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestTrashRepositoryInAnotherCaseIsReported(t *testing.T) {
+	t.Parallel()
+
+	s, _, _ := newTestService(t)
+
+	if err := s.CreateRepository(t.Context(), Repository{
+		Name:   strings.ToUpper(s.TrashRepository()),
+		Class:  ClassLocal,
+		Format: FormatGeneric,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.ensureTrashRepo(t.Context()); !errors.Is(err, ErrRepositoryKeyCaseConflict) {
+		t.Errorf("ensureTrashRepo() = %v, want %v", err, ErrRepositoryKeyCaseConflict)
 	}
 }

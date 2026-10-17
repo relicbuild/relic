@@ -104,7 +104,7 @@ func (s *Service) CreateRepository(ctx context.Context, r Repository) error {
 			Config:  config,
 		})
 	})
-	if errors.Is(err, ErrRepositoryExists) {
+	if errors.Is(err, ErrRepositoryKeyCaseConflict) {
 		return err
 	}
 
@@ -129,7 +129,7 @@ func (s *Service) refuseCaseVariant(ctx context.Context, key string) error {
 
 	for _, rp := range repos {
 		if rp.Name != key && strings.EqualFold(rp.Name, key) {
-			return fmt.Errorf("%w: case insensitive repository key %s already exists", ErrRepositoryExists, rp.Name)
+			return fmt.Errorf("%w: %s", ErrRepositoryKeyCaseConflict, rp.Name)
 		}
 	}
 

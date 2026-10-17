@@ -158,6 +158,7 @@ func codeOf(err error) *connect.Error {
 
 	switch {
 	case errors.Is(err, repository.ErrRepositoryExists),
+		errors.Is(err, repository.ErrRepositoryKeyCaseConflict),
 		errors.Is(err, security.ErrExists),
 		errors.Is(err, policy.ErrExists),
 		errors.Is(err, release.ErrExists),
