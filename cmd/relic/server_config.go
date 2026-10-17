@@ -31,7 +31,7 @@ func serverConfigCmd(g *globals) *cobra.Command {
 		Short: "Show the settings of the Relic service on this machine, secrets masked",
 		Long: "Prints the settings file relic server setup wrote (server.env, or /etc/relic/relic.env for a system " +
 			"service), with keys, passwords, secrets, tokens, connection strings, headers and the passwords in " +
-			"URLs masked. relic server config set changes one setting and restarts the service.",
+			"URLs and PostgreSQL connection strings masked. relic server config set changes one setting and restarts the service.",
 		Example: "  relic server config\n" +
 			"  relic server config set RELIC_HTTP_LISTEN_ADDRESS=0.0.0.0:8090",
 		Args: cobra.NoArgs,
@@ -72,7 +72,119 @@ func maskedSettingsLine(line string) string {
 		return key + "=" + masked + "\n"
 	}
 
+	if masked := withoutConnectionStringSecrets(value); masked != value {
+		return key + "=" + masked + "\n"
+	}
+
 	return line
+}
+
+// connectionParameter is one name=value field of a keyword/value connection
+// string, with the byte offsets of its value as written, quotes included.
+type connectionParameter struct {
+	name       string
+	value      string
+	valueStart int
+	valueEnd   int
+}
+
+// connectionParameters parses a keyword/value connection string such as
+// "host=db password='a b'" the way PostgreSQL clients do, returning nil when
+// the text is not one.
+func connectionParameters(text string) []connectionParameter {
+	var parameters []connectionParameter
+
+	i := skipSpaces(text, 0)
+	for i < len(text) {
+		nameStart := i
+		for i < len(text) && text[i] != '=' && !isSpace(text[i]) {
+			i++
+		}
+
+		name := text[nameStart:i]
+
+		i = skipSpaces(text, i)
+		if name == "" || i == len(text) || text[i] != '=' {
+			return nil
+		}
+
+		valueStart := skipSpaces(text, i+1)
+
+		value, valueEnd, ok := connectionValue(text, valueStart)
+		if !ok {
+			return nil
+		}
+
+		parameters = append(parameters, connectionParameter{
+			name:       name,
+			value:      value,
+			valueStart: valueStart,
+			valueEnd:   valueEnd,
+		})
+		i = skipSpaces(text, valueEnd)
+	}
+
+	return parameters
+}
+
+func connectionValue(text string, start int) (string, int, bool) {
+	quoted := start < len(text) && text[start] == '\''
+	if quoted {
+		start++
+	}
+
+	var value strings.Builder
+
+	for i := start; i < len(text); i++ {
+		switch c := text[i]; {
+		case c == '\\' && i+1 < len(text):
+			i++
+			value.WriteByte(text[i])
+		case quoted && c == '\'':
+			return value.String(), i + 1, true
+		case !quoted && isSpace(c):
+			return value.String(), i, true
+		default:
+			value.WriteByte(c)
+		}
+	}
+
+	return value.String(), len(text), !quoted
+}
+
+func skipSpaces(text string, i int) int {
+	for i < len(text) && isSpace(text[i]) {
+		i++
+	}
+
+	return i
+}
+
+func isSpace(c byte) bool {
+	return strings.IndexByte(" \t\n\r\f\v", c) >= 0
+}
+
+func withoutConnectionStringSecrets(value string) string {
+	var masked strings.Builder
+
+	written := 0
+
+	for _, p := range connectionParameters(value) {
+		if secretParameter.MatchString(p.name) {
+			masked.WriteString(value[written:p.valueStart])
+			masked.WriteString(maskedValue)
+
+			written = p.valueEnd
+		}
+	}
+
+	if written == 0 {
+		return value
+	}
+
+	masked.WriteString(value[written:])
+
+	return masked.String()
 }
 
 func withoutURLCredentials(value string) string {

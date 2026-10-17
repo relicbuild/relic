@@ -38,6 +38,21 @@ func TestMaskedSettingsLine(t *testing.T) {
 			want: "RELIC_DATABASE_URL=postgres://db:5432/relic?user=relic&password=********\n",
 		},
 		{
+			name: "password in a keyword/value connection string",
+			line: "RELIC_DATABASE_URL=host=db user=relic password=Sup3rSecretDbPw dbname=relic\n",
+			want: "RELIC_DATABASE_URL=host=db user=relic password=******** dbname=relic\n",
+		},
+		{
+			name: "quoted secrets in a keyword/value connection string",
+			line: "RELIC_DATABASE_URL=host=db password = 'Sup3r Secret\\' DbPw' sslpassword='KeyPw' dbname=relic\n",
+			want: "RELIC_DATABASE_URL=host=db password = ******** sslpassword=******** dbname=relic\n",
+		},
+		{
+			name: "keyword/value connection string without secrets",
+			line: "RELIC_DATABASE_URL=host=db user=relic dbname=relic sslmode=require\n",
+			want: "RELIC_DATABASE_URL=host=db user=relic dbname=relic sslmode=require\n",
+		},
+		{
 			name: "URL without credentials",
 			line: "RELIC_DATABASE_URL=sqlite:///var/lib/relic/relic.db\n",
 			want: "RELIC_DATABASE_URL=sqlite:///var/lib/relic/relic.db\n",
