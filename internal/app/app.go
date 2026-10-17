@@ -71,6 +71,7 @@ import (
 	"relic/internal/delivery/webhook"
 	"relic/internal/platform/database"
 	"relic/internal/platform/events"
+	"relic/internal/platform/httperror"
 	"relic/internal/platform/httpserver"
 	"relic/internal/platform/objectstore"
 	"relic/internal/platform/sealing"
@@ -1290,16 +1291,16 @@ var apiPrefixes = append([]string{
 
 func apiNotFound(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, p := range apiPrefixes {
+			if strings.HasPrefix(r.URL.Path, p) || r.URL.Path == strings.TrimSuffix(p, "/") {
+				httperror.Write(w, r, http.StatusNotFound, "no such endpoint")
+				return
+			}
+		}
+
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			http.NotFound(w, r)
 			return
-		}
-
-		for _, p := range apiPrefixes {
-			if strings.HasPrefix(r.URL.Path, p) || r.URL.Path == strings.TrimSuffix(p, "/") {
-				http.NotFound(w, r)
-				return
-			}
 		}
 
 		next.ServeHTTP(w, r)

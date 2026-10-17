@@ -102,7 +102,9 @@ func (h *Handler) Register(rt *httpserver.Router) {
 			})
 		},
 	)
-	rt.HandleFunc("/xray/api/v1/xsc/", auth.Authenticated, http.NotFound)
+	rt.HandleFunc("/xray/api/v1/xsc/", auth.Authenticated, func(w http.ResponseWriter, _ *http.Request) {
+		wire.WriteError(w, http.StatusNotFound, "no such endpoint")
+	})
 	rt.HandleFunc("GET /xray/api/v1/indexer-resources/download/{os}/{arch}", auth.Authenticated, h.downloadIndexer)
 	rt.HandleFunc("POST /xray/api/v1/scan/graph", auth.Authenticated, h.postGraph)
 	rt.HandleFunc("GET /xray/api/v1/scan/graph/{id}", auth.Authenticated, h.getGraph)
