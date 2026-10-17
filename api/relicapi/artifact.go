@@ -426,7 +426,15 @@ func (s *artifactServer) copyOrMove(ctx context.Context, key, p, toKey, toPath s
 		return err
 	}
 
-	if err := can(ctx, s.d, toKey, toPath, auth.ActionWrite); err != nil {
+	err := can(ctx, s.d, toKey, toPath, auth.ActionWrite)
+	if errors.Is(err, repository.ErrNotFound) {
+		return connect.NewError(
+			connect.CodePermissionDenied,
+			errors.New("no write permission on "+toKey+"/"+toPath),
+		)
+	}
+
+	if err != nil {
 		return err
 	}
 

@@ -5,6 +5,7 @@ package integration
 import (
 	"encoding/base64"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -208,6 +209,21 @@ func TestCopyAndMoveCheckEveryFile(t *testing.T) {
 
 		if status, body := adminContent(t, srv, "guarded-local/dst/open.txt"); status != 200 || body != "hello" {
 			t.Errorf("file after refused overwrites = %d %q, want 200 hello", status, body)
+		}
+	})
+
+	t.Run("a destination the caller cannot write is named as such", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := artifacts(copier).CopyItem(t.Context(), connect.NewRequest(&relicv1.CopyItemRequest{
+			Repository:   "guarded-local",
+			Path:         "dst/open.txt",
+			ToRepository: "guarded-local",
+			ToPath:       "src/secret/open.txt",
+		}))
+		if code(err) != connect.CodePermissionDenied ||
+			!strings.Contains(err.Error(), "guarded-local/src/secret/open.txt") {
+			t.Errorf("Relic API copy to an unwritable destination = %v, want PermissionDenied naming it", err)
 		}
 	})
 

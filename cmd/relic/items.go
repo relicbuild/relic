@@ -189,7 +189,7 @@ func copyMoveCmd(g *globals, move bool) *cobra.Command {
 					return printCompleted(
 						cmd.OutOrStdout(),
 						done,
-						fmt.Errorf("%s %s/%s: %w", use, t.fromRepo, t.from, err),
+						fmt.Errorf("%s %s/%s to %s/%s: %w", use, t.fromRepo, t.from, t.toRepo, t.to, err),
 					)
 				}
 
