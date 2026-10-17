@@ -66,4 +66,20 @@ func init() {
 			), nil //nolint:forcetypeassert // the map holds compiled patterns only
 		},
 	)
+	sqlite.MustRegisterDeterministicScalarFunction(
+		"lower",
+		1,
+		func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+			switch v := args[0].(type) {
+			case nil:
+				return nil, nil
+			case string:
+				return strings.ToLower(v), nil
+			case []byte:
+				return strings.ToLower(string(v)), nil
+			default:
+				return fmt.Sprint(v), nil
+			}
+		},
+	)
 }
