@@ -138,6 +138,11 @@ func (d Dependencies) download(w http.ResponseWriter, r *http.Request, key, p st
 func (d Dependencies) upload(w http.ResponseWriter, r *http.Request, key, p string) {
 	ctx := r.Context()
 
+	if _, err := readableRepository(ctx, d, key); err != nil {
+		writeHTTPError(w, d.logged(r, err))
+		return
+	}
+
 	target, err := d.Repositories.DeployTarget(ctx, key)
 	if err != nil {
 		writeHTTPError(w, d.logged(r, err))

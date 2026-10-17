@@ -30,12 +30,41 @@ func can(ctx context.Context, d Dependencies, repoKey, path string, action auth.
 	return check(path, action)
 }
 
+// readableRepository returns the repository named repoKey, or
+// ErrRepositoryNotFound, as for a missing one, when the caller may read
+// nothing in it.
+func readableRepository(ctx context.Context, d Dependencies, repoKey string) (repository.Repository, error) {
+	r, err := d.Repositories.GetRepository(ctx, repoKey)
+	if err != nil {
+		return repository.Repository{}, err
+	}
+
+	p := auth.FromContext(ctx)
+	if p.Admin || p.Viewer {
+		return r, nil
+	}
+
+	perms, err := d.Security.Permissions(ctx)
+	if err != nil {
+		return repository.Repository{}, err
+	}
+
+	if !perms.CanReadRepository(p.Subject(), auth.Repository{
+		Name:  r.Name,
+		Class: string(r.Class),
+	}) {
+		return repository.Repository{}, repository.ErrRepositoryNotFound
+	}
+
+	return r, nil
+}
+
 func repositoryAccess(
 	ctx context.Context,
 	d Dependencies,
 	repoKey string,
 ) (func(path string, action auth.Action) error, error) {
-	r, err := d.Repositories.GetRepository(ctx, repoKey)
+	r, err := readableRepository(ctx, d, repoKey)
 	if err != nil {
 		return nil, err
 	}
@@ -251,12 +280,16 @@ func (s *artifactServer) SearchItems(
 	out := &relicv1.SearchItemsResponse{}
 
 	for _, key := range keys {
-		hits, err := s.d.Repositories.SearchNames(ctx, key, name, limit)
+		check, err := repositoryAccess(ctx, s.d, key)
+		if errors.Is(err, repository.ErrRepositoryNotFound) && req.Msg.GetRepository() == "" {
+			continue
+		}
+
 		if err != nil {
 			return nil, err
 		}
 
-		check, err := repositoryAccess(ctx, s.d, key)
+		hits, err := s.d.Repositories.SearchNames(ctx, key, name, limit)
 		if err != nil {
 			return nil, err
 		}

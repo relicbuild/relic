@@ -438,7 +438,7 @@ func (s *repositoryServer) UpdateRepository(
 		return nil, err
 	}
 
-	existing, err := s.d.Repositories.GetRepository(ctx, r.Name)
+	existing, err := readableRepository(ctx, s.d, r.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -472,7 +472,7 @@ func (s *repositoryServer) DeleteRepository(
 	ctx context.Context,
 	req *connect.Request[relicv1.DeleteRepositoryRequest],
 ) (*connect.Response[relicv1.DeleteRepositoryResponse], error) {
-	existing, err := s.d.Repositories.GetRepository(ctx, req.Msg.GetName())
+	existing, err := readableRepository(ctx, s.d, req.Msg.GetName())
 	if err != nil {
 		return nil, err
 	}

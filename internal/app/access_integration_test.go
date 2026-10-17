@@ -197,3 +197,101 @@ func TestDashboardSummaryCountsWhatTheCallerMayRead(t *testing.T) {
 		})
 	}
 }
+
+func TestAnUnreadableRepositoryAnswersLikeAMissingOne(t *testing.T) {
+	t.Parallel()
+	srv := server(t)
+	send := func(c call) (reply, string) {
+		return do(t, srv, c)
+	}
+	admin := rest{
+		t:   t,
+		srv: send,
+	}
+
+	createRepository(t, srv, "seen-local", "LOCAL", "GENERIC", "")
+	createRepository(t, srv, "hidden-local", "LOCAL", "GENERIC", "")
+	createRepository(
+		t,
+		srv,
+		"hidden-virtual",
+		"VIRTUAL",
+		"GENERIC",
+		`,"virtual":{"members":["hidden-local"]}`,
+	)
+	upload(t, srv, "hidden-local", "x", "hidden")
+	admin.call(
+		http.MethodPut,
+		"/api/v1/users/reader",
+		`{"name":"reader","email":"reader@example.com","password":"Reader-pass-12345"}`,
+		http.StatusOK,
+	)
+	admin.call(
+		http.MethodPut,
+		"/api/v1/permissions/seen-reader",
+		`{"name":"seen-reader","rules":[{"resource":"RESOURCE_KIND_REPOSITORY",`+
+			`"selector":{"repositories":["seen-local"]},`+
+			`"grants":[{"user":"reader","actions":["ACTION_READ"]}]}]}`,
+		http.StatusOK,
+	)
+
+	requests := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+	}{
+		{
+			name:   "stat an item",
+			method: http.MethodGet,
+			path:   "/api/v1/repositories/{repo}/items/x",
+		},
+		{
+			name:   "list children",
+			method: http.MethodGet,
+			path:   "/api/v1/repositories/{repo}/children",
+		},
+		{
+			name:   "download",
+			method: http.MethodGet,
+			path:   "/api/v1/files/{repo}/x",
+		},
+		{
+			name:   "upload",
+			method: http.MethodPut,
+			path:   "/api/v1/files/{repo}/y",
+			body:   "y",
+		},
+		{
+			name:   "delete the repository",
+			method: http.MethodDelete,
+			path:   "/api/v1/repositories/{repo}",
+		},
+	}
+	for _, rq := range requests {
+		for _, repo := range []string{
+			"hidden-local",
+			"hidden-virtual",
+		} {
+			t.Run(rq.name+" in "+repo, func(t *testing.T) {
+				answer := func(repo string) string {
+					resp, body := send(call{
+						method: rq.method,
+						path:   strings.ReplaceAll(rq.path, "{repo}", repo),
+						body:   rq.body,
+						noAuth: true,
+						headers: map[string]string{
+							"Authorization": "Basic cmVhZGVyOlJlYWRlci1wYXNzLTEyMzQ1",
+						},
+					})
+
+					return http.StatusText(resp.StatusCode) + " " + body
+				}
+
+				if got, want := answer(repo), answer("missing-local"); got != want {
+					t.Errorf("%s = %s, a missing repository = %s", repo, got, want)
+				}
+			})
+		}
+	}
+}
