@@ -55,11 +55,13 @@ type setupStep struct {
 
 type setupClient struct {
 	formats []relicv1.Format
-	short   string
-	flags   map[string]string
-	steps   func(e setupEnv) ([]setupStep, error)
-	notes   func(e setupEnv) string
-	system  bool
+	// packageURL is an example of the package URLs the client's packages have.
+	packageURL string
+	short      string
+	flags      map[string]string
+	steps      func(e setupEnv) ([]setupStep, error)
+	notes      func(e setupEnv) string
+	system     bool
 }
 
 func withUserinfo(u, user, token string) (string, error) {
@@ -90,6 +92,7 @@ func npmSteps(e setupEnv) ([]setupStep, error) {
 
 var setupClients = map[string]setupClient{
 	"npm": {
+		packageURL: "pkg:npm/lodash@4.17.21",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_NPM,
 		},
@@ -97,6 +100,7 @@ var setupClients = map[string]setupClient{
 		steps: npmSteps,
 	},
 	"pnpm": {
+		packageURL: "pkg:npm/lodash@4.17.21",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_NPM,
 		},
@@ -104,6 +108,7 @@ var setupClients = map[string]setupClient{
 		steps: npmSteps,
 	},
 	"yarn": {
+		packageURL: "pkg:npm/lodash@4.17.21",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_NPM,
 		},
@@ -120,6 +125,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"maven": {
+		packageURL: "pkg:maven/org.apache.commons/commons-lang3@3.14.0",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_MAVEN,
 			relicv1.Format_FORMAT_GRADLE,
@@ -144,6 +150,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"gradle": {
+		packageURL: "pkg:maven/org.apache.commons/commons-lang3@3.14.0",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_GRADLE,
 			relicv1.Format_FORMAT_MAVEN,
@@ -169,6 +176,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"go": {
+		packageURL: "pkg:golang/github.com/google/uuid@v1.6.0",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_GOMOD,
 		},
@@ -211,6 +219,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"pip": {
+		packageURL: "pkg:pypi/requests@2.32.3",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_PYPI,
 		},
@@ -218,6 +227,7 @@ var setupClients = map[string]setupClient{
 		steps: pipSteps,
 	},
 	"pipenv": {
+		packageURL: "pkg:pypi/requests@2.32.3",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_PYPI,
 		},
@@ -232,6 +242,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"poetry": {
+		packageURL: "pkg:pypi/requests@2.32.3",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_PYPI,
 		},
@@ -262,6 +273,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"twine": {
+		packageURL: "pkg:pypi/requests@2.32.3",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_PYPI,
 		},
@@ -284,6 +296,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"docker": {
+		packageURL: "pkg:docker/library/nginx@1.27.0",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_DOCKER,
 			relicv1.Format_FORMAT_OCI,
@@ -295,6 +308,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"podman": {
+		packageURL: "pkg:docker/library/nginx@1.27.0",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_DOCKER,
 			relicv1.Format_FORMAT_OCI,
@@ -306,6 +320,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"nuget": {
+		packageURL: "pkg:nuget/Newtonsoft.Json@13.0.3",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_NUGET,
 		},
@@ -344,6 +359,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"conan": {
+		packageURL: "pkg:conan/zlib@1.3.1",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_CONAN,
 		},
@@ -376,6 +392,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"ruby": {
+		packageURL: "pkg:gem/rails@7.1.3",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_RUBYGEMS,
 		},
@@ -477,6 +494,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"cargo": {
+		packageURL: "pkg:cargo/serde@1.0.203",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_CARGO,
 		},
@@ -503,6 +521,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"apk": {
+		packageURL: "pkg:apk/alpine/curl@8.9.1-r0",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_ALPINE,
 		},
@@ -542,6 +561,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"apt": {
+		packageURL: "pkg:deb/debian/curl@7.88.1-10",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_DEBIAN,
 		},
@@ -587,6 +607,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"dnf": {
+		packageURL: "pkg:rpm/fedora/curl@8.6.0-1",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_RPM,
 		},
