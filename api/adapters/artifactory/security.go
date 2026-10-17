@@ -7,6 +7,7 @@ import (
 	"maps"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -164,7 +165,7 @@ func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request) {
 	for i, u := range users {
 		out[i] = nameURI{
 			Name:  u.Name,
-			URI:   baseURL(r) + "/api/security/users/" + escapePath(u.Name),
+			URI:   baseURL(r) + "/api/security/users/" + url.PathEscape(u.Name),
 			Realm: u.Realm,
 		}
 	}
@@ -345,7 +346,7 @@ func (h *Handler) listGroups(w http.ResponseWriter, r *http.Request) {
 	for i, n := range names {
 		out[i] = nameURI{
 			Name: n,
-			URI:  baseURL(r) + "/api/security/groups/" + escapePath(n),
+			URI:  baseURL(r) + "/api/security/groups/" + url.PathEscape(n),
 		}
 	}
 
@@ -495,7 +496,7 @@ func (h *Handler) listPermissionTargets(w http.ResponseWriter, r *http.Request) 
 	for i, n := range names {
 		out[i] = nameURI{
 			Name: n,
-			URI:  baseURL(r) + "/api/v2/security/permissions/" + escapePath(n),
+			URI:  baseURL(r) + "/api/v2/security/permissions/" + url.PathEscape(n),
 		}
 	}
 
