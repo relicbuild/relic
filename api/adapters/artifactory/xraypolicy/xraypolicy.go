@@ -404,6 +404,10 @@ func IgnoreRuleFromXray(r IgnoreRule) (policy.IgnoreRule, error) {
 		Watches:         f.Watches,
 		Policies:        f.Policies,
 	}
+	if out.Expires != nil && out.Expires.IsZero() {
+		out.Expires = nil
+	}
+
 	for _, c := range f.Components {
 		p, err := xraymap.PackageToPURL(c.Name, c.Version)
 		if err != nil {

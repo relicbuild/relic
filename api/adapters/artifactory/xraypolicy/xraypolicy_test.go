@@ -123,6 +123,27 @@ func TestIgnoreRuleRefusesFiltersItCannotEvaluate(t *testing.T) {
 	}
 }
 
+func TestIgnoreRuleWithTheZeroExpiryNeverExpires(t *testing.T) {
+	t.Parallel()
+
+	var r IgnoreRule
+	if err := json.Unmarshal(
+		[]byte(`{"notes":"sdk","expires_at":"0001-01-01T00:00:00Z","ignore_filters":{"cves":["CVE-1"]}}`),
+		&r,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	native, err := IgnoreRuleFromXray(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if native.Expires != nil {
+		t.Errorf("expires = %v, want none", native.Expires)
+	}
+}
+
 func TestNative(t *testing.T) {
 	t.Parallel()
 
