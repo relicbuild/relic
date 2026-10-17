@@ -1472,11 +1472,11 @@ const sqliteScanCounts = `-- name: ScanCounts :many
 SELECT status, count(*) AS count FROM scan_artifacts GROUP BY status;`
 
 const sqliteSearchItemsByName = `-- name: SearchItemsByName :many
--- Items of one repository whose name contains a term (case-insensitive;
--- the caller escapes LIKE wildcards). ESCAPE '\' is
--- PostgreSQL's default, which SQLite lacks.
+-- Items of one repository whose name contains a term (case-insensitive
+-- beyond ASCII, as ILIKE is; the caller escapes LIKE wildcards). ESCAPE '\'
+-- is PostgreSQL's default, which SQLite lacks.
 SELECT * FROM items
-WHERE repo_key = @repo_key AND lower(name) LIKE lower(@pattern) ESCAPE '\' AND name <> '.'
+WHERE repo_key = @repo_key AND unicode_lower(name) LIKE unicode_lower(@pattern) ESCAPE '\' AND name <> '.'
 ORDER BY path, name
 LIMIT @max_rows;`
 

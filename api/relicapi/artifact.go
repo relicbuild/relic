@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -220,7 +221,7 @@ func (s *artifactServer) SearchItems(
 	req *connect.Request[relicv1.SearchItemsRequest],
 ) (*connect.Response[relicv1.SearchItemsResponse], error) {
 	name := strings.TrimSpace(req.Msg.GetName())
-	if len(name) < 2 {
+	if utf8.RuneCountInString(name) < 2 {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("search needs at least two characters"))
 	}
 

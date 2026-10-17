@@ -378,6 +378,7 @@ func TestRelicAPISearchItems(t *testing.T) {
 		"org/app/app-1.0.pom",
 		"org/lib/lib_%25.txt",
 		"secret/app-key.txt",
+		"docs/h%C3%A9llo%20w%C3%B6rld.txt",
 	} {
 		do(t, srv, call{
 			method: "PUT",
@@ -443,6 +444,14 @@ func TestRelicAPISearchItems(t *testing.T) {
 			},
 		},
 		{
+			"case-insensitive beyond ASCII",
+			admin,
+			"WÖRLD",
+			[]string{
+				"docs/héllo wörld.txt",
+			},
+		},
+		{
 			"LIKE wildcards are literal",
 			admin,
 			"_%",
@@ -467,14 +476,19 @@ func TestRelicAPISearchItems(t *testing.T) {
 		}
 	}
 
-	if _, err := admin.SearchItems(
-		ctx,
-		connect.NewRequest(&relicv1.SearchItemsRequest{
-			Repository: "libs",
-			Name:       "a",
-		}),
-	); code(err) != connect.CodeInvalidArgument {
-		t.Errorf("one-character search: %v", err)
+	for _, one := range []string{
+		"a",
+		"é",
+	} {
+		if _, err := admin.SearchItems(
+			ctx,
+			connect.NewRequest(&relicv1.SearchItemsRequest{
+				Repository: "libs",
+				Name:       one,
+			}),
+		); code(err) != connect.CodeInvalidArgument {
+			t.Errorf("one-character search %q: %v", one, err)
+		}
 	}
 }
 
