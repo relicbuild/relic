@@ -123,6 +123,16 @@ func PackageMatches(filter, pkg string) bool {
 		(f.Version == "" || f.Version == p.Version)
 }
 
+func firstInvalidPackage(packages []string) (string, bool) {
+	for _, p := range packages {
+		if !ValidPackage(p) {
+			return p, true
+		}
+	}
+
+	return "", false
+}
+
 // ValidPackage reports whether s is a package URL.
 func ValidPackage(s string) bool {
 	_, err := packageurl.FromString(s)

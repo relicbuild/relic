@@ -3,6 +3,8 @@
 package integration
 
 import (
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -64,6 +66,14 @@ func TestWaivers(t *testing.T) {
 
 	if _, err := request(wanda, "not reachable", &relicv1.IgnoreRule{}); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("a waiver without filters: %v", err)
+	}
+
+	if _, err := request(wanda, "not reachable", &relicv1.IgnoreRule{
+		Packages: []string{
+			"notapurl",
+		},
+	}); code(err) != connect.CodeInvalidArgument || !strings.HasSuffix(connectMessage(err), `"notapurl" is not a package URL`) {
+		t.Errorf("a waiver on something that is not a package URL: %v", err)
 	}
 
 	approved, err := request(wanda, "the vulnerable function is not reachable", lodash)
@@ -209,4 +219,12 @@ func TestWaivers(t *testing.T) {
 			t.Errorf("page %d of one waiver = %v, total %d; want %s of 2", i+1, got, resp.Msg.GetTotal(), want)
 		}
 	}
+}
+
+func connectMessage(err error) string {
+	if ce, ok := errors.AsType[*connect.Error](err); ok {
+		return ce.Message()
+	}
+
+	return ""
 }

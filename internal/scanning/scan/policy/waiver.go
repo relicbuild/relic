@@ -77,6 +77,10 @@ func (a *Admin) RequestWaiver(ctx context.Context, rule IgnoreRule, reason, user
 		return Waiver{}, fmt.Errorf("%w: a waiver needs at least one filter", ErrInvalid)
 	}
 
+	if p, found := firstInvalidPackage(rule.Packages); found {
+		return Waiver{}, fmt.Errorf("%w: %q is not a package URL", ErrInvalid, p)
+	}
+
 	doc, err := json.Marshal(rule)
 	if err != nil {
 		return Waiver{}, err

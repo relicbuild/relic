@@ -352,10 +352,8 @@ func insertIgnoreRule(ctx context.Context, q database.Querier, r IgnoreRule, use
 		return IgnoreRule{}, fmt.Errorf("%w: an ignore rule needs at least one filter", ErrInvalid)
 	}
 
-	for _, p := range r.Packages {
-		if !ValidPackage(p) {
-			return IgnoreRule{}, fmt.Errorf("%w: %q is not a package URL", ErrInvalid, p)
-		}
+	if p, found := firstInvalidPackage(r.Packages); found {
+		return IgnoreRule{}, fmt.Errorf("%w: %q is not a package URL", ErrInvalid, p)
 	}
 
 	id := uuid.NewV4()
