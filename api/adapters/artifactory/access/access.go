@@ -106,8 +106,8 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	username := strings.ToLower(req.Username)
-	if username == "" || username == strings.ToLower(caller.Username) {
+	username := req.Username
+	if username == "" || strings.EqualFold(username, caller.Username) {
 		username = caller.Username
 	}
 

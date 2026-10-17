@@ -5,6 +5,7 @@ package integration
 import (
 	"encoding/base64"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"slices"
 	"testing"
@@ -134,6 +135,78 @@ func basicHeaders(credentials string) map[string]string {
 	return map[string]string{
 		"Authorization": "Basic " + base64.StdEncoding.EncodeToString([]byte(credentials)),
 		"Content-Type":  "application/json",
+	}
+}
+
+func accessTokenFor(t *testing.T, srv *httptest.Server, credentials, request string) (int, string) {
+	t.Helper()
+
+	resp, body := do(t, srv, call{
+		method:  "POST",
+		path:    "/access/api/v1/tokens",
+		body:    request,
+		noAuth:  true,
+		headers: basicHeaders(credentials),
+	})
+
+	var tok struct {
+		AccessToken string `json:"access_token"`
+	}
+
+	_ = json.Unmarshal([]byte(body), &tok)
+
+	return resp.StatusCode, tok.AccessToken
+}
+
+func signsInAs(t *testing.T, srv *httptest.Server, token string) string {
+	t.Helper()
+
+	whoami := connect.NewRequest(&relicv1.GetCurrentUserRequest{})
+	whoami.Header().Set("Authorization", "Bearer "+token)
+
+	me, err := relicv1connect.NewSessionServiceClient(http.DefaultClient, srv.URL+"/api").GetCurrentUser(
+		t.Context(),
+		whoami,
+	)
+	if err != nil {
+		return ""
+	}
+
+	return me.Msg.GetPrincipal().GetUsername()
+}
+
+func TestAccessTokensKeepTheUsernamesCase(t *testing.T) {
+	t.Parallel()
+
+	srv := server(t)
+	createTokenUser(t, srv, "Carol", "Carol-pass-1")
+
+	for _, tt := range []struct {
+		credentials string
+		username    string
+	}{
+		{
+			credentials: "admin:password",
+			username:    "Carol",
+		},
+		{
+			credentials: "Carol:Carol-pass-1",
+			username:    "carol",
+		},
+		{
+			credentials: "Carol:Carol-pass-1",
+		},
+	} {
+		status, token := accessTokenFor(t, srv, tt.credentials, `{"username":"`+tt.username+`","expires_in":300}`)
+		if got := signsInAs(t, srv, token); status != 200 || got != "Carol" {
+			t.Errorf(
+				"a token %s asked for %q = %d, signs in as %q, want Carol",
+				tt.credentials,
+				tt.username,
+				status,
+				got,
+			)
+		}
 	}
 }
 
