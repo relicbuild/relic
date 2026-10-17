@@ -134,6 +134,15 @@ func TestCodeOf(t *testing.T) {
 		t.Errorf("invalid replication = %v", c)
 	}
 
+	for _, err := range []error{
+		repository.ErrSelfCopy,
+		fmt.Errorf("%w: archive.rar", repository.ErrUnsupportedArchive),
+	} {
+		if c := codeOf(err).Code(); c != connect.CodeInvalidArgument {
+			t.Errorf("%v = %v, want InvalidArgument", err, c)
+		}
+	}
+
 	internal := codeOf(errors.New("password=hunter2 leaked in a driver error"))
 	if internal.Code() != connect.CodeInternal || internal.Message() != "internal error" {
 		t.Errorf("unexpected error = %v %q, want Internal without details", internal.Code(), internal.Message())

@@ -177,7 +177,10 @@ func codeOf(err error) *connect.Error {
 		errors.Is(err, evidence.ErrInvalid),
 		errors.Is(err, buildinfo.ErrInvalid):
 		return connect.NewError(connect.CodeInvalidArgument, err)
-	case errors.Is(err, repository.ErrChecksumMismatch), errors.Is(err, repository.ErrNotAFile):
+	case errors.Is(err, repository.ErrChecksumMismatch),
+		errors.Is(err, repository.ErrNotAFile),
+		errors.Is(err, repository.ErrSelfCopy),
+		errors.Is(err, repository.ErrUnsupportedArchive):
 		return connect.NewError(connect.CodeInvalidArgument, err)
 	case errors.Is(err, repository.ErrForbidden),
 		errors.Is(err, repository.ErrCoolingDown),
