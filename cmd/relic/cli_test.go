@@ -95,6 +95,19 @@ spec:
 			},
 		},
 		{
+			name: "date-like strings stay as written",
+			in: "apiVersion: relic.build/v1\nkind: Group\nmetadata: {name: g}\n" +
+				"spec: {description: 2024-01-01, members: [2024-01-01T10:00:00Z]}\n",
+			check: func(t *testing.T, docs []document) {
+				t.Helper()
+
+				g := docs[0].msg.(*relicv1.Group)
+				if g.GetDescription() != "2024-01-01" || g.GetMembers()[0] != "2024-01-01T10:00:00Z" {
+					t.Errorf("group = %v", g)
+				}
+			},
+		},
+		{
 			name:    "wrong apiVersion",
 			in:      "apiVersion: v1\nkind: Group\nmetadata: {name: g}\n",
 			wantErr: "apiVersion",

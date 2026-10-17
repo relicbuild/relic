@@ -26,10 +26,72 @@ type document struct {
 func (d document) String() string { return strings.ToLower(d.kind.name) + "/" + d.name }
 
 type resourceYAML struct {
-	APIVersion string         `yaml:"apiVersion"`
-	Kind       string         `yaml:"kind"`
-	Metadata   metadataYAML   `yaml:"metadata"`
-	Spec       map[string]any `yaml:"spec,omitempty"`
+	APIVersion string       `yaml:"apiVersion"`
+	Kind       string       `yaml:"kind"`
+	Metadata   metadataYAML `yaml:"metadata"`
+	Spec       specYAML     `yaml:"spec,omitempty"`
+}
+
+// specYAML is a document's spec, its timestamps kept as the text written.
+type specYAML map[string]any
+
+func (s *specYAML) UnmarshalYAML(n *yaml.Node) error {
+	v, err := plainValue(n)
+	if err != nil {
+		return err
+	}
+
+	m, ok := v.(map[string]any)
+	if v != nil && !ok {
+		return fmt.Errorf("line %d: spec is not a mapping", n.Line)
+	}
+
+	*s = m
+
+	return nil
+}
+
+func plainValue(n *yaml.Node) (any, error) {
+	switch n.Kind {
+	case yaml.AliasNode:
+		return plainValue(n.Alias)
+	case yaml.MappingNode:
+		out := make(map[string]any, len(n.Content)/2)
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			v, err := plainValue(n.Content[i+1])
+			if err != nil {
+				return nil, err
+			}
+
+			out[n.Content[i].Value] = v
+		}
+
+		return out, nil
+	case yaml.SequenceNode:
+		out := make([]any, 0, len(n.Content))
+		for _, c := range n.Content {
+			v, err := plainValue(c)
+			if err != nil {
+				return nil, err
+			}
+
+			out = append(out, v)
+		}
+
+		return out, nil
+	case yaml.ScalarNode:
+		if n.ShortTag() == "!!timestamp" {
+			return n.Value, nil
+		}
+	case yaml.DocumentNode:
+	}
+
+	var v any
+	if err := n.Decode(&v); err != nil {
+		return nil, err
+	}
+
+	return v, nil
 }
 
 type metadataYAML struct {
@@ -111,7 +173,7 @@ func decode(y resourceYAML) (document, error) {
 		return document{}, errors.New("metadata.name is required")
 	}
 
-	spec := y.Spec
+	spec := map[string]any(y.Spec)
 	if spec == nil {
 		spec = map[string]any{}
 	}
