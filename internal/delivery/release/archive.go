@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -130,32 +129,38 @@ func (s *Service) writeArchive(ctx context.Context, w io.Writer, b Release) erro
 		return err
 	}
 
-	files := []struct {
-		entry, path string
-	}{
+	stored, err := s.storedArtifacts(ctx, b)
+	if err != nil {
+		return err
+	}
+
+	manifest, err := s.repos.Stat(ctx, b.Repository, s.ManifestPath(b))
+	if err != nil {
+		return fmt.Errorf("export %s: %w", s.ManifestPath(b), err)
+	}
+
+	type archiveFile struct {
+		entry string
+		item  repository.Item
+	}
+
+	files := []archiveFile{
 		{
-			s.layout.ManifestName,
-			b.Folder() + "/" + s.layout.ManifestName,
+			entry: s.layout.ManifestName,
+			item:  manifest,
 		},
 	}
 	for _, a := range b.Artifacts {
-		files = append(files, struct {
-			entry, path string
-		}{
-			"artifacts/" + a.Path,
-			b.artifactPath(a),
+		files = append(files, archiveFile{
+			entry: "artifacts/" + a.Path,
+			item:  stored[a.Path],
 		})
 	}
 
 	for _, f := range files {
-		it, err := s.repos.Stat(ctx, b.Repository, f.path)
+		rc, err := s.repos.Open(ctx, f.item, nil)
 		if err != nil {
-			return fmt.Errorf("export %s: %w", f.path, err)
-		}
-
-		rc, err := s.repos.Open(ctx, it, nil)
-		if err != nil {
-			return fmt.Errorf("export %s: %w", f.path, err)
+			return fmt.Errorf("export %s: %w", f.entry, err)
 		}
 
 		err = writeZipEntry(zw, f.entry, rc)
@@ -356,37 +361,13 @@ func (s *Service) verifyManifest(ctx context.Context, entries map[string]*zip.Fi
 		return fmt.Errorf("%w: the manifest's signature does not verify with the archive's key", ErrInvalid)
 	}
 
-	payload, err := base64.StdEncoding.DecodeString(env.Payload)
+	statement, err := parseStatement(env)
 	if err != nil {
-		return fmt.Errorf("%w: manifest payload: %w", ErrInvalid, err)
-	}
-
-	var statement struct {
-		Subject []struct {
-			Name   string            `json:"name"`
-			Digest map[string]string `json:"digest"`
-		} `json:"subject"`
-		Predicate struct {
-			Name    string `json:"name"`
-			Version string `json:"version"`
-		} `json:"predicate"`
-	}
-	if err := json.Unmarshal(payload, &statement); err != nil {
-		return fmt.Errorf("%w: manifest payload: %w", ErrInvalid, err)
-	}
-
-	signed := map[string]string{}
-	for _, sub := range statement.Subject {
-		signed[sub.Name] = sub.Digest["sha256"]
-	}
-
-	listed := map[string]string{}
-	for _, a := range idx.Artifacts {
-		listed[a.Path] = a.SHA256
+		return err
 	}
 
 	if statement.Predicate.Name != idx.Name || statement.Predicate.Version != idx.Version ||
-		!maps.Equal(signed, listed) {
+		!maps.Equal(statement.digests(), artifactDigests(idx.Artifacts)) {
 		return fmt.Errorf("%w: the archive's index does not match its signed manifest", ErrInvalid)
 	}
 

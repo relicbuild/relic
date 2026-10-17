@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"strings"
 	"sync"
 	"time"
@@ -427,7 +428,7 @@ func (s *Service) releaseEvidence(ctx context.Context, b Release) ([]any, error)
 }
 
 // signed reports whether the stored manifest of b verifies with Relic's
-// release key.
+// release key, names b's artifacts, and still matches their stored copies.
 func (s *Service) signed(ctx context.Context, b Release) (bool, error) {
 	item, err := s.repos.Stat(ctx, b.Repository, s.ManifestPath(b))
 	if errors.Is(err, repository.ErrNotFound) || errors.Is(err, repository.ErrRepositoryNotFound) {
@@ -462,5 +463,24 @@ func (s *Service) signed(ctx context.Context, b Release) (bool, error) {
 		return false, fmt.Errorf("release signing key: %w", err)
 	}
 
-	return evidence.Verify(key.Public(), env), nil
+	if !evidence.Verify(key.Public(), env) {
+		return false, nil
+	}
+
+	statement, err := parseStatement(env)
+	if err != nil || statement.Predicate.Name != b.Name || statement.Predicate.Version != b.Version ||
+		!maps.Equal(statement.digests(), artifactDigests(b.Artifacts)) {
+		return false, nil
+	}
+
+	_, err = s.storedArtifacts(ctx, b)
+	if errors.Is(err, ErrInvalid) || errors.Is(err, repository.ErrNotFound) {
+		return false, nil
+	}
+
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }

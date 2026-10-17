@@ -77,6 +77,11 @@ func (s *Service) Promote(
 		return Promotion{}, fmt.Errorf("%w: release version %s is %s, not completed", ErrInvalid, version, b.Status)
 	}
 
+	stored, err := s.storedArtifacts(ctx, b)
+	if err != nil {
+		return Promotion{}, err
+	}
+
 	targets, err := s.environmentRepos(ctx, req)
 	if err != nil {
 		return Promotion{}, err
@@ -103,7 +108,7 @@ func (s *Service) Promote(
 			return Promotion{}, fmt.Errorf("%w: cannot write %s/%s", ErrForbidden, target, a.Path)
 		}
 
-		if err := s.promoteArtifact(ctx, b, a, target, user, access); err != nil {
+		if err := s.promoteArtifact(ctx, a, stored[a.Path], target, user, access); err != nil {
 			return Promotion{}, err
 		}
 	}
@@ -246,18 +251,13 @@ func (s *Service) pickTarget(
 
 func (s *Service) promoteArtifact(
 	ctx context.Context,
-	b Release,
 	a Artifact,
+	src repository.Item,
 	target, user string,
 	access Access,
 ) error {
 	if cur, err := s.repos.Stat(ctx, target, a.Path); err == nil && cur.Checksums.SHA256 == a.SHA256 {
 		return nil
-	}
-
-	src, err := s.repos.Stat(ctx, b.Repository, b.artifactPath(a))
-	if err != nil {
-		return fmt.Errorf("release file %s: %w", a.Path, err)
 	}
 
 	if err := s.repos.Copy(

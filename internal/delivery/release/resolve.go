@@ -2,6 +2,7 @@ package release
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -182,19 +183,9 @@ func (s *Service) fromReleases(
 		}
 
 		for _, a := range b.Artifacts {
-			it, err := s.repos.Stat(ctx, b.Repository, b.artifactPath(a))
+			it, err := s.storedArtifact(ctx, b, a)
 			if err != nil {
-				return fmt.Errorf("release %s/%s: %w", b.Name, b.Version, err)
-			}
-
-			if !strings.EqualFold(a.SHA256, it.Checksums.SHA256) {
-				return fmt.Errorf(
-					"%w: release %s/%s: %s does not match its sha256",
-					ErrInvalid,
-					b.Name,
-					b.Version,
-					a.Path,
-				)
+				return err
 			}
 
 			if err := add(it, a); err != nil {
@@ -204,6 +195,89 @@ func (s *Service) fromReleases(
 	}
 
 	return nil
+}
+
+// storedArtifact returns b's stored copy of a, and ErrInvalid when its content
+// is no longer the content the signed manifest names.
+func (s *Service) storedArtifact(ctx context.Context, b Release, a Artifact) (repository.Item, error) {
+	it, err := s.repos.Stat(ctx, b.Repository, b.artifactPath(a))
+	if err != nil {
+		return repository.Item{}, fmt.Errorf("release %s/%s: %s: %w", b.Name, b.Version, a.Path, err)
+	}
+
+	if !strings.EqualFold(a.SHA256, it.Checksums.SHA256) {
+		return repository.Item{}, fmt.Errorf(
+			"%w: release %s/%s: %s does not match its signed sha256",
+			ErrInvalid,
+			b.Name,
+			b.Version,
+			a.Path,
+		)
+	}
+
+	return it, nil
+}
+
+// storedArtifacts returns the stored copies of b's artifacts by path, and
+// ErrInvalid when any of them changed.
+func (s *Service) storedArtifacts(ctx context.Context, b Release) (map[string]repository.Item, error) {
+	out := make(map[string]repository.Item, len(b.Artifacts))
+
+	for _, a := range b.Artifacts {
+		it, err := s.storedArtifact(ctx, b, a)
+		if err != nil {
+			return nil, err
+		}
+
+		out[a.Path] = it
+	}
+
+	return out, nil
+}
+
+// signedStatement is the part of a manifest's in-toto statement Relic checks.
+type signedStatement struct {
+	Subject []struct {
+		Name   string            `json:"name"`
+		Digest map[string]string `json:"digest"`
+	} `json:"subject"`
+	Predicate struct {
+		Name    string `json:"name"`
+		Version string `json:"version"`
+	} `json:"predicate"`
+}
+
+func (st signedStatement) digests() map[string]string {
+	out := make(map[string]string, len(st.Subject))
+	for _, sub := range st.Subject {
+		out[sub.Name] = sub.Digest["sha256"]
+	}
+
+	return out
+}
+
+func parseStatement(env evidence.Envelope) (signedStatement, error) {
+	var st signedStatement
+
+	payload, err := base64.StdEncoding.DecodeString(env.Payload)
+	if err != nil {
+		return st, fmt.Errorf("%w: manifest payload: %w", ErrInvalid, err)
+	}
+
+	if err := json.Unmarshal(payload, &st); err != nil {
+		return st, fmt.Errorf("%w: manifest payload: %w", ErrInvalid, err)
+	}
+
+	return st, nil
+}
+
+func artifactDigests(arts []Artifact) map[string]string {
+	out := make(map[string]string, len(arts))
+	for _, a := range arts {
+		out[a.Path] = a.SHA256
+	}
+
+	return out
 }
 
 // Manifest statement types.

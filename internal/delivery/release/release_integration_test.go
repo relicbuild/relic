@@ -348,3 +348,65 @@ func TestPromoteOverwritesOnlyWithDeletePermission(t *testing.T) {
 		})
 	}
 }
+
+func TestAChangedReleaseFileIsNeitherPromotedNorExported(t *testing.T) {
+	t.Parallel()
+
+	f := newReleaseFixture(t)
+	b := f.create(t, "1.0", false, artifactSource("libs/app.bin"))
+	f.deploy(t, b.Repository, b.artifactPath(b.Artifacts[0]), "replaced")
+
+	_, err := f.releases.Promote(t.Context(), "", "app", "1.0", PromotionSpec{
+		Environment: "PROD",
+	}, "admin", Access{})
+	if !errors.Is(err, ErrInvalid) {
+		t.Errorf("Promote of a release whose file changed = %v; want ErrInvalid", err)
+	}
+
+	if _, err := f.repos.Stat(t.Context(), "prod", "app.bin"); !errors.Is(err, repository.ErrNotFound) {
+		t.Errorf("Stat of prod/app.bin after the refused promotion = %v; want ErrNotFound", err)
+	}
+
+	if _, err := f.releases.Export(t.Context(), "", "app", "1.0", "admin"); !errors.Is(err, ErrInvalid) {
+		t.Errorf("Export of a release whose file changed = %v; want ErrInvalid", err)
+	}
+
+	signed, err := f.releases.signed(t.Context(), b)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if signed {
+		t.Error("signed of a release whose file changed = true; want false")
+	}
+}
+
+func TestSignedNeedsTheManifestOfTheVersion(t *testing.T) {
+	t.Parallel()
+
+	f := newReleaseFixture(t)
+	b := f.create(t, "1.0", false, artifactSource("libs/app.bin"))
+	other := f.create(t, "2.0", false, artifactSource("libs/other.bin"))
+
+	manifest, err := f.repos.Stat(t.Context(), other.Repository, f.releases.ManifestPath(other))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.repos.Copy(t.Context(), repository.CopyInput{
+		Source:                manifest,
+		DestinationRepository: b.Repository,
+		DestinationPath:       f.releases.ManifestPath(b),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	signed, err := f.releases.signed(t.Context(), b)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if signed {
+		t.Error("signed with another version's manifest = true; want false")
+	}
+}
