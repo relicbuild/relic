@@ -3,7 +3,11 @@
 Relic is a self-hosted artifact repository and security platform.
 One binary keeps your packages and images in S3-compatible storage and scans everything it stores.
 
+> This project is developed with AI. 
+
 ## Install
+
+### From release
 
 Install the latest release into `~/.local/bin`:
 
@@ -17,7 +21,9 @@ Run it as a service on this machine, with SQLite and a local directory:
 relic server setup
 ```
 
-Or build it from source (Go 1.27, Node 24 and pnpm), with the web UI:
+### From source
+
+Install from source, with the web UI:
 
 ```bash
 task install
