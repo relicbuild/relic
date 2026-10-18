@@ -128,7 +128,6 @@ const columns: TableColumn<User>[] = [
         />
         <USelectMenu
           v-model="group"
-          aria-label="Filter by group"
           :items="groupItems"
           value-key="value"
           icon="i-lucide-users"

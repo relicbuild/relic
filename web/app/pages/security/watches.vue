@@ -125,7 +125,6 @@ const columns: TableColumn<Watch>[] = [
         />
         <USelectMenu
           v-model="policy"
-          aria-label="Filter by policy"
           :items="policyItems"
           value-key="value"
           icon="i-lucide-scroll-text"

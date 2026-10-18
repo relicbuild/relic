@@ -148,7 +148,6 @@ const columns: TableColumn<TrashEntryView>[] = [
         />
         <USelectMenu
           v-model="deletedBy"
-          aria-label="Filter by who deleted"
           :items="deletedByItems"
           value-key="value"
           icon="i-lucide-user"
