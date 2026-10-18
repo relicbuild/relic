@@ -131,7 +131,7 @@ tools/                  protogen (buf and plugins, own module), dashgen, metrics
 | Go | Go 1.27, pgx v5, sqlc v1.31, goose v3, River, connectrpc.com/connect, cobra, testcontainers-go |
 | Protobuf | buf, protoc-gen-go, protoc-gen-connect-go (pinned in `tools/protogen/go.mod`), protoc-gen-es (web) |
 | Web | Nuxt 4, Nuxt UI v4, pnpm, @connectrpc/connect-web, @bufbuild/protobuf v2, zod |
-| Lint | golangci-lint v2.13.2 (CI image), `buf lint`, ESLint (`pnpm lint`), `nuxt typecheck` (`pnpm typecheck`), `go tool unfold` ([github.com/imkonsowa/unfold](https://github.com/imkonsowa/unfold), pinned in `go.mod`) |
+| Lint | golangci-lint v2.14.0 (CI image), `buf lint`, ESLint (`pnpm lint`), `nuxt typecheck` (`pnpm typecheck`), `go tool unfold` ([github.com/imkonsowa/unfold](https://github.com/imkonsowa/unfold), pinned in `go.mod`) |
 | Compatibility | `jf` pinned by `api/adapters/artifactory/compat/jf.sh` (2.124.0), jfrog-client-go in `api/adapters/artifactory/compat/sdk` |
 
 ## Generated code
