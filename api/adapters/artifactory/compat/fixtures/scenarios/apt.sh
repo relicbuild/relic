@@ -17,7 +17,7 @@ JSON
 jf rt rc repos.json
 
 step "a real package through the remote"
-jf rt curl -sf -o Packages.xz "/$REMOTE/dists/bookworm/main/binary-amd64/Packages.xz"
+jf rt curl -sf -o Packages.xz "/$REMOTE/dists/trixie/main/binary-amd64/Packages.xz"
 file=$(python3 -c '
 import lzma
 for p in lzma.open("Packages.xz").read().decode().split("\n\n"):
@@ -28,22 +28,22 @@ for p in lzma.open("Packages.xz").read().decode().split("\n\n"):
 jf rt curl -sf -o hello.deb "/$REMOTE/$file"
 
 step "jf rt upload --deb"
-jf rt u hello.deb "$LOCAL/pool/main/h/hello/" --deb bookworm/main/amd64
+jf rt u hello.deb "$LOCAL/pool/main/h/hello/" --deb trixie/main/amd64
 jf rt s "$LOCAL/pool/main/h/hello/hello.deb" | expect_count 1
 
 step "jf apt install, trusting only Relic's key"
 jf rt curl -sf "/api/security/keypair/public/repositories/$LOCAL" >/etc/apt/trusted.gpg.d/relic-scenario.asc
-jf apt install -y hello --repo "$LOCAL" --dist bookworm
+jf apt install -y hello --repo "$LOCAL" --dist trixie
 hello --version | head -1
 rm -f /etc/apt/trusted.gpg.d/relic-scenario.asc
 
 step "apt-get through the virtual (merged index, dependencies from the remote)"
 key=$(jf rt curl -sf "/api/security/keypair/public/repositories/$VIRTUAL")
 base="${SCENARIO_URL/:\/\//://$SCENARIO_USER:$SCENARIO_PASSWORD@}/artifactory"
-docker run --rm --network host -e KEY="$key" -e REPO="$base/$VIRTUAL" debian:bookworm-slim sh -ec '
+docker run --rm --network host -e KEY="$key" -e REPO="$base/$VIRTUAL" debian:trixie-slim sh -ec '
   rm -f /etc/apt/sources.list.d/* /etc/apt/sources.list
   mkdir -p /etc/apt/keyrings && printf "%s\n" "$KEY" >/etc/apt/keyrings/relic.asc
-  echo "deb [signed-by=/etc/apt/keyrings/relic.asc] $REPO bookworm main" >/etc/apt/sources.list.d/relic.list
+  echo "deb [signed-by=/etc/apt/keyrings/relic.asc] $REPO trixie main" >/etc/apt/sources.list.d/relic.list
   apt-get update
   apt-get install -y --no-install-recommends jq
   jq --version'

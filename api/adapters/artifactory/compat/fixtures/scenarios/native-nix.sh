@@ -22,7 +22,7 @@ box=relic-scenario-nnix-$RANDOM
 trap 'docker rm -f "$box" >/dev/null 2>&1 || true; for r in "${ALL[@]}"; do delete_repo "$r"; done; rm -rf "$WORK"' EXIT
 docker create --name "$box" --network host -e U="$SCENARIO_USER" -e P="$SCENARIO_PASSWORD" -e HOST="$host" \
   -e API="$SCENARIO_TLS_URL/nix" -e LOCAL="$LOCAL" -e REMOTE="$REMOTE" -e VIRTUAL="$VIRTUAL" \
-  nixos/nix:2.35.2 sleep infinity >/dev/null
+  nixos/nix:2.35.3 sleep infinity >/dev/null
 docker cp "$TLS_CA" "$box:/tmp/relic-ca.crt"
 docker start "$box" >/dev/null
 docker exec "$box" sh -ec '

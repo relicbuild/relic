@@ -23,7 +23,7 @@ image="$reg/$LOCAL/native/app"
 export DOCKER_CONFIG="$WORK/docker-config"
 mkdir -p "$DOCKER_CONFIG"
 cleanup() {
-  docker rmi -f "$image:1.0" "$reg/$VIRTUAL/native/app:1.0" "$reg/$VIRTUAL/busybox:1.37" \
+  docker rmi -f "$image:1.0" "$reg/$VIRTUAL/native/app:1.0" "$reg/$VIRTUAL/busybox:1.38" \
     "$reg/$LOCAL/native/busybox:amd64" "$reg/$LOCAL/native/busybox:arm64" >/dev/null 2>&1 || true
   for r in "${ALL[@]}"; do delete_repo "$r"; done
 }
@@ -49,13 +49,13 @@ docker pull "$reg/$VIRTUAL/native/app:1.0"
 docker pull "$image@${pushed#*@}"
 
 step "Docker Hub through the remote, via the virtual"
-docker pull "$reg/$VIRTUAL/busybox:1.37"
-docker run --rm "$reg/$VIRTUAL/busybox:1.37" echo hello-through-relic | grep -q hello-through-relic
+docker pull "$reg/$VIRTUAL/busybox:1.38"
+docker run --rm "$reg/$VIRTUAL/busybox:1.38" echo hello-through-relic | grep -q hello-through-relic
 
 step "multi-arch index with docker manifest"
 for arch in amd64 arm64; do
-  docker pull -q --platform "linux/$arch" "$reg/$VIRTUAL/busybox:1.37" >/dev/null
-  docker tag "$reg/$VIRTUAL/busybox:1.37" "$reg/$LOCAL/native/busybox:$arch"
+  docker pull -q --platform "linux/$arch" "$reg/$VIRTUAL/busybox:1.38" >/dev/null
+  docker tag "$reg/$VIRTUAL/busybox:1.38" "$reg/$LOCAL/native/busybox:$arch"
   docker push -q "$reg/$LOCAL/native/busybox:$arch" >/dev/null
 done
 docker manifest create "${REGISTRY_INSECURE[@]}" "$reg/$LOCAL/native/busybox:multi" \

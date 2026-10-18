@@ -61,11 +61,11 @@ docker network inspect "$network" >/dev/null 2>&1 ||
 for d in "${daemons[@]}"; do
   docker rm -f "$(dind_name "$d")" >/dev/null 2>&1 || true
   docker run -d --rm --privileged --name "$(dind_name "$d")" --network "$network" --network-alias "$(dind_alias "$d")" \
-    -v "$(dind_name "$d"):/var/lib/docker" -e DOCKER_TLS_CERTDIR= docker:28-dind --insecure-registry relic-server:8090 >/dev/null
+    -v "$(dind_name "$d"):/var/lib/docker" -e DOCKER_TLS_CERTDIR= docker:29-dind --insecure-registry relic-server:8090 >/dev/null
 done
 bin=
 trap 'for d in "${daemons[@]}"; do docker rm -f "$(dind_name "$d")" >/dev/null 2>&1; done; docker rm -f "$tls" "$otel" >/dev/null 2>&1 || true; rm -rf "${bin:-}"' EXIT
-client_images=(alpine:3.21 debian:bookworm-slim mono:6.12 nixos/nix:2.35.2 osixia/openldap:1.5.0 quay.io/podman/stable:v5 rockylinux/rockylinux:10.2
+client_images=(alpine:3.24 debian:trixie-slim mono:6.12 nixos/nix:2.35.3 osixia/openldap:1.5.0 quay.io/podman/stable:v5 rockylinux/rockylinux:10.2
   ghcr.io/opencontainers/distribution-spec/conformance:v1.1.1)
 prepare_daemon() {
   local c; c="$(dind_name "$1")"
@@ -130,7 +130,7 @@ mkdir -p "$results/otel"
 docker rm -f "$otel" >/dev/null 2>&1 || true
 docker run -d --rm --name "$otel" --user "$(id -u):$(id -g)" --network "$network" --network-alias relic-e2e-otel \
   -v "$root/api/adapters/artifactory/compat/e2e/otel-collector.yaml:/etc/otelcol/config.yaml:ro" -v "$results/otel:/out" \
-  otel/opentelemetry-collector-contrib:0.161.0 --config=/etc/otelcol/config.yaml >/dev/null
+  otel/opentelemetry-collector-contrib:0.163.1 --config=/etc/otelcol/config.yaml >/dev/null
 if [[ -n "$remote" ]]; then
   docker run --rm caddy:2 cat /etc/ssl/certs/ca-certificates.crt >"$results/tls-ca.crt"
 fi
