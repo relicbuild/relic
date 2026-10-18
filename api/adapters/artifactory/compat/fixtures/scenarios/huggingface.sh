@@ -31,6 +31,15 @@ jf rt s "$LOCAL/models/relic/demo/*" | jq -e 'length == 3'
 jf rt bp "$B" 1
 jf rt curl -s "/api/build/$B/1" | jq -e '[.buildInfo.modules[].artifacts[]?.name] | (index("weights.bin") != null and index("config.json") != null and index("vocab.txt") != null)'
 
+step "the LFS file went through Xet and downloads byte-identical over plain HTTP"
+jf rt s "$LOCAL/.hf-xet/xorbs/*" | jq -e 'length > 0'
+weights=$(jf rt s "$LOCAL/models/relic/demo/*/weights.bin" | jq -r '.[0].path')
+curl -fsS -H "Authorization: Bearer $token" -o plain-weights.bin "$SCENARIO_URL/artifactory/$weights"
+cmp plain-weights.bin model/weights.bin
+curl -fsS -H "Authorization: Bearer $token" -o resolved-weights.bin \
+  "$SCENARIO_URL/artifactory/api/huggingfaceml/$VIRTUAL/relic/demo/resolve/main/weights.bin"
+cmp resolved-weights.bin model/weights.bin
+
 step "jf hf download"
 jf hf download relic/demo --repo-key "$VIRTUAL" --server-id relic-hf | tee download.log
 snap=$(find "$HF_HOME" -path '*snapshots*' -name config.json -printf '%h\n' | head -1)
@@ -38,6 +47,17 @@ test -n "$snap"
 cmp "$snap/config.json" model/config.json
 cmp "$snap/sub/vocab.txt" model/sub/vocab.txt
 cmp "$snap/weights.bin" model/weights.bin
+
+step "huggingface_hub uploads through Xet and downloads at Relic's own mount"
+head -c $((12 * 1024 * 1024)) /dev/urandom >native-weights.bin
+HF_TOKEN="$token" python3 - "$SCENARIO_URL/huggingface/$VIRTUAL" <<'PY'
+import filecmp, sys
+from huggingface_hub import HfApi, hf_hub_download
+api = HfApi(endpoint=sys.argv[1])
+api.upload_file(path_or_fileobj="native-weights.bin", path_in_repo="native/weights.bin", repo_id="relic/demo")
+got = hf_hub_download("relic/demo", "native/weights.bin", endpoint=sys.argv[1], cache_dir="native-cache")
+assert filecmp.cmp(got, "native-weights.bin", shallow=False)
+PY
 
 jf rt bdi "$B" --max-builds 0 >/dev/null 2>&1 || true
 for r in "$VIRTUAL" "$LOCAL"; do delete_repo "$r"; done
