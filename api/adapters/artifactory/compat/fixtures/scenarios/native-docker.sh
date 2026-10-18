@@ -56,7 +56,7 @@ step "multi-arch index with docker manifest"
 for arch in amd64 arm64; do
   docker pull -q --platform "linux/$arch" "$reg/$VIRTUAL/busybox:1.38" >/dev/null
   docker tag "$reg/$VIRTUAL/busybox:1.38" "$reg/$LOCAL/native/busybox:$arch"
-  docker push -q "$reg/$LOCAL/native/busybox:$arch" >/dev/null
+  docker push -q --platform "linux/$arch" "$reg/$LOCAL/native/busybox:$arch" >/dev/null
 done
 docker manifest create "${REGISTRY_INSECURE[@]}" "$reg/$LOCAL/native/busybox:multi" \
   "$reg/$LOCAL/native/busybox:amd64" "$reg/$LOCAL/native/busybox:arm64"

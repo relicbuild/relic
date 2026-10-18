@@ -5,7 +5,20 @@ FROM ${RELIC_IMAGE} AS relic
 
 FROM debian:trixie-slim
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl git jq zip unzip xz-utils openjdk-21-jdk-headless maven docker-cli golang-go python3 python3-venv python3-pip twine \
+ && apt-get install -y --no-install-recommends ca-certificates curl git jq zip unzip xz-utils openjdk-21-jdk-headless maven golang-go python3 python3-venv python3-pip twine \
+ && rm -rf /var/lib/apt/lists/*
+
+# Docker's own CLI, matching the docker:29-dind daemons; Debian's docker-cli is 26 and cannot push one
+# platform of an image the containerd image store holds as an index.
+ARG DOCKER_CLI_VERSION=5:29.9.1-1~debian.13~trixie
+ARG DOCKER_APT_KEY_FINGERPRINT=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
+RUN apt-get update && apt-get install -y --no-install-recommends gnupg \
+ && install -m 0755 -d /etc/apt/keyrings \
+ && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
+ && gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc | grep -q "^fpr:::::::::${DOCKER_APT_KEY_FINGERPRINT}:" \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian trixie stable" \
+    >/etc/apt/sources.list.d/docker.list \
+ && apt-get update && apt-get install -y --no-install-recommends "docker-ce-cli=${DOCKER_CLI_VERSION}" \
  && rm -rf /var/lib/apt/lists/*
 
 ARG JF_VERSION=2.127.0
