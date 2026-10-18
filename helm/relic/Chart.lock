@@ -4,13 +4,13 @@ dependencies:
   version: 0.29.1
 - name: cluster
   repository: https://cloudnative-pg.github.io/charts
-  version: 0.8.1
+  version: 0.9.0
 - name: seaweedfs
   repository: https://seaweedfs.github.io/seaweedfs/helm
   version: 4.48.0
 - name: kube-prometheus-stack
   repository: https://prometheus-community.github.io/helm-charts
-  version: 91.5.3
+  version: 92.10.1
 - name: tempo
   repository: https://grafana.github.io/helm-charts
   version: 1.24.4
@@ -19,6 +19,6 @@ dependencies:
   version: 7.3.0
 - name: alloy
   repository: https://grafana.github.io/helm-charts
-  version: 1.13.0
-digest: sha256:f2d4d87e04b9c7fe6d8742896aac1bf024562fcd9492709eedd639627db8da5d
-generated: "2026-10-05T03:15:19.875863165Z"
+  version: 1.13.1
+digest: sha256:4911b2002f2b16498d61d82862ef1d99228b92f7421831ef46a31f9138c764d1
+generated: "2026-10-18T12:59:19.801843+04:00"

@@ -42,6 +42,8 @@ postgresql:
   enabled: true
   # The Cluster is <release>-postgresql, its Secret <release>-postgresql-app.
   nameOverride: postgresql
+  version:
+    postgresql: "18"
   cluster:
     instances: 3
     initdb:
