@@ -43,6 +43,7 @@ func TestRecordersBoundTheirLabels(t *testing.T) {
 	Promoted(junk, nil)
 	TLSCertificateServed(junk, time.Now())
 	TLSCertificateIssued(err)
+	XetUploaded(junk, 1, nil)
 	SetInventory(Inventory{
 		Repositories: map[[2]string]int64{
 			{

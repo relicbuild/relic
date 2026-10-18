@@ -279,8 +279,7 @@ func (s *shardReader) xorbs() ([]XorbEntry, error) {
 }
 
 // MarshalBinary serializes the shard without a footer, as clients upload
-// it. Every file carries verification hashes; xorb chunk offsets are left
-// zero.
+// it. Xorb chunk offsets are left zero.
 func (s Shard) MarshalBinary() ([]byte, error) {
 	var out []byte
 
@@ -289,7 +288,11 @@ func (s Shard) MarshalBinary() ([]byte, error) {
 	out = binary.LittleEndian.AppendUint64(out, 0)
 
 	for _, f := range s.Files {
-		flags := uint32(fileFlagWithVerification)
+		var flags uint32
+		if f.Verification {
+			flags |= fileFlagWithVerification
+		}
+
 		if f.SHA256 != "" {
 			flags |= fileFlagWithMetadataExt
 		}
@@ -301,7 +304,9 @@ func (s Shard) MarshalBinary() ([]byte, error) {
 		}
 
 		for _, t := range f.Terms {
-			out = appendEntry(out, t.Verification)
+			if f.Verification {
+				out = appendEntry(out, t.Verification)
+			}
 		}
 
 		if f.SHA256 != "" {
