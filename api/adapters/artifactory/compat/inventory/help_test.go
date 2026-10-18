@@ -130,6 +130,24 @@ func TestParseHelpSkipsHelpAndWrappedLines(t *testing.T) {
 	}
 }
 
+func TestParseHelpMixedCaseCommands(t *testing.T) {
+	t.Parallel()
+
+	page := parseHelp("COMMANDS:\n   Install-PSResource  Run the native cmdlet.\n   apk  Run apk.\n")
+
+	names := make([]string, 0, len(page.Subcommands))
+	for _, e := range page.Subcommands {
+		names = append(names, e.Name)
+	}
+
+	if !slices.Equal(names, []string{
+		"Install-PSResource",
+		"apk",
+	}) {
+		t.Errorf("got %v, want Install-PSResource and apk", names)
+	}
+}
+
 func TestParseHelpFlags(t *testing.T) {
 	t.Parallel()
 

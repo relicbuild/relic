@@ -18,7 +18,7 @@ type helpPage struct {
 }
 
 var (
-	commandLine  = regexp.MustCompile(`^( {1,8})([a-z0-9][a-z0-9-]*(?:, [a-z0-9][a-z0-9-]*)*)(?: {2,}\S|$)`)
+	commandLine  = regexp.MustCompile(`^( {1,8})([a-zA-Z0-9][a-zA-Z0-9-]*(?:, [a-zA-Z0-9][a-zA-Z0-9-]*)*)(?: {2,}\S|$)`)
 	categoryLine = regexp.MustCompile(`^ {1,8}(\S[^:]*):\s*$`)
 	flagLine     = regexp.MustCompile(`^ {1,8}--([a-zA-Z0-9][a-zA-Z0-9-]*)`)
 )
