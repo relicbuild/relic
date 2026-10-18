@@ -29,9 +29,23 @@ down() {
   docker volume ls -q --filter "label=com.docker.compose.project=$project" | grep -v '_vulnerability-database$' |
     xargs -r docker volume rm >/dev/null 2>&1 || true
 }
+# The server's and worker's output and a last metrics scrape go into the
+# tier's results, which CI uploads, before the stack is removed.
+keep_server_output() {
+  [[ "$tier" == k8s ]] && return
+  local logs="$e2e/results/$tier/logs"
+  mkdir -p "$logs"
+  for service in relic-server relic-worker; do
+    docker compose -p "$project" -f "$root/deploy/docker-compose.yml" logs --no-color --timestamps "$service" \
+      >"$logs/$service.log" 2>/dev/null || true
+  done
+  docker run --rm --network "${project}_default" curlimages/curl:8.23.0 -sf http://relic-server:8091/metrics \
+    >"$logs/relic-server.metrics" 2>/dev/null || true
+}
 temporary=()
 cleanup() {
   rm -rf "${temporary[@]}"
+  keep_server_output
   down
 }
 trap cleanup EXIT
