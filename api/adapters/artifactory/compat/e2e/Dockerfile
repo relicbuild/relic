@@ -5,7 +5,7 @@ FROM ${RELIC_IMAGE} AS relic
 
 FROM debian:trixie-slim
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl git jq zip unzip nodejs npm openjdk-21-jdk-headless maven docker-cli golang-go python3 python3-venv python3-pip twine \
+ && apt-get install -y --no-install-recommends ca-certificates curl git jq zip unzip xz-utils nodejs npm openjdk-21-jdk-headless maven docker-cli golang-go python3 python3-venv python3-pip twine \
  && rm -rf /var/lib/apt/lists/*
 
 ARG JF_VERSION=2.124.0
@@ -51,6 +51,20 @@ RUN python3 -m venv /opt/conan && /opt/conan/bin/pip install --no-cache-dir cona
 RUN pip3 install --no-cache-dir --break-system-packages huggingface_hub==1.19.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends cargo && rm -rf /var/lib/apt/lists/*
+
+# MCP Inspector needs a newer Node than Debian's; it gets its own, so the
+# package manager scenarios keep Debian's Node.
+ARG TARGETARCH
+ARG NODE_LTS_VERSION=24.22.0
+ARG NODE_LTS_SHA256_X64=cc2f601cee82d9a5a233302fe307abc600727035fd7d2c3a3571755989e95008
+ARG NODE_LTS_SHA256_ARM64=fef00bb4d36e1c50104a9775a10359beee98f162b4104dd12472c75065c6a143
+RUN if [ "$TARGETARCH" = arm64 ]; then arch=arm64 sum=$NODE_LTS_SHA256_ARM64; else arch=x64 sum=$NODE_LTS_SHA256_X64; fi \
+ && curl -fsSL -o /tmp/node-lts.tar.xz "https://nodejs.org/dist/v${NODE_LTS_VERSION}/node-v${NODE_LTS_VERSION}-linux-${arch}.tar.xz" \
+ && echo "${sum}  /tmp/node-lts.tar.xz" | sha256sum -c - \
+ && mkdir -p /opt/node-lts && tar -xJf /tmp/node-lts.tar.xz -C /opt/node-lts --strip-components=1 && rm /tmp/node-lts.tar.xz \
+ && PATH=/opt/node-lts/bin:$PATH npm install -g @modelcontextprotocol/inspector@2.11.0 \
+ && printf '#!/bin/sh\nPATH=/opt/node-lts/bin:$PATH exec /opt/node-lts/bin/mcp-inspector "$@"\n' >/usr/local/bin/mcp-inspector \
+ && chmod +x /usr/local/bin/mcp-inspector
 
 ARG HELMFILE_VERSION=1.8.0
 ARG HELMFILE_SHA256=35d5d39fc608342b23fc7ce1dd0c3bf0c96cc07ec3796507ab6894a5d172bf20
