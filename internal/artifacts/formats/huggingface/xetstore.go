@@ -22,23 +22,23 @@ const (
 	xetIndexCacheSize = 64
 )
 
-func xorbPath(h xet.Hash) string { return xetStaging + "/xorbs/" + h.String() }
+func xorbPath(hash xet.Hash) string { return xetStaging + "/xorbs/" + hash.String() }
 
-func xorbIndexPath(h xet.Hash) string { return xorbPath(h) + ".index" }
+func xorbIndexPath(hash xet.Hash) string { return xorbPath(hash) + ".index" }
 
-// XorbStored reports whether repoKey holds the xorb with hash h.
-func (s *Service) XorbStored(ctx context.Context, repoKey string, h xet.Hash) bool {
-	_, err := s.repos.Stat(ctx, repoKey, xorbIndexPath(h))
+// XorbStored reports whether repoKey holds the xorb with that hash.
+func (s *Service) XorbStored(ctx context.Context, repoKey string, hash xet.Hash) bool {
+	_, err := s.repos.Stat(ctx, repoKey, xorbIndexPath(hash))
 	return err == nil
 }
 
-// XorbSize is the length of the xorb with hash h in repoKey.
-func (s *Service) XorbSize(ctx context.Context, repoKey string, h xet.Hash) (int64, error) {
-	if !s.XorbStored(ctx, repoKey, h) {
+// XorbSize is the length of the xorb with that hash in repoKey.
+func (s *Service) XorbSize(ctx context.Context, repoKey string, hash xet.Hash) (int64, error) {
+	if !s.XorbStored(ctx, repoKey, hash) {
 		return 0, repository.ErrNotFound
 	}
 
-	item, err := s.repos.Stat(ctx, repoKey, xorbPath(h))
+	item, err := s.repos.Stat(ctx, repoKey, xorbPath(hash))
 	if err != nil {
 		return 0, err
 	}
@@ -47,12 +47,12 @@ func (s *Service) XorbSize(ctx context.Context, repoKey string, h xet.Hash) (int
 }
 
 // StoreXorb stores a xorb a client uploaded to repoKey, with the index of
-// its chunks, after checking it hashes to h. It reports false when repoKey
-// already held the xorb.
+// its chunks, after checking it hashes to hash. It reports false when
+// repoKey already held the xorb.
 func (s *Service) StoreXorb(
 	ctx context.Context,
 	repoKey string,
-	h xet.Hash,
+	hash xet.Hash,
 	body io.Reader,
 	user string,
 ) (inserted bool, err error) {
@@ -69,23 +69,23 @@ func (s *Service) StoreXorb(
 		telemetry.End(span, err)
 	}()
 
-	if s.XorbStored(ctx, repoKey, h) {
+	if s.XorbStored(ctx, repoKey, hash) {
 		return false, nil
 	}
 
-	checked := xet.NewXorbReader(body, h)
+	checked := xet.NewXorbReader(body, hash)
 
 	item, err := s.repos.Deploy(
 		ctx,
 		repository.DeployInput{
 			Repository: repoKey,
-			Path:       xorbPath(h),
+			Path:       xorbPath(hash),
 			Body:       checked,
 			User:       user,
 		},
 	)
 	if err != nil {
-		return false, fmt.Errorf("store xorb %s: %w", h, err)
+		return false, fmt.Errorf("store xorb %s: %w", hash, err)
 	}
 
 	index, err := checked.Index().MarshalBinary()
@@ -97,13 +97,13 @@ func (s *Service) StoreXorb(
 		ctx,
 		repository.DeployInput{
 			Repository: repoKey,
-			Path:       xorbIndexPath(h),
+			Path:       xorbIndexPath(hash),
 			Body:       bytes.NewReader(index),
 			Size:       int64(len(index)),
 			User:       user,
 		},
 	); err != nil {
-		return false, fmt.Errorf("store xorb %s index: %w", h, err)
+		return false, fmt.Errorf("store xorb %s index: %w", hash, err)
 	}
 
 	size = item.Size
@@ -119,14 +119,14 @@ type xorbIndexes struct {
 	cached  map[xet.Hash]xet.Index
 }
 
-func (x *xorbIndexes) index(ctx context.Context, h xet.Hash) (xet.Index, error) {
-	if index, ok := x.cached[h]; ok {
+func (x *xorbIndexes) index(ctx context.Context, hash xet.Hash) (xet.Index, error) {
+	if index, ok := x.cached[hash]; ok {
 		return index, nil
 	}
 
-	item, err := x.service.repos.Stat(ctx, x.repoKey, xorbIndexPath(h))
+	item, err := x.service.repos.Stat(ctx, x.repoKey, xorbIndexPath(hash))
 	if errors.Is(err, repository.ErrNotFound) {
-		return nil, fmt.Errorf("%w: xorb %s was never uploaded", xet.ErrInvalid, h)
+		return nil, fmt.Errorf("%w: xorb %s was never uploaded", xet.ErrInvalid, hash)
 	}
 
 	if err != nil {
@@ -144,7 +144,7 @@ func (x *xorbIndexes) index(ctx context.Context, h xet.Hash) (xet.Index, error) 
 
 	encoded, err := io.ReadAll(io.LimitReader(rc, xet.MaxXorbChunks*64))
 	if err != nil {
-		return nil, fmt.Errorf("read xorb %s index: %w", h, err)
+		return nil, fmt.Errorf("read xorb %s index: %w", hash, err)
 	}
 
 	index, err := xet.ParseIndex(encoded)
@@ -156,7 +156,7 @@ func (x *xorbIndexes) index(ctx context.Context, h xet.Hash) (xet.Index, error) 
 		clear(x.cached)
 	}
 
-	x.cached[h] = index
+	x.cached[hash] = index
 
 	return index, nil
 }
@@ -314,14 +314,14 @@ func (s *Service) rebuildFile(
 		telemetry.End(span, err)
 	}()
 
-	pr, pw := io.Pipe()
+	reader, writer := io.Pipe()
 
 	go func() {
-		pw.CloseWithError(s.writeTerms(ctx, repoKey, indexes, f.Terms, pw))
+		writer.CloseWithError(s.writeTerms(ctx, repoKey, indexes, f.Terms, writer))
 	}()
 
 	defer func() {
-		_ = pr.Close()
+		_ = reader.Close()
 	}()
 
 	item, err := s.repos.Deploy(
@@ -329,7 +329,7 @@ func (s *Service) rebuildFile(
 		repository.DeployInput{
 			Repository: repoKey,
 			Path:       lfsStaging + "/" + f.SHA256,
-			Body:       pr,
+			Body:       reader,
 			Size:       int64(f.Size()), //nolint:gosec // a file's size fits int64
 			Expected: repository.Checksums{
 				SHA256: f.SHA256,
