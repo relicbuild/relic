@@ -5,171 +5,176 @@
 package relicv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
-	http "net/http"
 	v1 "relic/api/gen/relic/v1"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// AgentRegistryServiceName is the fully-qualified name of the AgentRegistryService service.
 	AgentRegistryServiceName = "relic.v1.AgentRegistryService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// AgentRegistryServiceListRegistryEntriesProcedure is the fully-qualified name of the
+	// AgentRegistryServiceListRegistryEntriesProcedure is the procedure name of the
 	// AgentRegistryService's ListRegistryEntries RPC.
 	AgentRegistryServiceListRegistryEntriesProcedure = "/relic.v1.AgentRegistryService/ListRegistryEntries"
-	// AgentRegistryServiceApproveRegistryEntryProcedure is the fully-qualified name of the
+	// AgentRegistryServiceApproveRegistryEntryProcedure is the procedure name of the
 	// AgentRegistryService's ApproveRegistryEntry RPC.
 	AgentRegistryServiceApproveRegistryEntryProcedure = "/relic.v1.AgentRegistryService/ApproveRegistryEntry"
-	// AgentRegistryServiceRevokeRegistryApprovalProcedure is the fully-qualified name of the
+	// AgentRegistryServiceRevokeRegistryApprovalProcedure is the procedure name of the
 	// AgentRegistryService's RevokeRegistryApproval RPC.
 	AgentRegistryServiceRevokeRegistryApprovalProcedure = "/relic.v1.AgentRegistryService/RevokeRegistryApproval"
+)
+
+var (
+	agentRegistryServiceListRegistryEntriesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_agent_registry_proto.Services().ByName("AgentRegistryService").Methods().ByName("ListRegistryEntries"),
+			Procedure:  AgentRegistryServiceListRegistryEntriesProcedure,
+		}
+	})
+	agentRegistryServiceApproveRegistryEntrySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_agent_registry_proto.Services().ByName("AgentRegistryService").Methods().ByName("ApproveRegistryEntry"),
+			Procedure:  AgentRegistryServiceApproveRegistryEntryProcedure,
+		}
+	})
+	agentRegistryServiceRevokeRegistryApprovalSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_agent_registry_proto.Services().ByName("AgentRegistryService").Methods().ByName("RevokeRegistryApproval"),
+			Procedure:  AgentRegistryServiceRevokeRegistryApprovalProcedure,
+		}
+	})
 )
 
 // AgentRegistryServiceClient is a client for the relic.v1.AgentRegistryService service.
 type AgentRegistryServiceClient interface {
 	// ListRegistryEntries lists a repository's entries the caller may read;
 	// unapproved ones only to administrators and viewers.
-	ListRegistryEntries(context.Context, *connect.Request[v1.ListRegistryEntriesRequest]) (*connect.Response[v1.ListRegistryEntriesResponse], error)
+	ListRegistryEntries(context.Context, *v1.ListRegistryEntriesRequest) (*v1.ListRegistryEntriesResponse, error)
 	// ApproveRegistryEntry approves an entry's current content; a new upload to
 	// its path needs a new approval.
-	ApproveRegistryEntry(context.Context, *connect.Request[v1.ApproveRegistryEntryRequest]) (*connect.Response[v1.ApproveRegistryEntryResponse], error)
-	RevokeRegistryApproval(context.Context, *connect.Request[v1.RevokeRegistryApprovalRequest]) (*connect.Response[v1.RevokeRegistryApprovalResponse], error)
+	ApproveRegistryEntry(context.Context, *v1.ApproveRegistryEntryRequest) (*v1.ApproveRegistryEntryResponse, error)
+	RevokeRegistryApproval(context.Context, *v1.RevokeRegistryApprovalRequest) (*v1.RevokeRegistryApprovalResponse, error)
 }
 
 // NewAgentRegistryServiceClient constructs a client for the relic.v1.AgentRegistryService service.
-// By default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped
-// responses, and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
-// connect.WithGRPC() or connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewAgentRegistryServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) AgentRegistryServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	agentRegistryServiceMethods := v1.File_relic_v1_agent_registry_proto.Services().ByName("AgentRegistryService").Methods()
-	return &agentRegistryServiceClient{
-		listRegistryEntries: connect.NewClient[v1.ListRegistryEntriesRequest, v1.ListRegistryEntriesResponse](
-			httpClient,
-			baseURL+AgentRegistryServiceListRegistryEntriesProcedure,
-			connect.WithSchema(agentRegistryServiceMethods.ByName("ListRegistryEntries")),
-			connect.WithClientOptions(opts...),
-		),
-		approveRegistryEntry: connect.NewClient[v1.ApproveRegistryEntryRequest, v1.ApproveRegistryEntryResponse](
-			httpClient,
-			baseURL+AgentRegistryServiceApproveRegistryEntryProcedure,
-			connect.WithSchema(agentRegistryServiceMethods.ByName("ApproveRegistryEntry")),
-			connect.WithClientOptions(opts...),
-		),
-		revokeRegistryApproval: connect.NewClient[v1.RevokeRegistryApprovalRequest, v1.RevokeRegistryApprovalResponse](
-			httpClient,
-			baseURL+AgentRegistryServiceRevokeRegistryApprovalProcedure,
-			connect.WithSchema(agentRegistryServiceMethods.ByName("RevokeRegistryApproval")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// agentRegistryServiceClient implements AgentRegistryServiceClient.
-type agentRegistryServiceClient struct {
-	listRegistryEntries    *connect.Client[v1.ListRegistryEntriesRequest, v1.ListRegistryEntriesResponse]
-	approveRegistryEntry   *connect.Client[v1.ApproveRegistryEntryRequest, v1.ApproveRegistryEntryResponse]
-	revokeRegistryApproval *connect.Client[v1.RevokeRegistryApprovalRequest, v1.RevokeRegistryApprovalResponse]
-}
-
-// ListRegistryEntries calls relic.v1.AgentRegistryService.ListRegistryEntries.
-func (c *agentRegistryServiceClient) ListRegistryEntries(ctx context.Context, req *connect.Request[v1.ListRegistryEntriesRequest]) (*connect.Response[v1.ListRegistryEntriesResponse], error) {
-	return c.listRegistryEntries.CallUnary(ctx, req)
-}
-
-// ApproveRegistryEntry calls relic.v1.AgentRegistryService.ApproveRegistryEntry.
-func (c *agentRegistryServiceClient) ApproveRegistryEntry(ctx context.Context, req *connect.Request[v1.ApproveRegistryEntryRequest]) (*connect.Response[v1.ApproveRegistryEntryResponse], error) {
-	return c.approveRegistryEntry.CallUnary(ctx, req)
-}
-
-// RevokeRegistryApproval calls relic.v1.AgentRegistryService.RevokeRegistryApproval.
-func (c *agentRegistryServiceClient) RevokeRegistryApproval(ctx context.Context, req *connect.Request[v1.RevokeRegistryApprovalRequest]) (*connect.Response[v1.RevokeRegistryApprovalResponse], error) {
-	return c.revokeRegistryApproval.CallUnary(ctx, req)
+// Multiple service clients may share a single connect.Client.
+func NewAgentRegistryServiceClient(client *connect.Client) AgentRegistryServiceClient {
+	return &agentRegistryServiceClient{client: client}
 }
 
 // AgentRegistryServiceHandler is an implementation of the relic.v1.AgentRegistryService service.
 type AgentRegistryServiceHandler interface {
 	// ListRegistryEntries lists a repository's entries the caller may read;
 	// unapproved ones only to administrators and viewers.
-	ListRegistryEntries(context.Context, *connect.Request[v1.ListRegistryEntriesRequest]) (*connect.Response[v1.ListRegistryEntriesResponse], error)
+	ListRegistryEntries(context.Context, *v1.ListRegistryEntriesRequest) (*v1.ListRegistryEntriesResponse, error)
 	// ApproveRegistryEntry approves an entry's current content; a new upload to
 	// its path needs a new approval.
-	ApproveRegistryEntry(context.Context, *connect.Request[v1.ApproveRegistryEntryRequest]) (*connect.Response[v1.ApproveRegistryEntryResponse], error)
-	RevokeRegistryApproval(context.Context, *connect.Request[v1.RevokeRegistryApprovalRequest]) (*connect.Response[v1.RevokeRegistryApprovalResponse], error)
+	ApproveRegistryEntry(context.Context, *v1.ApproveRegistryEntryRequest) (*v1.ApproveRegistryEntryResponse, error)
+	RevokeRegistryApproval(context.Context, *v1.RevokeRegistryApprovalRequest) (*v1.RevokeRegistryApprovalResponse, error)
 }
 
-// NewAgentRegistryServiceHandler builds an HTTP handler from the service implementation. It returns
-// the path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewAgentRegistryServiceHandler(svc AgentRegistryServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	agentRegistryServiceMethods := v1.File_relic_v1_agent_registry_proto.Services().ByName("AgentRegistryService").Methods()
-	agentRegistryServiceListRegistryEntriesHandler := connect.NewUnaryHandler(
-		AgentRegistryServiceListRegistryEntriesProcedure,
-		svc.ListRegistryEntries,
-		connect.WithSchema(agentRegistryServiceMethods.ByName("ListRegistryEntries")),
-		connect.WithHandlerOptions(opts...),
+// RegisterAgentRegistryServiceHandler registers svc as the relic.v1.AgentRegistryService
+// implementation on server.
+func RegisterAgentRegistryServiceHandler(server *connect.Server, svc AgentRegistryServiceHandler) {
+	adapter := agentRegistryServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: agentRegistryServiceListRegistryEntriesSpec(), Handler: adapter.listRegistryEntries},
+		connect.Method{Spec: agentRegistryServiceApproveRegistryEntrySpec(), Handler: adapter.approveRegistryEntry},
+		connect.Method{Spec: agentRegistryServiceRevokeRegistryApprovalSpec(), Handler: adapter.revokeRegistryApproval},
 	)
-	agentRegistryServiceApproveRegistryEntryHandler := connect.NewUnaryHandler(
-		AgentRegistryServiceApproveRegistryEntryProcedure,
-		svc.ApproveRegistryEntry,
-		connect.WithSchema(agentRegistryServiceMethods.ByName("ApproveRegistryEntry")),
-		connect.WithHandlerOptions(opts...),
-	)
-	agentRegistryServiceRevokeRegistryApprovalHandler := connect.NewUnaryHandler(
-		AgentRegistryServiceRevokeRegistryApprovalProcedure,
-		svc.RevokeRegistryApproval,
-		connect.WithSchema(agentRegistryServiceMethods.ByName("RevokeRegistryApproval")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/relic.v1.AgentRegistryService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case AgentRegistryServiceListRegistryEntriesProcedure:
-			agentRegistryServiceListRegistryEntriesHandler.ServeHTTP(w, r)
-		case AgentRegistryServiceApproveRegistryEntryProcedure:
-			agentRegistryServiceApproveRegistryEntryHandler.ServeHTTP(w, r)
-		case AgentRegistryServiceRevokeRegistryApprovalProcedure:
-			agentRegistryServiceRevokeRegistryApprovalHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedAgentRegistryServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedAgentRegistryServiceHandler struct{}
 
-func (UnimplementedAgentRegistryServiceHandler) ListRegistryEntries(context.Context, *connect.Request[v1.ListRegistryEntriesRequest]) (*connect.Response[v1.ListRegistryEntriesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.AgentRegistryService.ListRegistryEntries is not implemented"))
+func (UnimplementedAgentRegistryServiceHandler) ListRegistryEntries(context.Context, *v1.ListRegistryEntriesRequest) (*v1.ListRegistryEntriesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.AgentRegistryService.ListRegistryEntries is not implemented")
 }
 
-func (UnimplementedAgentRegistryServiceHandler) ApproveRegistryEntry(context.Context, *connect.Request[v1.ApproveRegistryEntryRequest]) (*connect.Response[v1.ApproveRegistryEntryResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.AgentRegistryService.ApproveRegistryEntry is not implemented"))
+func (UnimplementedAgentRegistryServiceHandler) ApproveRegistryEntry(context.Context, *v1.ApproveRegistryEntryRequest) (*v1.ApproveRegistryEntryResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.AgentRegistryService.ApproveRegistryEntry is not implemented")
 }
 
-func (UnimplementedAgentRegistryServiceHandler) RevokeRegistryApproval(context.Context, *connect.Request[v1.RevokeRegistryApprovalRequest]) (*connect.Response[v1.RevokeRegistryApprovalResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.AgentRegistryService.RevokeRegistryApproval is not implemented"))
+func (UnimplementedAgentRegistryServiceHandler) RevokeRegistryApproval(context.Context, *v1.RevokeRegistryApprovalRequest) (*v1.RevokeRegistryApprovalResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.AgentRegistryService.RevokeRegistryApproval is not implemented")
+}
+
+type agentRegistryServiceClient struct {
+	client *connect.Client
+}
+
+func (c *agentRegistryServiceClient) ListRegistryEntries(ctx context.Context, req *v1.ListRegistryEntriesRequest) (*v1.ListRegistryEntriesResponse, error) {
+	var res v1.ListRegistryEntriesResponse
+	if err := c.client.CallUnary(ctx, agentRegistryServiceListRegistryEntriesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentRegistryServiceClient) ApproveRegistryEntry(ctx context.Context, req *v1.ApproveRegistryEntryRequest) (*v1.ApproveRegistryEntryResponse, error) {
+	var res v1.ApproveRegistryEntryResponse
+	if err := c.client.CallUnary(ctx, agentRegistryServiceApproveRegistryEntrySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentRegistryServiceClient) RevokeRegistryApproval(ctx context.Context, req *v1.RevokeRegistryApprovalRequest) (*v1.RevokeRegistryApprovalResponse, error) {
+	var res v1.RevokeRegistryApprovalResponse
+	if err := c.client.CallUnary(ctx, agentRegistryServiceRevokeRegistryApprovalSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type agentRegistryServiceHandler struct{ svc AgentRegistryServiceHandler }
+
+func (h agentRegistryServiceHandler) listRegistryEntries(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListRegistryEntriesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListRegistryEntries(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentRegistryServiceHandler) approveRegistryEntry(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ApproveRegistryEntryRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ApproveRegistryEntry(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentRegistryServiceHandler) revokeRegistryApproval(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RevokeRegistryApprovalRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RevokeRegistryApproval(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

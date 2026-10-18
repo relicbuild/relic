@@ -5,462 +5,538 @@
 package relicv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
-	http "net/http"
 	v1 "relic/api/gen/relic/v1"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// ReleaseServiceName is the fully-qualified name of the ReleaseService service.
 	ReleaseServiceName = "relic.v1.ReleaseService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// ReleaseServiceListReleasesProcedure is the fully-qualified name of the ReleaseService's
-	// ListReleases RPC.
+	// ReleaseServiceListReleasesProcedure is the procedure name of the ReleaseService's ListReleases
+	// RPC.
 	ReleaseServiceListReleasesProcedure = "/relic.v1.ReleaseService/ListReleases"
-	// ReleaseServiceListReleaseVersionsProcedure is the fully-qualified name of the ReleaseService's
+	// ReleaseServiceListReleaseVersionsProcedure is the procedure name of the ReleaseService's
 	// ListReleaseVersions RPC.
 	ReleaseServiceListReleaseVersionsProcedure = "/relic.v1.ReleaseService/ListReleaseVersions"
-	// ReleaseServiceGetReleaseProcedure is the fully-qualified name of the ReleaseService's GetRelease
-	// RPC.
+	// ReleaseServiceGetReleaseProcedure is the procedure name of the ReleaseService's GetRelease RPC.
 	ReleaseServiceGetReleaseProcedure = "/relic.v1.ReleaseService/GetRelease"
-	// ReleaseServiceCreateReleaseProcedure is the fully-qualified name of the ReleaseService's
-	// CreateRelease RPC.
+	// ReleaseServiceCreateReleaseProcedure is the procedure name of the ReleaseService's CreateRelease
+	// RPC.
 	ReleaseServiceCreateReleaseProcedure = "/relic.v1.ReleaseService/CreateRelease"
-	// ReleaseServiceUpdateReleaseProcedure is the fully-qualified name of the ReleaseService's
-	// UpdateRelease RPC.
+	// ReleaseServiceUpdateReleaseProcedure is the procedure name of the ReleaseService's UpdateRelease
+	// RPC.
 	ReleaseServiceUpdateReleaseProcedure = "/relic.v1.ReleaseService/UpdateRelease"
-	// ReleaseServiceFinalizeReleaseProcedure is the fully-qualified name of the ReleaseService's
+	// ReleaseServiceFinalizeReleaseProcedure is the procedure name of the ReleaseService's
 	// FinalizeRelease RPC.
 	ReleaseServiceFinalizeReleaseProcedure = "/relic.v1.ReleaseService/FinalizeRelease"
-	// ReleaseServiceDeleteReleaseProcedure is the fully-qualified name of the ReleaseService's
-	// DeleteRelease RPC.
+	// ReleaseServiceDeleteReleaseProcedure is the procedure name of the ReleaseService's DeleteRelease
+	// RPC.
 	ReleaseServiceDeleteReleaseProcedure = "/relic.v1.ReleaseService/DeleteRelease"
-	// ReleaseServiceSetReleaseTagProcedure is the fully-qualified name of the ReleaseService's
-	// SetReleaseTag RPC.
+	// ReleaseServiceSetReleaseTagProcedure is the procedure name of the ReleaseService's SetReleaseTag
+	// RPC.
 	ReleaseServiceSetReleaseTagProcedure = "/relic.v1.ReleaseService/SetReleaseTag"
-	// ReleaseServicePromoteReleaseProcedure is the fully-qualified name of the ReleaseService's
+	// ReleaseServicePromoteReleaseProcedure is the procedure name of the ReleaseService's
 	// PromoteRelease RPC.
 	ReleaseServicePromoteReleaseProcedure = "/relic.v1.ReleaseService/PromoteRelease"
-	// ReleaseServiceListReleasePromotionsProcedure is the fully-qualified name of the ReleaseService's
+	// ReleaseServiceListReleasePromotionsProcedure is the procedure name of the ReleaseService's
 	// ListReleasePromotions RPC.
 	ReleaseServiceListReleasePromotionsProcedure = "/relic.v1.ReleaseService/ListReleasePromotions"
-	// ReleaseServiceDeleteReleasePromotionProcedure is the fully-qualified name of the ReleaseService's
+	// ReleaseServiceDeleteReleasePromotionProcedure is the procedure name of the ReleaseService's
 	// DeleteReleasePromotion RPC.
 	ReleaseServiceDeleteReleasePromotionProcedure = "/relic.v1.ReleaseService/DeleteReleasePromotion"
-	// ReleaseServiceExportReleaseProcedure is the fully-qualified name of the ReleaseService's
-	// ExportRelease RPC.
+	// ReleaseServiceExportReleaseProcedure is the procedure name of the ReleaseService's ExportRelease
+	// RPC.
 	ReleaseServiceExportReleaseProcedure = "/relic.v1.ReleaseService/ExportRelease"
+)
+
+var (
+	releaseServiceListReleasesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_release_proto.Services().ByName("ReleaseService").Methods().ByName("ListReleases"),
+			Procedure:  ReleaseServiceListReleasesProcedure,
+		}
+	})
+	releaseServiceListReleaseVersionsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_release_proto.Services().ByName("ReleaseService").Methods().ByName("ListReleaseVersions"),
+			Procedure:  ReleaseServiceListReleaseVersionsProcedure,
+		}
+	})
+	releaseServiceGetReleaseSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_release_proto.Services().ByName("ReleaseService").Methods().ByName("GetRelease"),
+			Procedure:  ReleaseServiceGetReleaseProcedure,
+		}
+	})
+	releaseServiceCreateReleaseSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_release_proto.Services().ByName("ReleaseService").Methods().ByName("CreateRelease"),
+			Procedure:  ReleaseServiceCreateReleaseProcedure,
+		}
+	})
+	releaseServiceUpdateReleaseSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_release_proto.Services().ByName("ReleaseService").Methods().ByName("UpdateRelease"),
+			Procedure:  ReleaseServiceUpdateReleaseProcedure,
+		}
+	})
+	releaseServiceFinalizeReleaseSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_release_proto.Services().ByName("ReleaseService").Methods().ByName("FinalizeRelease"),
+			Procedure:  ReleaseServiceFinalizeReleaseProcedure,
+		}
+	})
+	releaseServiceDeleteReleaseSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_release_proto.Services().ByName("ReleaseService").Methods().ByName("DeleteRelease"),
+			Procedure:  ReleaseServiceDeleteReleaseProcedure,
+		}
+	})
+	releaseServiceSetReleaseTagSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_release_proto.Services().ByName("ReleaseService").Methods().ByName("SetReleaseTag"),
+			Procedure:  ReleaseServiceSetReleaseTagProcedure,
+		}
+	})
+	releaseServicePromoteReleaseSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_release_proto.Services().ByName("ReleaseService").Methods().ByName("PromoteRelease"),
+			Procedure:  ReleaseServicePromoteReleaseProcedure,
+		}
+	})
+	releaseServiceListReleasePromotionsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_release_proto.Services().ByName("ReleaseService").Methods().ByName("ListReleasePromotions"),
+			Procedure:  ReleaseServiceListReleasePromotionsProcedure,
+		}
+	})
+	releaseServiceDeleteReleasePromotionSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_release_proto.Services().ByName("ReleaseService").Methods().ByName("DeleteReleasePromotion"),
+			Procedure:  ReleaseServiceDeleteReleasePromotionProcedure,
+		}
+	})
+	releaseServiceExportReleaseSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_release_proto.Services().ByName("ReleaseService").Methods().ByName("ExportRelease"),
+			Procedure:  ReleaseServiceExportReleaseProcedure,
+		}
+	})
 )
 
 // ReleaseServiceClient is a client for the relic.v1.ReleaseService service.
 type ReleaseServiceClient interface {
 	// ListReleases returns the releases the caller may read, with their
 	// latest version.
-	ListReleases(context.Context, *connect.Request[v1.ListReleasesRequest]) (*connect.Response[v1.ListReleasesResponse], error)
+	ListReleases(context.Context, *v1.ListReleasesRequest) (*v1.ListReleasesResponse, error)
 	// ListReleaseVersions returns a release's versions, newest first.
-	ListReleaseVersions(context.Context, *connect.Request[v1.ListReleaseVersionsRequest]) (*connect.Response[v1.ListReleaseVersionsResponse], error)
+	ListReleaseVersions(context.Context, *v1.ListReleaseVersionsRequest) (*v1.ListReleaseVersionsResponse, error)
 	// GetRelease returns one release version with its artifacts.
-	GetRelease(context.Context, *connect.Request[v1.GetReleaseRequest]) (*connect.Response[v1.GetReleaseResponse], error)
+	GetRelease(context.Context, *v1.GetReleaseRequest) (*v1.GetReleaseResponse, error)
 	// CreateRelease creates a release version from its sources. Every
 	// artifact it takes must be readable by the caller.
-	CreateRelease(context.Context, *connect.Request[v1.CreateReleaseRequest]) (*connect.Response[v1.CreateReleaseResponse], error)
+	CreateRelease(context.Context, *v1.CreateReleaseRequest) (*v1.CreateReleaseResponse, error)
 	// UpdateRelease adds sources to a draft version.
-	UpdateRelease(context.Context, *connect.Request[v1.UpdateReleaseRequest]) (*connect.Response[v1.UpdateReleaseResponse], error)
+	UpdateRelease(context.Context, *v1.UpdateReleaseRequest) (*v1.UpdateReleaseResponse, error)
 	// FinalizeRelease turns a draft version into a completed one.
-	FinalizeRelease(context.Context, *connect.Request[v1.FinalizeReleaseRequest]) (*connect.Response[v1.FinalizeReleaseResponse], error)
+	FinalizeRelease(context.Context, *v1.FinalizeReleaseRequest) (*v1.FinalizeReleaseResponse, error)
 	// DeleteRelease deletes a release version and its stored files.
-	DeleteRelease(context.Context, *connect.Request[v1.DeleteReleaseRequest]) (*connect.Response[v1.DeleteReleaseResponse], error)
+	DeleteRelease(context.Context, *v1.DeleteReleaseRequest) (*v1.DeleteReleaseResponse, error)
 	// SetReleaseTag sets (or, with an empty tag, clears) a version's tag.
-	SetReleaseTag(context.Context, *connect.Request[v1.SetReleaseTagRequest]) (*connect.Response[v1.SetReleaseTagResponse], error)
+	SetReleaseTag(context.Context, *v1.SetReleaseTagRequest) (*v1.SetReleaseTagResponse, error)
 	// PromoteRelease copies a completed version's artifacts into an
 	// environment's repositories. Every target must be writable by the
 	// caller.
-	PromoteRelease(context.Context, *connect.Request[v1.PromoteReleaseRequest]) (*connect.Response[v1.PromoteReleaseResponse], error)
+	PromoteRelease(context.Context, *v1.PromoteReleaseRequest) (*v1.PromoteReleaseResponse, error)
 	// ListReleasePromotions returns a version's promotions, newest first.
-	ListReleasePromotions(context.Context, *connect.Request[v1.ListReleasePromotionsRequest]) (*connect.Response[v1.ListReleasePromotionsResponse], error)
+	ListReleasePromotions(context.Context, *v1.ListReleasePromotionsRequest) (*v1.ListReleasePromotionsResponse, error)
 	// DeleteReleasePromotion removes a promotion's record and the files it
 	// placed.
-	DeleteReleasePromotion(context.Context, *connect.Request[v1.DeleteReleasePromotionRequest]) (*connect.Response[v1.DeleteReleasePromotionResponse], error)
+	DeleteReleasePromotion(context.Context, *v1.DeleteReleasePromotionRequest) (*v1.DeleteReleasePromotionResponse, error)
 	// ExportRelease writes a version's archive (its artifacts and signed
 	// manifest) to the release repository and returns the stored item;
 	// download it from /api/v1/files/.
-	ExportRelease(context.Context, *connect.Request[v1.ExportReleaseRequest]) (*connect.Response[v1.ExportReleaseResponse], error)
+	ExportRelease(context.Context, *v1.ExportReleaseRequest) (*v1.ExportReleaseResponse, error)
 }
 
-// NewReleaseServiceClient constructs a client for the relic.v1.ReleaseService service. By default,
-// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
-// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
-// or connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewReleaseServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) ReleaseServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	releaseServiceMethods := v1.File_relic_v1_release_proto.Services().ByName("ReleaseService").Methods()
-	return &releaseServiceClient{
-		listReleases: connect.NewClient[v1.ListReleasesRequest, v1.ListReleasesResponse](
-			httpClient,
-			baseURL+ReleaseServiceListReleasesProcedure,
-			connect.WithSchema(releaseServiceMethods.ByName("ListReleases")),
-			connect.WithClientOptions(opts...),
-		),
-		listReleaseVersions: connect.NewClient[v1.ListReleaseVersionsRequest, v1.ListReleaseVersionsResponse](
-			httpClient,
-			baseURL+ReleaseServiceListReleaseVersionsProcedure,
-			connect.WithSchema(releaseServiceMethods.ByName("ListReleaseVersions")),
-			connect.WithClientOptions(opts...),
-		),
-		getRelease: connect.NewClient[v1.GetReleaseRequest, v1.GetReleaseResponse](
-			httpClient,
-			baseURL+ReleaseServiceGetReleaseProcedure,
-			connect.WithSchema(releaseServiceMethods.ByName("GetRelease")),
-			connect.WithClientOptions(opts...),
-		),
-		createRelease: connect.NewClient[v1.CreateReleaseRequest, v1.CreateReleaseResponse](
-			httpClient,
-			baseURL+ReleaseServiceCreateReleaseProcedure,
-			connect.WithSchema(releaseServiceMethods.ByName("CreateRelease")),
-			connect.WithClientOptions(opts...),
-		),
-		updateRelease: connect.NewClient[v1.UpdateReleaseRequest, v1.UpdateReleaseResponse](
-			httpClient,
-			baseURL+ReleaseServiceUpdateReleaseProcedure,
-			connect.WithSchema(releaseServiceMethods.ByName("UpdateRelease")),
-			connect.WithClientOptions(opts...),
-		),
-		finalizeRelease: connect.NewClient[v1.FinalizeReleaseRequest, v1.FinalizeReleaseResponse](
-			httpClient,
-			baseURL+ReleaseServiceFinalizeReleaseProcedure,
-			connect.WithSchema(releaseServiceMethods.ByName("FinalizeRelease")),
-			connect.WithClientOptions(opts...),
-		),
-		deleteRelease: connect.NewClient[v1.DeleteReleaseRequest, v1.DeleteReleaseResponse](
-			httpClient,
-			baseURL+ReleaseServiceDeleteReleaseProcedure,
-			connect.WithSchema(releaseServiceMethods.ByName("DeleteRelease")),
-			connect.WithClientOptions(opts...),
-		),
-		setReleaseTag: connect.NewClient[v1.SetReleaseTagRequest, v1.SetReleaseTagResponse](
-			httpClient,
-			baseURL+ReleaseServiceSetReleaseTagProcedure,
-			connect.WithSchema(releaseServiceMethods.ByName("SetReleaseTag")),
-			connect.WithClientOptions(opts...),
-		),
-		promoteRelease: connect.NewClient[v1.PromoteReleaseRequest, v1.PromoteReleaseResponse](
-			httpClient,
-			baseURL+ReleaseServicePromoteReleaseProcedure,
-			connect.WithSchema(releaseServiceMethods.ByName("PromoteRelease")),
-			connect.WithClientOptions(opts...),
-		),
-		listReleasePromotions: connect.NewClient[v1.ListReleasePromotionsRequest, v1.ListReleasePromotionsResponse](
-			httpClient,
-			baseURL+ReleaseServiceListReleasePromotionsProcedure,
-			connect.WithSchema(releaseServiceMethods.ByName("ListReleasePromotions")),
-			connect.WithClientOptions(opts...),
-		),
-		deleteReleasePromotion: connect.NewClient[v1.DeleteReleasePromotionRequest, v1.DeleteReleasePromotionResponse](
-			httpClient,
-			baseURL+ReleaseServiceDeleteReleasePromotionProcedure,
-			connect.WithSchema(releaseServiceMethods.ByName("DeleteReleasePromotion")),
-			connect.WithClientOptions(opts...),
-		),
-		exportRelease: connect.NewClient[v1.ExportReleaseRequest, v1.ExportReleaseResponse](
-			httpClient,
-			baseURL+ReleaseServiceExportReleaseProcedure,
-			connect.WithSchema(releaseServiceMethods.ByName("ExportRelease")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// releaseServiceClient implements ReleaseServiceClient.
-type releaseServiceClient struct {
-	listReleases           *connect.Client[v1.ListReleasesRequest, v1.ListReleasesResponse]
-	listReleaseVersions    *connect.Client[v1.ListReleaseVersionsRequest, v1.ListReleaseVersionsResponse]
-	getRelease             *connect.Client[v1.GetReleaseRequest, v1.GetReleaseResponse]
-	createRelease          *connect.Client[v1.CreateReleaseRequest, v1.CreateReleaseResponse]
-	updateRelease          *connect.Client[v1.UpdateReleaseRequest, v1.UpdateReleaseResponse]
-	finalizeRelease        *connect.Client[v1.FinalizeReleaseRequest, v1.FinalizeReleaseResponse]
-	deleteRelease          *connect.Client[v1.DeleteReleaseRequest, v1.DeleteReleaseResponse]
-	setReleaseTag          *connect.Client[v1.SetReleaseTagRequest, v1.SetReleaseTagResponse]
-	promoteRelease         *connect.Client[v1.PromoteReleaseRequest, v1.PromoteReleaseResponse]
-	listReleasePromotions  *connect.Client[v1.ListReleasePromotionsRequest, v1.ListReleasePromotionsResponse]
-	deleteReleasePromotion *connect.Client[v1.DeleteReleasePromotionRequest, v1.DeleteReleasePromotionResponse]
-	exportRelease          *connect.Client[v1.ExportReleaseRequest, v1.ExportReleaseResponse]
-}
-
-// ListReleases calls relic.v1.ReleaseService.ListReleases.
-func (c *releaseServiceClient) ListReleases(ctx context.Context, req *connect.Request[v1.ListReleasesRequest]) (*connect.Response[v1.ListReleasesResponse], error) {
-	return c.listReleases.CallUnary(ctx, req)
-}
-
-// ListReleaseVersions calls relic.v1.ReleaseService.ListReleaseVersions.
-func (c *releaseServiceClient) ListReleaseVersions(ctx context.Context, req *connect.Request[v1.ListReleaseVersionsRequest]) (*connect.Response[v1.ListReleaseVersionsResponse], error) {
-	return c.listReleaseVersions.CallUnary(ctx, req)
-}
-
-// GetRelease calls relic.v1.ReleaseService.GetRelease.
-func (c *releaseServiceClient) GetRelease(ctx context.Context, req *connect.Request[v1.GetReleaseRequest]) (*connect.Response[v1.GetReleaseResponse], error) {
-	return c.getRelease.CallUnary(ctx, req)
-}
-
-// CreateRelease calls relic.v1.ReleaseService.CreateRelease.
-func (c *releaseServiceClient) CreateRelease(ctx context.Context, req *connect.Request[v1.CreateReleaseRequest]) (*connect.Response[v1.CreateReleaseResponse], error) {
-	return c.createRelease.CallUnary(ctx, req)
-}
-
-// UpdateRelease calls relic.v1.ReleaseService.UpdateRelease.
-func (c *releaseServiceClient) UpdateRelease(ctx context.Context, req *connect.Request[v1.UpdateReleaseRequest]) (*connect.Response[v1.UpdateReleaseResponse], error) {
-	return c.updateRelease.CallUnary(ctx, req)
-}
-
-// FinalizeRelease calls relic.v1.ReleaseService.FinalizeRelease.
-func (c *releaseServiceClient) FinalizeRelease(ctx context.Context, req *connect.Request[v1.FinalizeReleaseRequest]) (*connect.Response[v1.FinalizeReleaseResponse], error) {
-	return c.finalizeRelease.CallUnary(ctx, req)
-}
-
-// DeleteRelease calls relic.v1.ReleaseService.DeleteRelease.
-func (c *releaseServiceClient) DeleteRelease(ctx context.Context, req *connect.Request[v1.DeleteReleaseRequest]) (*connect.Response[v1.DeleteReleaseResponse], error) {
-	return c.deleteRelease.CallUnary(ctx, req)
-}
-
-// SetReleaseTag calls relic.v1.ReleaseService.SetReleaseTag.
-func (c *releaseServiceClient) SetReleaseTag(ctx context.Context, req *connect.Request[v1.SetReleaseTagRequest]) (*connect.Response[v1.SetReleaseTagResponse], error) {
-	return c.setReleaseTag.CallUnary(ctx, req)
-}
-
-// PromoteRelease calls relic.v1.ReleaseService.PromoteRelease.
-func (c *releaseServiceClient) PromoteRelease(ctx context.Context, req *connect.Request[v1.PromoteReleaseRequest]) (*connect.Response[v1.PromoteReleaseResponse], error) {
-	return c.promoteRelease.CallUnary(ctx, req)
-}
-
-// ListReleasePromotions calls relic.v1.ReleaseService.ListReleasePromotions.
-func (c *releaseServiceClient) ListReleasePromotions(ctx context.Context, req *connect.Request[v1.ListReleasePromotionsRequest]) (*connect.Response[v1.ListReleasePromotionsResponse], error) {
-	return c.listReleasePromotions.CallUnary(ctx, req)
-}
-
-// DeleteReleasePromotion calls relic.v1.ReleaseService.DeleteReleasePromotion.
-func (c *releaseServiceClient) DeleteReleasePromotion(ctx context.Context, req *connect.Request[v1.DeleteReleasePromotionRequest]) (*connect.Response[v1.DeleteReleasePromotionResponse], error) {
-	return c.deleteReleasePromotion.CallUnary(ctx, req)
-}
-
-// ExportRelease calls relic.v1.ReleaseService.ExportRelease.
-func (c *releaseServiceClient) ExportRelease(ctx context.Context, req *connect.Request[v1.ExportReleaseRequest]) (*connect.Response[v1.ExportReleaseResponse], error) {
-	return c.exportRelease.CallUnary(ctx, req)
+// NewReleaseServiceClient constructs a client for the relic.v1.ReleaseService service. Multiple
+// service clients may share a single connect.Client.
+func NewReleaseServiceClient(client *connect.Client) ReleaseServiceClient {
+	return &releaseServiceClient{client: client}
 }
 
 // ReleaseServiceHandler is an implementation of the relic.v1.ReleaseService service.
 type ReleaseServiceHandler interface {
 	// ListReleases returns the releases the caller may read, with their
 	// latest version.
-	ListReleases(context.Context, *connect.Request[v1.ListReleasesRequest]) (*connect.Response[v1.ListReleasesResponse], error)
+	ListReleases(context.Context, *v1.ListReleasesRequest) (*v1.ListReleasesResponse, error)
 	// ListReleaseVersions returns a release's versions, newest first.
-	ListReleaseVersions(context.Context, *connect.Request[v1.ListReleaseVersionsRequest]) (*connect.Response[v1.ListReleaseVersionsResponse], error)
+	ListReleaseVersions(context.Context, *v1.ListReleaseVersionsRequest) (*v1.ListReleaseVersionsResponse, error)
 	// GetRelease returns one release version with its artifacts.
-	GetRelease(context.Context, *connect.Request[v1.GetReleaseRequest]) (*connect.Response[v1.GetReleaseResponse], error)
+	GetRelease(context.Context, *v1.GetReleaseRequest) (*v1.GetReleaseResponse, error)
 	// CreateRelease creates a release version from its sources. Every
 	// artifact it takes must be readable by the caller.
-	CreateRelease(context.Context, *connect.Request[v1.CreateReleaseRequest]) (*connect.Response[v1.CreateReleaseResponse], error)
+	CreateRelease(context.Context, *v1.CreateReleaseRequest) (*v1.CreateReleaseResponse, error)
 	// UpdateRelease adds sources to a draft version.
-	UpdateRelease(context.Context, *connect.Request[v1.UpdateReleaseRequest]) (*connect.Response[v1.UpdateReleaseResponse], error)
+	UpdateRelease(context.Context, *v1.UpdateReleaseRequest) (*v1.UpdateReleaseResponse, error)
 	// FinalizeRelease turns a draft version into a completed one.
-	FinalizeRelease(context.Context, *connect.Request[v1.FinalizeReleaseRequest]) (*connect.Response[v1.FinalizeReleaseResponse], error)
+	FinalizeRelease(context.Context, *v1.FinalizeReleaseRequest) (*v1.FinalizeReleaseResponse, error)
 	// DeleteRelease deletes a release version and its stored files.
-	DeleteRelease(context.Context, *connect.Request[v1.DeleteReleaseRequest]) (*connect.Response[v1.DeleteReleaseResponse], error)
+	DeleteRelease(context.Context, *v1.DeleteReleaseRequest) (*v1.DeleteReleaseResponse, error)
 	// SetReleaseTag sets (or, with an empty tag, clears) a version's tag.
-	SetReleaseTag(context.Context, *connect.Request[v1.SetReleaseTagRequest]) (*connect.Response[v1.SetReleaseTagResponse], error)
+	SetReleaseTag(context.Context, *v1.SetReleaseTagRequest) (*v1.SetReleaseTagResponse, error)
 	// PromoteRelease copies a completed version's artifacts into an
 	// environment's repositories. Every target must be writable by the
 	// caller.
-	PromoteRelease(context.Context, *connect.Request[v1.PromoteReleaseRequest]) (*connect.Response[v1.PromoteReleaseResponse], error)
+	PromoteRelease(context.Context, *v1.PromoteReleaseRequest) (*v1.PromoteReleaseResponse, error)
 	// ListReleasePromotions returns a version's promotions, newest first.
-	ListReleasePromotions(context.Context, *connect.Request[v1.ListReleasePromotionsRequest]) (*connect.Response[v1.ListReleasePromotionsResponse], error)
+	ListReleasePromotions(context.Context, *v1.ListReleasePromotionsRequest) (*v1.ListReleasePromotionsResponse, error)
 	// DeleteReleasePromotion removes a promotion's record and the files it
 	// placed.
-	DeleteReleasePromotion(context.Context, *connect.Request[v1.DeleteReleasePromotionRequest]) (*connect.Response[v1.DeleteReleasePromotionResponse], error)
+	DeleteReleasePromotion(context.Context, *v1.DeleteReleasePromotionRequest) (*v1.DeleteReleasePromotionResponse, error)
 	// ExportRelease writes a version's archive (its artifacts and signed
 	// manifest) to the release repository and returns the stored item;
 	// download it from /api/v1/files/.
-	ExportRelease(context.Context, *connect.Request[v1.ExportReleaseRequest]) (*connect.Response[v1.ExportReleaseResponse], error)
+	ExportRelease(context.Context, *v1.ExportReleaseRequest) (*v1.ExportReleaseResponse, error)
 }
 
-// NewReleaseServiceHandler builds an HTTP handler from the service implementation. It returns the
-// path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewReleaseServiceHandler(svc ReleaseServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	releaseServiceMethods := v1.File_relic_v1_release_proto.Services().ByName("ReleaseService").Methods()
-	releaseServiceListReleasesHandler := connect.NewUnaryHandler(
-		ReleaseServiceListReleasesProcedure,
-		svc.ListReleases,
-		connect.WithSchema(releaseServiceMethods.ByName("ListReleases")),
-		connect.WithHandlerOptions(opts...),
+// RegisterReleaseServiceHandler registers svc as the relic.v1.ReleaseService implementation on
+// server.
+func RegisterReleaseServiceHandler(server *connect.Server, svc ReleaseServiceHandler) {
+	adapter := releaseServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: releaseServiceListReleasesSpec(), Handler: adapter.listReleases},
+		connect.Method{Spec: releaseServiceListReleaseVersionsSpec(), Handler: adapter.listReleaseVersions},
+		connect.Method{Spec: releaseServiceGetReleaseSpec(), Handler: adapter.getRelease},
+		connect.Method{Spec: releaseServiceCreateReleaseSpec(), Handler: adapter.createRelease},
+		connect.Method{Spec: releaseServiceUpdateReleaseSpec(), Handler: adapter.updateRelease},
+		connect.Method{Spec: releaseServiceFinalizeReleaseSpec(), Handler: adapter.finalizeRelease},
+		connect.Method{Spec: releaseServiceDeleteReleaseSpec(), Handler: adapter.deleteRelease},
+		connect.Method{Spec: releaseServiceSetReleaseTagSpec(), Handler: adapter.setReleaseTag},
+		connect.Method{Spec: releaseServicePromoteReleaseSpec(), Handler: adapter.promoteRelease},
+		connect.Method{Spec: releaseServiceListReleasePromotionsSpec(), Handler: adapter.listReleasePromotions},
+		connect.Method{Spec: releaseServiceDeleteReleasePromotionSpec(), Handler: adapter.deleteReleasePromotion},
+		connect.Method{Spec: releaseServiceExportReleaseSpec(), Handler: adapter.exportRelease},
 	)
-	releaseServiceListReleaseVersionsHandler := connect.NewUnaryHandler(
-		ReleaseServiceListReleaseVersionsProcedure,
-		svc.ListReleaseVersions,
-		connect.WithSchema(releaseServiceMethods.ByName("ListReleaseVersions")),
-		connect.WithHandlerOptions(opts...),
-	)
-	releaseServiceGetReleaseHandler := connect.NewUnaryHandler(
-		ReleaseServiceGetReleaseProcedure,
-		svc.GetRelease,
-		connect.WithSchema(releaseServiceMethods.ByName("GetRelease")),
-		connect.WithHandlerOptions(opts...),
-	)
-	releaseServiceCreateReleaseHandler := connect.NewUnaryHandler(
-		ReleaseServiceCreateReleaseProcedure,
-		svc.CreateRelease,
-		connect.WithSchema(releaseServiceMethods.ByName("CreateRelease")),
-		connect.WithHandlerOptions(opts...),
-	)
-	releaseServiceUpdateReleaseHandler := connect.NewUnaryHandler(
-		ReleaseServiceUpdateReleaseProcedure,
-		svc.UpdateRelease,
-		connect.WithSchema(releaseServiceMethods.ByName("UpdateRelease")),
-		connect.WithHandlerOptions(opts...),
-	)
-	releaseServiceFinalizeReleaseHandler := connect.NewUnaryHandler(
-		ReleaseServiceFinalizeReleaseProcedure,
-		svc.FinalizeRelease,
-		connect.WithSchema(releaseServiceMethods.ByName("FinalizeRelease")),
-		connect.WithHandlerOptions(opts...),
-	)
-	releaseServiceDeleteReleaseHandler := connect.NewUnaryHandler(
-		ReleaseServiceDeleteReleaseProcedure,
-		svc.DeleteRelease,
-		connect.WithSchema(releaseServiceMethods.ByName("DeleteRelease")),
-		connect.WithHandlerOptions(opts...),
-	)
-	releaseServiceSetReleaseTagHandler := connect.NewUnaryHandler(
-		ReleaseServiceSetReleaseTagProcedure,
-		svc.SetReleaseTag,
-		connect.WithSchema(releaseServiceMethods.ByName("SetReleaseTag")),
-		connect.WithHandlerOptions(opts...),
-	)
-	releaseServicePromoteReleaseHandler := connect.NewUnaryHandler(
-		ReleaseServicePromoteReleaseProcedure,
-		svc.PromoteRelease,
-		connect.WithSchema(releaseServiceMethods.ByName("PromoteRelease")),
-		connect.WithHandlerOptions(opts...),
-	)
-	releaseServiceListReleasePromotionsHandler := connect.NewUnaryHandler(
-		ReleaseServiceListReleasePromotionsProcedure,
-		svc.ListReleasePromotions,
-		connect.WithSchema(releaseServiceMethods.ByName("ListReleasePromotions")),
-		connect.WithHandlerOptions(opts...),
-	)
-	releaseServiceDeleteReleasePromotionHandler := connect.NewUnaryHandler(
-		ReleaseServiceDeleteReleasePromotionProcedure,
-		svc.DeleteReleasePromotion,
-		connect.WithSchema(releaseServiceMethods.ByName("DeleteReleasePromotion")),
-		connect.WithHandlerOptions(opts...),
-	)
-	releaseServiceExportReleaseHandler := connect.NewUnaryHandler(
-		ReleaseServiceExportReleaseProcedure,
-		svc.ExportRelease,
-		connect.WithSchema(releaseServiceMethods.ByName("ExportRelease")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/relic.v1.ReleaseService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case ReleaseServiceListReleasesProcedure:
-			releaseServiceListReleasesHandler.ServeHTTP(w, r)
-		case ReleaseServiceListReleaseVersionsProcedure:
-			releaseServiceListReleaseVersionsHandler.ServeHTTP(w, r)
-		case ReleaseServiceGetReleaseProcedure:
-			releaseServiceGetReleaseHandler.ServeHTTP(w, r)
-		case ReleaseServiceCreateReleaseProcedure:
-			releaseServiceCreateReleaseHandler.ServeHTTP(w, r)
-		case ReleaseServiceUpdateReleaseProcedure:
-			releaseServiceUpdateReleaseHandler.ServeHTTP(w, r)
-		case ReleaseServiceFinalizeReleaseProcedure:
-			releaseServiceFinalizeReleaseHandler.ServeHTTP(w, r)
-		case ReleaseServiceDeleteReleaseProcedure:
-			releaseServiceDeleteReleaseHandler.ServeHTTP(w, r)
-		case ReleaseServiceSetReleaseTagProcedure:
-			releaseServiceSetReleaseTagHandler.ServeHTTP(w, r)
-		case ReleaseServicePromoteReleaseProcedure:
-			releaseServicePromoteReleaseHandler.ServeHTTP(w, r)
-		case ReleaseServiceListReleasePromotionsProcedure:
-			releaseServiceListReleasePromotionsHandler.ServeHTTP(w, r)
-		case ReleaseServiceDeleteReleasePromotionProcedure:
-			releaseServiceDeleteReleasePromotionHandler.ServeHTTP(w, r)
-		case ReleaseServiceExportReleaseProcedure:
-			releaseServiceExportReleaseHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedReleaseServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedReleaseServiceHandler struct{}
 
-func (UnimplementedReleaseServiceHandler) ListReleases(context.Context, *connect.Request[v1.ListReleasesRequest]) (*connect.Response[v1.ListReleasesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ReleaseService.ListReleases is not implemented"))
+func (UnimplementedReleaseServiceHandler) ListReleases(context.Context, *v1.ListReleasesRequest) (*v1.ListReleasesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ReleaseService.ListReleases is not implemented")
 }
 
-func (UnimplementedReleaseServiceHandler) ListReleaseVersions(context.Context, *connect.Request[v1.ListReleaseVersionsRequest]) (*connect.Response[v1.ListReleaseVersionsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ReleaseService.ListReleaseVersions is not implemented"))
+func (UnimplementedReleaseServiceHandler) ListReleaseVersions(context.Context, *v1.ListReleaseVersionsRequest) (*v1.ListReleaseVersionsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ReleaseService.ListReleaseVersions is not implemented")
 }
 
-func (UnimplementedReleaseServiceHandler) GetRelease(context.Context, *connect.Request[v1.GetReleaseRequest]) (*connect.Response[v1.GetReleaseResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ReleaseService.GetRelease is not implemented"))
+func (UnimplementedReleaseServiceHandler) GetRelease(context.Context, *v1.GetReleaseRequest) (*v1.GetReleaseResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ReleaseService.GetRelease is not implemented")
 }
 
-func (UnimplementedReleaseServiceHandler) CreateRelease(context.Context, *connect.Request[v1.CreateReleaseRequest]) (*connect.Response[v1.CreateReleaseResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ReleaseService.CreateRelease is not implemented"))
+func (UnimplementedReleaseServiceHandler) CreateRelease(context.Context, *v1.CreateReleaseRequest) (*v1.CreateReleaseResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ReleaseService.CreateRelease is not implemented")
 }
 
-func (UnimplementedReleaseServiceHandler) UpdateRelease(context.Context, *connect.Request[v1.UpdateReleaseRequest]) (*connect.Response[v1.UpdateReleaseResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ReleaseService.UpdateRelease is not implemented"))
+func (UnimplementedReleaseServiceHandler) UpdateRelease(context.Context, *v1.UpdateReleaseRequest) (*v1.UpdateReleaseResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ReleaseService.UpdateRelease is not implemented")
 }
 
-func (UnimplementedReleaseServiceHandler) FinalizeRelease(context.Context, *connect.Request[v1.FinalizeReleaseRequest]) (*connect.Response[v1.FinalizeReleaseResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ReleaseService.FinalizeRelease is not implemented"))
+func (UnimplementedReleaseServiceHandler) FinalizeRelease(context.Context, *v1.FinalizeReleaseRequest) (*v1.FinalizeReleaseResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ReleaseService.FinalizeRelease is not implemented")
 }
 
-func (UnimplementedReleaseServiceHandler) DeleteRelease(context.Context, *connect.Request[v1.DeleteReleaseRequest]) (*connect.Response[v1.DeleteReleaseResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ReleaseService.DeleteRelease is not implemented"))
+func (UnimplementedReleaseServiceHandler) DeleteRelease(context.Context, *v1.DeleteReleaseRequest) (*v1.DeleteReleaseResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ReleaseService.DeleteRelease is not implemented")
 }
 
-func (UnimplementedReleaseServiceHandler) SetReleaseTag(context.Context, *connect.Request[v1.SetReleaseTagRequest]) (*connect.Response[v1.SetReleaseTagResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ReleaseService.SetReleaseTag is not implemented"))
+func (UnimplementedReleaseServiceHandler) SetReleaseTag(context.Context, *v1.SetReleaseTagRequest) (*v1.SetReleaseTagResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ReleaseService.SetReleaseTag is not implemented")
 }
 
-func (UnimplementedReleaseServiceHandler) PromoteRelease(context.Context, *connect.Request[v1.PromoteReleaseRequest]) (*connect.Response[v1.PromoteReleaseResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ReleaseService.PromoteRelease is not implemented"))
+func (UnimplementedReleaseServiceHandler) PromoteRelease(context.Context, *v1.PromoteReleaseRequest) (*v1.PromoteReleaseResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ReleaseService.PromoteRelease is not implemented")
 }
 
-func (UnimplementedReleaseServiceHandler) ListReleasePromotions(context.Context, *connect.Request[v1.ListReleasePromotionsRequest]) (*connect.Response[v1.ListReleasePromotionsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ReleaseService.ListReleasePromotions is not implemented"))
+func (UnimplementedReleaseServiceHandler) ListReleasePromotions(context.Context, *v1.ListReleasePromotionsRequest) (*v1.ListReleasePromotionsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ReleaseService.ListReleasePromotions is not implemented")
 }
 
-func (UnimplementedReleaseServiceHandler) DeleteReleasePromotion(context.Context, *connect.Request[v1.DeleteReleasePromotionRequest]) (*connect.Response[v1.DeleteReleasePromotionResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ReleaseService.DeleteReleasePromotion is not implemented"))
+func (UnimplementedReleaseServiceHandler) DeleteReleasePromotion(context.Context, *v1.DeleteReleasePromotionRequest) (*v1.DeleteReleasePromotionResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ReleaseService.DeleteReleasePromotion is not implemented")
 }
 
-func (UnimplementedReleaseServiceHandler) ExportRelease(context.Context, *connect.Request[v1.ExportReleaseRequest]) (*connect.Response[v1.ExportReleaseResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ReleaseService.ExportRelease is not implemented"))
+func (UnimplementedReleaseServiceHandler) ExportRelease(context.Context, *v1.ExportReleaseRequest) (*v1.ExportReleaseResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ReleaseService.ExportRelease is not implemented")
+}
+
+type releaseServiceClient struct {
+	client *connect.Client
+}
+
+func (c *releaseServiceClient) ListReleases(ctx context.Context, req *v1.ListReleasesRequest) (*v1.ListReleasesResponse, error) {
+	var res v1.ListReleasesResponse
+	if err := c.client.CallUnary(ctx, releaseServiceListReleasesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *releaseServiceClient) ListReleaseVersions(ctx context.Context, req *v1.ListReleaseVersionsRequest) (*v1.ListReleaseVersionsResponse, error) {
+	var res v1.ListReleaseVersionsResponse
+	if err := c.client.CallUnary(ctx, releaseServiceListReleaseVersionsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *releaseServiceClient) GetRelease(ctx context.Context, req *v1.GetReleaseRequest) (*v1.GetReleaseResponse, error) {
+	var res v1.GetReleaseResponse
+	if err := c.client.CallUnary(ctx, releaseServiceGetReleaseSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *releaseServiceClient) CreateRelease(ctx context.Context, req *v1.CreateReleaseRequest) (*v1.CreateReleaseResponse, error) {
+	var res v1.CreateReleaseResponse
+	if err := c.client.CallUnary(ctx, releaseServiceCreateReleaseSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *releaseServiceClient) UpdateRelease(ctx context.Context, req *v1.UpdateReleaseRequest) (*v1.UpdateReleaseResponse, error) {
+	var res v1.UpdateReleaseResponse
+	if err := c.client.CallUnary(ctx, releaseServiceUpdateReleaseSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *releaseServiceClient) FinalizeRelease(ctx context.Context, req *v1.FinalizeReleaseRequest) (*v1.FinalizeReleaseResponse, error) {
+	var res v1.FinalizeReleaseResponse
+	if err := c.client.CallUnary(ctx, releaseServiceFinalizeReleaseSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *releaseServiceClient) DeleteRelease(ctx context.Context, req *v1.DeleteReleaseRequest) (*v1.DeleteReleaseResponse, error) {
+	var res v1.DeleteReleaseResponse
+	if err := c.client.CallUnary(ctx, releaseServiceDeleteReleaseSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *releaseServiceClient) SetReleaseTag(ctx context.Context, req *v1.SetReleaseTagRequest) (*v1.SetReleaseTagResponse, error) {
+	var res v1.SetReleaseTagResponse
+	if err := c.client.CallUnary(ctx, releaseServiceSetReleaseTagSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *releaseServiceClient) PromoteRelease(ctx context.Context, req *v1.PromoteReleaseRequest) (*v1.PromoteReleaseResponse, error) {
+	var res v1.PromoteReleaseResponse
+	if err := c.client.CallUnary(ctx, releaseServicePromoteReleaseSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *releaseServiceClient) ListReleasePromotions(ctx context.Context, req *v1.ListReleasePromotionsRequest) (*v1.ListReleasePromotionsResponse, error) {
+	var res v1.ListReleasePromotionsResponse
+	if err := c.client.CallUnary(ctx, releaseServiceListReleasePromotionsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *releaseServiceClient) DeleteReleasePromotion(ctx context.Context, req *v1.DeleteReleasePromotionRequest) (*v1.DeleteReleasePromotionResponse, error) {
+	var res v1.DeleteReleasePromotionResponse
+	if err := c.client.CallUnary(ctx, releaseServiceDeleteReleasePromotionSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *releaseServiceClient) ExportRelease(ctx context.Context, req *v1.ExportReleaseRequest) (*v1.ExportReleaseResponse, error) {
+	var res v1.ExportReleaseResponse
+	if err := c.client.CallUnary(ctx, releaseServiceExportReleaseSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type releaseServiceHandler struct{ svc ReleaseServiceHandler }
+
+func (h releaseServiceHandler) listReleases(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListReleasesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListReleases(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h releaseServiceHandler) listReleaseVersions(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListReleaseVersionsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListReleaseVersions(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h releaseServiceHandler) getRelease(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetReleaseRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetRelease(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h releaseServiceHandler) createRelease(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.CreateReleaseRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.CreateRelease(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h releaseServiceHandler) updateRelease(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.UpdateReleaseRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.UpdateRelease(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h releaseServiceHandler) finalizeRelease(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.FinalizeReleaseRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.FinalizeRelease(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h releaseServiceHandler) deleteRelease(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DeleteReleaseRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.DeleteRelease(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h releaseServiceHandler) setReleaseTag(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SetReleaseTagRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.SetReleaseTag(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h releaseServiceHandler) promoteRelease(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PromoteReleaseRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.PromoteRelease(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h releaseServiceHandler) listReleasePromotions(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListReleasePromotionsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListReleasePromotions(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h releaseServiceHandler) deleteReleasePromotion(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DeleteReleasePromotionRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.DeleteReleasePromotion(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h releaseServiceHandler) exportRelease(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ExportReleaseRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ExportRelease(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

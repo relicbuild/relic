@@ -5,192 +5,205 @@
 package relicv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
-	http "net/http"
 	v1 "relic/api/gen/relic/v1"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// PromotionGateServiceName is the fully-qualified name of the PromotionGateService service.
 	PromotionGateServiceName = "relic.v1.PromotionGateService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// PromotionGateServiceListPromotionGatesProcedure is the fully-qualified name of the
+	// PromotionGateServiceListPromotionGatesProcedure is the procedure name of the
 	// PromotionGateService's ListPromotionGates RPC.
 	PromotionGateServiceListPromotionGatesProcedure = "/relic.v1.PromotionGateService/ListPromotionGates"
-	// PromotionGateServiceGetPromotionGateProcedure is the fully-qualified name of the
-	// PromotionGateService's GetPromotionGate RPC.
+	// PromotionGateServiceGetPromotionGateProcedure is the procedure name of the PromotionGateService's
+	// GetPromotionGate RPC.
 	PromotionGateServiceGetPromotionGateProcedure = "/relic.v1.PromotionGateService/GetPromotionGate"
-	// PromotionGateServicePutPromotionGateProcedure is the fully-qualified name of the
-	// PromotionGateService's PutPromotionGate RPC.
+	// PromotionGateServicePutPromotionGateProcedure is the procedure name of the PromotionGateService's
+	// PutPromotionGate RPC.
 	PromotionGateServicePutPromotionGateProcedure = "/relic.v1.PromotionGateService/PutPromotionGate"
-	// PromotionGateServiceDeletePromotionGateProcedure is the fully-qualified name of the
+	// PromotionGateServiceDeletePromotionGateProcedure is the procedure name of the
 	// PromotionGateService's DeletePromotionGate RPC.
 	PromotionGateServiceDeletePromotionGateProcedure = "/relic.v1.PromotionGateService/DeletePromotionGate"
 )
 
+var (
+	promotionGateServiceListPromotionGatesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_promotion_gate_proto.Services().ByName("PromotionGateService").Methods().ByName("ListPromotionGates"),
+			Procedure:  PromotionGateServiceListPromotionGatesProcedure,
+		}
+	})
+	promotionGateServiceGetPromotionGateSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_promotion_gate_proto.Services().ByName("PromotionGateService").Methods().ByName("GetPromotionGate"),
+			Procedure:  PromotionGateServiceGetPromotionGateProcedure,
+		}
+	})
+	promotionGateServicePutPromotionGateSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_promotion_gate_proto.Services().ByName("PromotionGateService").Methods().ByName("PutPromotionGate"),
+			Procedure:  PromotionGateServicePutPromotionGateProcedure,
+		}
+	})
+	promotionGateServiceDeletePromotionGateSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_promotion_gate_proto.Services().ByName("PromotionGateService").Methods().ByName("DeletePromotionGate"),
+			Procedure:  PromotionGateServiceDeletePromotionGateProcedure,
+		}
+	})
+)
+
 // PromotionGateServiceClient is a client for the relic.v1.PromotionGateService service.
 type PromotionGateServiceClient interface {
-	ListPromotionGates(context.Context, *connect.Request[v1.ListPromotionGatesRequest]) (*connect.Response[v1.ListPromotionGatesResponse], error)
-	GetPromotionGate(context.Context, *connect.Request[v1.GetPromotionGateRequest]) (*connect.Response[v1.GetPromotionGateResponse], error)
-	PutPromotionGate(context.Context, *connect.Request[v1.PutPromotionGateRequest]) (*connect.Response[v1.PutPromotionGateResponse], error)
-	DeletePromotionGate(context.Context, *connect.Request[v1.DeletePromotionGateRequest]) (*connect.Response[v1.DeletePromotionGateResponse], error)
+	ListPromotionGates(context.Context, *v1.ListPromotionGatesRequest) (*v1.ListPromotionGatesResponse, error)
+	GetPromotionGate(context.Context, *v1.GetPromotionGateRequest) (*v1.GetPromotionGateResponse, error)
+	PutPromotionGate(context.Context, *v1.PutPromotionGateRequest) (*v1.PutPromotionGateResponse, error)
+	DeletePromotionGate(context.Context, *v1.DeletePromotionGateRequest) (*v1.DeletePromotionGateResponse, error)
 }
 
 // NewPromotionGateServiceClient constructs a client for the relic.v1.PromotionGateService service.
-// By default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped
-// responses, and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
-// connect.WithGRPC() or connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewPromotionGateServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) PromotionGateServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	promotionGateServiceMethods := v1.File_relic_v1_promotion_gate_proto.Services().ByName("PromotionGateService").Methods()
-	return &promotionGateServiceClient{
-		listPromotionGates: connect.NewClient[v1.ListPromotionGatesRequest, v1.ListPromotionGatesResponse](
-			httpClient,
-			baseURL+PromotionGateServiceListPromotionGatesProcedure,
-			connect.WithSchema(promotionGateServiceMethods.ByName("ListPromotionGates")),
-			connect.WithClientOptions(opts...),
-		),
-		getPromotionGate: connect.NewClient[v1.GetPromotionGateRequest, v1.GetPromotionGateResponse](
-			httpClient,
-			baseURL+PromotionGateServiceGetPromotionGateProcedure,
-			connect.WithSchema(promotionGateServiceMethods.ByName("GetPromotionGate")),
-			connect.WithClientOptions(opts...),
-		),
-		putPromotionGate: connect.NewClient[v1.PutPromotionGateRequest, v1.PutPromotionGateResponse](
-			httpClient,
-			baseURL+PromotionGateServicePutPromotionGateProcedure,
-			connect.WithSchema(promotionGateServiceMethods.ByName("PutPromotionGate")),
-			connect.WithClientOptions(opts...),
-		),
-		deletePromotionGate: connect.NewClient[v1.DeletePromotionGateRequest, v1.DeletePromotionGateResponse](
-			httpClient,
-			baseURL+PromotionGateServiceDeletePromotionGateProcedure,
-			connect.WithSchema(promotionGateServiceMethods.ByName("DeletePromotionGate")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// promotionGateServiceClient implements PromotionGateServiceClient.
-type promotionGateServiceClient struct {
-	listPromotionGates  *connect.Client[v1.ListPromotionGatesRequest, v1.ListPromotionGatesResponse]
-	getPromotionGate    *connect.Client[v1.GetPromotionGateRequest, v1.GetPromotionGateResponse]
-	putPromotionGate    *connect.Client[v1.PutPromotionGateRequest, v1.PutPromotionGateResponse]
-	deletePromotionGate *connect.Client[v1.DeletePromotionGateRequest, v1.DeletePromotionGateResponse]
-}
-
-// ListPromotionGates calls relic.v1.PromotionGateService.ListPromotionGates.
-func (c *promotionGateServiceClient) ListPromotionGates(ctx context.Context, req *connect.Request[v1.ListPromotionGatesRequest]) (*connect.Response[v1.ListPromotionGatesResponse], error) {
-	return c.listPromotionGates.CallUnary(ctx, req)
-}
-
-// GetPromotionGate calls relic.v1.PromotionGateService.GetPromotionGate.
-func (c *promotionGateServiceClient) GetPromotionGate(ctx context.Context, req *connect.Request[v1.GetPromotionGateRequest]) (*connect.Response[v1.GetPromotionGateResponse], error) {
-	return c.getPromotionGate.CallUnary(ctx, req)
-}
-
-// PutPromotionGate calls relic.v1.PromotionGateService.PutPromotionGate.
-func (c *promotionGateServiceClient) PutPromotionGate(ctx context.Context, req *connect.Request[v1.PutPromotionGateRequest]) (*connect.Response[v1.PutPromotionGateResponse], error) {
-	return c.putPromotionGate.CallUnary(ctx, req)
-}
-
-// DeletePromotionGate calls relic.v1.PromotionGateService.DeletePromotionGate.
-func (c *promotionGateServiceClient) DeletePromotionGate(ctx context.Context, req *connect.Request[v1.DeletePromotionGateRequest]) (*connect.Response[v1.DeletePromotionGateResponse], error) {
-	return c.deletePromotionGate.CallUnary(ctx, req)
+// Multiple service clients may share a single connect.Client.
+func NewPromotionGateServiceClient(client *connect.Client) PromotionGateServiceClient {
+	return &promotionGateServiceClient{client: client}
 }
 
 // PromotionGateServiceHandler is an implementation of the relic.v1.PromotionGateService service.
 type PromotionGateServiceHandler interface {
-	ListPromotionGates(context.Context, *connect.Request[v1.ListPromotionGatesRequest]) (*connect.Response[v1.ListPromotionGatesResponse], error)
-	GetPromotionGate(context.Context, *connect.Request[v1.GetPromotionGateRequest]) (*connect.Response[v1.GetPromotionGateResponse], error)
-	PutPromotionGate(context.Context, *connect.Request[v1.PutPromotionGateRequest]) (*connect.Response[v1.PutPromotionGateResponse], error)
-	DeletePromotionGate(context.Context, *connect.Request[v1.DeletePromotionGateRequest]) (*connect.Response[v1.DeletePromotionGateResponse], error)
+	ListPromotionGates(context.Context, *v1.ListPromotionGatesRequest) (*v1.ListPromotionGatesResponse, error)
+	GetPromotionGate(context.Context, *v1.GetPromotionGateRequest) (*v1.GetPromotionGateResponse, error)
+	PutPromotionGate(context.Context, *v1.PutPromotionGateRequest) (*v1.PutPromotionGateResponse, error)
+	DeletePromotionGate(context.Context, *v1.DeletePromotionGateRequest) (*v1.DeletePromotionGateResponse, error)
 }
 
-// NewPromotionGateServiceHandler builds an HTTP handler from the service implementation. It returns
-// the path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewPromotionGateServiceHandler(svc PromotionGateServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	promotionGateServiceMethods := v1.File_relic_v1_promotion_gate_proto.Services().ByName("PromotionGateService").Methods()
-	promotionGateServiceListPromotionGatesHandler := connect.NewUnaryHandler(
-		PromotionGateServiceListPromotionGatesProcedure,
-		svc.ListPromotionGates,
-		connect.WithSchema(promotionGateServiceMethods.ByName("ListPromotionGates")),
-		connect.WithHandlerOptions(opts...),
+// RegisterPromotionGateServiceHandler registers svc as the relic.v1.PromotionGateService
+// implementation on server.
+func RegisterPromotionGateServiceHandler(server *connect.Server, svc PromotionGateServiceHandler) {
+	adapter := promotionGateServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: promotionGateServiceListPromotionGatesSpec(), Handler: adapter.listPromotionGates},
+		connect.Method{Spec: promotionGateServiceGetPromotionGateSpec(), Handler: adapter.getPromotionGate},
+		connect.Method{Spec: promotionGateServicePutPromotionGateSpec(), Handler: adapter.putPromotionGate},
+		connect.Method{Spec: promotionGateServiceDeletePromotionGateSpec(), Handler: adapter.deletePromotionGate},
 	)
-	promotionGateServiceGetPromotionGateHandler := connect.NewUnaryHandler(
-		PromotionGateServiceGetPromotionGateProcedure,
-		svc.GetPromotionGate,
-		connect.WithSchema(promotionGateServiceMethods.ByName("GetPromotionGate")),
-		connect.WithHandlerOptions(opts...),
-	)
-	promotionGateServicePutPromotionGateHandler := connect.NewUnaryHandler(
-		PromotionGateServicePutPromotionGateProcedure,
-		svc.PutPromotionGate,
-		connect.WithSchema(promotionGateServiceMethods.ByName("PutPromotionGate")),
-		connect.WithHandlerOptions(opts...),
-	)
-	promotionGateServiceDeletePromotionGateHandler := connect.NewUnaryHandler(
-		PromotionGateServiceDeletePromotionGateProcedure,
-		svc.DeletePromotionGate,
-		connect.WithSchema(promotionGateServiceMethods.ByName("DeletePromotionGate")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/relic.v1.PromotionGateService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case PromotionGateServiceListPromotionGatesProcedure:
-			promotionGateServiceListPromotionGatesHandler.ServeHTTP(w, r)
-		case PromotionGateServiceGetPromotionGateProcedure:
-			promotionGateServiceGetPromotionGateHandler.ServeHTTP(w, r)
-		case PromotionGateServicePutPromotionGateProcedure:
-			promotionGateServicePutPromotionGateHandler.ServeHTTP(w, r)
-		case PromotionGateServiceDeletePromotionGateProcedure:
-			promotionGateServiceDeletePromotionGateHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedPromotionGateServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedPromotionGateServiceHandler struct{}
 
-func (UnimplementedPromotionGateServiceHandler) ListPromotionGates(context.Context, *connect.Request[v1.ListPromotionGatesRequest]) (*connect.Response[v1.ListPromotionGatesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.PromotionGateService.ListPromotionGates is not implemented"))
+func (UnimplementedPromotionGateServiceHandler) ListPromotionGates(context.Context, *v1.ListPromotionGatesRequest) (*v1.ListPromotionGatesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.PromotionGateService.ListPromotionGates is not implemented")
 }
 
-func (UnimplementedPromotionGateServiceHandler) GetPromotionGate(context.Context, *connect.Request[v1.GetPromotionGateRequest]) (*connect.Response[v1.GetPromotionGateResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.PromotionGateService.GetPromotionGate is not implemented"))
+func (UnimplementedPromotionGateServiceHandler) GetPromotionGate(context.Context, *v1.GetPromotionGateRequest) (*v1.GetPromotionGateResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.PromotionGateService.GetPromotionGate is not implemented")
 }
 
-func (UnimplementedPromotionGateServiceHandler) PutPromotionGate(context.Context, *connect.Request[v1.PutPromotionGateRequest]) (*connect.Response[v1.PutPromotionGateResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.PromotionGateService.PutPromotionGate is not implemented"))
+func (UnimplementedPromotionGateServiceHandler) PutPromotionGate(context.Context, *v1.PutPromotionGateRequest) (*v1.PutPromotionGateResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.PromotionGateService.PutPromotionGate is not implemented")
 }
 
-func (UnimplementedPromotionGateServiceHandler) DeletePromotionGate(context.Context, *connect.Request[v1.DeletePromotionGateRequest]) (*connect.Response[v1.DeletePromotionGateResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.PromotionGateService.DeletePromotionGate is not implemented"))
+func (UnimplementedPromotionGateServiceHandler) DeletePromotionGate(context.Context, *v1.DeletePromotionGateRequest) (*v1.DeletePromotionGateResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.PromotionGateService.DeletePromotionGate is not implemented")
+}
+
+type promotionGateServiceClient struct {
+	client *connect.Client
+}
+
+func (c *promotionGateServiceClient) ListPromotionGates(ctx context.Context, req *v1.ListPromotionGatesRequest) (*v1.ListPromotionGatesResponse, error) {
+	var res v1.ListPromotionGatesResponse
+	if err := c.client.CallUnary(ctx, promotionGateServiceListPromotionGatesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *promotionGateServiceClient) GetPromotionGate(ctx context.Context, req *v1.GetPromotionGateRequest) (*v1.GetPromotionGateResponse, error) {
+	var res v1.GetPromotionGateResponse
+	if err := c.client.CallUnary(ctx, promotionGateServiceGetPromotionGateSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *promotionGateServiceClient) PutPromotionGate(ctx context.Context, req *v1.PutPromotionGateRequest) (*v1.PutPromotionGateResponse, error) {
+	var res v1.PutPromotionGateResponse
+	if err := c.client.CallUnary(ctx, promotionGateServicePutPromotionGateSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *promotionGateServiceClient) DeletePromotionGate(ctx context.Context, req *v1.DeletePromotionGateRequest) (*v1.DeletePromotionGateResponse, error) {
+	var res v1.DeletePromotionGateResponse
+	if err := c.client.CallUnary(ctx, promotionGateServiceDeletePromotionGateSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type promotionGateServiceHandler struct{ svc PromotionGateServiceHandler }
+
+func (h promotionGateServiceHandler) listPromotionGates(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListPromotionGatesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListPromotionGates(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h promotionGateServiceHandler) getPromotionGate(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetPromotionGateRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetPromotionGate(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h promotionGateServiceHandler) putPromotionGate(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PutPromotionGateRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.PutPromotionGate(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h promotionGateServiceHandler) deletePromotionGate(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DeletePromotionGateRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.DeletePromotionGate(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

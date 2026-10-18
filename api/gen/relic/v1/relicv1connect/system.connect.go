@@ -5,309 +5,344 @@
 package relicv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
-	http "net/http"
 	v1 "relic/api/gen/relic/v1"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// SystemServiceName is the fully-qualified name of the SystemService service.
 	SystemServiceName = "relic.v1.SystemService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// SystemServiceGetVersionProcedure is the fully-qualified name of the SystemService's GetVersion
-	// RPC.
+	// SystemServiceGetVersionProcedure is the procedure name of the SystemService's GetVersion RPC.
 	SystemServiceGetVersionProcedure = "/relic.v1.SystemService/GetVersion"
-	// SystemServiceGetSystemStatusProcedure is the fully-qualified name of the SystemService's
+	// SystemServiceGetSystemStatusProcedure is the procedure name of the SystemService's
 	// GetSystemStatus RPC.
 	SystemServiceGetSystemStatusProcedure = "/relic.v1.SystemService/GetSystemStatus"
-	// SystemServiceGetDashboardSummaryProcedure is the fully-qualified name of the SystemService's
+	// SystemServiceGetDashboardSummaryProcedure is the procedure name of the SystemService's
 	// GetDashboardSummary RPC.
 	SystemServiceGetDashboardSummaryProcedure = "/relic.v1.SystemService/GetDashboardSummary"
-	// SystemServiceListBackgroundJobsProcedure is the fully-qualified name of the SystemService's
+	// SystemServiceListBackgroundJobsProcedure is the procedure name of the SystemService's
 	// ListBackgroundJobs RPC.
 	SystemServiceListBackgroundJobsProcedure = "/relic.v1.SystemService/ListBackgroundJobs"
-	// SystemServiceCheckStorageProcedure is the fully-qualified name of the SystemService's
-	// CheckStorage RPC.
+	// SystemServiceCheckStorageProcedure is the procedure name of the SystemService's CheckStorage RPC.
 	SystemServiceCheckStorageProcedure = "/relic.v1.SystemService/CheckStorage"
-	// SystemServiceGetUsageReportProcedure is the fully-qualified name of the SystemService's
-	// GetUsageReport RPC.
+	// SystemServiceGetUsageReportProcedure is the procedure name of the SystemService's GetUsageReport
+	// RPC.
 	SystemServiceGetUsageReportProcedure = "/relic.v1.SystemService/GetUsageReport"
-	// SystemServiceCollectGarbageProcedure is the fully-qualified name of the SystemService's
-	// CollectGarbage RPC.
+	// SystemServiceCollectGarbageProcedure is the procedure name of the SystemService's CollectGarbage
+	// RPC.
 	SystemServiceCollectGarbageProcedure = "/relic.v1.SystemService/CollectGarbage"
+)
+
+var (
+	systemServiceGetVersionSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_system_proto.Services().ByName("SystemService").Methods().ByName("GetVersion"),
+			Procedure:  SystemServiceGetVersionProcedure,
+		}
+	})
+	systemServiceGetSystemStatusSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_system_proto.Services().ByName("SystemService").Methods().ByName("GetSystemStatus"),
+			Procedure:  SystemServiceGetSystemStatusProcedure,
+		}
+	})
+	systemServiceGetDashboardSummarySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_system_proto.Services().ByName("SystemService").Methods().ByName("GetDashboardSummary"),
+			Procedure:  SystemServiceGetDashboardSummaryProcedure,
+		}
+	})
+	systemServiceListBackgroundJobsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_system_proto.Services().ByName("SystemService").Methods().ByName("ListBackgroundJobs"),
+			Procedure:  SystemServiceListBackgroundJobsProcedure,
+		}
+	})
+	systemServiceCheckStorageSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_system_proto.Services().ByName("SystemService").Methods().ByName("CheckStorage"),
+			Procedure:  SystemServiceCheckStorageProcedure,
+		}
+	})
+	systemServiceGetUsageReportSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_system_proto.Services().ByName("SystemService").Methods().ByName("GetUsageReport"),
+			Procedure:  SystemServiceGetUsageReportProcedure,
+		}
+	})
+	systemServiceCollectGarbageSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_system_proto.Services().ByName("SystemService").Methods().ByName("CollectGarbage"),
+			Procedure:  SystemServiceCollectGarbageProcedure,
+		}
+	})
 )
 
 // SystemServiceClient is a client for the relic.v1.SystemService service.
 type SystemServiceClient interface {
 	// GetVersion returns the server's version.
-	GetVersion(context.Context, *connect.Request[v1.GetVersionRequest]) (*connect.Response[v1.GetVersionResponse], error)
+	GetVersion(context.Context, *v1.GetVersionRequest) (*v1.GetVersionResponse, error)
 	// GetSystemStatus returns the health checks, stored content, background jobs
 	// and scanner state.
-	GetSystemStatus(context.Context, *connect.Request[v1.GetSystemStatusRequest]) (*connect.Response[v1.GetSystemStatusResponse], error)
+	GetSystemStatus(context.Context, *v1.GetSystemStatusRequest) (*v1.GetSystemStatusResponse, error)
 	// GetDashboardSummary returns the dashboard's numbers, counted over what the
 	// caller may read.
-	GetDashboardSummary(context.Context, *connect.Request[v1.GetDashboardSummaryRequest]) (*connect.Response[v1.GetDashboardSummaryResponse], error)
+	GetDashboardSummary(context.Context, *v1.GetDashboardSummaryRequest) (*v1.GetDashboardSummaryResponse, error)
 	// ListBackgroundJobs returns recent background jobs, newest first, with
 	// every attempt's error in full.
-	ListBackgroundJobs(context.Context, *connect.Request[v1.ListBackgroundJobsRequest]) (*connect.Response[v1.ListBackgroundJobsResponse], error)
+	ListBackgroundJobs(context.Context, *v1.ListBackgroundJobsRequest) (*v1.ListBackgroundJobsResponse, error)
 	// CheckStorage queues a storage check: objects no blob names are handed
 	// to garbage collection, missing or damaged content is reported, and a
 	// share of the stored content is re-hashed. Its report is the job's
 	// output.
-	CheckStorage(context.Context, *connect.Request[v1.CheckStorageRequest]) (*connect.Response[v1.CheckStorageResponse], error)
+	CheckStorage(context.Context, *v1.CheckStorageRequest) (*v1.CheckStorageResponse, error)
 	// GetUsageReport reports storage, growth, downloads and deploys over the
 	// last days days, by repository, project and day, with the top
 	// downloaders and deployers.
-	GetUsageReport(context.Context, *connect.Request[v1.GetUsageReportRequest]) (*connect.Response[v1.GetUsageReportResponse], error)
+	GetUsageReport(context.Context, *v1.GetUsageReportRequest) (*v1.GetUsageReportResponse, error)
 	// CollectGarbage queues a garbage collection of unreferenced content.
-	CollectGarbage(context.Context, *connect.Request[v1.CollectGarbageRequest]) (*connect.Response[v1.CollectGarbageResponse], error)
+	CollectGarbage(context.Context, *v1.CollectGarbageRequest) (*v1.CollectGarbageResponse, error)
 }
 
-// NewSystemServiceClient constructs a client for the relic.v1.SystemService service. By default, it
-// uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
-// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
-// connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewSystemServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) SystemServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	systemServiceMethods := v1.File_relic_v1_system_proto.Services().ByName("SystemService").Methods()
-	return &systemServiceClient{
-		getVersion: connect.NewClient[v1.GetVersionRequest, v1.GetVersionResponse](
-			httpClient,
-			baseURL+SystemServiceGetVersionProcedure,
-			connect.WithSchema(systemServiceMethods.ByName("GetVersion")),
-			connect.WithClientOptions(opts...),
-		),
-		getSystemStatus: connect.NewClient[v1.GetSystemStatusRequest, v1.GetSystemStatusResponse](
-			httpClient,
-			baseURL+SystemServiceGetSystemStatusProcedure,
-			connect.WithSchema(systemServiceMethods.ByName("GetSystemStatus")),
-			connect.WithClientOptions(opts...),
-		),
-		getDashboardSummary: connect.NewClient[v1.GetDashboardSummaryRequest, v1.GetDashboardSummaryResponse](
-			httpClient,
-			baseURL+SystemServiceGetDashboardSummaryProcedure,
-			connect.WithSchema(systemServiceMethods.ByName("GetDashboardSummary")),
-			connect.WithClientOptions(opts...),
-		),
-		listBackgroundJobs: connect.NewClient[v1.ListBackgroundJobsRequest, v1.ListBackgroundJobsResponse](
-			httpClient,
-			baseURL+SystemServiceListBackgroundJobsProcedure,
-			connect.WithSchema(systemServiceMethods.ByName("ListBackgroundJobs")),
-			connect.WithClientOptions(opts...),
-		),
-		checkStorage: connect.NewClient[v1.CheckStorageRequest, v1.CheckStorageResponse](
-			httpClient,
-			baseURL+SystemServiceCheckStorageProcedure,
-			connect.WithSchema(systemServiceMethods.ByName("CheckStorage")),
-			connect.WithClientOptions(opts...),
-		),
-		getUsageReport: connect.NewClient[v1.GetUsageReportRequest, v1.GetUsageReportResponse](
-			httpClient,
-			baseURL+SystemServiceGetUsageReportProcedure,
-			connect.WithSchema(systemServiceMethods.ByName("GetUsageReport")),
-			connect.WithClientOptions(opts...),
-		),
-		collectGarbage: connect.NewClient[v1.CollectGarbageRequest, v1.CollectGarbageResponse](
-			httpClient,
-			baseURL+SystemServiceCollectGarbageProcedure,
-			connect.WithSchema(systemServiceMethods.ByName("CollectGarbage")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// systemServiceClient implements SystemServiceClient.
-type systemServiceClient struct {
-	getVersion          *connect.Client[v1.GetVersionRequest, v1.GetVersionResponse]
-	getSystemStatus     *connect.Client[v1.GetSystemStatusRequest, v1.GetSystemStatusResponse]
-	getDashboardSummary *connect.Client[v1.GetDashboardSummaryRequest, v1.GetDashboardSummaryResponse]
-	listBackgroundJobs  *connect.Client[v1.ListBackgroundJobsRequest, v1.ListBackgroundJobsResponse]
-	checkStorage        *connect.Client[v1.CheckStorageRequest, v1.CheckStorageResponse]
-	getUsageReport      *connect.Client[v1.GetUsageReportRequest, v1.GetUsageReportResponse]
-	collectGarbage      *connect.Client[v1.CollectGarbageRequest, v1.CollectGarbageResponse]
-}
-
-// GetVersion calls relic.v1.SystemService.GetVersion.
-func (c *systemServiceClient) GetVersion(ctx context.Context, req *connect.Request[v1.GetVersionRequest]) (*connect.Response[v1.GetVersionResponse], error) {
-	return c.getVersion.CallUnary(ctx, req)
-}
-
-// GetSystemStatus calls relic.v1.SystemService.GetSystemStatus.
-func (c *systemServiceClient) GetSystemStatus(ctx context.Context, req *connect.Request[v1.GetSystemStatusRequest]) (*connect.Response[v1.GetSystemStatusResponse], error) {
-	return c.getSystemStatus.CallUnary(ctx, req)
-}
-
-// GetDashboardSummary calls relic.v1.SystemService.GetDashboardSummary.
-func (c *systemServiceClient) GetDashboardSummary(ctx context.Context, req *connect.Request[v1.GetDashboardSummaryRequest]) (*connect.Response[v1.GetDashboardSummaryResponse], error) {
-	return c.getDashboardSummary.CallUnary(ctx, req)
-}
-
-// ListBackgroundJobs calls relic.v1.SystemService.ListBackgroundJobs.
-func (c *systemServiceClient) ListBackgroundJobs(ctx context.Context, req *connect.Request[v1.ListBackgroundJobsRequest]) (*connect.Response[v1.ListBackgroundJobsResponse], error) {
-	return c.listBackgroundJobs.CallUnary(ctx, req)
-}
-
-// CheckStorage calls relic.v1.SystemService.CheckStorage.
-func (c *systemServiceClient) CheckStorage(ctx context.Context, req *connect.Request[v1.CheckStorageRequest]) (*connect.Response[v1.CheckStorageResponse], error) {
-	return c.checkStorage.CallUnary(ctx, req)
-}
-
-// GetUsageReport calls relic.v1.SystemService.GetUsageReport.
-func (c *systemServiceClient) GetUsageReport(ctx context.Context, req *connect.Request[v1.GetUsageReportRequest]) (*connect.Response[v1.GetUsageReportResponse], error) {
-	return c.getUsageReport.CallUnary(ctx, req)
-}
-
-// CollectGarbage calls relic.v1.SystemService.CollectGarbage.
-func (c *systemServiceClient) CollectGarbage(ctx context.Context, req *connect.Request[v1.CollectGarbageRequest]) (*connect.Response[v1.CollectGarbageResponse], error) {
-	return c.collectGarbage.CallUnary(ctx, req)
+// NewSystemServiceClient constructs a client for the relic.v1.SystemService service. Multiple
+// service clients may share a single connect.Client.
+func NewSystemServiceClient(client *connect.Client) SystemServiceClient {
+	return &systemServiceClient{client: client}
 }
 
 // SystemServiceHandler is an implementation of the relic.v1.SystemService service.
 type SystemServiceHandler interface {
 	// GetVersion returns the server's version.
-	GetVersion(context.Context, *connect.Request[v1.GetVersionRequest]) (*connect.Response[v1.GetVersionResponse], error)
+	GetVersion(context.Context, *v1.GetVersionRequest) (*v1.GetVersionResponse, error)
 	// GetSystemStatus returns the health checks, stored content, background jobs
 	// and scanner state.
-	GetSystemStatus(context.Context, *connect.Request[v1.GetSystemStatusRequest]) (*connect.Response[v1.GetSystemStatusResponse], error)
+	GetSystemStatus(context.Context, *v1.GetSystemStatusRequest) (*v1.GetSystemStatusResponse, error)
 	// GetDashboardSummary returns the dashboard's numbers, counted over what the
 	// caller may read.
-	GetDashboardSummary(context.Context, *connect.Request[v1.GetDashboardSummaryRequest]) (*connect.Response[v1.GetDashboardSummaryResponse], error)
+	GetDashboardSummary(context.Context, *v1.GetDashboardSummaryRequest) (*v1.GetDashboardSummaryResponse, error)
 	// ListBackgroundJobs returns recent background jobs, newest first, with
 	// every attempt's error in full.
-	ListBackgroundJobs(context.Context, *connect.Request[v1.ListBackgroundJobsRequest]) (*connect.Response[v1.ListBackgroundJobsResponse], error)
+	ListBackgroundJobs(context.Context, *v1.ListBackgroundJobsRequest) (*v1.ListBackgroundJobsResponse, error)
 	// CheckStorage queues a storage check: objects no blob names are handed
 	// to garbage collection, missing or damaged content is reported, and a
 	// share of the stored content is re-hashed. Its report is the job's
 	// output.
-	CheckStorage(context.Context, *connect.Request[v1.CheckStorageRequest]) (*connect.Response[v1.CheckStorageResponse], error)
+	CheckStorage(context.Context, *v1.CheckStorageRequest) (*v1.CheckStorageResponse, error)
 	// GetUsageReport reports storage, growth, downloads and deploys over the
 	// last days days, by repository, project and day, with the top
 	// downloaders and deployers.
-	GetUsageReport(context.Context, *connect.Request[v1.GetUsageReportRequest]) (*connect.Response[v1.GetUsageReportResponse], error)
+	GetUsageReport(context.Context, *v1.GetUsageReportRequest) (*v1.GetUsageReportResponse, error)
 	// CollectGarbage queues a garbage collection of unreferenced content.
-	CollectGarbage(context.Context, *connect.Request[v1.CollectGarbageRequest]) (*connect.Response[v1.CollectGarbageResponse], error)
+	CollectGarbage(context.Context, *v1.CollectGarbageRequest) (*v1.CollectGarbageResponse, error)
 }
 
-// NewSystemServiceHandler builds an HTTP handler from the service implementation. It returns the
-// path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewSystemServiceHandler(svc SystemServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	systemServiceMethods := v1.File_relic_v1_system_proto.Services().ByName("SystemService").Methods()
-	systemServiceGetVersionHandler := connect.NewUnaryHandler(
-		SystemServiceGetVersionProcedure,
-		svc.GetVersion,
-		connect.WithSchema(systemServiceMethods.ByName("GetVersion")),
-		connect.WithHandlerOptions(opts...),
+// RegisterSystemServiceHandler registers svc as the relic.v1.SystemService implementation on
+// server.
+func RegisterSystemServiceHandler(server *connect.Server, svc SystemServiceHandler) {
+	adapter := systemServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: systemServiceGetVersionSpec(), Handler: adapter.getVersion},
+		connect.Method{Spec: systemServiceGetSystemStatusSpec(), Handler: adapter.getSystemStatus},
+		connect.Method{Spec: systemServiceGetDashboardSummarySpec(), Handler: adapter.getDashboardSummary},
+		connect.Method{Spec: systemServiceListBackgroundJobsSpec(), Handler: adapter.listBackgroundJobs},
+		connect.Method{Spec: systemServiceCheckStorageSpec(), Handler: adapter.checkStorage},
+		connect.Method{Spec: systemServiceGetUsageReportSpec(), Handler: adapter.getUsageReport},
+		connect.Method{Spec: systemServiceCollectGarbageSpec(), Handler: adapter.collectGarbage},
 	)
-	systemServiceGetSystemStatusHandler := connect.NewUnaryHandler(
-		SystemServiceGetSystemStatusProcedure,
-		svc.GetSystemStatus,
-		connect.WithSchema(systemServiceMethods.ByName("GetSystemStatus")),
-		connect.WithHandlerOptions(opts...),
-	)
-	systemServiceGetDashboardSummaryHandler := connect.NewUnaryHandler(
-		SystemServiceGetDashboardSummaryProcedure,
-		svc.GetDashboardSummary,
-		connect.WithSchema(systemServiceMethods.ByName("GetDashboardSummary")),
-		connect.WithHandlerOptions(opts...),
-	)
-	systemServiceListBackgroundJobsHandler := connect.NewUnaryHandler(
-		SystemServiceListBackgroundJobsProcedure,
-		svc.ListBackgroundJobs,
-		connect.WithSchema(systemServiceMethods.ByName("ListBackgroundJobs")),
-		connect.WithHandlerOptions(opts...),
-	)
-	systemServiceCheckStorageHandler := connect.NewUnaryHandler(
-		SystemServiceCheckStorageProcedure,
-		svc.CheckStorage,
-		connect.WithSchema(systemServiceMethods.ByName("CheckStorage")),
-		connect.WithHandlerOptions(opts...),
-	)
-	systemServiceGetUsageReportHandler := connect.NewUnaryHandler(
-		SystemServiceGetUsageReportProcedure,
-		svc.GetUsageReport,
-		connect.WithSchema(systemServiceMethods.ByName("GetUsageReport")),
-		connect.WithHandlerOptions(opts...),
-	)
-	systemServiceCollectGarbageHandler := connect.NewUnaryHandler(
-		SystemServiceCollectGarbageProcedure,
-		svc.CollectGarbage,
-		connect.WithSchema(systemServiceMethods.ByName("CollectGarbage")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/relic.v1.SystemService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case SystemServiceGetVersionProcedure:
-			systemServiceGetVersionHandler.ServeHTTP(w, r)
-		case SystemServiceGetSystemStatusProcedure:
-			systemServiceGetSystemStatusHandler.ServeHTTP(w, r)
-		case SystemServiceGetDashboardSummaryProcedure:
-			systemServiceGetDashboardSummaryHandler.ServeHTTP(w, r)
-		case SystemServiceListBackgroundJobsProcedure:
-			systemServiceListBackgroundJobsHandler.ServeHTTP(w, r)
-		case SystemServiceCheckStorageProcedure:
-			systemServiceCheckStorageHandler.ServeHTTP(w, r)
-		case SystemServiceGetUsageReportProcedure:
-			systemServiceGetUsageReportHandler.ServeHTTP(w, r)
-		case SystemServiceCollectGarbageProcedure:
-			systemServiceCollectGarbageHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedSystemServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSystemServiceHandler struct{}
 
-func (UnimplementedSystemServiceHandler) GetVersion(context.Context, *connect.Request[v1.GetVersionRequest]) (*connect.Response[v1.GetVersionResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.SystemService.GetVersion is not implemented"))
+func (UnimplementedSystemServiceHandler) GetVersion(context.Context, *v1.GetVersionRequest) (*v1.GetVersionResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.SystemService.GetVersion is not implemented")
 }
 
-func (UnimplementedSystemServiceHandler) GetSystemStatus(context.Context, *connect.Request[v1.GetSystemStatusRequest]) (*connect.Response[v1.GetSystemStatusResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.SystemService.GetSystemStatus is not implemented"))
+func (UnimplementedSystemServiceHandler) GetSystemStatus(context.Context, *v1.GetSystemStatusRequest) (*v1.GetSystemStatusResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.SystemService.GetSystemStatus is not implemented")
 }
 
-func (UnimplementedSystemServiceHandler) GetDashboardSummary(context.Context, *connect.Request[v1.GetDashboardSummaryRequest]) (*connect.Response[v1.GetDashboardSummaryResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.SystemService.GetDashboardSummary is not implemented"))
+func (UnimplementedSystemServiceHandler) GetDashboardSummary(context.Context, *v1.GetDashboardSummaryRequest) (*v1.GetDashboardSummaryResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.SystemService.GetDashboardSummary is not implemented")
 }
 
-func (UnimplementedSystemServiceHandler) ListBackgroundJobs(context.Context, *connect.Request[v1.ListBackgroundJobsRequest]) (*connect.Response[v1.ListBackgroundJobsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.SystemService.ListBackgroundJobs is not implemented"))
+func (UnimplementedSystemServiceHandler) ListBackgroundJobs(context.Context, *v1.ListBackgroundJobsRequest) (*v1.ListBackgroundJobsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.SystemService.ListBackgroundJobs is not implemented")
 }
 
-func (UnimplementedSystemServiceHandler) CheckStorage(context.Context, *connect.Request[v1.CheckStorageRequest]) (*connect.Response[v1.CheckStorageResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.SystemService.CheckStorage is not implemented"))
+func (UnimplementedSystemServiceHandler) CheckStorage(context.Context, *v1.CheckStorageRequest) (*v1.CheckStorageResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.SystemService.CheckStorage is not implemented")
 }
 
-func (UnimplementedSystemServiceHandler) GetUsageReport(context.Context, *connect.Request[v1.GetUsageReportRequest]) (*connect.Response[v1.GetUsageReportResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.SystemService.GetUsageReport is not implemented"))
+func (UnimplementedSystemServiceHandler) GetUsageReport(context.Context, *v1.GetUsageReportRequest) (*v1.GetUsageReportResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.SystemService.GetUsageReport is not implemented")
 }
 
-func (UnimplementedSystemServiceHandler) CollectGarbage(context.Context, *connect.Request[v1.CollectGarbageRequest]) (*connect.Response[v1.CollectGarbageResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.SystemService.CollectGarbage is not implemented"))
+func (UnimplementedSystemServiceHandler) CollectGarbage(context.Context, *v1.CollectGarbageRequest) (*v1.CollectGarbageResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.SystemService.CollectGarbage is not implemented")
+}
+
+type systemServiceClient struct {
+	client *connect.Client
+}
+
+func (c *systemServiceClient) GetVersion(ctx context.Context, req *v1.GetVersionRequest) (*v1.GetVersionResponse, error) {
+	var res v1.GetVersionResponse
+	if err := c.client.CallUnary(ctx, systemServiceGetVersionSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *systemServiceClient) GetSystemStatus(ctx context.Context, req *v1.GetSystemStatusRequest) (*v1.GetSystemStatusResponse, error) {
+	var res v1.GetSystemStatusResponse
+	if err := c.client.CallUnary(ctx, systemServiceGetSystemStatusSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *systemServiceClient) GetDashboardSummary(ctx context.Context, req *v1.GetDashboardSummaryRequest) (*v1.GetDashboardSummaryResponse, error) {
+	var res v1.GetDashboardSummaryResponse
+	if err := c.client.CallUnary(ctx, systemServiceGetDashboardSummarySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *systemServiceClient) ListBackgroundJobs(ctx context.Context, req *v1.ListBackgroundJobsRequest) (*v1.ListBackgroundJobsResponse, error) {
+	var res v1.ListBackgroundJobsResponse
+	if err := c.client.CallUnary(ctx, systemServiceListBackgroundJobsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *systemServiceClient) CheckStorage(ctx context.Context, req *v1.CheckStorageRequest) (*v1.CheckStorageResponse, error) {
+	var res v1.CheckStorageResponse
+	if err := c.client.CallUnary(ctx, systemServiceCheckStorageSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *systemServiceClient) GetUsageReport(ctx context.Context, req *v1.GetUsageReportRequest) (*v1.GetUsageReportResponse, error) {
+	var res v1.GetUsageReportResponse
+	if err := c.client.CallUnary(ctx, systemServiceGetUsageReportSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *systemServiceClient) CollectGarbage(ctx context.Context, req *v1.CollectGarbageRequest) (*v1.CollectGarbageResponse, error) {
+	var res v1.CollectGarbageResponse
+	if err := c.client.CallUnary(ctx, systemServiceCollectGarbageSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type systemServiceHandler struct{ svc SystemServiceHandler }
+
+func (h systemServiceHandler) getVersion(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetVersionRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetVersion(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h systemServiceHandler) getSystemStatus(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetSystemStatusRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetSystemStatus(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h systemServiceHandler) getDashboardSummary(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetDashboardSummaryRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetDashboardSummary(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h systemServiceHandler) listBackgroundJobs(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListBackgroundJobsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListBackgroundJobs(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h systemServiceHandler) checkStorage(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.CheckStorageRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.CheckStorage(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h systemServiceHandler) getUsageReport(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetUsageReportRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetUsageReport(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h systemServiceHandler) collectGarbage(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.CollectGarbageRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.CollectGarbage(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

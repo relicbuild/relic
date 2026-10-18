@@ -5,227 +5,248 @@
 package relicv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
-	http "net/http"
 	v1 "relic/api/gen/relic/v1"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// ReplicationServiceName is the fully-qualified name of the ReplicationService service.
 	ReplicationServiceName = "relic.v1.ReplicationService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// ReplicationServiceListReplicationsProcedure is the fully-qualified name of the
-	// ReplicationService's ListReplications RPC.
+	// ReplicationServiceListReplicationsProcedure is the procedure name of the ReplicationService's
+	// ListReplications RPC.
 	ReplicationServiceListReplicationsProcedure = "/relic.v1.ReplicationService/ListReplications"
-	// ReplicationServiceGetReplicationProcedure is the fully-qualified name of the ReplicationService's
+	// ReplicationServiceGetReplicationProcedure is the procedure name of the ReplicationService's
 	// GetReplication RPC.
 	ReplicationServiceGetReplicationProcedure = "/relic.v1.ReplicationService/GetReplication"
-	// ReplicationServicePutReplicationProcedure is the fully-qualified name of the ReplicationService's
+	// ReplicationServicePutReplicationProcedure is the procedure name of the ReplicationService's
 	// PutReplication RPC.
 	ReplicationServicePutReplicationProcedure = "/relic.v1.ReplicationService/PutReplication"
-	// ReplicationServiceDeleteReplicationProcedure is the fully-qualified name of the
-	// ReplicationService's DeleteReplication RPC.
+	// ReplicationServiceDeleteReplicationProcedure is the procedure name of the ReplicationService's
+	// DeleteReplication RPC.
 	ReplicationServiceDeleteReplicationProcedure = "/relic.v1.ReplicationService/DeleteReplication"
-	// ReplicationServiceRunReplicationProcedure is the fully-qualified name of the ReplicationService's
+	// ReplicationServiceRunReplicationProcedure is the procedure name of the ReplicationService's
 	// RunReplication RPC.
 	ReplicationServiceRunReplicationProcedure = "/relic.v1.ReplicationService/RunReplication"
 )
 
+var (
+	replicationServiceListReplicationsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_replication_proto.Services().ByName("ReplicationService").Methods().ByName("ListReplications"),
+			Procedure:  ReplicationServiceListReplicationsProcedure,
+		}
+	})
+	replicationServiceGetReplicationSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_replication_proto.Services().ByName("ReplicationService").Methods().ByName("GetReplication"),
+			Procedure:  ReplicationServiceGetReplicationProcedure,
+		}
+	})
+	replicationServicePutReplicationSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_replication_proto.Services().ByName("ReplicationService").Methods().ByName("PutReplication"),
+			Procedure:  ReplicationServicePutReplicationProcedure,
+		}
+	})
+	replicationServiceDeleteReplicationSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_replication_proto.Services().ByName("ReplicationService").Methods().ByName("DeleteReplication"),
+			Procedure:  ReplicationServiceDeleteReplicationProcedure,
+		}
+	})
+	replicationServiceRunReplicationSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_replication_proto.Services().ByName("ReplicationService").Methods().ByName("RunReplication"),
+			Procedure:  ReplicationServiceRunReplicationProcedure,
+		}
+	})
+)
+
 // ReplicationServiceClient is a client for the relic.v1.ReplicationService service.
 type ReplicationServiceClient interface {
-	ListReplications(context.Context, *connect.Request[v1.ListReplicationsRequest]) (*connect.Response[v1.ListReplicationsResponse], error)
-	GetReplication(context.Context, *connect.Request[v1.GetReplicationRequest]) (*connect.Response[v1.GetReplicationResponse], error)
+	ListReplications(context.Context, *v1.ListReplicationsRequest) (*v1.ListReplicationsResponse, error)
+	GetReplication(context.Context, *v1.GetReplicationRequest) (*v1.GetReplicationResponse, error)
 	// PutReplication creates or replaces a repository's replication. An empty
 	// password keeps the stored one.
-	PutReplication(context.Context, *connect.Request[v1.PutReplicationRequest]) (*connect.Response[v1.PutReplicationResponse], error)
-	DeleteReplication(context.Context, *connect.Request[v1.DeleteReplicationRequest]) (*connect.Response[v1.DeleteReplicationResponse], error)
+	PutReplication(context.Context, *v1.PutReplicationRequest) (*v1.PutReplicationResponse, error)
+	DeleteReplication(context.Context, *v1.DeleteReplicationRequest) (*v1.DeleteReplicationResponse, error)
 	// RunReplication queues an immediate push.
-	RunReplication(context.Context, *connect.Request[v1.RunReplicationRequest]) (*connect.Response[v1.RunReplicationResponse], error)
+	RunReplication(context.Context, *v1.RunReplicationRequest) (*v1.RunReplicationResponse, error)
 }
 
-// NewReplicationServiceClient constructs a client for the relic.v1.ReplicationService service. By
-// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
-// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
-// connect.WithGRPC() or connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewReplicationServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) ReplicationServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	replicationServiceMethods := v1.File_relic_v1_replication_proto.Services().ByName("ReplicationService").Methods()
-	return &replicationServiceClient{
-		listReplications: connect.NewClient[v1.ListReplicationsRequest, v1.ListReplicationsResponse](
-			httpClient,
-			baseURL+ReplicationServiceListReplicationsProcedure,
-			connect.WithSchema(replicationServiceMethods.ByName("ListReplications")),
-			connect.WithClientOptions(opts...),
-		),
-		getReplication: connect.NewClient[v1.GetReplicationRequest, v1.GetReplicationResponse](
-			httpClient,
-			baseURL+ReplicationServiceGetReplicationProcedure,
-			connect.WithSchema(replicationServiceMethods.ByName("GetReplication")),
-			connect.WithClientOptions(opts...),
-		),
-		putReplication: connect.NewClient[v1.PutReplicationRequest, v1.PutReplicationResponse](
-			httpClient,
-			baseURL+ReplicationServicePutReplicationProcedure,
-			connect.WithSchema(replicationServiceMethods.ByName("PutReplication")),
-			connect.WithClientOptions(opts...),
-		),
-		deleteReplication: connect.NewClient[v1.DeleteReplicationRequest, v1.DeleteReplicationResponse](
-			httpClient,
-			baseURL+ReplicationServiceDeleteReplicationProcedure,
-			connect.WithSchema(replicationServiceMethods.ByName("DeleteReplication")),
-			connect.WithClientOptions(opts...),
-		),
-		runReplication: connect.NewClient[v1.RunReplicationRequest, v1.RunReplicationResponse](
-			httpClient,
-			baseURL+ReplicationServiceRunReplicationProcedure,
-			connect.WithSchema(replicationServiceMethods.ByName("RunReplication")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// replicationServiceClient implements ReplicationServiceClient.
-type replicationServiceClient struct {
-	listReplications  *connect.Client[v1.ListReplicationsRequest, v1.ListReplicationsResponse]
-	getReplication    *connect.Client[v1.GetReplicationRequest, v1.GetReplicationResponse]
-	putReplication    *connect.Client[v1.PutReplicationRequest, v1.PutReplicationResponse]
-	deleteReplication *connect.Client[v1.DeleteReplicationRequest, v1.DeleteReplicationResponse]
-	runReplication    *connect.Client[v1.RunReplicationRequest, v1.RunReplicationResponse]
-}
-
-// ListReplications calls relic.v1.ReplicationService.ListReplications.
-func (c *replicationServiceClient) ListReplications(ctx context.Context, req *connect.Request[v1.ListReplicationsRequest]) (*connect.Response[v1.ListReplicationsResponse], error) {
-	return c.listReplications.CallUnary(ctx, req)
-}
-
-// GetReplication calls relic.v1.ReplicationService.GetReplication.
-func (c *replicationServiceClient) GetReplication(ctx context.Context, req *connect.Request[v1.GetReplicationRequest]) (*connect.Response[v1.GetReplicationResponse], error) {
-	return c.getReplication.CallUnary(ctx, req)
-}
-
-// PutReplication calls relic.v1.ReplicationService.PutReplication.
-func (c *replicationServiceClient) PutReplication(ctx context.Context, req *connect.Request[v1.PutReplicationRequest]) (*connect.Response[v1.PutReplicationResponse], error) {
-	return c.putReplication.CallUnary(ctx, req)
-}
-
-// DeleteReplication calls relic.v1.ReplicationService.DeleteReplication.
-func (c *replicationServiceClient) DeleteReplication(ctx context.Context, req *connect.Request[v1.DeleteReplicationRequest]) (*connect.Response[v1.DeleteReplicationResponse], error) {
-	return c.deleteReplication.CallUnary(ctx, req)
-}
-
-// RunReplication calls relic.v1.ReplicationService.RunReplication.
-func (c *replicationServiceClient) RunReplication(ctx context.Context, req *connect.Request[v1.RunReplicationRequest]) (*connect.Response[v1.RunReplicationResponse], error) {
-	return c.runReplication.CallUnary(ctx, req)
+// NewReplicationServiceClient constructs a client for the relic.v1.ReplicationService service.
+// Multiple service clients may share a single connect.Client.
+func NewReplicationServiceClient(client *connect.Client) ReplicationServiceClient {
+	return &replicationServiceClient{client: client}
 }
 
 // ReplicationServiceHandler is an implementation of the relic.v1.ReplicationService service.
 type ReplicationServiceHandler interface {
-	ListReplications(context.Context, *connect.Request[v1.ListReplicationsRequest]) (*connect.Response[v1.ListReplicationsResponse], error)
-	GetReplication(context.Context, *connect.Request[v1.GetReplicationRequest]) (*connect.Response[v1.GetReplicationResponse], error)
+	ListReplications(context.Context, *v1.ListReplicationsRequest) (*v1.ListReplicationsResponse, error)
+	GetReplication(context.Context, *v1.GetReplicationRequest) (*v1.GetReplicationResponse, error)
 	// PutReplication creates or replaces a repository's replication. An empty
 	// password keeps the stored one.
-	PutReplication(context.Context, *connect.Request[v1.PutReplicationRequest]) (*connect.Response[v1.PutReplicationResponse], error)
-	DeleteReplication(context.Context, *connect.Request[v1.DeleteReplicationRequest]) (*connect.Response[v1.DeleteReplicationResponse], error)
+	PutReplication(context.Context, *v1.PutReplicationRequest) (*v1.PutReplicationResponse, error)
+	DeleteReplication(context.Context, *v1.DeleteReplicationRequest) (*v1.DeleteReplicationResponse, error)
 	// RunReplication queues an immediate push.
-	RunReplication(context.Context, *connect.Request[v1.RunReplicationRequest]) (*connect.Response[v1.RunReplicationResponse], error)
+	RunReplication(context.Context, *v1.RunReplicationRequest) (*v1.RunReplicationResponse, error)
 }
 
-// NewReplicationServiceHandler builds an HTTP handler from the service implementation. It returns
-// the path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewReplicationServiceHandler(svc ReplicationServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	replicationServiceMethods := v1.File_relic_v1_replication_proto.Services().ByName("ReplicationService").Methods()
-	replicationServiceListReplicationsHandler := connect.NewUnaryHandler(
-		ReplicationServiceListReplicationsProcedure,
-		svc.ListReplications,
-		connect.WithSchema(replicationServiceMethods.ByName("ListReplications")),
-		connect.WithHandlerOptions(opts...),
+// RegisterReplicationServiceHandler registers svc as the relic.v1.ReplicationService implementation
+// on server.
+func RegisterReplicationServiceHandler(server *connect.Server, svc ReplicationServiceHandler) {
+	adapter := replicationServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: replicationServiceListReplicationsSpec(), Handler: adapter.listReplications},
+		connect.Method{Spec: replicationServiceGetReplicationSpec(), Handler: adapter.getReplication},
+		connect.Method{Spec: replicationServicePutReplicationSpec(), Handler: adapter.putReplication},
+		connect.Method{Spec: replicationServiceDeleteReplicationSpec(), Handler: adapter.deleteReplication},
+		connect.Method{Spec: replicationServiceRunReplicationSpec(), Handler: adapter.runReplication},
 	)
-	replicationServiceGetReplicationHandler := connect.NewUnaryHandler(
-		ReplicationServiceGetReplicationProcedure,
-		svc.GetReplication,
-		connect.WithSchema(replicationServiceMethods.ByName("GetReplication")),
-		connect.WithHandlerOptions(opts...),
-	)
-	replicationServicePutReplicationHandler := connect.NewUnaryHandler(
-		ReplicationServicePutReplicationProcedure,
-		svc.PutReplication,
-		connect.WithSchema(replicationServiceMethods.ByName("PutReplication")),
-		connect.WithHandlerOptions(opts...),
-	)
-	replicationServiceDeleteReplicationHandler := connect.NewUnaryHandler(
-		ReplicationServiceDeleteReplicationProcedure,
-		svc.DeleteReplication,
-		connect.WithSchema(replicationServiceMethods.ByName("DeleteReplication")),
-		connect.WithHandlerOptions(opts...),
-	)
-	replicationServiceRunReplicationHandler := connect.NewUnaryHandler(
-		ReplicationServiceRunReplicationProcedure,
-		svc.RunReplication,
-		connect.WithSchema(replicationServiceMethods.ByName("RunReplication")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/relic.v1.ReplicationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case ReplicationServiceListReplicationsProcedure:
-			replicationServiceListReplicationsHandler.ServeHTTP(w, r)
-		case ReplicationServiceGetReplicationProcedure:
-			replicationServiceGetReplicationHandler.ServeHTTP(w, r)
-		case ReplicationServicePutReplicationProcedure:
-			replicationServicePutReplicationHandler.ServeHTTP(w, r)
-		case ReplicationServiceDeleteReplicationProcedure:
-			replicationServiceDeleteReplicationHandler.ServeHTTP(w, r)
-		case ReplicationServiceRunReplicationProcedure:
-			replicationServiceRunReplicationHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedReplicationServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedReplicationServiceHandler struct{}
 
-func (UnimplementedReplicationServiceHandler) ListReplications(context.Context, *connect.Request[v1.ListReplicationsRequest]) (*connect.Response[v1.ListReplicationsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ReplicationService.ListReplications is not implemented"))
+func (UnimplementedReplicationServiceHandler) ListReplications(context.Context, *v1.ListReplicationsRequest) (*v1.ListReplicationsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ReplicationService.ListReplications is not implemented")
 }
 
-func (UnimplementedReplicationServiceHandler) GetReplication(context.Context, *connect.Request[v1.GetReplicationRequest]) (*connect.Response[v1.GetReplicationResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ReplicationService.GetReplication is not implemented"))
+func (UnimplementedReplicationServiceHandler) GetReplication(context.Context, *v1.GetReplicationRequest) (*v1.GetReplicationResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ReplicationService.GetReplication is not implemented")
 }
 
-func (UnimplementedReplicationServiceHandler) PutReplication(context.Context, *connect.Request[v1.PutReplicationRequest]) (*connect.Response[v1.PutReplicationResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ReplicationService.PutReplication is not implemented"))
+func (UnimplementedReplicationServiceHandler) PutReplication(context.Context, *v1.PutReplicationRequest) (*v1.PutReplicationResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ReplicationService.PutReplication is not implemented")
 }
 
-func (UnimplementedReplicationServiceHandler) DeleteReplication(context.Context, *connect.Request[v1.DeleteReplicationRequest]) (*connect.Response[v1.DeleteReplicationResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ReplicationService.DeleteReplication is not implemented"))
+func (UnimplementedReplicationServiceHandler) DeleteReplication(context.Context, *v1.DeleteReplicationRequest) (*v1.DeleteReplicationResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ReplicationService.DeleteReplication is not implemented")
 }
 
-func (UnimplementedReplicationServiceHandler) RunReplication(context.Context, *connect.Request[v1.RunReplicationRequest]) (*connect.Response[v1.RunReplicationResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ReplicationService.RunReplication is not implemented"))
+func (UnimplementedReplicationServiceHandler) RunReplication(context.Context, *v1.RunReplicationRequest) (*v1.RunReplicationResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ReplicationService.RunReplication is not implemented")
+}
+
+type replicationServiceClient struct {
+	client *connect.Client
+}
+
+func (c *replicationServiceClient) ListReplications(ctx context.Context, req *v1.ListReplicationsRequest) (*v1.ListReplicationsResponse, error) {
+	var res v1.ListReplicationsResponse
+	if err := c.client.CallUnary(ctx, replicationServiceListReplicationsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *replicationServiceClient) GetReplication(ctx context.Context, req *v1.GetReplicationRequest) (*v1.GetReplicationResponse, error) {
+	var res v1.GetReplicationResponse
+	if err := c.client.CallUnary(ctx, replicationServiceGetReplicationSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *replicationServiceClient) PutReplication(ctx context.Context, req *v1.PutReplicationRequest) (*v1.PutReplicationResponse, error) {
+	var res v1.PutReplicationResponse
+	if err := c.client.CallUnary(ctx, replicationServicePutReplicationSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *replicationServiceClient) DeleteReplication(ctx context.Context, req *v1.DeleteReplicationRequest) (*v1.DeleteReplicationResponse, error) {
+	var res v1.DeleteReplicationResponse
+	if err := c.client.CallUnary(ctx, replicationServiceDeleteReplicationSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *replicationServiceClient) RunReplication(ctx context.Context, req *v1.RunReplicationRequest) (*v1.RunReplicationResponse, error) {
+	var res v1.RunReplicationResponse
+	if err := c.client.CallUnary(ctx, replicationServiceRunReplicationSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type replicationServiceHandler struct{ svc ReplicationServiceHandler }
+
+func (h replicationServiceHandler) listReplications(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListReplicationsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListReplications(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h replicationServiceHandler) getReplication(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetReplicationRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetReplication(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h replicationServiceHandler) putReplication(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PutReplicationRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.PutReplication(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h replicationServiceHandler) deleteReplication(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DeleteReplicationRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.DeleteReplication(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h replicationServiceHandler) runReplication(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RunReplicationRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RunReplication(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

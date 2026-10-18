@@ -5,258 +5,287 @@
 package relicv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
-	http "net/http"
 	v1 "relic/api/gen/relic/v1"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// CleanupServiceName is the fully-qualified name of the CleanupService service.
 	CleanupServiceName = "relic.v1.CleanupService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// CleanupServiceListCleanupPoliciesProcedure is the fully-qualified name of the CleanupService's
+	// CleanupServiceListCleanupPoliciesProcedure is the procedure name of the CleanupService's
 	// ListCleanupPolicies RPC.
 	CleanupServiceListCleanupPoliciesProcedure = "/relic.v1.CleanupService/ListCleanupPolicies"
-	// CleanupServiceGetCleanupPolicyProcedure is the fully-qualified name of the CleanupService's
+	// CleanupServiceGetCleanupPolicyProcedure is the procedure name of the CleanupService's
 	// GetCleanupPolicy RPC.
 	CleanupServiceGetCleanupPolicyProcedure = "/relic.v1.CleanupService/GetCleanupPolicy"
-	// CleanupServicePutCleanupPolicyProcedure is the fully-qualified name of the CleanupService's
+	// CleanupServicePutCleanupPolicyProcedure is the procedure name of the CleanupService's
 	// PutCleanupPolicy RPC.
 	CleanupServicePutCleanupPolicyProcedure = "/relic.v1.CleanupService/PutCleanupPolicy"
-	// CleanupServiceDeleteCleanupPolicyProcedure is the fully-qualified name of the CleanupService's
+	// CleanupServiceDeleteCleanupPolicyProcedure is the procedure name of the CleanupService's
 	// DeleteCleanupPolicy RPC.
 	CleanupServiceDeleteCleanupPolicyProcedure = "/relic.v1.CleanupService/DeleteCleanupPolicy"
-	// CleanupServicePreviewCleanupPolicyProcedure is the fully-qualified name of the CleanupService's
+	// CleanupServicePreviewCleanupPolicyProcedure is the procedure name of the CleanupService's
 	// PreviewCleanupPolicy RPC.
 	CleanupServicePreviewCleanupPolicyProcedure = "/relic.v1.CleanupService/PreviewCleanupPolicy"
-	// CleanupServiceRunCleanupPolicyProcedure is the fully-qualified name of the CleanupService's
+	// CleanupServiceRunCleanupPolicyProcedure is the procedure name of the CleanupService's
 	// RunCleanupPolicy RPC.
 	CleanupServiceRunCleanupPolicyProcedure = "/relic.v1.CleanupService/RunCleanupPolicy"
 )
 
+var (
+	cleanupServiceListCleanupPoliciesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_cleanup_proto.Services().ByName("CleanupService").Methods().ByName("ListCleanupPolicies"),
+			Procedure:  CleanupServiceListCleanupPoliciesProcedure,
+		}
+	})
+	cleanupServiceGetCleanupPolicySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_cleanup_proto.Services().ByName("CleanupService").Methods().ByName("GetCleanupPolicy"),
+			Procedure:  CleanupServiceGetCleanupPolicyProcedure,
+		}
+	})
+	cleanupServicePutCleanupPolicySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_cleanup_proto.Services().ByName("CleanupService").Methods().ByName("PutCleanupPolicy"),
+			Procedure:  CleanupServicePutCleanupPolicyProcedure,
+		}
+	})
+	cleanupServiceDeleteCleanupPolicySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_cleanup_proto.Services().ByName("CleanupService").Methods().ByName("DeleteCleanupPolicy"),
+			Procedure:  CleanupServiceDeleteCleanupPolicyProcedure,
+		}
+	})
+	cleanupServicePreviewCleanupPolicySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_cleanup_proto.Services().ByName("CleanupService").Methods().ByName("PreviewCleanupPolicy"),
+			Procedure:  CleanupServicePreviewCleanupPolicyProcedure,
+		}
+	})
+	cleanupServiceRunCleanupPolicySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_cleanup_proto.Services().ByName("CleanupService").Methods().ByName("RunCleanupPolicy"),
+			Procedure:  CleanupServiceRunCleanupPolicyProcedure,
+		}
+	})
+)
+
 // CleanupServiceClient is a client for the relic.v1.CleanupService service.
 type CleanupServiceClient interface {
-	ListCleanupPolicies(context.Context, *connect.Request[v1.ListCleanupPoliciesRequest]) (*connect.Response[v1.ListCleanupPoliciesResponse], error)
-	GetCleanupPolicy(context.Context, *connect.Request[v1.GetCleanupPolicyRequest]) (*connect.Response[v1.GetCleanupPolicyResponse], error)
+	ListCleanupPolicies(context.Context, *v1.ListCleanupPoliciesRequest) (*v1.ListCleanupPoliciesResponse, error)
+	GetCleanupPolicy(context.Context, *v1.GetCleanupPolicyRequest) (*v1.GetCleanupPolicyResponse, error)
 	// PutCleanupPolicy creates or replaces a policy.
-	PutCleanupPolicy(context.Context, *connect.Request[v1.PutCleanupPolicyRequest]) (*connect.Response[v1.PutCleanupPolicyResponse], error)
-	DeleteCleanupPolicy(context.Context, *connect.Request[v1.DeleteCleanupPolicyRequest]) (*connect.Response[v1.DeleteCleanupPolicyResponse], error)
+	PutCleanupPolicy(context.Context, *v1.PutCleanupPolicyRequest) (*v1.PutCleanupPolicyResponse, error)
+	DeleteCleanupPolicy(context.Context, *v1.DeleteCleanupPolicyRequest) (*v1.DeleteCleanupPolicyResponse, error)
 	// PreviewCleanupPolicy lists what a policy selects now, without moving
 	// anything; the policy need not be stored.
-	PreviewCleanupPolicy(context.Context, *connect.Request[v1.PreviewCleanupPolicyRequest]) (*connect.Response[v1.PreviewCleanupPolicyResponse], error)
+	PreviewCleanupPolicy(context.Context, *v1.PreviewCleanupPolicyRequest) (*v1.PreviewCleanupPolicyResponse, error)
 	// RunCleanupPolicy moves what a stored policy selects to the trash now.
-	RunCleanupPolicy(context.Context, *connect.Request[v1.RunCleanupPolicyRequest]) (*connect.Response[v1.RunCleanupPolicyResponse], error)
+	RunCleanupPolicy(context.Context, *v1.RunCleanupPolicyRequest) (*v1.RunCleanupPolicyResponse, error)
 }
 
-// NewCleanupServiceClient constructs a client for the relic.v1.CleanupService service. By default,
-// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
-// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
-// or connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewCleanupServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) CleanupServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	cleanupServiceMethods := v1.File_relic_v1_cleanup_proto.Services().ByName("CleanupService").Methods()
-	return &cleanupServiceClient{
-		listCleanupPolicies: connect.NewClient[v1.ListCleanupPoliciesRequest, v1.ListCleanupPoliciesResponse](
-			httpClient,
-			baseURL+CleanupServiceListCleanupPoliciesProcedure,
-			connect.WithSchema(cleanupServiceMethods.ByName("ListCleanupPolicies")),
-			connect.WithClientOptions(opts...),
-		),
-		getCleanupPolicy: connect.NewClient[v1.GetCleanupPolicyRequest, v1.GetCleanupPolicyResponse](
-			httpClient,
-			baseURL+CleanupServiceGetCleanupPolicyProcedure,
-			connect.WithSchema(cleanupServiceMethods.ByName("GetCleanupPolicy")),
-			connect.WithClientOptions(opts...),
-		),
-		putCleanupPolicy: connect.NewClient[v1.PutCleanupPolicyRequest, v1.PutCleanupPolicyResponse](
-			httpClient,
-			baseURL+CleanupServicePutCleanupPolicyProcedure,
-			connect.WithSchema(cleanupServiceMethods.ByName("PutCleanupPolicy")),
-			connect.WithClientOptions(opts...),
-		),
-		deleteCleanupPolicy: connect.NewClient[v1.DeleteCleanupPolicyRequest, v1.DeleteCleanupPolicyResponse](
-			httpClient,
-			baseURL+CleanupServiceDeleteCleanupPolicyProcedure,
-			connect.WithSchema(cleanupServiceMethods.ByName("DeleteCleanupPolicy")),
-			connect.WithClientOptions(opts...),
-		),
-		previewCleanupPolicy: connect.NewClient[v1.PreviewCleanupPolicyRequest, v1.PreviewCleanupPolicyResponse](
-			httpClient,
-			baseURL+CleanupServicePreviewCleanupPolicyProcedure,
-			connect.WithSchema(cleanupServiceMethods.ByName("PreviewCleanupPolicy")),
-			connect.WithClientOptions(opts...),
-		),
-		runCleanupPolicy: connect.NewClient[v1.RunCleanupPolicyRequest, v1.RunCleanupPolicyResponse](
-			httpClient,
-			baseURL+CleanupServiceRunCleanupPolicyProcedure,
-			connect.WithSchema(cleanupServiceMethods.ByName("RunCleanupPolicy")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// cleanupServiceClient implements CleanupServiceClient.
-type cleanupServiceClient struct {
-	listCleanupPolicies  *connect.Client[v1.ListCleanupPoliciesRequest, v1.ListCleanupPoliciesResponse]
-	getCleanupPolicy     *connect.Client[v1.GetCleanupPolicyRequest, v1.GetCleanupPolicyResponse]
-	putCleanupPolicy     *connect.Client[v1.PutCleanupPolicyRequest, v1.PutCleanupPolicyResponse]
-	deleteCleanupPolicy  *connect.Client[v1.DeleteCleanupPolicyRequest, v1.DeleteCleanupPolicyResponse]
-	previewCleanupPolicy *connect.Client[v1.PreviewCleanupPolicyRequest, v1.PreviewCleanupPolicyResponse]
-	runCleanupPolicy     *connect.Client[v1.RunCleanupPolicyRequest, v1.RunCleanupPolicyResponse]
-}
-
-// ListCleanupPolicies calls relic.v1.CleanupService.ListCleanupPolicies.
-func (c *cleanupServiceClient) ListCleanupPolicies(ctx context.Context, req *connect.Request[v1.ListCleanupPoliciesRequest]) (*connect.Response[v1.ListCleanupPoliciesResponse], error) {
-	return c.listCleanupPolicies.CallUnary(ctx, req)
-}
-
-// GetCleanupPolicy calls relic.v1.CleanupService.GetCleanupPolicy.
-func (c *cleanupServiceClient) GetCleanupPolicy(ctx context.Context, req *connect.Request[v1.GetCleanupPolicyRequest]) (*connect.Response[v1.GetCleanupPolicyResponse], error) {
-	return c.getCleanupPolicy.CallUnary(ctx, req)
-}
-
-// PutCleanupPolicy calls relic.v1.CleanupService.PutCleanupPolicy.
-func (c *cleanupServiceClient) PutCleanupPolicy(ctx context.Context, req *connect.Request[v1.PutCleanupPolicyRequest]) (*connect.Response[v1.PutCleanupPolicyResponse], error) {
-	return c.putCleanupPolicy.CallUnary(ctx, req)
-}
-
-// DeleteCleanupPolicy calls relic.v1.CleanupService.DeleteCleanupPolicy.
-func (c *cleanupServiceClient) DeleteCleanupPolicy(ctx context.Context, req *connect.Request[v1.DeleteCleanupPolicyRequest]) (*connect.Response[v1.DeleteCleanupPolicyResponse], error) {
-	return c.deleteCleanupPolicy.CallUnary(ctx, req)
-}
-
-// PreviewCleanupPolicy calls relic.v1.CleanupService.PreviewCleanupPolicy.
-func (c *cleanupServiceClient) PreviewCleanupPolicy(ctx context.Context, req *connect.Request[v1.PreviewCleanupPolicyRequest]) (*connect.Response[v1.PreviewCleanupPolicyResponse], error) {
-	return c.previewCleanupPolicy.CallUnary(ctx, req)
-}
-
-// RunCleanupPolicy calls relic.v1.CleanupService.RunCleanupPolicy.
-func (c *cleanupServiceClient) RunCleanupPolicy(ctx context.Context, req *connect.Request[v1.RunCleanupPolicyRequest]) (*connect.Response[v1.RunCleanupPolicyResponse], error) {
-	return c.runCleanupPolicy.CallUnary(ctx, req)
+// NewCleanupServiceClient constructs a client for the relic.v1.CleanupService service. Multiple
+// service clients may share a single connect.Client.
+func NewCleanupServiceClient(client *connect.Client) CleanupServiceClient {
+	return &cleanupServiceClient{client: client}
 }
 
 // CleanupServiceHandler is an implementation of the relic.v1.CleanupService service.
 type CleanupServiceHandler interface {
-	ListCleanupPolicies(context.Context, *connect.Request[v1.ListCleanupPoliciesRequest]) (*connect.Response[v1.ListCleanupPoliciesResponse], error)
-	GetCleanupPolicy(context.Context, *connect.Request[v1.GetCleanupPolicyRequest]) (*connect.Response[v1.GetCleanupPolicyResponse], error)
+	ListCleanupPolicies(context.Context, *v1.ListCleanupPoliciesRequest) (*v1.ListCleanupPoliciesResponse, error)
+	GetCleanupPolicy(context.Context, *v1.GetCleanupPolicyRequest) (*v1.GetCleanupPolicyResponse, error)
 	// PutCleanupPolicy creates or replaces a policy.
-	PutCleanupPolicy(context.Context, *connect.Request[v1.PutCleanupPolicyRequest]) (*connect.Response[v1.PutCleanupPolicyResponse], error)
-	DeleteCleanupPolicy(context.Context, *connect.Request[v1.DeleteCleanupPolicyRequest]) (*connect.Response[v1.DeleteCleanupPolicyResponse], error)
+	PutCleanupPolicy(context.Context, *v1.PutCleanupPolicyRequest) (*v1.PutCleanupPolicyResponse, error)
+	DeleteCleanupPolicy(context.Context, *v1.DeleteCleanupPolicyRequest) (*v1.DeleteCleanupPolicyResponse, error)
 	// PreviewCleanupPolicy lists what a policy selects now, without moving
 	// anything; the policy need not be stored.
-	PreviewCleanupPolicy(context.Context, *connect.Request[v1.PreviewCleanupPolicyRequest]) (*connect.Response[v1.PreviewCleanupPolicyResponse], error)
+	PreviewCleanupPolicy(context.Context, *v1.PreviewCleanupPolicyRequest) (*v1.PreviewCleanupPolicyResponse, error)
 	// RunCleanupPolicy moves what a stored policy selects to the trash now.
-	RunCleanupPolicy(context.Context, *connect.Request[v1.RunCleanupPolicyRequest]) (*connect.Response[v1.RunCleanupPolicyResponse], error)
+	RunCleanupPolicy(context.Context, *v1.RunCleanupPolicyRequest) (*v1.RunCleanupPolicyResponse, error)
 }
 
-// NewCleanupServiceHandler builds an HTTP handler from the service implementation. It returns the
-// path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewCleanupServiceHandler(svc CleanupServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	cleanupServiceMethods := v1.File_relic_v1_cleanup_proto.Services().ByName("CleanupService").Methods()
-	cleanupServiceListCleanupPoliciesHandler := connect.NewUnaryHandler(
-		CleanupServiceListCleanupPoliciesProcedure,
-		svc.ListCleanupPolicies,
-		connect.WithSchema(cleanupServiceMethods.ByName("ListCleanupPolicies")),
-		connect.WithHandlerOptions(opts...),
+// RegisterCleanupServiceHandler registers svc as the relic.v1.CleanupService implementation on
+// server.
+func RegisterCleanupServiceHandler(server *connect.Server, svc CleanupServiceHandler) {
+	adapter := cleanupServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: cleanupServiceListCleanupPoliciesSpec(), Handler: adapter.listCleanupPolicies},
+		connect.Method{Spec: cleanupServiceGetCleanupPolicySpec(), Handler: adapter.getCleanupPolicy},
+		connect.Method{Spec: cleanupServicePutCleanupPolicySpec(), Handler: adapter.putCleanupPolicy},
+		connect.Method{Spec: cleanupServiceDeleteCleanupPolicySpec(), Handler: adapter.deleteCleanupPolicy},
+		connect.Method{Spec: cleanupServicePreviewCleanupPolicySpec(), Handler: adapter.previewCleanupPolicy},
+		connect.Method{Spec: cleanupServiceRunCleanupPolicySpec(), Handler: adapter.runCleanupPolicy},
 	)
-	cleanupServiceGetCleanupPolicyHandler := connect.NewUnaryHandler(
-		CleanupServiceGetCleanupPolicyProcedure,
-		svc.GetCleanupPolicy,
-		connect.WithSchema(cleanupServiceMethods.ByName("GetCleanupPolicy")),
-		connect.WithHandlerOptions(opts...),
-	)
-	cleanupServicePutCleanupPolicyHandler := connect.NewUnaryHandler(
-		CleanupServicePutCleanupPolicyProcedure,
-		svc.PutCleanupPolicy,
-		connect.WithSchema(cleanupServiceMethods.ByName("PutCleanupPolicy")),
-		connect.WithHandlerOptions(opts...),
-	)
-	cleanupServiceDeleteCleanupPolicyHandler := connect.NewUnaryHandler(
-		CleanupServiceDeleteCleanupPolicyProcedure,
-		svc.DeleteCleanupPolicy,
-		connect.WithSchema(cleanupServiceMethods.ByName("DeleteCleanupPolicy")),
-		connect.WithHandlerOptions(opts...),
-	)
-	cleanupServicePreviewCleanupPolicyHandler := connect.NewUnaryHandler(
-		CleanupServicePreviewCleanupPolicyProcedure,
-		svc.PreviewCleanupPolicy,
-		connect.WithSchema(cleanupServiceMethods.ByName("PreviewCleanupPolicy")),
-		connect.WithHandlerOptions(opts...),
-	)
-	cleanupServiceRunCleanupPolicyHandler := connect.NewUnaryHandler(
-		CleanupServiceRunCleanupPolicyProcedure,
-		svc.RunCleanupPolicy,
-		connect.WithSchema(cleanupServiceMethods.ByName("RunCleanupPolicy")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/relic.v1.CleanupService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case CleanupServiceListCleanupPoliciesProcedure:
-			cleanupServiceListCleanupPoliciesHandler.ServeHTTP(w, r)
-		case CleanupServiceGetCleanupPolicyProcedure:
-			cleanupServiceGetCleanupPolicyHandler.ServeHTTP(w, r)
-		case CleanupServicePutCleanupPolicyProcedure:
-			cleanupServicePutCleanupPolicyHandler.ServeHTTP(w, r)
-		case CleanupServiceDeleteCleanupPolicyProcedure:
-			cleanupServiceDeleteCleanupPolicyHandler.ServeHTTP(w, r)
-		case CleanupServicePreviewCleanupPolicyProcedure:
-			cleanupServicePreviewCleanupPolicyHandler.ServeHTTP(w, r)
-		case CleanupServiceRunCleanupPolicyProcedure:
-			cleanupServiceRunCleanupPolicyHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedCleanupServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedCleanupServiceHandler struct{}
 
-func (UnimplementedCleanupServiceHandler) ListCleanupPolicies(context.Context, *connect.Request[v1.ListCleanupPoliciesRequest]) (*connect.Response[v1.ListCleanupPoliciesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.CleanupService.ListCleanupPolicies is not implemented"))
+func (UnimplementedCleanupServiceHandler) ListCleanupPolicies(context.Context, *v1.ListCleanupPoliciesRequest) (*v1.ListCleanupPoliciesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.CleanupService.ListCleanupPolicies is not implemented")
 }
 
-func (UnimplementedCleanupServiceHandler) GetCleanupPolicy(context.Context, *connect.Request[v1.GetCleanupPolicyRequest]) (*connect.Response[v1.GetCleanupPolicyResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.CleanupService.GetCleanupPolicy is not implemented"))
+func (UnimplementedCleanupServiceHandler) GetCleanupPolicy(context.Context, *v1.GetCleanupPolicyRequest) (*v1.GetCleanupPolicyResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.CleanupService.GetCleanupPolicy is not implemented")
 }
 
-func (UnimplementedCleanupServiceHandler) PutCleanupPolicy(context.Context, *connect.Request[v1.PutCleanupPolicyRequest]) (*connect.Response[v1.PutCleanupPolicyResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.CleanupService.PutCleanupPolicy is not implemented"))
+func (UnimplementedCleanupServiceHandler) PutCleanupPolicy(context.Context, *v1.PutCleanupPolicyRequest) (*v1.PutCleanupPolicyResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.CleanupService.PutCleanupPolicy is not implemented")
 }
 
-func (UnimplementedCleanupServiceHandler) DeleteCleanupPolicy(context.Context, *connect.Request[v1.DeleteCleanupPolicyRequest]) (*connect.Response[v1.DeleteCleanupPolicyResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.CleanupService.DeleteCleanupPolicy is not implemented"))
+func (UnimplementedCleanupServiceHandler) DeleteCleanupPolicy(context.Context, *v1.DeleteCleanupPolicyRequest) (*v1.DeleteCleanupPolicyResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.CleanupService.DeleteCleanupPolicy is not implemented")
 }
 
-func (UnimplementedCleanupServiceHandler) PreviewCleanupPolicy(context.Context, *connect.Request[v1.PreviewCleanupPolicyRequest]) (*connect.Response[v1.PreviewCleanupPolicyResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.CleanupService.PreviewCleanupPolicy is not implemented"))
+func (UnimplementedCleanupServiceHandler) PreviewCleanupPolicy(context.Context, *v1.PreviewCleanupPolicyRequest) (*v1.PreviewCleanupPolicyResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.CleanupService.PreviewCleanupPolicy is not implemented")
 }
 
-func (UnimplementedCleanupServiceHandler) RunCleanupPolicy(context.Context, *connect.Request[v1.RunCleanupPolicyRequest]) (*connect.Response[v1.RunCleanupPolicyResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.CleanupService.RunCleanupPolicy is not implemented"))
+func (UnimplementedCleanupServiceHandler) RunCleanupPolicy(context.Context, *v1.RunCleanupPolicyRequest) (*v1.RunCleanupPolicyResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.CleanupService.RunCleanupPolicy is not implemented")
+}
+
+type cleanupServiceClient struct {
+	client *connect.Client
+}
+
+func (c *cleanupServiceClient) ListCleanupPolicies(ctx context.Context, req *v1.ListCleanupPoliciesRequest) (*v1.ListCleanupPoliciesResponse, error) {
+	var res v1.ListCleanupPoliciesResponse
+	if err := c.client.CallUnary(ctx, cleanupServiceListCleanupPoliciesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *cleanupServiceClient) GetCleanupPolicy(ctx context.Context, req *v1.GetCleanupPolicyRequest) (*v1.GetCleanupPolicyResponse, error) {
+	var res v1.GetCleanupPolicyResponse
+	if err := c.client.CallUnary(ctx, cleanupServiceGetCleanupPolicySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *cleanupServiceClient) PutCleanupPolicy(ctx context.Context, req *v1.PutCleanupPolicyRequest) (*v1.PutCleanupPolicyResponse, error) {
+	var res v1.PutCleanupPolicyResponse
+	if err := c.client.CallUnary(ctx, cleanupServicePutCleanupPolicySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *cleanupServiceClient) DeleteCleanupPolicy(ctx context.Context, req *v1.DeleteCleanupPolicyRequest) (*v1.DeleteCleanupPolicyResponse, error) {
+	var res v1.DeleteCleanupPolicyResponse
+	if err := c.client.CallUnary(ctx, cleanupServiceDeleteCleanupPolicySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *cleanupServiceClient) PreviewCleanupPolicy(ctx context.Context, req *v1.PreviewCleanupPolicyRequest) (*v1.PreviewCleanupPolicyResponse, error) {
+	var res v1.PreviewCleanupPolicyResponse
+	if err := c.client.CallUnary(ctx, cleanupServicePreviewCleanupPolicySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *cleanupServiceClient) RunCleanupPolicy(ctx context.Context, req *v1.RunCleanupPolicyRequest) (*v1.RunCleanupPolicyResponse, error) {
+	var res v1.RunCleanupPolicyResponse
+	if err := c.client.CallUnary(ctx, cleanupServiceRunCleanupPolicySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type cleanupServiceHandler struct{ svc CleanupServiceHandler }
+
+func (h cleanupServiceHandler) listCleanupPolicies(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListCleanupPoliciesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListCleanupPolicies(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h cleanupServiceHandler) getCleanupPolicy(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetCleanupPolicyRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetCleanupPolicy(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h cleanupServiceHandler) putCleanupPolicy(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PutCleanupPolicyRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.PutCleanupPolicy(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h cleanupServiceHandler) deleteCleanupPolicy(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DeleteCleanupPolicyRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.DeleteCleanupPolicy(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h cleanupServiceHandler) previewCleanupPolicy(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PreviewCleanupPolicyRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.PreviewCleanupPolicy(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h cleanupServiceHandler) runCleanupPolicy(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RunCleanupPolicyRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RunCleanupPolicy(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

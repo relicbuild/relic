@@ -5,162 +5,166 @@
 package relicv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
-	http "net/http"
 	v1 "relic/api/gen/relic/v1"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// HoldServiceName is the fully-qualified name of the HoldService service.
 	HoldServiceName = "relic.v1.HoldService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// HoldServiceListHoldsProcedure is the fully-qualified name of the HoldService's ListHolds RPC.
+	// HoldServiceListHoldsProcedure is the procedure name of the HoldService's ListHolds RPC.
 	HoldServiceListHoldsProcedure = "/relic.v1.HoldService/ListHolds"
-	// HoldServicePutHoldProcedure is the fully-qualified name of the HoldService's PutHold RPC.
+	// HoldServicePutHoldProcedure is the procedure name of the HoldService's PutHold RPC.
 	HoldServicePutHoldProcedure = "/relic.v1.HoldService/PutHold"
-	// HoldServiceDeleteHoldProcedure is the fully-qualified name of the HoldService's DeleteHold RPC.
+	// HoldServiceDeleteHoldProcedure is the procedure name of the HoldService's DeleteHold RPC.
 	HoldServiceDeleteHoldProcedure = "/relic.v1.HoldService/DeleteHold"
+)
+
+var (
+	holdServiceListHoldsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_hold_proto.Services().ByName("HoldService").Methods().ByName("ListHolds"),
+			Procedure:  HoldServiceListHoldsProcedure,
+		}
+	})
+	holdServicePutHoldSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_hold_proto.Services().ByName("HoldService").Methods().ByName("PutHold"),
+			Procedure:  HoldServicePutHoldProcedure,
+		}
+	})
+	holdServiceDeleteHoldSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_hold_proto.Services().ByName("HoldService").Methods().ByName("DeleteHold"),
+			Procedure:  HoldServiceDeleteHoldProcedure,
+		}
+	})
 )
 
 // HoldServiceClient is a client for the relic.v1.HoldService service.
 type HoldServiceClient interface {
-	ListHolds(context.Context, *connect.Request[v1.ListHoldsRequest]) (*connect.Response[v1.ListHoldsResponse], error)
+	ListHolds(context.Context, *v1.ListHoldsRequest) (*v1.ListHoldsResponse, error)
 	// PutHold places a hold on an item, or replaces its reason.
-	PutHold(context.Context, *connect.Request[v1.PutHoldRequest]) (*connect.Response[v1.PutHoldResponse], error)
-	DeleteHold(context.Context, *connect.Request[v1.DeleteHoldRequest]) (*connect.Response[v1.DeleteHoldResponse], error)
+	PutHold(context.Context, *v1.PutHoldRequest) (*v1.PutHoldResponse, error)
+	DeleteHold(context.Context, *v1.DeleteHoldRequest) (*v1.DeleteHoldResponse, error)
 }
 
-// NewHoldServiceClient constructs a client for the relic.v1.HoldService service. By default, it
-// uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
-// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
-// connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewHoldServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) HoldServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	holdServiceMethods := v1.File_relic_v1_hold_proto.Services().ByName("HoldService").Methods()
-	return &holdServiceClient{
-		listHolds: connect.NewClient[v1.ListHoldsRequest, v1.ListHoldsResponse](
-			httpClient,
-			baseURL+HoldServiceListHoldsProcedure,
-			connect.WithSchema(holdServiceMethods.ByName("ListHolds")),
-			connect.WithClientOptions(opts...),
-		),
-		putHold: connect.NewClient[v1.PutHoldRequest, v1.PutHoldResponse](
-			httpClient,
-			baseURL+HoldServicePutHoldProcedure,
-			connect.WithSchema(holdServiceMethods.ByName("PutHold")),
-			connect.WithClientOptions(opts...),
-		),
-		deleteHold: connect.NewClient[v1.DeleteHoldRequest, v1.DeleteHoldResponse](
-			httpClient,
-			baseURL+HoldServiceDeleteHoldProcedure,
-			connect.WithSchema(holdServiceMethods.ByName("DeleteHold")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// holdServiceClient implements HoldServiceClient.
-type holdServiceClient struct {
-	listHolds  *connect.Client[v1.ListHoldsRequest, v1.ListHoldsResponse]
-	putHold    *connect.Client[v1.PutHoldRequest, v1.PutHoldResponse]
-	deleteHold *connect.Client[v1.DeleteHoldRequest, v1.DeleteHoldResponse]
-}
-
-// ListHolds calls relic.v1.HoldService.ListHolds.
-func (c *holdServiceClient) ListHolds(ctx context.Context, req *connect.Request[v1.ListHoldsRequest]) (*connect.Response[v1.ListHoldsResponse], error) {
-	return c.listHolds.CallUnary(ctx, req)
-}
-
-// PutHold calls relic.v1.HoldService.PutHold.
-func (c *holdServiceClient) PutHold(ctx context.Context, req *connect.Request[v1.PutHoldRequest]) (*connect.Response[v1.PutHoldResponse], error) {
-	return c.putHold.CallUnary(ctx, req)
-}
-
-// DeleteHold calls relic.v1.HoldService.DeleteHold.
-func (c *holdServiceClient) DeleteHold(ctx context.Context, req *connect.Request[v1.DeleteHoldRequest]) (*connect.Response[v1.DeleteHoldResponse], error) {
-	return c.deleteHold.CallUnary(ctx, req)
+// NewHoldServiceClient constructs a client for the relic.v1.HoldService service. Multiple service
+// clients may share a single connect.Client.
+func NewHoldServiceClient(client *connect.Client) HoldServiceClient {
+	return &holdServiceClient{client: client}
 }
 
 // HoldServiceHandler is an implementation of the relic.v1.HoldService service.
 type HoldServiceHandler interface {
-	ListHolds(context.Context, *connect.Request[v1.ListHoldsRequest]) (*connect.Response[v1.ListHoldsResponse], error)
+	ListHolds(context.Context, *v1.ListHoldsRequest) (*v1.ListHoldsResponse, error)
 	// PutHold places a hold on an item, or replaces its reason.
-	PutHold(context.Context, *connect.Request[v1.PutHoldRequest]) (*connect.Response[v1.PutHoldResponse], error)
-	DeleteHold(context.Context, *connect.Request[v1.DeleteHoldRequest]) (*connect.Response[v1.DeleteHoldResponse], error)
+	PutHold(context.Context, *v1.PutHoldRequest) (*v1.PutHoldResponse, error)
+	DeleteHold(context.Context, *v1.DeleteHoldRequest) (*v1.DeleteHoldResponse, error)
 }
 
-// NewHoldServiceHandler builds an HTTP handler from the service implementation. It returns the path
-// on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewHoldServiceHandler(svc HoldServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	holdServiceMethods := v1.File_relic_v1_hold_proto.Services().ByName("HoldService").Methods()
-	holdServiceListHoldsHandler := connect.NewUnaryHandler(
-		HoldServiceListHoldsProcedure,
-		svc.ListHolds,
-		connect.WithSchema(holdServiceMethods.ByName("ListHolds")),
-		connect.WithHandlerOptions(opts...),
+// RegisterHoldServiceHandler registers svc as the relic.v1.HoldService implementation on server.
+func RegisterHoldServiceHandler(server *connect.Server, svc HoldServiceHandler) {
+	adapter := holdServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: holdServiceListHoldsSpec(), Handler: adapter.listHolds},
+		connect.Method{Spec: holdServicePutHoldSpec(), Handler: adapter.putHold},
+		connect.Method{Spec: holdServiceDeleteHoldSpec(), Handler: adapter.deleteHold},
 	)
-	holdServicePutHoldHandler := connect.NewUnaryHandler(
-		HoldServicePutHoldProcedure,
-		svc.PutHold,
-		connect.WithSchema(holdServiceMethods.ByName("PutHold")),
-		connect.WithHandlerOptions(opts...),
-	)
-	holdServiceDeleteHoldHandler := connect.NewUnaryHandler(
-		HoldServiceDeleteHoldProcedure,
-		svc.DeleteHold,
-		connect.WithSchema(holdServiceMethods.ByName("DeleteHold")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/relic.v1.HoldService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case HoldServiceListHoldsProcedure:
-			holdServiceListHoldsHandler.ServeHTTP(w, r)
-		case HoldServicePutHoldProcedure:
-			holdServicePutHoldHandler.ServeHTTP(w, r)
-		case HoldServiceDeleteHoldProcedure:
-			holdServiceDeleteHoldHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedHoldServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedHoldServiceHandler struct{}
 
-func (UnimplementedHoldServiceHandler) ListHolds(context.Context, *connect.Request[v1.ListHoldsRequest]) (*connect.Response[v1.ListHoldsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.HoldService.ListHolds is not implemented"))
+func (UnimplementedHoldServiceHandler) ListHolds(context.Context, *v1.ListHoldsRequest) (*v1.ListHoldsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.HoldService.ListHolds is not implemented")
 }
 
-func (UnimplementedHoldServiceHandler) PutHold(context.Context, *connect.Request[v1.PutHoldRequest]) (*connect.Response[v1.PutHoldResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.HoldService.PutHold is not implemented"))
+func (UnimplementedHoldServiceHandler) PutHold(context.Context, *v1.PutHoldRequest) (*v1.PutHoldResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.HoldService.PutHold is not implemented")
 }
 
-func (UnimplementedHoldServiceHandler) DeleteHold(context.Context, *connect.Request[v1.DeleteHoldRequest]) (*connect.Response[v1.DeleteHoldResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.HoldService.DeleteHold is not implemented"))
+func (UnimplementedHoldServiceHandler) DeleteHold(context.Context, *v1.DeleteHoldRequest) (*v1.DeleteHoldResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.HoldService.DeleteHold is not implemented")
+}
+
+type holdServiceClient struct {
+	client *connect.Client
+}
+
+func (c *holdServiceClient) ListHolds(ctx context.Context, req *v1.ListHoldsRequest) (*v1.ListHoldsResponse, error) {
+	var res v1.ListHoldsResponse
+	if err := c.client.CallUnary(ctx, holdServiceListHoldsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *holdServiceClient) PutHold(ctx context.Context, req *v1.PutHoldRequest) (*v1.PutHoldResponse, error) {
+	var res v1.PutHoldResponse
+	if err := c.client.CallUnary(ctx, holdServicePutHoldSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *holdServiceClient) DeleteHold(ctx context.Context, req *v1.DeleteHoldRequest) (*v1.DeleteHoldResponse, error) {
+	var res v1.DeleteHoldResponse
+	if err := c.client.CallUnary(ctx, holdServiceDeleteHoldSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type holdServiceHandler struct{ svc HoldServiceHandler }
+
+func (h holdServiceHandler) listHolds(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListHoldsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListHolds(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h holdServiceHandler) putHold(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PutHoldRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.PutHold(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h holdServiceHandler) deleteHold(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DeleteHoldRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.DeleteHold(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

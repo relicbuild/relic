@@ -5,237 +5,258 @@
 package relicv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
-	http "net/http"
 	v1 "relic/api/gen/relic/v1"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// EvidenceServiceName is the fully-qualified name of the EvidenceService service.
 	EvidenceServiceName = "relic.v1.EvidenceService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// EvidenceServiceListEvidenceProcedure is the fully-qualified name of the EvidenceService's
-	// ListEvidence RPC.
+	// EvidenceServiceListEvidenceProcedure is the procedure name of the EvidenceService's ListEvidence
+	// RPC.
 	EvidenceServiceListEvidenceProcedure = "/relic.v1.EvidenceService/ListEvidence"
-	// EvidenceServiceCreateEvidenceProcedure is the fully-qualified name of the EvidenceService's
+	// EvidenceServiceCreateEvidenceProcedure is the procedure name of the EvidenceService's
 	// CreateEvidence RPC.
 	EvidenceServiceCreateEvidenceProcedure = "/relic.v1.EvidenceService/CreateEvidence"
-	// EvidenceServiceListTrustedKeysProcedure is the fully-qualified name of the EvidenceService's
+	// EvidenceServiceListTrustedKeysProcedure is the procedure name of the EvidenceService's
 	// ListTrustedKeys RPC.
 	EvidenceServiceListTrustedKeysProcedure = "/relic.v1.EvidenceService/ListTrustedKeys"
-	// EvidenceServiceAddTrustedKeyProcedure is the fully-qualified name of the EvidenceService's
+	// EvidenceServiceAddTrustedKeyProcedure is the procedure name of the EvidenceService's
 	// AddTrustedKey RPC.
 	EvidenceServiceAddTrustedKeyProcedure = "/relic.v1.EvidenceService/AddTrustedKey"
-	// EvidenceServiceDeleteTrustedKeyProcedure is the fully-qualified name of the EvidenceService's
+	// EvidenceServiceDeleteTrustedKeyProcedure is the procedure name of the EvidenceService's
 	// DeleteTrustedKey RPC.
 	EvidenceServiceDeleteTrustedKeyProcedure = "/relic.v1.EvidenceService/DeleteTrustedKey"
+)
+
+var (
+	evidenceServiceListEvidenceSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_evidence_proto.Services().ByName("EvidenceService").Methods().ByName("ListEvidence"),
+			Procedure:  EvidenceServiceListEvidenceProcedure,
+		}
+	})
+	evidenceServiceCreateEvidenceSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_evidence_proto.Services().ByName("EvidenceService").Methods().ByName("CreateEvidence"),
+			Procedure:  EvidenceServiceCreateEvidenceProcedure,
+		}
+	})
+	evidenceServiceListTrustedKeysSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_evidence_proto.Services().ByName("EvidenceService").Methods().ByName("ListTrustedKeys"),
+			Procedure:  EvidenceServiceListTrustedKeysProcedure,
+		}
+	})
+	evidenceServiceAddTrustedKeySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_evidence_proto.Services().ByName("EvidenceService").Methods().ByName("AddTrustedKey"),
+			Procedure:  EvidenceServiceAddTrustedKeyProcedure,
+		}
+	})
+	evidenceServiceDeleteTrustedKeySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_evidence_proto.Services().ByName("EvidenceService").Methods().ByName("DeleteTrustedKey"),
+			Procedure:  EvidenceServiceDeleteTrustedKeyProcedure,
+		}
+	})
 )
 
 // EvidenceServiceClient is a client for the relic.v1.EvidenceService service.
 type EvidenceServiceClient interface {
 	// ListEvidence returns the evidence about a file the caller may read.
-	ListEvidence(context.Context, *connect.Request[v1.ListEvidenceRequest]) (*connect.Response[v1.ListEvidenceResponse], error)
+	ListEvidence(context.Context, *v1.ListEvidenceRequest) (*v1.ListEvidenceResponse, error)
 	// CreateEvidence stores a DSSE envelope as evidence about a file; it needs
 	// annotate permission on the file. An envelope whose key ID names no
 	// trusted key is refused.
-	CreateEvidence(context.Context, *connect.Request[v1.CreateEvidenceRequest]) (*connect.Response[v1.CreateEvidenceResponse], error)
+	CreateEvidence(context.Context, *v1.CreateEvidenceRequest) (*v1.CreateEvidenceResponse, error)
 	// ListTrustedKeys returns the public keys evidence is verified with.
-	ListTrustedKeys(context.Context, *connect.Request[v1.ListTrustedKeysRequest]) (*connect.Response[v1.ListTrustedKeysResponse], error)
+	ListTrustedKeys(context.Context, *v1.ListTrustedKeysRequest) (*v1.ListTrustedKeysResponse, error)
 	// AddTrustedKey adds a public key (PEM) under an alias.
-	AddTrustedKey(context.Context, *connect.Request[v1.AddTrustedKeyRequest]) (*connect.Response[v1.AddTrustedKeyResponse], error)
+	AddTrustedKey(context.Context, *v1.AddTrustedKeyRequest) (*v1.AddTrustedKeyResponse, error)
 	// DeleteTrustedKey removes a trusted key; evidence it signed stays but no
 	// longer verifies.
-	DeleteTrustedKey(context.Context, *connect.Request[v1.DeleteTrustedKeyRequest]) (*connect.Response[v1.DeleteTrustedKeyResponse], error)
+	DeleteTrustedKey(context.Context, *v1.DeleteTrustedKeyRequest) (*v1.DeleteTrustedKeyResponse, error)
 }
 
-// NewEvidenceServiceClient constructs a client for the relic.v1.EvidenceService service. By
-// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
-// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
-// connect.WithGRPC() or connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewEvidenceServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) EvidenceServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	evidenceServiceMethods := v1.File_relic_v1_evidence_proto.Services().ByName("EvidenceService").Methods()
-	return &evidenceServiceClient{
-		listEvidence: connect.NewClient[v1.ListEvidenceRequest, v1.ListEvidenceResponse](
-			httpClient,
-			baseURL+EvidenceServiceListEvidenceProcedure,
-			connect.WithSchema(evidenceServiceMethods.ByName("ListEvidence")),
-			connect.WithClientOptions(opts...),
-		),
-		createEvidence: connect.NewClient[v1.CreateEvidenceRequest, v1.CreateEvidenceResponse](
-			httpClient,
-			baseURL+EvidenceServiceCreateEvidenceProcedure,
-			connect.WithSchema(evidenceServiceMethods.ByName("CreateEvidence")),
-			connect.WithClientOptions(opts...),
-		),
-		listTrustedKeys: connect.NewClient[v1.ListTrustedKeysRequest, v1.ListTrustedKeysResponse](
-			httpClient,
-			baseURL+EvidenceServiceListTrustedKeysProcedure,
-			connect.WithSchema(evidenceServiceMethods.ByName("ListTrustedKeys")),
-			connect.WithClientOptions(opts...),
-		),
-		addTrustedKey: connect.NewClient[v1.AddTrustedKeyRequest, v1.AddTrustedKeyResponse](
-			httpClient,
-			baseURL+EvidenceServiceAddTrustedKeyProcedure,
-			connect.WithSchema(evidenceServiceMethods.ByName("AddTrustedKey")),
-			connect.WithClientOptions(opts...),
-		),
-		deleteTrustedKey: connect.NewClient[v1.DeleteTrustedKeyRequest, v1.DeleteTrustedKeyResponse](
-			httpClient,
-			baseURL+EvidenceServiceDeleteTrustedKeyProcedure,
-			connect.WithSchema(evidenceServiceMethods.ByName("DeleteTrustedKey")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// evidenceServiceClient implements EvidenceServiceClient.
-type evidenceServiceClient struct {
-	listEvidence     *connect.Client[v1.ListEvidenceRequest, v1.ListEvidenceResponse]
-	createEvidence   *connect.Client[v1.CreateEvidenceRequest, v1.CreateEvidenceResponse]
-	listTrustedKeys  *connect.Client[v1.ListTrustedKeysRequest, v1.ListTrustedKeysResponse]
-	addTrustedKey    *connect.Client[v1.AddTrustedKeyRequest, v1.AddTrustedKeyResponse]
-	deleteTrustedKey *connect.Client[v1.DeleteTrustedKeyRequest, v1.DeleteTrustedKeyResponse]
-}
-
-// ListEvidence calls relic.v1.EvidenceService.ListEvidence.
-func (c *evidenceServiceClient) ListEvidence(ctx context.Context, req *connect.Request[v1.ListEvidenceRequest]) (*connect.Response[v1.ListEvidenceResponse], error) {
-	return c.listEvidence.CallUnary(ctx, req)
-}
-
-// CreateEvidence calls relic.v1.EvidenceService.CreateEvidence.
-func (c *evidenceServiceClient) CreateEvidence(ctx context.Context, req *connect.Request[v1.CreateEvidenceRequest]) (*connect.Response[v1.CreateEvidenceResponse], error) {
-	return c.createEvidence.CallUnary(ctx, req)
-}
-
-// ListTrustedKeys calls relic.v1.EvidenceService.ListTrustedKeys.
-func (c *evidenceServiceClient) ListTrustedKeys(ctx context.Context, req *connect.Request[v1.ListTrustedKeysRequest]) (*connect.Response[v1.ListTrustedKeysResponse], error) {
-	return c.listTrustedKeys.CallUnary(ctx, req)
-}
-
-// AddTrustedKey calls relic.v1.EvidenceService.AddTrustedKey.
-func (c *evidenceServiceClient) AddTrustedKey(ctx context.Context, req *connect.Request[v1.AddTrustedKeyRequest]) (*connect.Response[v1.AddTrustedKeyResponse], error) {
-	return c.addTrustedKey.CallUnary(ctx, req)
-}
-
-// DeleteTrustedKey calls relic.v1.EvidenceService.DeleteTrustedKey.
-func (c *evidenceServiceClient) DeleteTrustedKey(ctx context.Context, req *connect.Request[v1.DeleteTrustedKeyRequest]) (*connect.Response[v1.DeleteTrustedKeyResponse], error) {
-	return c.deleteTrustedKey.CallUnary(ctx, req)
+// NewEvidenceServiceClient constructs a client for the relic.v1.EvidenceService service. Multiple
+// service clients may share a single connect.Client.
+func NewEvidenceServiceClient(client *connect.Client) EvidenceServiceClient {
+	return &evidenceServiceClient{client: client}
 }
 
 // EvidenceServiceHandler is an implementation of the relic.v1.EvidenceService service.
 type EvidenceServiceHandler interface {
 	// ListEvidence returns the evidence about a file the caller may read.
-	ListEvidence(context.Context, *connect.Request[v1.ListEvidenceRequest]) (*connect.Response[v1.ListEvidenceResponse], error)
+	ListEvidence(context.Context, *v1.ListEvidenceRequest) (*v1.ListEvidenceResponse, error)
 	// CreateEvidence stores a DSSE envelope as evidence about a file; it needs
 	// annotate permission on the file. An envelope whose key ID names no
 	// trusted key is refused.
-	CreateEvidence(context.Context, *connect.Request[v1.CreateEvidenceRequest]) (*connect.Response[v1.CreateEvidenceResponse], error)
+	CreateEvidence(context.Context, *v1.CreateEvidenceRequest) (*v1.CreateEvidenceResponse, error)
 	// ListTrustedKeys returns the public keys evidence is verified with.
-	ListTrustedKeys(context.Context, *connect.Request[v1.ListTrustedKeysRequest]) (*connect.Response[v1.ListTrustedKeysResponse], error)
+	ListTrustedKeys(context.Context, *v1.ListTrustedKeysRequest) (*v1.ListTrustedKeysResponse, error)
 	// AddTrustedKey adds a public key (PEM) under an alias.
-	AddTrustedKey(context.Context, *connect.Request[v1.AddTrustedKeyRequest]) (*connect.Response[v1.AddTrustedKeyResponse], error)
+	AddTrustedKey(context.Context, *v1.AddTrustedKeyRequest) (*v1.AddTrustedKeyResponse, error)
 	// DeleteTrustedKey removes a trusted key; evidence it signed stays but no
 	// longer verifies.
-	DeleteTrustedKey(context.Context, *connect.Request[v1.DeleteTrustedKeyRequest]) (*connect.Response[v1.DeleteTrustedKeyResponse], error)
+	DeleteTrustedKey(context.Context, *v1.DeleteTrustedKeyRequest) (*v1.DeleteTrustedKeyResponse, error)
 }
 
-// NewEvidenceServiceHandler builds an HTTP handler from the service implementation. It returns the
-// path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewEvidenceServiceHandler(svc EvidenceServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	evidenceServiceMethods := v1.File_relic_v1_evidence_proto.Services().ByName("EvidenceService").Methods()
-	evidenceServiceListEvidenceHandler := connect.NewUnaryHandler(
-		EvidenceServiceListEvidenceProcedure,
-		svc.ListEvidence,
-		connect.WithSchema(evidenceServiceMethods.ByName("ListEvidence")),
-		connect.WithHandlerOptions(opts...),
+// RegisterEvidenceServiceHandler registers svc as the relic.v1.EvidenceService implementation on
+// server.
+func RegisterEvidenceServiceHandler(server *connect.Server, svc EvidenceServiceHandler) {
+	adapter := evidenceServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: evidenceServiceListEvidenceSpec(), Handler: adapter.listEvidence},
+		connect.Method{Spec: evidenceServiceCreateEvidenceSpec(), Handler: adapter.createEvidence},
+		connect.Method{Spec: evidenceServiceListTrustedKeysSpec(), Handler: adapter.listTrustedKeys},
+		connect.Method{Spec: evidenceServiceAddTrustedKeySpec(), Handler: adapter.addTrustedKey},
+		connect.Method{Spec: evidenceServiceDeleteTrustedKeySpec(), Handler: adapter.deleteTrustedKey},
 	)
-	evidenceServiceCreateEvidenceHandler := connect.NewUnaryHandler(
-		EvidenceServiceCreateEvidenceProcedure,
-		svc.CreateEvidence,
-		connect.WithSchema(evidenceServiceMethods.ByName("CreateEvidence")),
-		connect.WithHandlerOptions(opts...),
-	)
-	evidenceServiceListTrustedKeysHandler := connect.NewUnaryHandler(
-		EvidenceServiceListTrustedKeysProcedure,
-		svc.ListTrustedKeys,
-		connect.WithSchema(evidenceServiceMethods.ByName("ListTrustedKeys")),
-		connect.WithHandlerOptions(opts...),
-	)
-	evidenceServiceAddTrustedKeyHandler := connect.NewUnaryHandler(
-		EvidenceServiceAddTrustedKeyProcedure,
-		svc.AddTrustedKey,
-		connect.WithSchema(evidenceServiceMethods.ByName("AddTrustedKey")),
-		connect.WithHandlerOptions(opts...),
-	)
-	evidenceServiceDeleteTrustedKeyHandler := connect.NewUnaryHandler(
-		EvidenceServiceDeleteTrustedKeyProcedure,
-		svc.DeleteTrustedKey,
-		connect.WithSchema(evidenceServiceMethods.ByName("DeleteTrustedKey")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/relic.v1.EvidenceService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case EvidenceServiceListEvidenceProcedure:
-			evidenceServiceListEvidenceHandler.ServeHTTP(w, r)
-		case EvidenceServiceCreateEvidenceProcedure:
-			evidenceServiceCreateEvidenceHandler.ServeHTTP(w, r)
-		case EvidenceServiceListTrustedKeysProcedure:
-			evidenceServiceListTrustedKeysHandler.ServeHTTP(w, r)
-		case EvidenceServiceAddTrustedKeyProcedure:
-			evidenceServiceAddTrustedKeyHandler.ServeHTTP(w, r)
-		case EvidenceServiceDeleteTrustedKeyProcedure:
-			evidenceServiceDeleteTrustedKeyHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedEvidenceServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedEvidenceServiceHandler struct{}
 
-func (UnimplementedEvidenceServiceHandler) ListEvidence(context.Context, *connect.Request[v1.ListEvidenceRequest]) (*connect.Response[v1.ListEvidenceResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.EvidenceService.ListEvidence is not implemented"))
+func (UnimplementedEvidenceServiceHandler) ListEvidence(context.Context, *v1.ListEvidenceRequest) (*v1.ListEvidenceResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.EvidenceService.ListEvidence is not implemented")
 }
 
-func (UnimplementedEvidenceServiceHandler) CreateEvidence(context.Context, *connect.Request[v1.CreateEvidenceRequest]) (*connect.Response[v1.CreateEvidenceResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.EvidenceService.CreateEvidence is not implemented"))
+func (UnimplementedEvidenceServiceHandler) CreateEvidence(context.Context, *v1.CreateEvidenceRequest) (*v1.CreateEvidenceResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.EvidenceService.CreateEvidence is not implemented")
 }
 
-func (UnimplementedEvidenceServiceHandler) ListTrustedKeys(context.Context, *connect.Request[v1.ListTrustedKeysRequest]) (*connect.Response[v1.ListTrustedKeysResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.EvidenceService.ListTrustedKeys is not implemented"))
+func (UnimplementedEvidenceServiceHandler) ListTrustedKeys(context.Context, *v1.ListTrustedKeysRequest) (*v1.ListTrustedKeysResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.EvidenceService.ListTrustedKeys is not implemented")
 }
 
-func (UnimplementedEvidenceServiceHandler) AddTrustedKey(context.Context, *connect.Request[v1.AddTrustedKeyRequest]) (*connect.Response[v1.AddTrustedKeyResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.EvidenceService.AddTrustedKey is not implemented"))
+func (UnimplementedEvidenceServiceHandler) AddTrustedKey(context.Context, *v1.AddTrustedKeyRequest) (*v1.AddTrustedKeyResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.EvidenceService.AddTrustedKey is not implemented")
 }
 
-func (UnimplementedEvidenceServiceHandler) DeleteTrustedKey(context.Context, *connect.Request[v1.DeleteTrustedKeyRequest]) (*connect.Response[v1.DeleteTrustedKeyResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.EvidenceService.DeleteTrustedKey is not implemented"))
+func (UnimplementedEvidenceServiceHandler) DeleteTrustedKey(context.Context, *v1.DeleteTrustedKeyRequest) (*v1.DeleteTrustedKeyResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.EvidenceService.DeleteTrustedKey is not implemented")
+}
+
+type evidenceServiceClient struct {
+	client *connect.Client
+}
+
+func (c *evidenceServiceClient) ListEvidence(ctx context.Context, req *v1.ListEvidenceRequest) (*v1.ListEvidenceResponse, error) {
+	var res v1.ListEvidenceResponse
+	if err := c.client.CallUnary(ctx, evidenceServiceListEvidenceSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *evidenceServiceClient) CreateEvidence(ctx context.Context, req *v1.CreateEvidenceRequest) (*v1.CreateEvidenceResponse, error) {
+	var res v1.CreateEvidenceResponse
+	if err := c.client.CallUnary(ctx, evidenceServiceCreateEvidenceSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *evidenceServiceClient) ListTrustedKeys(ctx context.Context, req *v1.ListTrustedKeysRequest) (*v1.ListTrustedKeysResponse, error) {
+	var res v1.ListTrustedKeysResponse
+	if err := c.client.CallUnary(ctx, evidenceServiceListTrustedKeysSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *evidenceServiceClient) AddTrustedKey(ctx context.Context, req *v1.AddTrustedKeyRequest) (*v1.AddTrustedKeyResponse, error) {
+	var res v1.AddTrustedKeyResponse
+	if err := c.client.CallUnary(ctx, evidenceServiceAddTrustedKeySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *evidenceServiceClient) DeleteTrustedKey(ctx context.Context, req *v1.DeleteTrustedKeyRequest) (*v1.DeleteTrustedKeyResponse, error) {
+	var res v1.DeleteTrustedKeyResponse
+	if err := c.client.CallUnary(ctx, evidenceServiceDeleteTrustedKeySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type evidenceServiceHandler struct{ svc EvidenceServiceHandler }
+
+func (h evidenceServiceHandler) listEvidence(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListEvidenceRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListEvidence(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h evidenceServiceHandler) createEvidence(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.CreateEvidenceRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.CreateEvidence(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h evidenceServiceHandler) listTrustedKeys(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListTrustedKeysRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListTrustedKeys(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h evidenceServiceHandler) addTrustedKey(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.AddTrustedKeyRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.AddTrustedKey(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h evidenceServiceHandler) deleteTrustedKey(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DeleteTrustedKeyRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.DeleteTrustedKey(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

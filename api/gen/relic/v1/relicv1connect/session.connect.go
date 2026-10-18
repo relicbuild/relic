@@ -5,371 +5,424 @@
 package relicv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
-	http "net/http"
 	v1 "relic/api/gen/relic/v1"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// SessionServiceName is the fully-qualified name of the SessionService service.
 	SessionServiceName = "relic.v1.SessionService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// SessionServiceLoginProcedure is the fully-qualified name of the SessionService's Login RPC.
+	// SessionServiceLoginProcedure is the procedure name of the SessionService's Login RPC.
 	SessionServiceLoginProcedure = "/relic.v1.SessionService/Login"
-	// SessionServiceLogoutProcedure is the fully-qualified name of the SessionService's Logout RPC.
+	// SessionServiceLogoutProcedure is the procedure name of the SessionService's Logout RPC.
 	SessionServiceLogoutProcedure = "/relic.v1.SessionService/Logout"
-	// SessionServiceApproveLoginProcedure is the fully-qualified name of the SessionService's
-	// ApproveLogin RPC.
+	// SessionServiceApproveLoginProcedure is the procedure name of the SessionService's ApproveLogin
+	// RPC.
 	SessionServiceApproveLoginProcedure = "/relic.v1.SessionService/ApproveLogin"
-	// SessionServiceListSignInProvidersProcedure is the fully-qualified name of the SessionService's
+	// SessionServiceListSignInProvidersProcedure is the procedure name of the SessionService's
 	// ListSignInProviders RPC.
 	SessionServiceListSignInProvidersProcedure = "/relic.v1.SessionService/ListSignInProviders"
-	// SessionServiceGetSignInNoteProcedure is the fully-qualified name of the SessionService's
-	// GetSignInNote RPC.
+	// SessionServiceGetSignInNoteProcedure is the procedure name of the SessionService's GetSignInNote
+	// RPC.
 	SessionServiceGetSignInNoteProcedure = "/relic.v1.SessionService/GetSignInNote"
-	// SessionServiceExchangeWorkloadTokenProcedure is the fully-qualified name of the SessionService's
+	// SessionServiceExchangeWorkloadTokenProcedure is the procedure name of the SessionService's
 	// ExchangeWorkloadToken RPC.
 	SessionServiceExchangeWorkloadTokenProcedure = "/relic.v1.SessionService/ExchangeWorkloadToken"
-	// SessionServiceStartWebLoginProcedure is the fully-qualified name of the SessionService's
-	// StartWebLogin RPC.
+	// SessionServiceStartWebLoginProcedure is the procedure name of the SessionService's StartWebLogin
+	// RPC.
 	SessionServiceStartWebLoginProcedure = "/relic.v1.SessionService/StartWebLogin"
-	// SessionServicePollWebLoginProcedure is the fully-qualified name of the SessionService's
-	// PollWebLogin RPC.
+	// SessionServicePollWebLoginProcedure is the procedure name of the SessionService's PollWebLogin
+	// RPC.
 	SessionServicePollWebLoginProcedure = "/relic.v1.SessionService/PollWebLogin"
-	// SessionServiceGetCurrentUserProcedure is the fully-qualified name of the SessionService's
+	// SessionServiceGetCurrentUserProcedure is the procedure name of the SessionService's
 	// GetCurrentUser RPC.
 	SessionServiceGetCurrentUserProcedure = "/relic.v1.SessionService/GetCurrentUser"
+)
+
+var (
+	sessionServiceLoginSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_session_proto.Services().ByName("SessionService").Methods().ByName("Login"),
+			Procedure:  SessionServiceLoginProcedure,
+		}
+	})
+	sessionServiceLogoutSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_session_proto.Services().ByName("SessionService").Methods().ByName("Logout"),
+			Procedure:  SessionServiceLogoutProcedure,
+		}
+	})
+	sessionServiceApproveLoginSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_session_proto.Services().ByName("SessionService").Methods().ByName("ApproveLogin"),
+			Procedure:  SessionServiceApproveLoginProcedure,
+		}
+	})
+	sessionServiceListSignInProvidersSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_session_proto.Services().ByName("SessionService").Methods().ByName("ListSignInProviders"),
+			Procedure:  SessionServiceListSignInProvidersProcedure,
+		}
+	})
+	sessionServiceGetSignInNoteSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_session_proto.Services().ByName("SessionService").Methods().ByName("GetSignInNote"),
+			Procedure:  SessionServiceGetSignInNoteProcedure,
+		}
+	})
+	sessionServiceExchangeWorkloadTokenSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_session_proto.Services().ByName("SessionService").Methods().ByName("ExchangeWorkloadToken"),
+			Procedure:  SessionServiceExchangeWorkloadTokenProcedure,
+		}
+	})
+	sessionServiceStartWebLoginSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_session_proto.Services().ByName("SessionService").Methods().ByName("StartWebLogin"),
+			Procedure:  SessionServiceStartWebLoginProcedure,
+		}
+	})
+	sessionServicePollWebLoginSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_session_proto.Services().ByName("SessionService").Methods().ByName("PollWebLogin"),
+			Procedure:  SessionServicePollWebLoginProcedure,
+		}
+	})
+	sessionServiceGetCurrentUserSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_session_proto.Services().ByName("SessionService").Methods().ByName("GetCurrentUser"),
+			Procedure:  SessionServiceGetCurrentUserProcedure,
+		}
+	})
 )
 
 // SessionServiceClient is a client for the relic.v1.SessionService service.
 type SessionServiceClient interface {
 	// Login checks a user's password and starts a browser session: the
 	// response sets the session cookie.
-	Login(context.Context, *connect.Request[v1.LoginRequest]) (*connect.Response[v1.LoginResponse], error)
+	Login(context.Context, *v1.LoginRequest) (*v1.LoginResponse, error)
 	// Logout ends the browser session, and revokes the bearer token the request
 	// carries.
-	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error)
+	Logout(context.Context, *v1.LogoutRequest) (*v1.LogoutResponse, error)
 	// ApproveLogin approves a CLI login session for the caller, after they
 	// type the code the CLI printed in their terminal.
-	ApproveLogin(context.Context, *connect.Request[v1.ApproveLoginRequest]) (*connect.Response[v1.ApproveLoginResponse], error)
+	ApproveLogin(context.Context, *v1.ApproveLoginRequest) (*v1.ApproveLoginResponse, error)
 	// ListSignInProviders lists the enabled identity providers for the sign-in
 	// page.
-	ListSignInProviders(context.Context, *connect.Request[v1.ListSignInProvidersRequest]) (*connect.Response[v1.ListSignInProvidersResponse], error)
+	ListSignInProviders(context.Context, *v1.ListSignInProvidersRequest) (*v1.ListSignInProvidersResponse, error)
 	// GetSignInNote returns the note the operator shows on the sign-in page,
 	// empty when there is none.
-	GetSignInNote(context.Context, *connect.Request[v1.GetSignInNoteRequest]) (*connect.Response[v1.GetSignInNoteResponse], error)
+	GetSignInNote(context.Context, *v1.GetSignInNoteRequest) (*v1.GetSignInNoteResponse, error)
 	// ExchangeWorkloadToken gives a CI job's OIDC token, from an issuer a
 	// workload identity trusts, a short-lived Relic token.
-	ExchangeWorkloadToken(context.Context, *connect.Request[v1.ExchangeWorkloadTokenRequest]) (*connect.Response[v1.ExchangeWorkloadTokenResponse], error)
+	ExchangeWorkloadToken(context.Context, *v1.ExchangeWorkloadTokenRequest) (*v1.ExchangeWorkloadTokenResponse, error)
 	// StartWebLogin registers a sign-in a command-line client started with a
 	// session ID it generated (a UUID). A signed-in user approves it in the
 	// browser (ApproveLogin), then the client collects its token
 	// (PollWebLogin).
-	StartWebLogin(context.Context, *connect.Request[v1.StartWebLoginRequest]) (*connect.Response[v1.StartWebLoginResponse], error)
+	StartWebLogin(context.Context, *v1.StartWebLoginRequest) (*v1.StartWebLoginResponse, error)
 	// PollWebLogin returns the token of an approved sign-in, once.
-	PollWebLogin(context.Context, *connect.Request[v1.PollWebLoginRequest]) (*connect.Response[v1.PollWebLoginResponse], error)
+	PollWebLogin(context.Context, *v1.PollWebLoginRequest) (*v1.PollWebLoginResponse, error)
 	// GetCurrentUser returns the caller.
-	GetCurrentUser(context.Context, *connect.Request[v1.GetCurrentUserRequest]) (*connect.Response[v1.GetCurrentUserResponse], error)
+	GetCurrentUser(context.Context, *v1.GetCurrentUserRequest) (*v1.GetCurrentUserResponse, error)
 }
 
-// NewSessionServiceClient constructs a client for the relic.v1.SessionService service. By default,
-// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
-// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
-// or connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) SessionServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	sessionServiceMethods := v1.File_relic_v1_session_proto.Services().ByName("SessionService").Methods()
-	return &sessionServiceClient{
-		login: connect.NewClient[v1.LoginRequest, v1.LoginResponse](
-			httpClient,
-			baseURL+SessionServiceLoginProcedure,
-			connect.WithSchema(sessionServiceMethods.ByName("Login")),
-			connect.WithClientOptions(opts...),
-		),
-		logout: connect.NewClient[v1.LogoutRequest, v1.LogoutResponse](
-			httpClient,
-			baseURL+SessionServiceLogoutProcedure,
-			connect.WithSchema(sessionServiceMethods.ByName("Logout")),
-			connect.WithClientOptions(opts...),
-		),
-		approveLogin: connect.NewClient[v1.ApproveLoginRequest, v1.ApproveLoginResponse](
-			httpClient,
-			baseURL+SessionServiceApproveLoginProcedure,
-			connect.WithSchema(sessionServiceMethods.ByName("ApproveLogin")),
-			connect.WithClientOptions(opts...),
-		),
-		listSignInProviders: connect.NewClient[v1.ListSignInProvidersRequest, v1.ListSignInProvidersResponse](
-			httpClient,
-			baseURL+SessionServiceListSignInProvidersProcedure,
-			connect.WithSchema(sessionServiceMethods.ByName("ListSignInProviders")),
-			connect.WithClientOptions(opts...),
-		),
-		getSignInNote: connect.NewClient[v1.GetSignInNoteRequest, v1.GetSignInNoteResponse](
-			httpClient,
-			baseURL+SessionServiceGetSignInNoteProcedure,
-			connect.WithSchema(sessionServiceMethods.ByName("GetSignInNote")),
-			connect.WithClientOptions(opts...),
-		),
-		exchangeWorkloadToken: connect.NewClient[v1.ExchangeWorkloadTokenRequest, v1.ExchangeWorkloadTokenResponse](
-			httpClient,
-			baseURL+SessionServiceExchangeWorkloadTokenProcedure,
-			connect.WithSchema(sessionServiceMethods.ByName("ExchangeWorkloadToken")),
-			connect.WithClientOptions(opts...),
-		),
-		startWebLogin: connect.NewClient[v1.StartWebLoginRequest, v1.StartWebLoginResponse](
-			httpClient,
-			baseURL+SessionServiceStartWebLoginProcedure,
-			connect.WithSchema(sessionServiceMethods.ByName("StartWebLogin")),
-			connect.WithClientOptions(opts...),
-		),
-		pollWebLogin: connect.NewClient[v1.PollWebLoginRequest, v1.PollWebLoginResponse](
-			httpClient,
-			baseURL+SessionServicePollWebLoginProcedure,
-			connect.WithSchema(sessionServiceMethods.ByName("PollWebLogin")),
-			connect.WithClientOptions(opts...),
-		),
-		getCurrentUser: connect.NewClient[v1.GetCurrentUserRequest, v1.GetCurrentUserResponse](
-			httpClient,
-			baseURL+SessionServiceGetCurrentUserProcedure,
-			connect.WithSchema(sessionServiceMethods.ByName("GetCurrentUser")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// sessionServiceClient implements SessionServiceClient.
-type sessionServiceClient struct {
-	login                 *connect.Client[v1.LoginRequest, v1.LoginResponse]
-	logout                *connect.Client[v1.LogoutRequest, v1.LogoutResponse]
-	approveLogin          *connect.Client[v1.ApproveLoginRequest, v1.ApproveLoginResponse]
-	listSignInProviders   *connect.Client[v1.ListSignInProvidersRequest, v1.ListSignInProvidersResponse]
-	getSignInNote         *connect.Client[v1.GetSignInNoteRequest, v1.GetSignInNoteResponse]
-	exchangeWorkloadToken *connect.Client[v1.ExchangeWorkloadTokenRequest, v1.ExchangeWorkloadTokenResponse]
-	startWebLogin         *connect.Client[v1.StartWebLoginRequest, v1.StartWebLoginResponse]
-	pollWebLogin          *connect.Client[v1.PollWebLoginRequest, v1.PollWebLoginResponse]
-	getCurrentUser        *connect.Client[v1.GetCurrentUserRequest, v1.GetCurrentUserResponse]
-}
-
-// Login calls relic.v1.SessionService.Login.
-func (c *sessionServiceClient) Login(ctx context.Context, req *connect.Request[v1.LoginRequest]) (*connect.Response[v1.LoginResponse], error) {
-	return c.login.CallUnary(ctx, req)
-}
-
-// Logout calls relic.v1.SessionService.Logout.
-func (c *sessionServiceClient) Logout(ctx context.Context, req *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error) {
-	return c.logout.CallUnary(ctx, req)
-}
-
-// ApproveLogin calls relic.v1.SessionService.ApproveLogin.
-func (c *sessionServiceClient) ApproveLogin(ctx context.Context, req *connect.Request[v1.ApproveLoginRequest]) (*connect.Response[v1.ApproveLoginResponse], error) {
-	return c.approveLogin.CallUnary(ctx, req)
-}
-
-// ListSignInProviders calls relic.v1.SessionService.ListSignInProviders.
-func (c *sessionServiceClient) ListSignInProviders(ctx context.Context, req *connect.Request[v1.ListSignInProvidersRequest]) (*connect.Response[v1.ListSignInProvidersResponse], error) {
-	return c.listSignInProviders.CallUnary(ctx, req)
-}
-
-// GetSignInNote calls relic.v1.SessionService.GetSignInNote.
-func (c *sessionServiceClient) GetSignInNote(ctx context.Context, req *connect.Request[v1.GetSignInNoteRequest]) (*connect.Response[v1.GetSignInNoteResponse], error) {
-	return c.getSignInNote.CallUnary(ctx, req)
-}
-
-// ExchangeWorkloadToken calls relic.v1.SessionService.ExchangeWorkloadToken.
-func (c *sessionServiceClient) ExchangeWorkloadToken(ctx context.Context, req *connect.Request[v1.ExchangeWorkloadTokenRequest]) (*connect.Response[v1.ExchangeWorkloadTokenResponse], error) {
-	return c.exchangeWorkloadToken.CallUnary(ctx, req)
-}
-
-// StartWebLogin calls relic.v1.SessionService.StartWebLogin.
-func (c *sessionServiceClient) StartWebLogin(ctx context.Context, req *connect.Request[v1.StartWebLoginRequest]) (*connect.Response[v1.StartWebLoginResponse], error) {
-	return c.startWebLogin.CallUnary(ctx, req)
-}
-
-// PollWebLogin calls relic.v1.SessionService.PollWebLogin.
-func (c *sessionServiceClient) PollWebLogin(ctx context.Context, req *connect.Request[v1.PollWebLoginRequest]) (*connect.Response[v1.PollWebLoginResponse], error) {
-	return c.pollWebLogin.CallUnary(ctx, req)
-}
-
-// GetCurrentUser calls relic.v1.SessionService.GetCurrentUser.
-func (c *sessionServiceClient) GetCurrentUser(ctx context.Context, req *connect.Request[v1.GetCurrentUserRequest]) (*connect.Response[v1.GetCurrentUserResponse], error) {
-	return c.getCurrentUser.CallUnary(ctx, req)
+// NewSessionServiceClient constructs a client for the relic.v1.SessionService service. Multiple
+// service clients may share a single connect.Client.
+func NewSessionServiceClient(client *connect.Client) SessionServiceClient {
+	return &sessionServiceClient{client: client}
 }
 
 // SessionServiceHandler is an implementation of the relic.v1.SessionService service.
 type SessionServiceHandler interface {
 	// Login checks a user's password and starts a browser session: the
 	// response sets the session cookie.
-	Login(context.Context, *connect.Request[v1.LoginRequest]) (*connect.Response[v1.LoginResponse], error)
+	Login(context.Context, *v1.LoginRequest) (*v1.LoginResponse, error)
 	// Logout ends the browser session, and revokes the bearer token the request
 	// carries.
-	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error)
+	Logout(context.Context, *v1.LogoutRequest) (*v1.LogoutResponse, error)
 	// ApproveLogin approves a CLI login session for the caller, after they
 	// type the code the CLI printed in their terminal.
-	ApproveLogin(context.Context, *connect.Request[v1.ApproveLoginRequest]) (*connect.Response[v1.ApproveLoginResponse], error)
+	ApproveLogin(context.Context, *v1.ApproveLoginRequest) (*v1.ApproveLoginResponse, error)
 	// ListSignInProviders lists the enabled identity providers for the sign-in
 	// page.
-	ListSignInProviders(context.Context, *connect.Request[v1.ListSignInProvidersRequest]) (*connect.Response[v1.ListSignInProvidersResponse], error)
+	ListSignInProviders(context.Context, *v1.ListSignInProvidersRequest) (*v1.ListSignInProvidersResponse, error)
 	// GetSignInNote returns the note the operator shows on the sign-in page,
 	// empty when there is none.
-	GetSignInNote(context.Context, *connect.Request[v1.GetSignInNoteRequest]) (*connect.Response[v1.GetSignInNoteResponse], error)
+	GetSignInNote(context.Context, *v1.GetSignInNoteRequest) (*v1.GetSignInNoteResponse, error)
 	// ExchangeWorkloadToken gives a CI job's OIDC token, from an issuer a
 	// workload identity trusts, a short-lived Relic token.
-	ExchangeWorkloadToken(context.Context, *connect.Request[v1.ExchangeWorkloadTokenRequest]) (*connect.Response[v1.ExchangeWorkloadTokenResponse], error)
+	ExchangeWorkloadToken(context.Context, *v1.ExchangeWorkloadTokenRequest) (*v1.ExchangeWorkloadTokenResponse, error)
 	// StartWebLogin registers a sign-in a command-line client started with a
 	// session ID it generated (a UUID). A signed-in user approves it in the
 	// browser (ApproveLogin), then the client collects its token
 	// (PollWebLogin).
-	StartWebLogin(context.Context, *connect.Request[v1.StartWebLoginRequest]) (*connect.Response[v1.StartWebLoginResponse], error)
+	StartWebLogin(context.Context, *v1.StartWebLoginRequest) (*v1.StartWebLoginResponse, error)
 	// PollWebLogin returns the token of an approved sign-in, once.
-	PollWebLogin(context.Context, *connect.Request[v1.PollWebLoginRequest]) (*connect.Response[v1.PollWebLoginResponse], error)
+	PollWebLogin(context.Context, *v1.PollWebLoginRequest) (*v1.PollWebLoginResponse, error)
 	// GetCurrentUser returns the caller.
-	GetCurrentUser(context.Context, *connect.Request[v1.GetCurrentUserRequest]) (*connect.Response[v1.GetCurrentUserResponse], error)
+	GetCurrentUser(context.Context, *v1.GetCurrentUserRequest) (*v1.GetCurrentUserResponse, error)
 }
 
-// NewSessionServiceHandler builds an HTTP handler from the service implementation. It returns the
-// path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	sessionServiceMethods := v1.File_relic_v1_session_proto.Services().ByName("SessionService").Methods()
-	sessionServiceLoginHandler := connect.NewUnaryHandler(
-		SessionServiceLoginProcedure,
-		svc.Login,
-		connect.WithSchema(sessionServiceMethods.ByName("Login")),
-		connect.WithHandlerOptions(opts...),
+// RegisterSessionServiceHandler registers svc as the relic.v1.SessionService implementation on
+// server.
+func RegisterSessionServiceHandler(server *connect.Server, svc SessionServiceHandler) {
+	adapter := sessionServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: sessionServiceLoginSpec(), Handler: adapter.login},
+		connect.Method{Spec: sessionServiceLogoutSpec(), Handler: adapter.logout},
+		connect.Method{Spec: sessionServiceApproveLoginSpec(), Handler: adapter.approveLogin},
+		connect.Method{Spec: sessionServiceListSignInProvidersSpec(), Handler: adapter.listSignInProviders},
+		connect.Method{Spec: sessionServiceGetSignInNoteSpec(), Handler: adapter.getSignInNote},
+		connect.Method{Spec: sessionServiceExchangeWorkloadTokenSpec(), Handler: adapter.exchangeWorkloadToken},
+		connect.Method{Spec: sessionServiceStartWebLoginSpec(), Handler: adapter.startWebLogin},
+		connect.Method{Spec: sessionServicePollWebLoginSpec(), Handler: adapter.pollWebLogin},
+		connect.Method{Spec: sessionServiceGetCurrentUserSpec(), Handler: adapter.getCurrentUser},
 	)
-	sessionServiceLogoutHandler := connect.NewUnaryHandler(
-		SessionServiceLogoutProcedure,
-		svc.Logout,
-		connect.WithSchema(sessionServiceMethods.ByName("Logout")),
-		connect.WithHandlerOptions(opts...),
-	)
-	sessionServiceApproveLoginHandler := connect.NewUnaryHandler(
-		SessionServiceApproveLoginProcedure,
-		svc.ApproveLogin,
-		connect.WithSchema(sessionServiceMethods.ByName("ApproveLogin")),
-		connect.WithHandlerOptions(opts...),
-	)
-	sessionServiceListSignInProvidersHandler := connect.NewUnaryHandler(
-		SessionServiceListSignInProvidersProcedure,
-		svc.ListSignInProviders,
-		connect.WithSchema(sessionServiceMethods.ByName("ListSignInProviders")),
-		connect.WithHandlerOptions(opts...),
-	)
-	sessionServiceGetSignInNoteHandler := connect.NewUnaryHandler(
-		SessionServiceGetSignInNoteProcedure,
-		svc.GetSignInNote,
-		connect.WithSchema(sessionServiceMethods.ByName("GetSignInNote")),
-		connect.WithHandlerOptions(opts...),
-	)
-	sessionServiceExchangeWorkloadTokenHandler := connect.NewUnaryHandler(
-		SessionServiceExchangeWorkloadTokenProcedure,
-		svc.ExchangeWorkloadToken,
-		connect.WithSchema(sessionServiceMethods.ByName("ExchangeWorkloadToken")),
-		connect.WithHandlerOptions(opts...),
-	)
-	sessionServiceStartWebLoginHandler := connect.NewUnaryHandler(
-		SessionServiceStartWebLoginProcedure,
-		svc.StartWebLogin,
-		connect.WithSchema(sessionServiceMethods.ByName("StartWebLogin")),
-		connect.WithHandlerOptions(opts...),
-	)
-	sessionServicePollWebLoginHandler := connect.NewUnaryHandler(
-		SessionServicePollWebLoginProcedure,
-		svc.PollWebLogin,
-		connect.WithSchema(sessionServiceMethods.ByName("PollWebLogin")),
-		connect.WithHandlerOptions(opts...),
-	)
-	sessionServiceGetCurrentUserHandler := connect.NewUnaryHandler(
-		SessionServiceGetCurrentUserProcedure,
-		svc.GetCurrentUser,
-		connect.WithSchema(sessionServiceMethods.ByName("GetCurrentUser")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/relic.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case SessionServiceLoginProcedure:
-			sessionServiceLoginHandler.ServeHTTP(w, r)
-		case SessionServiceLogoutProcedure:
-			sessionServiceLogoutHandler.ServeHTTP(w, r)
-		case SessionServiceApproveLoginProcedure:
-			sessionServiceApproveLoginHandler.ServeHTTP(w, r)
-		case SessionServiceListSignInProvidersProcedure:
-			sessionServiceListSignInProvidersHandler.ServeHTTP(w, r)
-		case SessionServiceGetSignInNoteProcedure:
-			sessionServiceGetSignInNoteHandler.ServeHTTP(w, r)
-		case SessionServiceExchangeWorkloadTokenProcedure:
-			sessionServiceExchangeWorkloadTokenHandler.ServeHTTP(w, r)
-		case SessionServiceStartWebLoginProcedure:
-			sessionServiceStartWebLoginHandler.ServeHTTP(w, r)
-		case SessionServicePollWebLoginProcedure:
-			sessionServicePollWebLoginHandler.ServeHTTP(w, r)
-		case SessionServiceGetCurrentUserProcedure:
-			sessionServiceGetCurrentUserHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedSessionServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSessionServiceHandler struct{}
 
-func (UnimplementedSessionServiceHandler) Login(context.Context, *connect.Request[v1.LoginRequest]) (*connect.Response[v1.LoginResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.SessionService.Login is not implemented"))
+func (UnimplementedSessionServiceHandler) Login(context.Context, *v1.LoginRequest) (*v1.LoginResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.SessionService.Login is not implemented")
 }
 
-func (UnimplementedSessionServiceHandler) Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.SessionService.Logout is not implemented"))
+func (UnimplementedSessionServiceHandler) Logout(context.Context, *v1.LogoutRequest) (*v1.LogoutResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.SessionService.Logout is not implemented")
 }
 
-func (UnimplementedSessionServiceHandler) ApproveLogin(context.Context, *connect.Request[v1.ApproveLoginRequest]) (*connect.Response[v1.ApproveLoginResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.SessionService.ApproveLogin is not implemented"))
+func (UnimplementedSessionServiceHandler) ApproveLogin(context.Context, *v1.ApproveLoginRequest) (*v1.ApproveLoginResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.SessionService.ApproveLogin is not implemented")
 }
 
-func (UnimplementedSessionServiceHandler) ListSignInProviders(context.Context, *connect.Request[v1.ListSignInProvidersRequest]) (*connect.Response[v1.ListSignInProvidersResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.SessionService.ListSignInProviders is not implemented"))
+func (UnimplementedSessionServiceHandler) ListSignInProviders(context.Context, *v1.ListSignInProvidersRequest) (*v1.ListSignInProvidersResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.SessionService.ListSignInProviders is not implemented")
 }
 
-func (UnimplementedSessionServiceHandler) GetSignInNote(context.Context, *connect.Request[v1.GetSignInNoteRequest]) (*connect.Response[v1.GetSignInNoteResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.SessionService.GetSignInNote is not implemented"))
+func (UnimplementedSessionServiceHandler) GetSignInNote(context.Context, *v1.GetSignInNoteRequest) (*v1.GetSignInNoteResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.SessionService.GetSignInNote is not implemented")
 }
 
-func (UnimplementedSessionServiceHandler) ExchangeWorkloadToken(context.Context, *connect.Request[v1.ExchangeWorkloadTokenRequest]) (*connect.Response[v1.ExchangeWorkloadTokenResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.SessionService.ExchangeWorkloadToken is not implemented"))
+func (UnimplementedSessionServiceHandler) ExchangeWorkloadToken(context.Context, *v1.ExchangeWorkloadTokenRequest) (*v1.ExchangeWorkloadTokenResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.SessionService.ExchangeWorkloadToken is not implemented")
 }
 
-func (UnimplementedSessionServiceHandler) StartWebLogin(context.Context, *connect.Request[v1.StartWebLoginRequest]) (*connect.Response[v1.StartWebLoginResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.SessionService.StartWebLogin is not implemented"))
+func (UnimplementedSessionServiceHandler) StartWebLogin(context.Context, *v1.StartWebLoginRequest) (*v1.StartWebLoginResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.SessionService.StartWebLogin is not implemented")
 }
 
-func (UnimplementedSessionServiceHandler) PollWebLogin(context.Context, *connect.Request[v1.PollWebLoginRequest]) (*connect.Response[v1.PollWebLoginResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.SessionService.PollWebLogin is not implemented"))
+func (UnimplementedSessionServiceHandler) PollWebLogin(context.Context, *v1.PollWebLoginRequest) (*v1.PollWebLoginResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.SessionService.PollWebLogin is not implemented")
 }
 
-func (UnimplementedSessionServiceHandler) GetCurrentUser(context.Context, *connect.Request[v1.GetCurrentUserRequest]) (*connect.Response[v1.GetCurrentUserResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.SessionService.GetCurrentUser is not implemented"))
+func (UnimplementedSessionServiceHandler) GetCurrentUser(context.Context, *v1.GetCurrentUserRequest) (*v1.GetCurrentUserResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.SessionService.GetCurrentUser is not implemented")
+}
+
+type sessionServiceClient struct {
+	client *connect.Client
+}
+
+func (c *sessionServiceClient) Login(ctx context.Context, req *v1.LoginRequest) (*v1.LoginResponse, error) {
+	var res v1.LoginResponse
+	if err := c.client.CallUnary(ctx, sessionServiceLoginSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) Logout(ctx context.Context, req *v1.LogoutRequest) (*v1.LogoutResponse, error) {
+	var res v1.LogoutResponse
+	if err := c.client.CallUnary(ctx, sessionServiceLogoutSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) ApproveLogin(ctx context.Context, req *v1.ApproveLoginRequest) (*v1.ApproveLoginResponse, error) {
+	var res v1.ApproveLoginResponse
+	if err := c.client.CallUnary(ctx, sessionServiceApproveLoginSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) ListSignInProviders(ctx context.Context, req *v1.ListSignInProvidersRequest) (*v1.ListSignInProvidersResponse, error) {
+	var res v1.ListSignInProvidersResponse
+	if err := c.client.CallUnary(ctx, sessionServiceListSignInProvidersSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) GetSignInNote(ctx context.Context, req *v1.GetSignInNoteRequest) (*v1.GetSignInNoteResponse, error) {
+	var res v1.GetSignInNoteResponse
+	if err := c.client.CallUnary(ctx, sessionServiceGetSignInNoteSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) ExchangeWorkloadToken(ctx context.Context, req *v1.ExchangeWorkloadTokenRequest) (*v1.ExchangeWorkloadTokenResponse, error) {
+	var res v1.ExchangeWorkloadTokenResponse
+	if err := c.client.CallUnary(ctx, sessionServiceExchangeWorkloadTokenSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) StartWebLogin(ctx context.Context, req *v1.StartWebLoginRequest) (*v1.StartWebLoginResponse, error) {
+	var res v1.StartWebLoginResponse
+	if err := c.client.CallUnary(ctx, sessionServiceStartWebLoginSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) PollWebLogin(ctx context.Context, req *v1.PollWebLoginRequest) (*v1.PollWebLoginResponse, error) {
+	var res v1.PollWebLoginResponse
+	if err := c.client.CallUnary(ctx, sessionServicePollWebLoginSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) GetCurrentUser(ctx context.Context, req *v1.GetCurrentUserRequest) (*v1.GetCurrentUserResponse, error) {
+	var res v1.GetCurrentUserResponse
+	if err := c.client.CallUnary(ctx, sessionServiceGetCurrentUserSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type sessionServiceHandler struct{ svc SessionServiceHandler }
+
+func (h sessionServiceHandler) login(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.LoginRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Login(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) logout(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.LogoutRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Logout(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) approveLogin(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ApproveLoginRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ApproveLogin(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) listSignInProviders(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListSignInProvidersRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListSignInProviders(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) getSignInNote(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetSignInNoteRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetSignInNote(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) exchangeWorkloadToken(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ExchangeWorkloadTokenRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ExchangeWorkloadToken(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) startWebLogin(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.StartWebLoginRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.StartWebLogin(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) pollWebLogin(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PollWebLoginRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.PollWebLogin(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) getCurrentUser(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetCurrentUserRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetCurrentUser(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

@@ -5,235 +5,256 @@
 package relicv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
-	http "net/http"
 	v1 "relic/api/gen/relic/v1"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// PackageServiceName is the fully-qualified name of the PackageService service.
 	PackageServiceName = "relic.v1.PackageService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// PackageServiceGetContainerImageProcedure is the fully-qualified name of the PackageService's
+	// PackageServiceGetContainerImageProcedure is the procedure name of the PackageService's
 	// GetContainerImage RPC.
 	PackageServiceGetContainerImageProcedure = "/relic.v1.PackageService/GetContainerImage"
-	// PackageServicePromoteContainerImageProcedure is the fully-qualified name of the PackageService's
+	// PackageServicePromoteContainerImageProcedure is the procedure name of the PackageService's
 	// PromoteContainerImage RPC.
 	PackageServicePromoteContainerImageProcedure = "/relic.v1.PackageService/PromoteContainerImage"
-	// PackageServiceGetNpmPackageProcedure is the fully-qualified name of the PackageService's
-	// GetNpmPackage RPC.
+	// PackageServiceGetNpmPackageProcedure is the procedure name of the PackageService's GetNpmPackage
+	// RPC.
 	PackageServiceGetNpmPackageProcedure = "/relic.v1.PackageService/GetNpmPackage"
-	// PackageServiceGetPythonPackageProcedure is the fully-qualified name of the PackageService's
+	// PackageServiceGetPythonPackageProcedure is the procedure name of the PackageService's
 	// GetPythonPackage RPC.
 	PackageServiceGetPythonPackageProcedure = "/relic.v1.PackageService/GetPythonPackage"
-	// PackageServiceGetHelmChartProcedure is the fully-qualified name of the PackageService's
-	// GetHelmChart RPC.
+	// PackageServiceGetHelmChartProcedure is the procedure name of the PackageService's GetHelmChart
+	// RPC.
 	PackageServiceGetHelmChartProcedure = "/relic.v1.PackageService/GetHelmChart"
+)
+
+var (
+	packageServiceGetContainerImageSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_package_proto.Services().ByName("PackageService").Methods().ByName("GetContainerImage"),
+			Procedure:  PackageServiceGetContainerImageProcedure,
+		}
+	})
+	packageServicePromoteContainerImageSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_package_proto.Services().ByName("PackageService").Methods().ByName("PromoteContainerImage"),
+			Procedure:  PackageServicePromoteContainerImageProcedure,
+		}
+	})
+	packageServiceGetNpmPackageSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_package_proto.Services().ByName("PackageService").Methods().ByName("GetNpmPackage"),
+			Procedure:  PackageServiceGetNpmPackageProcedure,
+		}
+	})
+	packageServiceGetPythonPackageSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_package_proto.Services().ByName("PackageService").Methods().ByName("GetPythonPackage"),
+			Procedure:  PackageServiceGetPythonPackageProcedure,
+		}
+	})
+	packageServiceGetHelmChartSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_package_proto.Services().ByName("PackageService").Methods().ByName("GetHelmChart"),
+			Procedure:  PackageServiceGetHelmChartProcedure,
+		}
+	})
 )
 
 // PackageServiceClient is a client for the relic.v1.PackageService service.
 type PackageServiceClient interface {
 	// GetContainerImage returns the image an image tag folder holds.
-	GetContainerImage(context.Context, *connect.Request[v1.GetContainerImageRequest]) (*connect.Response[v1.GetContainerImageResponse], error)
+	GetContainerImage(context.Context, *v1.GetContainerImageRequest) (*v1.GetContainerImageResponse, error)
 	// PromoteContainerImage copies or moves an image tag (or every tag of the
 	// image) to another repository. It needs write permission on the target
 	// and, to move, delete permission on the source.
-	PromoteContainerImage(context.Context, *connect.Request[v1.PromoteContainerImageRequest]) (*connect.Response[v1.PromoteContainerImageResponse], error)
+	PromoteContainerImage(context.Context, *v1.PromoteContainerImageRequest) (*v1.PromoteContainerImageResponse, error)
 	// GetNpmPackage returns an npm tarball's package.json facts.
-	GetNpmPackage(context.Context, *connect.Request[v1.GetNpmPackageRequest]) (*connect.Response[v1.GetNpmPackageResponse], error)
+	GetNpmPackage(context.Context, *v1.GetNpmPackageRequest) (*v1.GetNpmPackageResponse, error)
 	// GetPythonPackage returns a wheel's or sdist's core metadata.
-	GetPythonPackage(context.Context, *connect.Request[v1.GetPythonPackageRequest]) (*connect.Response[v1.GetPythonPackageResponse], error)
+	GetPythonPackage(context.Context, *v1.GetPythonPackageRequest) (*v1.GetPythonPackageResponse, error)
 	// GetHelmChart returns a chart's Chart.yaml.
-	GetHelmChart(context.Context, *connect.Request[v1.GetHelmChartRequest]) (*connect.Response[v1.GetHelmChartResponse], error)
+	GetHelmChart(context.Context, *v1.GetHelmChartRequest) (*v1.GetHelmChartResponse, error)
 }
 
-// NewPackageServiceClient constructs a client for the relic.v1.PackageService service. By default,
-// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
-// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
-// or connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewPackageServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) PackageServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	packageServiceMethods := v1.File_relic_v1_package_proto.Services().ByName("PackageService").Methods()
-	return &packageServiceClient{
-		getContainerImage: connect.NewClient[v1.GetContainerImageRequest, v1.GetContainerImageResponse](
-			httpClient,
-			baseURL+PackageServiceGetContainerImageProcedure,
-			connect.WithSchema(packageServiceMethods.ByName("GetContainerImage")),
-			connect.WithClientOptions(opts...),
-		),
-		promoteContainerImage: connect.NewClient[v1.PromoteContainerImageRequest, v1.PromoteContainerImageResponse](
-			httpClient,
-			baseURL+PackageServicePromoteContainerImageProcedure,
-			connect.WithSchema(packageServiceMethods.ByName("PromoteContainerImage")),
-			connect.WithClientOptions(opts...),
-		),
-		getNpmPackage: connect.NewClient[v1.GetNpmPackageRequest, v1.GetNpmPackageResponse](
-			httpClient,
-			baseURL+PackageServiceGetNpmPackageProcedure,
-			connect.WithSchema(packageServiceMethods.ByName("GetNpmPackage")),
-			connect.WithClientOptions(opts...),
-		),
-		getPythonPackage: connect.NewClient[v1.GetPythonPackageRequest, v1.GetPythonPackageResponse](
-			httpClient,
-			baseURL+PackageServiceGetPythonPackageProcedure,
-			connect.WithSchema(packageServiceMethods.ByName("GetPythonPackage")),
-			connect.WithClientOptions(opts...),
-		),
-		getHelmChart: connect.NewClient[v1.GetHelmChartRequest, v1.GetHelmChartResponse](
-			httpClient,
-			baseURL+PackageServiceGetHelmChartProcedure,
-			connect.WithSchema(packageServiceMethods.ByName("GetHelmChart")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// packageServiceClient implements PackageServiceClient.
-type packageServiceClient struct {
-	getContainerImage     *connect.Client[v1.GetContainerImageRequest, v1.GetContainerImageResponse]
-	promoteContainerImage *connect.Client[v1.PromoteContainerImageRequest, v1.PromoteContainerImageResponse]
-	getNpmPackage         *connect.Client[v1.GetNpmPackageRequest, v1.GetNpmPackageResponse]
-	getPythonPackage      *connect.Client[v1.GetPythonPackageRequest, v1.GetPythonPackageResponse]
-	getHelmChart          *connect.Client[v1.GetHelmChartRequest, v1.GetHelmChartResponse]
-}
-
-// GetContainerImage calls relic.v1.PackageService.GetContainerImage.
-func (c *packageServiceClient) GetContainerImage(ctx context.Context, req *connect.Request[v1.GetContainerImageRequest]) (*connect.Response[v1.GetContainerImageResponse], error) {
-	return c.getContainerImage.CallUnary(ctx, req)
-}
-
-// PromoteContainerImage calls relic.v1.PackageService.PromoteContainerImage.
-func (c *packageServiceClient) PromoteContainerImage(ctx context.Context, req *connect.Request[v1.PromoteContainerImageRequest]) (*connect.Response[v1.PromoteContainerImageResponse], error) {
-	return c.promoteContainerImage.CallUnary(ctx, req)
-}
-
-// GetNpmPackage calls relic.v1.PackageService.GetNpmPackage.
-func (c *packageServiceClient) GetNpmPackage(ctx context.Context, req *connect.Request[v1.GetNpmPackageRequest]) (*connect.Response[v1.GetNpmPackageResponse], error) {
-	return c.getNpmPackage.CallUnary(ctx, req)
-}
-
-// GetPythonPackage calls relic.v1.PackageService.GetPythonPackage.
-func (c *packageServiceClient) GetPythonPackage(ctx context.Context, req *connect.Request[v1.GetPythonPackageRequest]) (*connect.Response[v1.GetPythonPackageResponse], error) {
-	return c.getPythonPackage.CallUnary(ctx, req)
-}
-
-// GetHelmChart calls relic.v1.PackageService.GetHelmChart.
-func (c *packageServiceClient) GetHelmChart(ctx context.Context, req *connect.Request[v1.GetHelmChartRequest]) (*connect.Response[v1.GetHelmChartResponse], error) {
-	return c.getHelmChart.CallUnary(ctx, req)
+// NewPackageServiceClient constructs a client for the relic.v1.PackageService service. Multiple
+// service clients may share a single connect.Client.
+func NewPackageServiceClient(client *connect.Client) PackageServiceClient {
+	return &packageServiceClient{client: client}
 }
 
 // PackageServiceHandler is an implementation of the relic.v1.PackageService service.
 type PackageServiceHandler interface {
 	// GetContainerImage returns the image an image tag folder holds.
-	GetContainerImage(context.Context, *connect.Request[v1.GetContainerImageRequest]) (*connect.Response[v1.GetContainerImageResponse], error)
+	GetContainerImage(context.Context, *v1.GetContainerImageRequest) (*v1.GetContainerImageResponse, error)
 	// PromoteContainerImage copies or moves an image tag (or every tag of the
 	// image) to another repository. It needs write permission on the target
 	// and, to move, delete permission on the source.
-	PromoteContainerImage(context.Context, *connect.Request[v1.PromoteContainerImageRequest]) (*connect.Response[v1.PromoteContainerImageResponse], error)
+	PromoteContainerImage(context.Context, *v1.PromoteContainerImageRequest) (*v1.PromoteContainerImageResponse, error)
 	// GetNpmPackage returns an npm tarball's package.json facts.
-	GetNpmPackage(context.Context, *connect.Request[v1.GetNpmPackageRequest]) (*connect.Response[v1.GetNpmPackageResponse], error)
+	GetNpmPackage(context.Context, *v1.GetNpmPackageRequest) (*v1.GetNpmPackageResponse, error)
 	// GetPythonPackage returns a wheel's or sdist's core metadata.
-	GetPythonPackage(context.Context, *connect.Request[v1.GetPythonPackageRequest]) (*connect.Response[v1.GetPythonPackageResponse], error)
+	GetPythonPackage(context.Context, *v1.GetPythonPackageRequest) (*v1.GetPythonPackageResponse, error)
 	// GetHelmChart returns a chart's Chart.yaml.
-	GetHelmChart(context.Context, *connect.Request[v1.GetHelmChartRequest]) (*connect.Response[v1.GetHelmChartResponse], error)
+	GetHelmChart(context.Context, *v1.GetHelmChartRequest) (*v1.GetHelmChartResponse, error)
 }
 
-// NewPackageServiceHandler builds an HTTP handler from the service implementation. It returns the
-// path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewPackageServiceHandler(svc PackageServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	packageServiceMethods := v1.File_relic_v1_package_proto.Services().ByName("PackageService").Methods()
-	packageServiceGetContainerImageHandler := connect.NewUnaryHandler(
-		PackageServiceGetContainerImageProcedure,
-		svc.GetContainerImage,
-		connect.WithSchema(packageServiceMethods.ByName("GetContainerImage")),
-		connect.WithHandlerOptions(opts...),
+// RegisterPackageServiceHandler registers svc as the relic.v1.PackageService implementation on
+// server.
+func RegisterPackageServiceHandler(server *connect.Server, svc PackageServiceHandler) {
+	adapter := packageServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: packageServiceGetContainerImageSpec(), Handler: adapter.getContainerImage},
+		connect.Method{Spec: packageServicePromoteContainerImageSpec(), Handler: adapter.promoteContainerImage},
+		connect.Method{Spec: packageServiceGetNpmPackageSpec(), Handler: adapter.getNpmPackage},
+		connect.Method{Spec: packageServiceGetPythonPackageSpec(), Handler: adapter.getPythonPackage},
+		connect.Method{Spec: packageServiceGetHelmChartSpec(), Handler: adapter.getHelmChart},
 	)
-	packageServicePromoteContainerImageHandler := connect.NewUnaryHandler(
-		PackageServicePromoteContainerImageProcedure,
-		svc.PromoteContainerImage,
-		connect.WithSchema(packageServiceMethods.ByName("PromoteContainerImage")),
-		connect.WithHandlerOptions(opts...),
-	)
-	packageServiceGetNpmPackageHandler := connect.NewUnaryHandler(
-		PackageServiceGetNpmPackageProcedure,
-		svc.GetNpmPackage,
-		connect.WithSchema(packageServiceMethods.ByName("GetNpmPackage")),
-		connect.WithHandlerOptions(opts...),
-	)
-	packageServiceGetPythonPackageHandler := connect.NewUnaryHandler(
-		PackageServiceGetPythonPackageProcedure,
-		svc.GetPythonPackage,
-		connect.WithSchema(packageServiceMethods.ByName("GetPythonPackage")),
-		connect.WithHandlerOptions(opts...),
-	)
-	packageServiceGetHelmChartHandler := connect.NewUnaryHandler(
-		PackageServiceGetHelmChartProcedure,
-		svc.GetHelmChart,
-		connect.WithSchema(packageServiceMethods.ByName("GetHelmChart")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/relic.v1.PackageService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case PackageServiceGetContainerImageProcedure:
-			packageServiceGetContainerImageHandler.ServeHTTP(w, r)
-		case PackageServicePromoteContainerImageProcedure:
-			packageServicePromoteContainerImageHandler.ServeHTTP(w, r)
-		case PackageServiceGetNpmPackageProcedure:
-			packageServiceGetNpmPackageHandler.ServeHTTP(w, r)
-		case PackageServiceGetPythonPackageProcedure:
-			packageServiceGetPythonPackageHandler.ServeHTTP(w, r)
-		case PackageServiceGetHelmChartProcedure:
-			packageServiceGetHelmChartHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedPackageServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedPackageServiceHandler struct{}
 
-func (UnimplementedPackageServiceHandler) GetContainerImage(context.Context, *connect.Request[v1.GetContainerImageRequest]) (*connect.Response[v1.GetContainerImageResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.PackageService.GetContainerImage is not implemented"))
+func (UnimplementedPackageServiceHandler) GetContainerImage(context.Context, *v1.GetContainerImageRequest) (*v1.GetContainerImageResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.PackageService.GetContainerImage is not implemented")
 }
 
-func (UnimplementedPackageServiceHandler) PromoteContainerImage(context.Context, *connect.Request[v1.PromoteContainerImageRequest]) (*connect.Response[v1.PromoteContainerImageResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.PackageService.PromoteContainerImage is not implemented"))
+func (UnimplementedPackageServiceHandler) PromoteContainerImage(context.Context, *v1.PromoteContainerImageRequest) (*v1.PromoteContainerImageResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.PackageService.PromoteContainerImage is not implemented")
 }
 
-func (UnimplementedPackageServiceHandler) GetNpmPackage(context.Context, *connect.Request[v1.GetNpmPackageRequest]) (*connect.Response[v1.GetNpmPackageResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.PackageService.GetNpmPackage is not implemented"))
+func (UnimplementedPackageServiceHandler) GetNpmPackage(context.Context, *v1.GetNpmPackageRequest) (*v1.GetNpmPackageResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.PackageService.GetNpmPackage is not implemented")
 }
 
-func (UnimplementedPackageServiceHandler) GetPythonPackage(context.Context, *connect.Request[v1.GetPythonPackageRequest]) (*connect.Response[v1.GetPythonPackageResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.PackageService.GetPythonPackage is not implemented"))
+func (UnimplementedPackageServiceHandler) GetPythonPackage(context.Context, *v1.GetPythonPackageRequest) (*v1.GetPythonPackageResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.PackageService.GetPythonPackage is not implemented")
 }
 
-func (UnimplementedPackageServiceHandler) GetHelmChart(context.Context, *connect.Request[v1.GetHelmChartRequest]) (*connect.Response[v1.GetHelmChartResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.PackageService.GetHelmChart is not implemented"))
+func (UnimplementedPackageServiceHandler) GetHelmChart(context.Context, *v1.GetHelmChartRequest) (*v1.GetHelmChartResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.PackageService.GetHelmChart is not implemented")
+}
+
+type packageServiceClient struct {
+	client *connect.Client
+}
+
+func (c *packageServiceClient) GetContainerImage(ctx context.Context, req *v1.GetContainerImageRequest) (*v1.GetContainerImageResponse, error) {
+	var res v1.GetContainerImageResponse
+	if err := c.client.CallUnary(ctx, packageServiceGetContainerImageSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *packageServiceClient) PromoteContainerImage(ctx context.Context, req *v1.PromoteContainerImageRequest) (*v1.PromoteContainerImageResponse, error) {
+	var res v1.PromoteContainerImageResponse
+	if err := c.client.CallUnary(ctx, packageServicePromoteContainerImageSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *packageServiceClient) GetNpmPackage(ctx context.Context, req *v1.GetNpmPackageRequest) (*v1.GetNpmPackageResponse, error) {
+	var res v1.GetNpmPackageResponse
+	if err := c.client.CallUnary(ctx, packageServiceGetNpmPackageSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *packageServiceClient) GetPythonPackage(ctx context.Context, req *v1.GetPythonPackageRequest) (*v1.GetPythonPackageResponse, error) {
+	var res v1.GetPythonPackageResponse
+	if err := c.client.CallUnary(ctx, packageServiceGetPythonPackageSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *packageServiceClient) GetHelmChart(ctx context.Context, req *v1.GetHelmChartRequest) (*v1.GetHelmChartResponse, error) {
+	var res v1.GetHelmChartResponse
+	if err := c.client.CallUnary(ctx, packageServiceGetHelmChartSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type packageServiceHandler struct{ svc PackageServiceHandler }
+
+func (h packageServiceHandler) getContainerImage(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetContainerImageRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetContainerImage(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h packageServiceHandler) promoteContainerImage(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PromoteContainerImageRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.PromoteContainerImage(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h packageServiceHandler) getNpmPackage(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetNpmPackageRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetNpmPackage(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h packageServiceHandler) getPythonPackage(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetPythonPackageRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetPythonPackage(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h packageServiceHandler) getHelmChart(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetHelmChartRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetHelmChart(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

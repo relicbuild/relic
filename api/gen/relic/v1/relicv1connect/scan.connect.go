@@ -5,828 +5,994 @@
 package relicv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
-	http "net/http"
 	v1 "relic/api/gen/relic/v1"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// ScanServiceName is the fully-qualified name of the ScanService service.
 	ScanServiceName = "relic.v1.ScanService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// ScanServiceGetItemScanProcedure is the fully-qualified name of the ScanService's GetItemScan RPC.
+	// ScanServiceGetItemScanProcedure is the procedure name of the ScanService's GetItemScan RPC.
 	ScanServiceGetItemScanProcedure = "/relic.v1.ScanService/GetItemScan"
-	// ScanServiceExplainDownloadProcedure is the fully-qualified name of the ScanService's
-	// ExplainDownload RPC.
+	// ScanServiceExplainDownloadProcedure is the procedure name of the ScanService's ExplainDownload
+	// RPC.
 	ScanServiceExplainDownloadProcedure = "/relic.v1.ScanService/ExplainDownload"
-	// ScanServiceCheckPackageProcedure is the fully-qualified name of the ScanService's CheckPackage
-	// RPC.
+	// ScanServiceCheckPackageProcedure is the procedure name of the ScanService's CheckPackage RPC.
 	ScanServiceCheckPackageProcedure = "/relic.v1.ScanService/CheckPackage"
-	// ScanServiceScanBuildRunProcedure is the fully-qualified name of the ScanService's ScanBuildRun
-	// RPC.
+	// ScanServiceScanBuildRunProcedure is the procedure name of the ScanService's ScanBuildRun RPC.
 	ScanServiceScanBuildRunProcedure = "/relic.v1.ScanService/ScanBuildRun"
-	// ScanServiceGetBuildRunScanProcedure is the fully-qualified name of the ScanService's
-	// GetBuildRunScan RPC.
+	// ScanServiceGetBuildRunScanProcedure is the procedure name of the ScanService's GetBuildRunScan
+	// RPC.
 	ScanServiceGetBuildRunScanProcedure = "/relic.v1.ScanService/GetBuildRunScan"
-	// ScanServiceScanPackagesProcedure is the fully-qualified name of the ScanService's ScanPackages
-	// RPC.
+	// ScanServiceScanPackagesProcedure is the procedure name of the ScanService's ScanPackages RPC.
 	ScanServiceScanPackagesProcedure = "/relic.v1.ScanService/ScanPackages"
-	// ScanServiceGetPackagesScanProcedure is the fully-qualified name of the ScanService's
-	// GetPackagesScan RPC.
-	ScanServiceGetPackagesScanProcedure = "/relic.v1.ScanService/GetPackagesScan"
-	// ScanServiceExportVexProcedure is the fully-qualified name of the ScanService's ExportVex RPC.
-	ScanServiceExportVexProcedure = "/relic.v1.ScanService/ExportVex"
-	// ScanServiceImportVexProcedure is the fully-qualified name of the ScanService's ImportVex RPC.
-	ScanServiceImportVexProcedure = "/relic.v1.ScanService/ImportVex"
-	// ScanServiceGetItemSbomProcedure is the fully-qualified name of the ScanService's GetItemSbom RPC.
-	ScanServiceGetItemSbomProcedure = "/relic.v1.ScanService/GetItemSbom"
-	// ScanServiceListFindingsProcedure is the fully-qualified name of the ScanService's ListFindings
+	// ScanServiceGetPackagesScanProcedure is the procedure name of the ScanService's GetPackagesScan
 	// RPC.
+	ScanServiceGetPackagesScanProcedure = "/relic.v1.ScanService/GetPackagesScan"
+	// ScanServiceExportVexProcedure is the procedure name of the ScanService's ExportVex RPC.
+	ScanServiceExportVexProcedure = "/relic.v1.ScanService/ExportVex"
+	// ScanServiceImportVexProcedure is the procedure name of the ScanService's ImportVex RPC.
+	ScanServiceImportVexProcedure = "/relic.v1.ScanService/ImportVex"
+	// ScanServiceGetItemSbomProcedure is the procedure name of the ScanService's GetItemSbom RPC.
+	ScanServiceGetItemSbomProcedure = "/relic.v1.ScanService/GetItemSbom"
+	// ScanServiceListFindingsProcedure is the procedure name of the ScanService's ListFindings RPC.
 	ScanServiceListFindingsProcedure = "/relic.v1.ScanService/ListFindings"
-	// ScanServiceListOperationalRisksProcedure is the fully-qualified name of the ScanService's
+	// ScanServiceListOperationalRisksProcedure is the procedure name of the ScanService's
 	// ListOperationalRisks RPC.
 	ScanServiceListOperationalRisksProcedure = "/relic.v1.ScanService/ListOperationalRisks"
-	// ScanServiceGetEndOfLifeStatusProcedure is the fully-qualified name of the ScanService's
+	// ScanServiceGetEndOfLifeStatusProcedure is the procedure name of the ScanService's
 	// GetEndOfLifeStatus RPC.
 	ScanServiceGetEndOfLifeStatusProcedure = "/relic.v1.ScanService/GetEndOfLifeStatus"
-	// ScanServiceListCvesProcedure is the fully-qualified name of the ScanService's ListCves RPC.
+	// ScanServiceListCvesProcedure is the procedure name of the ScanService's ListCves RPC.
 	ScanServiceListCvesProcedure = "/relic.v1.ScanService/ListCves"
-	// ScanServiceGetCveProcedure is the fully-qualified name of the ScanService's GetCve RPC.
+	// ScanServiceGetCveProcedure is the procedure name of the ScanService's GetCve RPC.
 	ScanServiceGetCveProcedure = "/relic.v1.ScanService/GetCve"
-	// ScanServiceListPoliciesProcedure is the fully-qualified name of the ScanService's ListPolicies
-	// RPC.
+	// ScanServiceListPoliciesProcedure is the procedure name of the ScanService's ListPolicies RPC.
 	ScanServiceListPoliciesProcedure = "/relic.v1.ScanService/ListPolicies"
-	// ScanServicePutPolicyProcedure is the fully-qualified name of the ScanService's PutPolicy RPC.
+	// ScanServicePutPolicyProcedure is the procedure name of the ScanService's PutPolicy RPC.
 	ScanServicePutPolicyProcedure = "/relic.v1.ScanService/PutPolicy"
-	// ScanServiceDeletePolicyProcedure is the fully-qualified name of the ScanService's DeletePolicy
-	// RPC.
+	// ScanServiceDeletePolicyProcedure is the procedure name of the ScanService's DeletePolicy RPC.
 	ScanServiceDeletePolicyProcedure = "/relic.v1.ScanService/DeletePolicy"
-	// ScanServiceListWatchesProcedure is the fully-qualified name of the ScanService's ListWatches RPC.
+	// ScanServiceListWatchesProcedure is the procedure name of the ScanService's ListWatches RPC.
 	ScanServiceListWatchesProcedure = "/relic.v1.ScanService/ListWatches"
-	// ScanServicePutWatchProcedure is the fully-qualified name of the ScanService's PutWatch RPC.
+	// ScanServicePutWatchProcedure is the procedure name of the ScanService's PutWatch RPC.
 	ScanServicePutWatchProcedure = "/relic.v1.ScanService/PutWatch"
-	// ScanServiceDeleteWatchProcedure is the fully-qualified name of the ScanService's DeleteWatch RPC.
+	// ScanServiceDeleteWatchProcedure is the procedure name of the ScanService's DeleteWatch RPC.
 	ScanServiceDeleteWatchProcedure = "/relic.v1.ScanService/DeleteWatch"
-	// ScanServiceListIgnoreRulesProcedure is the fully-qualified name of the ScanService's
-	// ListIgnoreRules RPC.
+	// ScanServiceListIgnoreRulesProcedure is the procedure name of the ScanService's ListIgnoreRules
+	// RPC.
 	ScanServiceListIgnoreRulesProcedure = "/relic.v1.ScanService/ListIgnoreRules"
-	// ScanServiceCreateIgnoreRuleProcedure is the fully-qualified name of the ScanService's
-	// CreateIgnoreRule RPC.
+	// ScanServiceCreateIgnoreRuleProcedure is the procedure name of the ScanService's CreateIgnoreRule
+	// RPC.
 	ScanServiceCreateIgnoreRuleProcedure = "/relic.v1.ScanService/CreateIgnoreRule"
-	// ScanServiceDeleteIgnoreRuleProcedure is the fully-qualified name of the ScanService's
-	// DeleteIgnoreRule RPC.
+	// ScanServiceDeleteIgnoreRuleProcedure is the procedure name of the ScanService's DeleteIgnoreRule
+	// RPC.
 	ScanServiceDeleteIgnoreRuleProcedure = "/relic.v1.ScanService/DeleteIgnoreRule"
+)
+
+var (
+	scanServiceGetItemScanSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("GetItemScan"),
+			Procedure:  ScanServiceGetItemScanProcedure,
+		}
+	})
+	scanServiceExplainDownloadSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("ExplainDownload"),
+			Procedure:  ScanServiceExplainDownloadProcedure,
+		}
+	})
+	scanServiceCheckPackageSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("CheckPackage"),
+			Procedure:  ScanServiceCheckPackageProcedure,
+		}
+	})
+	scanServiceScanBuildRunSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("ScanBuildRun"),
+			Procedure:  ScanServiceScanBuildRunProcedure,
+		}
+	})
+	scanServiceGetBuildRunScanSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("GetBuildRunScan"),
+			Procedure:  ScanServiceGetBuildRunScanProcedure,
+		}
+	})
+	scanServiceScanPackagesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("ScanPackages"),
+			Procedure:  ScanServiceScanPackagesProcedure,
+		}
+	})
+	scanServiceGetPackagesScanSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("GetPackagesScan"),
+			Procedure:  ScanServiceGetPackagesScanProcedure,
+		}
+	})
+	scanServiceExportVexSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("ExportVex"),
+			Procedure:  ScanServiceExportVexProcedure,
+		}
+	})
+	scanServiceImportVexSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("ImportVex"),
+			Procedure:  ScanServiceImportVexProcedure,
+		}
+	})
+	scanServiceGetItemSbomSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("GetItemSbom"),
+			Procedure:  ScanServiceGetItemSbomProcedure,
+		}
+	})
+	scanServiceListFindingsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("ListFindings"),
+			Procedure:  ScanServiceListFindingsProcedure,
+		}
+	})
+	scanServiceListOperationalRisksSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("ListOperationalRisks"),
+			Procedure:  ScanServiceListOperationalRisksProcedure,
+		}
+	})
+	scanServiceGetEndOfLifeStatusSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("GetEndOfLifeStatus"),
+			Procedure:  ScanServiceGetEndOfLifeStatusProcedure,
+		}
+	})
+	scanServiceListCvesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("ListCves"),
+			Procedure:  ScanServiceListCvesProcedure,
+		}
+	})
+	scanServiceGetCveSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("GetCve"),
+			Procedure:  ScanServiceGetCveProcedure,
+		}
+	})
+	scanServiceListPoliciesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("ListPolicies"),
+			Procedure:  ScanServiceListPoliciesProcedure,
+		}
+	})
+	scanServicePutPolicySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("PutPolicy"),
+			Procedure:  ScanServicePutPolicyProcedure,
+		}
+	})
+	scanServiceDeletePolicySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("DeletePolicy"),
+			Procedure:  ScanServiceDeletePolicyProcedure,
+		}
+	})
+	scanServiceListWatchesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("ListWatches"),
+			Procedure:  ScanServiceListWatchesProcedure,
+		}
+	})
+	scanServicePutWatchSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("PutWatch"),
+			Procedure:  ScanServicePutWatchProcedure,
+		}
+	})
+	scanServiceDeleteWatchSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("DeleteWatch"),
+			Procedure:  ScanServiceDeleteWatchProcedure,
+		}
+	})
+	scanServiceListIgnoreRulesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("ListIgnoreRules"),
+			Procedure:  ScanServiceListIgnoreRulesProcedure,
+		}
+	})
+	scanServiceCreateIgnoreRuleSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("CreateIgnoreRule"),
+			Procedure:  ScanServiceCreateIgnoreRuleProcedure,
+		}
+	})
+	scanServiceDeleteIgnoreRuleSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods().ByName("DeleteIgnoreRule"),
+			Procedure:  ScanServiceDeleteIgnoreRuleProcedure,
+		}
+	})
 )
 
 // ScanServiceClient is a client for the relic.v1.ScanService service.
 type ScanServiceClient interface {
 	// GetItemScan returns the scan of a file the caller may read (for an image
 	// folder, its manifest's).
-	GetItemScan(context.Context, *connect.Request[v1.GetItemScanRequest]) (*connect.Response[v1.GetItemScanResponse], error)
+	GetItemScan(context.Context, *v1.GetItemScanRequest) (*v1.GetItemScanResponse, error)
 	// ExplainDownload says whether a download of a file the caller may read
 	// would be blocked, and why, without recording a decision.
-	ExplainDownload(context.Context, *connect.Request[v1.ExplainDownloadRequest]) (*connect.Response[v1.ExplainDownloadResponse], error)
+	ExplainDownload(context.Context, *v1.ExplainDownloadRequest) (*v1.ExplainDownloadResponse, error)
 	// CheckPackage says whether a package version may be used: not a known
 	// malicious package, offered by the repository's npm or PyPI metadata
 	// (which leaves out versions cooling down, quarantined or blocked), and
 	// with no stored finding that a blocking rule of the watches covering the
 	// repository refuses.
-	CheckPackage(context.Context, *connect.Request[v1.CheckPackageRequest]) (*connect.Response[v1.CheckPackageResponse], error)
+	CheckPackage(context.Context, *v1.CheckPackageRequest) (*v1.CheckPackageResponse, error)
 	// ScanBuildRun queues a scan of a build run's dependencies; its artifacts'
 	// own scans join the result. It needs read permission on the build.
-	ScanBuildRun(context.Context, *connect.Request[v1.ScanBuildRunRequest]) (*connect.Response[v1.ScanBuildRunResponse], error)
+	ScanBuildRun(context.Context, *v1.ScanBuildRunRequest) (*v1.ScanBuildRunResponse, error)
 	// GetBuildRunScan returns the newest scan of a build run and the policy
 	// rules its findings violate under the watches covering the build.
-	GetBuildRunScan(context.Context, *connect.Request[v1.GetBuildRunScanRequest]) (*connect.Response[v1.GetBuildRunScanResponse], error)
+	GetBuildRunScan(context.Context, *v1.GetBuildRunScanRequest) (*v1.GetBuildRunScanResponse, error)
 	// ScanPackages queues a scan of packages named by purl (a project's
 	// dependencies, the contents of local files) and returns its ID.
-	ScanPackages(context.Context, *connect.Request[v1.ScanPackagesRequest]) (*connect.Response[v1.ScanPackagesResponse], error)
+	ScanPackages(context.Context, *v1.ScanPackagesRequest) (*v1.ScanPackagesResponse, error)
 	// GetPackagesScan returns a package scan the caller queued: its findings
 	// and the policy rules they violate.
-	GetPackagesScan(context.Context, *connect.Request[v1.GetPackagesScanRequest]) (*connect.Response[v1.GetPackagesScanResponse], error)
+	GetPackagesScan(context.Context, *v1.GetPackagesScanRequest) (*v1.GetPackagesScanResponse, error)
 	// ExportVex writes the ignore rules as an OpenVEX or CycloneDX document: a
 	// not_affected statement per vulnerability they ignore in packages, and,
 	// when asked, per vulnerability govulncheck found no call path to.
-	ExportVex(context.Context, *connect.Request[v1.ExportVexRequest]) (*connect.Response[v1.ExportVexResponse], error)
+	ExportVex(context.Context, *v1.ExportVexRequest) (*v1.ExportVexResponse, error)
 	// ImportVex creates ignore rules from an OpenVEX document's not_affected
 	// and fixed statements, or a CycloneDX document's not_affected and
 	// resolved vulnerabilities; each rule's notes name the document and
 	// author.
-	ImportVex(context.Context, *connect.Request[v1.ImportVexRequest]) (*connect.Response[v1.ImportVexResponse], error)
+	ImportVex(context.Context, *v1.ImportVexRequest) (*v1.ImportVexResponse, error)
 	// GetItemSbom returns the components of an item's scan (for an image
 	// folder, its manifest's).
-	GetItemSbom(context.Context, *connect.Request[v1.GetItemSbomRequest]) (*connect.Response[v1.GetItemSbomResponse], error)
+	GetItemSbom(context.Context, *v1.GetItemSbomRequest) (*v1.GetItemSbomResponse, error)
 	// ListFindings returns findings across everything scanned.
-	ListFindings(context.Context, *connect.Request[v1.ListFindingsRequest]) (*connect.Response[v1.ListFindingsResponse], error)
+	ListFindings(context.Context, *v1.ListFindingsRequest) (*v1.ListFindingsResponse, error)
 	// ListOperationalRisks returns operational risks across scanned content:
 	// components past or near end of life, deprecated or unmaintained.
-	ListOperationalRisks(context.Context, *connect.Request[v1.ListOperationalRisksRequest]) (*connect.Response[v1.ListOperationalRisksResponse], error)
+	ListOperationalRisks(context.Context, *v1.ListOperationalRisksRequest) (*v1.ListOperationalRisksResponse, error)
 	// GetEndOfLifeStatus says what end-of-life data the server holds. PUT a
 	// dump of endoflife.date to the same path to import one.
-	GetEndOfLifeStatus(context.Context, *connect.Request[v1.GetEndOfLifeStatusRequest]) (*connect.Response[v1.GetEndOfLifeStatusResponse], error)
+	GetEndOfLifeStatus(context.Context, *v1.GetEndOfLifeStatusRequest) (*v1.GetEndOfLifeStatusResponse, error)
 	// ListCves returns the CVEs findings name, with what the feeds say.
-	ListCves(context.Context, *connect.Request[v1.ListCvesRequest]) (*connect.Response[v1.ListCvesResponse], error)
+	ListCves(context.Context, *v1.ListCvesRequest) (*v1.ListCvesResponse, error)
 	// GetCve returns one CVE and the artifacts it affects.
-	GetCve(context.Context, *connect.Request[v1.GetCveRequest]) (*connect.Response[v1.GetCveResponse], error)
-	ListPolicies(context.Context, *connect.Request[v1.ListPoliciesRequest]) (*connect.Response[v1.ListPoliciesResponse], error)
-	PutPolicy(context.Context, *connect.Request[v1.PutPolicyRequest]) (*connect.Response[v1.PutPolicyResponse], error)
-	DeletePolicy(context.Context, *connect.Request[v1.DeletePolicyRequest]) (*connect.Response[v1.DeletePolicyResponse], error)
-	ListWatches(context.Context, *connect.Request[v1.ListWatchesRequest]) (*connect.Response[v1.ListWatchesResponse], error)
-	PutWatch(context.Context, *connect.Request[v1.PutWatchRequest]) (*connect.Response[v1.PutWatchResponse], error)
-	DeleteWatch(context.Context, *connect.Request[v1.DeleteWatchRequest]) (*connect.Response[v1.DeleteWatchResponse], error)
-	ListIgnoreRules(context.Context, *connect.Request[v1.ListIgnoreRulesRequest]) (*connect.Response[v1.ListIgnoreRulesResponse], error)
-	CreateIgnoreRule(context.Context, *connect.Request[v1.CreateIgnoreRuleRequest]) (*connect.Response[v1.CreateIgnoreRuleResponse], error)
-	DeleteIgnoreRule(context.Context, *connect.Request[v1.DeleteIgnoreRuleRequest]) (*connect.Response[v1.DeleteIgnoreRuleResponse], error)
+	GetCve(context.Context, *v1.GetCveRequest) (*v1.GetCveResponse, error)
+	ListPolicies(context.Context, *v1.ListPoliciesRequest) (*v1.ListPoliciesResponse, error)
+	PutPolicy(context.Context, *v1.PutPolicyRequest) (*v1.PutPolicyResponse, error)
+	DeletePolicy(context.Context, *v1.DeletePolicyRequest) (*v1.DeletePolicyResponse, error)
+	ListWatches(context.Context, *v1.ListWatchesRequest) (*v1.ListWatchesResponse, error)
+	PutWatch(context.Context, *v1.PutWatchRequest) (*v1.PutWatchResponse, error)
+	DeleteWatch(context.Context, *v1.DeleteWatchRequest) (*v1.DeleteWatchResponse, error)
+	ListIgnoreRules(context.Context, *v1.ListIgnoreRulesRequest) (*v1.ListIgnoreRulesResponse, error)
+	CreateIgnoreRule(context.Context, *v1.CreateIgnoreRuleRequest) (*v1.CreateIgnoreRuleResponse, error)
+	DeleteIgnoreRule(context.Context, *v1.DeleteIgnoreRuleRequest) (*v1.DeleteIgnoreRuleResponse, error)
 }
 
-// NewScanServiceClient constructs a client for the relic.v1.ScanService service. By default, it
-// uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
-// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
-// connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewScanServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) ScanServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	scanServiceMethods := v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods()
-	return &scanServiceClient{
-		getItemScan: connect.NewClient[v1.GetItemScanRequest, v1.GetItemScanResponse](
-			httpClient,
-			baseURL+ScanServiceGetItemScanProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("GetItemScan")),
-			connect.WithClientOptions(opts...),
-		),
-		explainDownload: connect.NewClient[v1.ExplainDownloadRequest, v1.ExplainDownloadResponse](
-			httpClient,
-			baseURL+ScanServiceExplainDownloadProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("ExplainDownload")),
-			connect.WithClientOptions(opts...),
-		),
-		checkPackage: connect.NewClient[v1.CheckPackageRequest, v1.CheckPackageResponse](
-			httpClient,
-			baseURL+ScanServiceCheckPackageProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("CheckPackage")),
-			connect.WithClientOptions(opts...),
-		),
-		scanBuildRun: connect.NewClient[v1.ScanBuildRunRequest, v1.ScanBuildRunResponse](
-			httpClient,
-			baseURL+ScanServiceScanBuildRunProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("ScanBuildRun")),
-			connect.WithClientOptions(opts...),
-		),
-		getBuildRunScan: connect.NewClient[v1.GetBuildRunScanRequest, v1.GetBuildRunScanResponse](
-			httpClient,
-			baseURL+ScanServiceGetBuildRunScanProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("GetBuildRunScan")),
-			connect.WithClientOptions(opts...),
-		),
-		scanPackages: connect.NewClient[v1.ScanPackagesRequest, v1.ScanPackagesResponse](
-			httpClient,
-			baseURL+ScanServiceScanPackagesProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("ScanPackages")),
-			connect.WithClientOptions(opts...),
-		),
-		getPackagesScan: connect.NewClient[v1.GetPackagesScanRequest, v1.GetPackagesScanResponse](
-			httpClient,
-			baseURL+ScanServiceGetPackagesScanProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("GetPackagesScan")),
-			connect.WithClientOptions(opts...),
-		),
-		exportVex: connect.NewClient[v1.ExportVexRequest, v1.ExportVexResponse](
-			httpClient,
-			baseURL+ScanServiceExportVexProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("ExportVex")),
-			connect.WithClientOptions(opts...),
-		),
-		importVex: connect.NewClient[v1.ImportVexRequest, v1.ImportVexResponse](
-			httpClient,
-			baseURL+ScanServiceImportVexProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("ImportVex")),
-			connect.WithClientOptions(opts...),
-		),
-		getItemSbom: connect.NewClient[v1.GetItemSbomRequest, v1.GetItemSbomResponse](
-			httpClient,
-			baseURL+ScanServiceGetItemSbomProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("GetItemSbom")),
-			connect.WithClientOptions(opts...),
-		),
-		listFindings: connect.NewClient[v1.ListFindingsRequest, v1.ListFindingsResponse](
-			httpClient,
-			baseURL+ScanServiceListFindingsProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("ListFindings")),
-			connect.WithClientOptions(opts...),
-		),
-		listOperationalRisks: connect.NewClient[v1.ListOperationalRisksRequest, v1.ListOperationalRisksResponse](
-			httpClient,
-			baseURL+ScanServiceListOperationalRisksProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("ListOperationalRisks")),
-			connect.WithClientOptions(opts...),
-		),
-		getEndOfLifeStatus: connect.NewClient[v1.GetEndOfLifeStatusRequest, v1.GetEndOfLifeStatusResponse](
-			httpClient,
-			baseURL+ScanServiceGetEndOfLifeStatusProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("GetEndOfLifeStatus")),
-			connect.WithClientOptions(opts...),
-		),
-		listCves: connect.NewClient[v1.ListCvesRequest, v1.ListCvesResponse](
-			httpClient,
-			baseURL+ScanServiceListCvesProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("ListCves")),
-			connect.WithClientOptions(opts...),
-		),
-		getCve: connect.NewClient[v1.GetCveRequest, v1.GetCveResponse](
-			httpClient,
-			baseURL+ScanServiceGetCveProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("GetCve")),
-			connect.WithClientOptions(opts...),
-		),
-		listPolicies: connect.NewClient[v1.ListPoliciesRequest, v1.ListPoliciesResponse](
-			httpClient,
-			baseURL+ScanServiceListPoliciesProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("ListPolicies")),
-			connect.WithClientOptions(opts...),
-		),
-		putPolicy: connect.NewClient[v1.PutPolicyRequest, v1.PutPolicyResponse](
-			httpClient,
-			baseURL+ScanServicePutPolicyProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("PutPolicy")),
-			connect.WithClientOptions(opts...),
-		),
-		deletePolicy: connect.NewClient[v1.DeletePolicyRequest, v1.DeletePolicyResponse](
-			httpClient,
-			baseURL+ScanServiceDeletePolicyProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("DeletePolicy")),
-			connect.WithClientOptions(opts...),
-		),
-		listWatches: connect.NewClient[v1.ListWatchesRequest, v1.ListWatchesResponse](
-			httpClient,
-			baseURL+ScanServiceListWatchesProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("ListWatches")),
-			connect.WithClientOptions(opts...),
-		),
-		putWatch: connect.NewClient[v1.PutWatchRequest, v1.PutWatchResponse](
-			httpClient,
-			baseURL+ScanServicePutWatchProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("PutWatch")),
-			connect.WithClientOptions(opts...),
-		),
-		deleteWatch: connect.NewClient[v1.DeleteWatchRequest, v1.DeleteWatchResponse](
-			httpClient,
-			baseURL+ScanServiceDeleteWatchProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("DeleteWatch")),
-			connect.WithClientOptions(opts...),
-		),
-		listIgnoreRules: connect.NewClient[v1.ListIgnoreRulesRequest, v1.ListIgnoreRulesResponse](
-			httpClient,
-			baseURL+ScanServiceListIgnoreRulesProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("ListIgnoreRules")),
-			connect.WithClientOptions(opts...),
-		),
-		createIgnoreRule: connect.NewClient[v1.CreateIgnoreRuleRequest, v1.CreateIgnoreRuleResponse](
-			httpClient,
-			baseURL+ScanServiceCreateIgnoreRuleProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("CreateIgnoreRule")),
-			connect.WithClientOptions(opts...),
-		),
-		deleteIgnoreRule: connect.NewClient[v1.DeleteIgnoreRuleRequest, v1.DeleteIgnoreRuleResponse](
-			httpClient,
-			baseURL+ScanServiceDeleteIgnoreRuleProcedure,
-			connect.WithSchema(scanServiceMethods.ByName("DeleteIgnoreRule")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// scanServiceClient implements ScanServiceClient.
-type scanServiceClient struct {
-	getItemScan          *connect.Client[v1.GetItemScanRequest, v1.GetItemScanResponse]
-	explainDownload      *connect.Client[v1.ExplainDownloadRequest, v1.ExplainDownloadResponse]
-	checkPackage         *connect.Client[v1.CheckPackageRequest, v1.CheckPackageResponse]
-	scanBuildRun         *connect.Client[v1.ScanBuildRunRequest, v1.ScanBuildRunResponse]
-	getBuildRunScan      *connect.Client[v1.GetBuildRunScanRequest, v1.GetBuildRunScanResponse]
-	scanPackages         *connect.Client[v1.ScanPackagesRequest, v1.ScanPackagesResponse]
-	getPackagesScan      *connect.Client[v1.GetPackagesScanRequest, v1.GetPackagesScanResponse]
-	exportVex            *connect.Client[v1.ExportVexRequest, v1.ExportVexResponse]
-	importVex            *connect.Client[v1.ImportVexRequest, v1.ImportVexResponse]
-	getItemSbom          *connect.Client[v1.GetItemSbomRequest, v1.GetItemSbomResponse]
-	listFindings         *connect.Client[v1.ListFindingsRequest, v1.ListFindingsResponse]
-	listOperationalRisks *connect.Client[v1.ListOperationalRisksRequest, v1.ListOperationalRisksResponse]
-	getEndOfLifeStatus   *connect.Client[v1.GetEndOfLifeStatusRequest, v1.GetEndOfLifeStatusResponse]
-	listCves             *connect.Client[v1.ListCvesRequest, v1.ListCvesResponse]
-	getCve               *connect.Client[v1.GetCveRequest, v1.GetCveResponse]
-	listPolicies         *connect.Client[v1.ListPoliciesRequest, v1.ListPoliciesResponse]
-	putPolicy            *connect.Client[v1.PutPolicyRequest, v1.PutPolicyResponse]
-	deletePolicy         *connect.Client[v1.DeletePolicyRequest, v1.DeletePolicyResponse]
-	listWatches          *connect.Client[v1.ListWatchesRequest, v1.ListWatchesResponse]
-	putWatch             *connect.Client[v1.PutWatchRequest, v1.PutWatchResponse]
-	deleteWatch          *connect.Client[v1.DeleteWatchRequest, v1.DeleteWatchResponse]
-	listIgnoreRules      *connect.Client[v1.ListIgnoreRulesRequest, v1.ListIgnoreRulesResponse]
-	createIgnoreRule     *connect.Client[v1.CreateIgnoreRuleRequest, v1.CreateIgnoreRuleResponse]
-	deleteIgnoreRule     *connect.Client[v1.DeleteIgnoreRuleRequest, v1.DeleteIgnoreRuleResponse]
-}
-
-// GetItemScan calls relic.v1.ScanService.GetItemScan.
-func (c *scanServiceClient) GetItemScan(ctx context.Context, req *connect.Request[v1.GetItemScanRequest]) (*connect.Response[v1.GetItemScanResponse], error) {
-	return c.getItemScan.CallUnary(ctx, req)
-}
-
-// ExplainDownload calls relic.v1.ScanService.ExplainDownload.
-func (c *scanServiceClient) ExplainDownload(ctx context.Context, req *connect.Request[v1.ExplainDownloadRequest]) (*connect.Response[v1.ExplainDownloadResponse], error) {
-	return c.explainDownload.CallUnary(ctx, req)
-}
-
-// CheckPackage calls relic.v1.ScanService.CheckPackage.
-func (c *scanServiceClient) CheckPackage(ctx context.Context, req *connect.Request[v1.CheckPackageRequest]) (*connect.Response[v1.CheckPackageResponse], error) {
-	return c.checkPackage.CallUnary(ctx, req)
-}
-
-// ScanBuildRun calls relic.v1.ScanService.ScanBuildRun.
-func (c *scanServiceClient) ScanBuildRun(ctx context.Context, req *connect.Request[v1.ScanBuildRunRequest]) (*connect.Response[v1.ScanBuildRunResponse], error) {
-	return c.scanBuildRun.CallUnary(ctx, req)
-}
-
-// GetBuildRunScan calls relic.v1.ScanService.GetBuildRunScan.
-func (c *scanServiceClient) GetBuildRunScan(ctx context.Context, req *connect.Request[v1.GetBuildRunScanRequest]) (*connect.Response[v1.GetBuildRunScanResponse], error) {
-	return c.getBuildRunScan.CallUnary(ctx, req)
-}
-
-// ScanPackages calls relic.v1.ScanService.ScanPackages.
-func (c *scanServiceClient) ScanPackages(ctx context.Context, req *connect.Request[v1.ScanPackagesRequest]) (*connect.Response[v1.ScanPackagesResponse], error) {
-	return c.scanPackages.CallUnary(ctx, req)
-}
-
-// GetPackagesScan calls relic.v1.ScanService.GetPackagesScan.
-func (c *scanServiceClient) GetPackagesScan(ctx context.Context, req *connect.Request[v1.GetPackagesScanRequest]) (*connect.Response[v1.GetPackagesScanResponse], error) {
-	return c.getPackagesScan.CallUnary(ctx, req)
-}
-
-// ExportVex calls relic.v1.ScanService.ExportVex.
-func (c *scanServiceClient) ExportVex(ctx context.Context, req *connect.Request[v1.ExportVexRequest]) (*connect.Response[v1.ExportVexResponse], error) {
-	return c.exportVex.CallUnary(ctx, req)
-}
-
-// ImportVex calls relic.v1.ScanService.ImportVex.
-func (c *scanServiceClient) ImportVex(ctx context.Context, req *connect.Request[v1.ImportVexRequest]) (*connect.Response[v1.ImportVexResponse], error) {
-	return c.importVex.CallUnary(ctx, req)
-}
-
-// GetItemSbom calls relic.v1.ScanService.GetItemSbom.
-func (c *scanServiceClient) GetItemSbom(ctx context.Context, req *connect.Request[v1.GetItemSbomRequest]) (*connect.Response[v1.GetItemSbomResponse], error) {
-	return c.getItemSbom.CallUnary(ctx, req)
-}
-
-// ListFindings calls relic.v1.ScanService.ListFindings.
-func (c *scanServiceClient) ListFindings(ctx context.Context, req *connect.Request[v1.ListFindingsRequest]) (*connect.Response[v1.ListFindingsResponse], error) {
-	return c.listFindings.CallUnary(ctx, req)
-}
-
-// ListOperationalRisks calls relic.v1.ScanService.ListOperationalRisks.
-func (c *scanServiceClient) ListOperationalRisks(ctx context.Context, req *connect.Request[v1.ListOperationalRisksRequest]) (*connect.Response[v1.ListOperationalRisksResponse], error) {
-	return c.listOperationalRisks.CallUnary(ctx, req)
-}
-
-// GetEndOfLifeStatus calls relic.v1.ScanService.GetEndOfLifeStatus.
-func (c *scanServiceClient) GetEndOfLifeStatus(ctx context.Context, req *connect.Request[v1.GetEndOfLifeStatusRequest]) (*connect.Response[v1.GetEndOfLifeStatusResponse], error) {
-	return c.getEndOfLifeStatus.CallUnary(ctx, req)
-}
-
-// ListCves calls relic.v1.ScanService.ListCves.
-func (c *scanServiceClient) ListCves(ctx context.Context, req *connect.Request[v1.ListCvesRequest]) (*connect.Response[v1.ListCvesResponse], error) {
-	return c.listCves.CallUnary(ctx, req)
-}
-
-// GetCve calls relic.v1.ScanService.GetCve.
-func (c *scanServiceClient) GetCve(ctx context.Context, req *connect.Request[v1.GetCveRequest]) (*connect.Response[v1.GetCveResponse], error) {
-	return c.getCve.CallUnary(ctx, req)
-}
-
-// ListPolicies calls relic.v1.ScanService.ListPolicies.
-func (c *scanServiceClient) ListPolicies(ctx context.Context, req *connect.Request[v1.ListPoliciesRequest]) (*connect.Response[v1.ListPoliciesResponse], error) {
-	return c.listPolicies.CallUnary(ctx, req)
-}
-
-// PutPolicy calls relic.v1.ScanService.PutPolicy.
-func (c *scanServiceClient) PutPolicy(ctx context.Context, req *connect.Request[v1.PutPolicyRequest]) (*connect.Response[v1.PutPolicyResponse], error) {
-	return c.putPolicy.CallUnary(ctx, req)
-}
-
-// DeletePolicy calls relic.v1.ScanService.DeletePolicy.
-func (c *scanServiceClient) DeletePolicy(ctx context.Context, req *connect.Request[v1.DeletePolicyRequest]) (*connect.Response[v1.DeletePolicyResponse], error) {
-	return c.deletePolicy.CallUnary(ctx, req)
-}
-
-// ListWatches calls relic.v1.ScanService.ListWatches.
-func (c *scanServiceClient) ListWatches(ctx context.Context, req *connect.Request[v1.ListWatchesRequest]) (*connect.Response[v1.ListWatchesResponse], error) {
-	return c.listWatches.CallUnary(ctx, req)
-}
-
-// PutWatch calls relic.v1.ScanService.PutWatch.
-func (c *scanServiceClient) PutWatch(ctx context.Context, req *connect.Request[v1.PutWatchRequest]) (*connect.Response[v1.PutWatchResponse], error) {
-	return c.putWatch.CallUnary(ctx, req)
-}
-
-// DeleteWatch calls relic.v1.ScanService.DeleteWatch.
-func (c *scanServiceClient) DeleteWatch(ctx context.Context, req *connect.Request[v1.DeleteWatchRequest]) (*connect.Response[v1.DeleteWatchResponse], error) {
-	return c.deleteWatch.CallUnary(ctx, req)
-}
-
-// ListIgnoreRules calls relic.v1.ScanService.ListIgnoreRules.
-func (c *scanServiceClient) ListIgnoreRules(ctx context.Context, req *connect.Request[v1.ListIgnoreRulesRequest]) (*connect.Response[v1.ListIgnoreRulesResponse], error) {
-	return c.listIgnoreRules.CallUnary(ctx, req)
-}
-
-// CreateIgnoreRule calls relic.v1.ScanService.CreateIgnoreRule.
-func (c *scanServiceClient) CreateIgnoreRule(ctx context.Context, req *connect.Request[v1.CreateIgnoreRuleRequest]) (*connect.Response[v1.CreateIgnoreRuleResponse], error) {
-	return c.createIgnoreRule.CallUnary(ctx, req)
-}
-
-// DeleteIgnoreRule calls relic.v1.ScanService.DeleteIgnoreRule.
-func (c *scanServiceClient) DeleteIgnoreRule(ctx context.Context, req *connect.Request[v1.DeleteIgnoreRuleRequest]) (*connect.Response[v1.DeleteIgnoreRuleResponse], error) {
-	return c.deleteIgnoreRule.CallUnary(ctx, req)
+// NewScanServiceClient constructs a client for the relic.v1.ScanService service. Multiple service
+// clients may share a single connect.Client.
+func NewScanServiceClient(client *connect.Client) ScanServiceClient {
+	return &scanServiceClient{client: client}
 }
 
 // ScanServiceHandler is an implementation of the relic.v1.ScanService service.
 type ScanServiceHandler interface {
 	// GetItemScan returns the scan of a file the caller may read (for an image
 	// folder, its manifest's).
-	GetItemScan(context.Context, *connect.Request[v1.GetItemScanRequest]) (*connect.Response[v1.GetItemScanResponse], error)
+	GetItemScan(context.Context, *v1.GetItemScanRequest) (*v1.GetItemScanResponse, error)
 	// ExplainDownload says whether a download of a file the caller may read
 	// would be blocked, and why, without recording a decision.
-	ExplainDownload(context.Context, *connect.Request[v1.ExplainDownloadRequest]) (*connect.Response[v1.ExplainDownloadResponse], error)
+	ExplainDownload(context.Context, *v1.ExplainDownloadRequest) (*v1.ExplainDownloadResponse, error)
 	// CheckPackage says whether a package version may be used: not a known
 	// malicious package, offered by the repository's npm or PyPI metadata
 	// (which leaves out versions cooling down, quarantined or blocked), and
 	// with no stored finding that a blocking rule of the watches covering the
 	// repository refuses.
-	CheckPackage(context.Context, *connect.Request[v1.CheckPackageRequest]) (*connect.Response[v1.CheckPackageResponse], error)
+	CheckPackage(context.Context, *v1.CheckPackageRequest) (*v1.CheckPackageResponse, error)
 	// ScanBuildRun queues a scan of a build run's dependencies; its artifacts'
 	// own scans join the result. It needs read permission on the build.
-	ScanBuildRun(context.Context, *connect.Request[v1.ScanBuildRunRequest]) (*connect.Response[v1.ScanBuildRunResponse], error)
+	ScanBuildRun(context.Context, *v1.ScanBuildRunRequest) (*v1.ScanBuildRunResponse, error)
 	// GetBuildRunScan returns the newest scan of a build run and the policy
 	// rules its findings violate under the watches covering the build.
-	GetBuildRunScan(context.Context, *connect.Request[v1.GetBuildRunScanRequest]) (*connect.Response[v1.GetBuildRunScanResponse], error)
+	GetBuildRunScan(context.Context, *v1.GetBuildRunScanRequest) (*v1.GetBuildRunScanResponse, error)
 	// ScanPackages queues a scan of packages named by purl (a project's
 	// dependencies, the contents of local files) and returns its ID.
-	ScanPackages(context.Context, *connect.Request[v1.ScanPackagesRequest]) (*connect.Response[v1.ScanPackagesResponse], error)
+	ScanPackages(context.Context, *v1.ScanPackagesRequest) (*v1.ScanPackagesResponse, error)
 	// GetPackagesScan returns a package scan the caller queued: its findings
 	// and the policy rules they violate.
-	GetPackagesScan(context.Context, *connect.Request[v1.GetPackagesScanRequest]) (*connect.Response[v1.GetPackagesScanResponse], error)
+	GetPackagesScan(context.Context, *v1.GetPackagesScanRequest) (*v1.GetPackagesScanResponse, error)
 	// ExportVex writes the ignore rules as an OpenVEX or CycloneDX document: a
 	// not_affected statement per vulnerability they ignore in packages, and,
 	// when asked, per vulnerability govulncheck found no call path to.
-	ExportVex(context.Context, *connect.Request[v1.ExportVexRequest]) (*connect.Response[v1.ExportVexResponse], error)
+	ExportVex(context.Context, *v1.ExportVexRequest) (*v1.ExportVexResponse, error)
 	// ImportVex creates ignore rules from an OpenVEX document's not_affected
 	// and fixed statements, or a CycloneDX document's not_affected and
 	// resolved vulnerabilities; each rule's notes name the document and
 	// author.
-	ImportVex(context.Context, *connect.Request[v1.ImportVexRequest]) (*connect.Response[v1.ImportVexResponse], error)
+	ImportVex(context.Context, *v1.ImportVexRequest) (*v1.ImportVexResponse, error)
 	// GetItemSbom returns the components of an item's scan (for an image
 	// folder, its manifest's).
-	GetItemSbom(context.Context, *connect.Request[v1.GetItemSbomRequest]) (*connect.Response[v1.GetItemSbomResponse], error)
+	GetItemSbom(context.Context, *v1.GetItemSbomRequest) (*v1.GetItemSbomResponse, error)
 	// ListFindings returns findings across everything scanned.
-	ListFindings(context.Context, *connect.Request[v1.ListFindingsRequest]) (*connect.Response[v1.ListFindingsResponse], error)
+	ListFindings(context.Context, *v1.ListFindingsRequest) (*v1.ListFindingsResponse, error)
 	// ListOperationalRisks returns operational risks across scanned content:
 	// components past or near end of life, deprecated or unmaintained.
-	ListOperationalRisks(context.Context, *connect.Request[v1.ListOperationalRisksRequest]) (*connect.Response[v1.ListOperationalRisksResponse], error)
+	ListOperationalRisks(context.Context, *v1.ListOperationalRisksRequest) (*v1.ListOperationalRisksResponse, error)
 	// GetEndOfLifeStatus says what end-of-life data the server holds. PUT a
 	// dump of endoflife.date to the same path to import one.
-	GetEndOfLifeStatus(context.Context, *connect.Request[v1.GetEndOfLifeStatusRequest]) (*connect.Response[v1.GetEndOfLifeStatusResponse], error)
+	GetEndOfLifeStatus(context.Context, *v1.GetEndOfLifeStatusRequest) (*v1.GetEndOfLifeStatusResponse, error)
 	// ListCves returns the CVEs findings name, with what the feeds say.
-	ListCves(context.Context, *connect.Request[v1.ListCvesRequest]) (*connect.Response[v1.ListCvesResponse], error)
+	ListCves(context.Context, *v1.ListCvesRequest) (*v1.ListCvesResponse, error)
 	// GetCve returns one CVE and the artifacts it affects.
-	GetCve(context.Context, *connect.Request[v1.GetCveRequest]) (*connect.Response[v1.GetCveResponse], error)
-	ListPolicies(context.Context, *connect.Request[v1.ListPoliciesRequest]) (*connect.Response[v1.ListPoliciesResponse], error)
-	PutPolicy(context.Context, *connect.Request[v1.PutPolicyRequest]) (*connect.Response[v1.PutPolicyResponse], error)
-	DeletePolicy(context.Context, *connect.Request[v1.DeletePolicyRequest]) (*connect.Response[v1.DeletePolicyResponse], error)
-	ListWatches(context.Context, *connect.Request[v1.ListWatchesRequest]) (*connect.Response[v1.ListWatchesResponse], error)
-	PutWatch(context.Context, *connect.Request[v1.PutWatchRequest]) (*connect.Response[v1.PutWatchResponse], error)
-	DeleteWatch(context.Context, *connect.Request[v1.DeleteWatchRequest]) (*connect.Response[v1.DeleteWatchResponse], error)
-	ListIgnoreRules(context.Context, *connect.Request[v1.ListIgnoreRulesRequest]) (*connect.Response[v1.ListIgnoreRulesResponse], error)
-	CreateIgnoreRule(context.Context, *connect.Request[v1.CreateIgnoreRuleRequest]) (*connect.Response[v1.CreateIgnoreRuleResponse], error)
-	DeleteIgnoreRule(context.Context, *connect.Request[v1.DeleteIgnoreRuleRequest]) (*connect.Response[v1.DeleteIgnoreRuleResponse], error)
+	GetCve(context.Context, *v1.GetCveRequest) (*v1.GetCveResponse, error)
+	ListPolicies(context.Context, *v1.ListPoliciesRequest) (*v1.ListPoliciesResponse, error)
+	PutPolicy(context.Context, *v1.PutPolicyRequest) (*v1.PutPolicyResponse, error)
+	DeletePolicy(context.Context, *v1.DeletePolicyRequest) (*v1.DeletePolicyResponse, error)
+	ListWatches(context.Context, *v1.ListWatchesRequest) (*v1.ListWatchesResponse, error)
+	PutWatch(context.Context, *v1.PutWatchRequest) (*v1.PutWatchResponse, error)
+	DeleteWatch(context.Context, *v1.DeleteWatchRequest) (*v1.DeleteWatchResponse, error)
+	ListIgnoreRules(context.Context, *v1.ListIgnoreRulesRequest) (*v1.ListIgnoreRulesResponse, error)
+	CreateIgnoreRule(context.Context, *v1.CreateIgnoreRuleRequest) (*v1.CreateIgnoreRuleResponse, error)
+	DeleteIgnoreRule(context.Context, *v1.DeleteIgnoreRuleRequest) (*v1.DeleteIgnoreRuleResponse, error)
 }
 
-// NewScanServiceHandler builds an HTTP handler from the service implementation. It returns the path
-// on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewScanServiceHandler(svc ScanServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	scanServiceMethods := v1.File_relic_v1_scan_proto.Services().ByName("ScanService").Methods()
-	scanServiceGetItemScanHandler := connect.NewUnaryHandler(
-		ScanServiceGetItemScanProcedure,
-		svc.GetItemScan,
-		connect.WithSchema(scanServiceMethods.ByName("GetItemScan")),
-		connect.WithHandlerOptions(opts...),
+// RegisterScanServiceHandler registers svc as the relic.v1.ScanService implementation on server.
+func RegisterScanServiceHandler(server *connect.Server, svc ScanServiceHandler) {
+	adapter := scanServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: scanServiceGetItemScanSpec(), Handler: adapter.getItemScan},
+		connect.Method{Spec: scanServiceExplainDownloadSpec(), Handler: adapter.explainDownload},
+		connect.Method{Spec: scanServiceCheckPackageSpec(), Handler: adapter.checkPackage},
+		connect.Method{Spec: scanServiceScanBuildRunSpec(), Handler: adapter.scanBuildRun},
+		connect.Method{Spec: scanServiceGetBuildRunScanSpec(), Handler: adapter.getBuildRunScan},
+		connect.Method{Spec: scanServiceScanPackagesSpec(), Handler: adapter.scanPackages},
+		connect.Method{Spec: scanServiceGetPackagesScanSpec(), Handler: adapter.getPackagesScan},
+		connect.Method{Spec: scanServiceExportVexSpec(), Handler: adapter.exportVex},
+		connect.Method{Spec: scanServiceImportVexSpec(), Handler: adapter.importVex},
+		connect.Method{Spec: scanServiceGetItemSbomSpec(), Handler: adapter.getItemSbom},
+		connect.Method{Spec: scanServiceListFindingsSpec(), Handler: adapter.listFindings},
+		connect.Method{Spec: scanServiceListOperationalRisksSpec(), Handler: adapter.listOperationalRisks},
+		connect.Method{Spec: scanServiceGetEndOfLifeStatusSpec(), Handler: adapter.getEndOfLifeStatus},
+		connect.Method{Spec: scanServiceListCvesSpec(), Handler: adapter.listCves},
+		connect.Method{Spec: scanServiceGetCveSpec(), Handler: adapter.getCve},
+		connect.Method{Spec: scanServiceListPoliciesSpec(), Handler: adapter.listPolicies},
+		connect.Method{Spec: scanServicePutPolicySpec(), Handler: adapter.putPolicy},
+		connect.Method{Spec: scanServiceDeletePolicySpec(), Handler: adapter.deletePolicy},
+		connect.Method{Spec: scanServiceListWatchesSpec(), Handler: adapter.listWatches},
+		connect.Method{Spec: scanServicePutWatchSpec(), Handler: adapter.putWatch},
+		connect.Method{Spec: scanServiceDeleteWatchSpec(), Handler: adapter.deleteWatch},
+		connect.Method{Spec: scanServiceListIgnoreRulesSpec(), Handler: adapter.listIgnoreRules},
+		connect.Method{Spec: scanServiceCreateIgnoreRuleSpec(), Handler: adapter.createIgnoreRule},
+		connect.Method{Spec: scanServiceDeleteIgnoreRuleSpec(), Handler: adapter.deleteIgnoreRule},
 	)
-	scanServiceExplainDownloadHandler := connect.NewUnaryHandler(
-		ScanServiceExplainDownloadProcedure,
-		svc.ExplainDownload,
-		connect.WithSchema(scanServiceMethods.ByName("ExplainDownload")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServiceCheckPackageHandler := connect.NewUnaryHandler(
-		ScanServiceCheckPackageProcedure,
-		svc.CheckPackage,
-		connect.WithSchema(scanServiceMethods.ByName("CheckPackage")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServiceScanBuildRunHandler := connect.NewUnaryHandler(
-		ScanServiceScanBuildRunProcedure,
-		svc.ScanBuildRun,
-		connect.WithSchema(scanServiceMethods.ByName("ScanBuildRun")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServiceGetBuildRunScanHandler := connect.NewUnaryHandler(
-		ScanServiceGetBuildRunScanProcedure,
-		svc.GetBuildRunScan,
-		connect.WithSchema(scanServiceMethods.ByName("GetBuildRunScan")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServiceScanPackagesHandler := connect.NewUnaryHandler(
-		ScanServiceScanPackagesProcedure,
-		svc.ScanPackages,
-		connect.WithSchema(scanServiceMethods.ByName("ScanPackages")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServiceGetPackagesScanHandler := connect.NewUnaryHandler(
-		ScanServiceGetPackagesScanProcedure,
-		svc.GetPackagesScan,
-		connect.WithSchema(scanServiceMethods.ByName("GetPackagesScan")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServiceExportVexHandler := connect.NewUnaryHandler(
-		ScanServiceExportVexProcedure,
-		svc.ExportVex,
-		connect.WithSchema(scanServiceMethods.ByName("ExportVex")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServiceImportVexHandler := connect.NewUnaryHandler(
-		ScanServiceImportVexProcedure,
-		svc.ImportVex,
-		connect.WithSchema(scanServiceMethods.ByName("ImportVex")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServiceGetItemSbomHandler := connect.NewUnaryHandler(
-		ScanServiceGetItemSbomProcedure,
-		svc.GetItemSbom,
-		connect.WithSchema(scanServiceMethods.ByName("GetItemSbom")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServiceListFindingsHandler := connect.NewUnaryHandler(
-		ScanServiceListFindingsProcedure,
-		svc.ListFindings,
-		connect.WithSchema(scanServiceMethods.ByName("ListFindings")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServiceListOperationalRisksHandler := connect.NewUnaryHandler(
-		ScanServiceListOperationalRisksProcedure,
-		svc.ListOperationalRisks,
-		connect.WithSchema(scanServiceMethods.ByName("ListOperationalRisks")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServiceGetEndOfLifeStatusHandler := connect.NewUnaryHandler(
-		ScanServiceGetEndOfLifeStatusProcedure,
-		svc.GetEndOfLifeStatus,
-		connect.WithSchema(scanServiceMethods.ByName("GetEndOfLifeStatus")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServiceListCvesHandler := connect.NewUnaryHandler(
-		ScanServiceListCvesProcedure,
-		svc.ListCves,
-		connect.WithSchema(scanServiceMethods.ByName("ListCves")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServiceGetCveHandler := connect.NewUnaryHandler(
-		ScanServiceGetCveProcedure,
-		svc.GetCve,
-		connect.WithSchema(scanServiceMethods.ByName("GetCve")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServiceListPoliciesHandler := connect.NewUnaryHandler(
-		ScanServiceListPoliciesProcedure,
-		svc.ListPolicies,
-		connect.WithSchema(scanServiceMethods.ByName("ListPolicies")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServicePutPolicyHandler := connect.NewUnaryHandler(
-		ScanServicePutPolicyProcedure,
-		svc.PutPolicy,
-		connect.WithSchema(scanServiceMethods.ByName("PutPolicy")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServiceDeletePolicyHandler := connect.NewUnaryHandler(
-		ScanServiceDeletePolicyProcedure,
-		svc.DeletePolicy,
-		connect.WithSchema(scanServiceMethods.ByName("DeletePolicy")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServiceListWatchesHandler := connect.NewUnaryHandler(
-		ScanServiceListWatchesProcedure,
-		svc.ListWatches,
-		connect.WithSchema(scanServiceMethods.ByName("ListWatches")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServicePutWatchHandler := connect.NewUnaryHandler(
-		ScanServicePutWatchProcedure,
-		svc.PutWatch,
-		connect.WithSchema(scanServiceMethods.ByName("PutWatch")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServiceDeleteWatchHandler := connect.NewUnaryHandler(
-		ScanServiceDeleteWatchProcedure,
-		svc.DeleteWatch,
-		connect.WithSchema(scanServiceMethods.ByName("DeleteWatch")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServiceListIgnoreRulesHandler := connect.NewUnaryHandler(
-		ScanServiceListIgnoreRulesProcedure,
-		svc.ListIgnoreRules,
-		connect.WithSchema(scanServiceMethods.ByName("ListIgnoreRules")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServiceCreateIgnoreRuleHandler := connect.NewUnaryHandler(
-		ScanServiceCreateIgnoreRuleProcedure,
-		svc.CreateIgnoreRule,
-		connect.WithSchema(scanServiceMethods.ByName("CreateIgnoreRule")),
-		connect.WithHandlerOptions(opts...),
-	)
-	scanServiceDeleteIgnoreRuleHandler := connect.NewUnaryHandler(
-		ScanServiceDeleteIgnoreRuleProcedure,
-		svc.DeleteIgnoreRule,
-		connect.WithSchema(scanServiceMethods.ByName("DeleteIgnoreRule")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/relic.v1.ScanService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case ScanServiceGetItemScanProcedure:
-			scanServiceGetItemScanHandler.ServeHTTP(w, r)
-		case ScanServiceExplainDownloadProcedure:
-			scanServiceExplainDownloadHandler.ServeHTTP(w, r)
-		case ScanServiceCheckPackageProcedure:
-			scanServiceCheckPackageHandler.ServeHTTP(w, r)
-		case ScanServiceScanBuildRunProcedure:
-			scanServiceScanBuildRunHandler.ServeHTTP(w, r)
-		case ScanServiceGetBuildRunScanProcedure:
-			scanServiceGetBuildRunScanHandler.ServeHTTP(w, r)
-		case ScanServiceScanPackagesProcedure:
-			scanServiceScanPackagesHandler.ServeHTTP(w, r)
-		case ScanServiceGetPackagesScanProcedure:
-			scanServiceGetPackagesScanHandler.ServeHTTP(w, r)
-		case ScanServiceExportVexProcedure:
-			scanServiceExportVexHandler.ServeHTTP(w, r)
-		case ScanServiceImportVexProcedure:
-			scanServiceImportVexHandler.ServeHTTP(w, r)
-		case ScanServiceGetItemSbomProcedure:
-			scanServiceGetItemSbomHandler.ServeHTTP(w, r)
-		case ScanServiceListFindingsProcedure:
-			scanServiceListFindingsHandler.ServeHTTP(w, r)
-		case ScanServiceListOperationalRisksProcedure:
-			scanServiceListOperationalRisksHandler.ServeHTTP(w, r)
-		case ScanServiceGetEndOfLifeStatusProcedure:
-			scanServiceGetEndOfLifeStatusHandler.ServeHTTP(w, r)
-		case ScanServiceListCvesProcedure:
-			scanServiceListCvesHandler.ServeHTTP(w, r)
-		case ScanServiceGetCveProcedure:
-			scanServiceGetCveHandler.ServeHTTP(w, r)
-		case ScanServiceListPoliciesProcedure:
-			scanServiceListPoliciesHandler.ServeHTTP(w, r)
-		case ScanServicePutPolicyProcedure:
-			scanServicePutPolicyHandler.ServeHTTP(w, r)
-		case ScanServiceDeletePolicyProcedure:
-			scanServiceDeletePolicyHandler.ServeHTTP(w, r)
-		case ScanServiceListWatchesProcedure:
-			scanServiceListWatchesHandler.ServeHTTP(w, r)
-		case ScanServicePutWatchProcedure:
-			scanServicePutWatchHandler.ServeHTTP(w, r)
-		case ScanServiceDeleteWatchProcedure:
-			scanServiceDeleteWatchHandler.ServeHTTP(w, r)
-		case ScanServiceListIgnoreRulesProcedure:
-			scanServiceListIgnoreRulesHandler.ServeHTTP(w, r)
-		case ScanServiceCreateIgnoreRuleProcedure:
-			scanServiceCreateIgnoreRuleHandler.ServeHTTP(w, r)
-		case ScanServiceDeleteIgnoreRuleProcedure:
-			scanServiceDeleteIgnoreRuleHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedScanServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedScanServiceHandler struct{}
 
-func (UnimplementedScanServiceHandler) GetItemScan(context.Context, *connect.Request[v1.GetItemScanRequest]) (*connect.Response[v1.GetItemScanResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.GetItemScan is not implemented"))
+func (UnimplementedScanServiceHandler) GetItemScan(context.Context, *v1.GetItemScanRequest) (*v1.GetItemScanResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.GetItemScan is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) ExplainDownload(context.Context, *connect.Request[v1.ExplainDownloadRequest]) (*connect.Response[v1.ExplainDownloadResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.ExplainDownload is not implemented"))
+func (UnimplementedScanServiceHandler) ExplainDownload(context.Context, *v1.ExplainDownloadRequest) (*v1.ExplainDownloadResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.ExplainDownload is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) CheckPackage(context.Context, *connect.Request[v1.CheckPackageRequest]) (*connect.Response[v1.CheckPackageResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.CheckPackage is not implemented"))
+func (UnimplementedScanServiceHandler) CheckPackage(context.Context, *v1.CheckPackageRequest) (*v1.CheckPackageResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.CheckPackage is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) ScanBuildRun(context.Context, *connect.Request[v1.ScanBuildRunRequest]) (*connect.Response[v1.ScanBuildRunResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.ScanBuildRun is not implemented"))
+func (UnimplementedScanServiceHandler) ScanBuildRun(context.Context, *v1.ScanBuildRunRequest) (*v1.ScanBuildRunResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.ScanBuildRun is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) GetBuildRunScan(context.Context, *connect.Request[v1.GetBuildRunScanRequest]) (*connect.Response[v1.GetBuildRunScanResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.GetBuildRunScan is not implemented"))
+func (UnimplementedScanServiceHandler) GetBuildRunScan(context.Context, *v1.GetBuildRunScanRequest) (*v1.GetBuildRunScanResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.GetBuildRunScan is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) ScanPackages(context.Context, *connect.Request[v1.ScanPackagesRequest]) (*connect.Response[v1.ScanPackagesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.ScanPackages is not implemented"))
+func (UnimplementedScanServiceHandler) ScanPackages(context.Context, *v1.ScanPackagesRequest) (*v1.ScanPackagesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.ScanPackages is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) GetPackagesScan(context.Context, *connect.Request[v1.GetPackagesScanRequest]) (*connect.Response[v1.GetPackagesScanResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.GetPackagesScan is not implemented"))
+func (UnimplementedScanServiceHandler) GetPackagesScan(context.Context, *v1.GetPackagesScanRequest) (*v1.GetPackagesScanResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.GetPackagesScan is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) ExportVex(context.Context, *connect.Request[v1.ExportVexRequest]) (*connect.Response[v1.ExportVexResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.ExportVex is not implemented"))
+func (UnimplementedScanServiceHandler) ExportVex(context.Context, *v1.ExportVexRequest) (*v1.ExportVexResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.ExportVex is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) ImportVex(context.Context, *connect.Request[v1.ImportVexRequest]) (*connect.Response[v1.ImportVexResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.ImportVex is not implemented"))
+func (UnimplementedScanServiceHandler) ImportVex(context.Context, *v1.ImportVexRequest) (*v1.ImportVexResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.ImportVex is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) GetItemSbom(context.Context, *connect.Request[v1.GetItemSbomRequest]) (*connect.Response[v1.GetItemSbomResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.GetItemSbom is not implemented"))
+func (UnimplementedScanServiceHandler) GetItemSbom(context.Context, *v1.GetItemSbomRequest) (*v1.GetItemSbomResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.GetItemSbom is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) ListFindings(context.Context, *connect.Request[v1.ListFindingsRequest]) (*connect.Response[v1.ListFindingsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.ListFindings is not implemented"))
+func (UnimplementedScanServiceHandler) ListFindings(context.Context, *v1.ListFindingsRequest) (*v1.ListFindingsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.ListFindings is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) ListOperationalRisks(context.Context, *connect.Request[v1.ListOperationalRisksRequest]) (*connect.Response[v1.ListOperationalRisksResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.ListOperationalRisks is not implemented"))
+func (UnimplementedScanServiceHandler) ListOperationalRisks(context.Context, *v1.ListOperationalRisksRequest) (*v1.ListOperationalRisksResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.ListOperationalRisks is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) GetEndOfLifeStatus(context.Context, *connect.Request[v1.GetEndOfLifeStatusRequest]) (*connect.Response[v1.GetEndOfLifeStatusResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.GetEndOfLifeStatus is not implemented"))
+func (UnimplementedScanServiceHandler) GetEndOfLifeStatus(context.Context, *v1.GetEndOfLifeStatusRequest) (*v1.GetEndOfLifeStatusResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.GetEndOfLifeStatus is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) ListCves(context.Context, *connect.Request[v1.ListCvesRequest]) (*connect.Response[v1.ListCvesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.ListCves is not implemented"))
+func (UnimplementedScanServiceHandler) ListCves(context.Context, *v1.ListCvesRequest) (*v1.ListCvesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.ListCves is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) GetCve(context.Context, *connect.Request[v1.GetCveRequest]) (*connect.Response[v1.GetCveResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.GetCve is not implemented"))
+func (UnimplementedScanServiceHandler) GetCve(context.Context, *v1.GetCveRequest) (*v1.GetCveResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.GetCve is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) ListPolicies(context.Context, *connect.Request[v1.ListPoliciesRequest]) (*connect.Response[v1.ListPoliciesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.ListPolicies is not implemented"))
+func (UnimplementedScanServiceHandler) ListPolicies(context.Context, *v1.ListPoliciesRequest) (*v1.ListPoliciesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.ListPolicies is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) PutPolicy(context.Context, *connect.Request[v1.PutPolicyRequest]) (*connect.Response[v1.PutPolicyResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.PutPolicy is not implemented"))
+func (UnimplementedScanServiceHandler) PutPolicy(context.Context, *v1.PutPolicyRequest) (*v1.PutPolicyResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.PutPolicy is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) DeletePolicy(context.Context, *connect.Request[v1.DeletePolicyRequest]) (*connect.Response[v1.DeletePolicyResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.DeletePolicy is not implemented"))
+func (UnimplementedScanServiceHandler) DeletePolicy(context.Context, *v1.DeletePolicyRequest) (*v1.DeletePolicyResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.DeletePolicy is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) ListWatches(context.Context, *connect.Request[v1.ListWatchesRequest]) (*connect.Response[v1.ListWatchesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.ListWatches is not implemented"))
+func (UnimplementedScanServiceHandler) ListWatches(context.Context, *v1.ListWatchesRequest) (*v1.ListWatchesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.ListWatches is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) PutWatch(context.Context, *connect.Request[v1.PutWatchRequest]) (*connect.Response[v1.PutWatchResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.PutWatch is not implemented"))
+func (UnimplementedScanServiceHandler) PutWatch(context.Context, *v1.PutWatchRequest) (*v1.PutWatchResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.PutWatch is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) DeleteWatch(context.Context, *connect.Request[v1.DeleteWatchRequest]) (*connect.Response[v1.DeleteWatchResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.DeleteWatch is not implemented"))
+func (UnimplementedScanServiceHandler) DeleteWatch(context.Context, *v1.DeleteWatchRequest) (*v1.DeleteWatchResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.DeleteWatch is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) ListIgnoreRules(context.Context, *connect.Request[v1.ListIgnoreRulesRequest]) (*connect.Response[v1.ListIgnoreRulesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.ListIgnoreRules is not implemented"))
+func (UnimplementedScanServiceHandler) ListIgnoreRules(context.Context, *v1.ListIgnoreRulesRequest) (*v1.ListIgnoreRulesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.ListIgnoreRules is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) CreateIgnoreRule(context.Context, *connect.Request[v1.CreateIgnoreRuleRequest]) (*connect.Response[v1.CreateIgnoreRuleResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.CreateIgnoreRule is not implemented"))
+func (UnimplementedScanServiceHandler) CreateIgnoreRule(context.Context, *v1.CreateIgnoreRuleRequest) (*v1.CreateIgnoreRuleResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.CreateIgnoreRule is not implemented")
 }
 
-func (UnimplementedScanServiceHandler) DeleteIgnoreRule(context.Context, *connect.Request[v1.DeleteIgnoreRuleRequest]) (*connect.Response[v1.DeleteIgnoreRuleResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ScanService.DeleteIgnoreRule is not implemented"))
+func (UnimplementedScanServiceHandler) DeleteIgnoreRule(context.Context, *v1.DeleteIgnoreRuleRequest) (*v1.DeleteIgnoreRuleResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ScanService.DeleteIgnoreRule is not implemented")
+}
+
+type scanServiceClient struct {
+	client *connect.Client
+}
+
+func (c *scanServiceClient) GetItemScan(ctx context.Context, req *v1.GetItemScanRequest) (*v1.GetItemScanResponse, error) {
+	var res v1.GetItemScanResponse
+	if err := c.client.CallUnary(ctx, scanServiceGetItemScanSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) ExplainDownload(ctx context.Context, req *v1.ExplainDownloadRequest) (*v1.ExplainDownloadResponse, error) {
+	var res v1.ExplainDownloadResponse
+	if err := c.client.CallUnary(ctx, scanServiceExplainDownloadSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) CheckPackage(ctx context.Context, req *v1.CheckPackageRequest) (*v1.CheckPackageResponse, error) {
+	var res v1.CheckPackageResponse
+	if err := c.client.CallUnary(ctx, scanServiceCheckPackageSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) ScanBuildRun(ctx context.Context, req *v1.ScanBuildRunRequest) (*v1.ScanBuildRunResponse, error) {
+	var res v1.ScanBuildRunResponse
+	if err := c.client.CallUnary(ctx, scanServiceScanBuildRunSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) GetBuildRunScan(ctx context.Context, req *v1.GetBuildRunScanRequest) (*v1.GetBuildRunScanResponse, error) {
+	var res v1.GetBuildRunScanResponse
+	if err := c.client.CallUnary(ctx, scanServiceGetBuildRunScanSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) ScanPackages(ctx context.Context, req *v1.ScanPackagesRequest) (*v1.ScanPackagesResponse, error) {
+	var res v1.ScanPackagesResponse
+	if err := c.client.CallUnary(ctx, scanServiceScanPackagesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) GetPackagesScan(ctx context.Context, req *v1.GetPackagesScanRequest) (*v1.GetPackagesScanResponse, error) {
+	var res v1.GetPackagesScanResponse
+	if err := c.client.CallUnary(ctx, scanServiceGetPackagesScanSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) ExportVex(ctx context.Context, req *v1.ExportVexRequest) (*v1.ExportVexResponse, error) {
+	var res v1.ExportVexResponse
+	if err := c.client.CallUnary(ctx, scanServiceExportVexSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) ImportVex(ctx context.Context, req *v1.ImportVexRequest) (*v1.ImportVexResponse, error) {
+	var res v1.ImportVexResponse
+	if err := c.client.CallUnary(ctx, scanServiceImportVexSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) GetItemSbom(ctx context.Context, req *v1.GetItemSbomRequest) (*v1.GetItemSbomResponse, error) {
+	var res v1.GetItemSbomResponse
+	if err := c.client.CallUnary(ctx, scanServiceGetItemSbomSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) ListFindings(ctx context.Context, req *v1.ListFindingsRequest) (*v1.ListFindingsResponse, error) {
+	var res v1.ListFindingsResponse
+	if err := c.client.CallUnary(ctx, scanServiceListFindingsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) ListOperationalRisks(ctx context.Context, req *v1.ListOperationalRisksRequest) (*v1.ListOperationalRisksResponse, error) {
+	var res v1.ListOperationalRisksResponse
+	if err := c.client.CallUnary(ctx, scanServiceListOperationalRisksSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) GetEndOfLifeStatus(ctx context.Context, req *v1.GetEndOfLifeStatusRequest) (*v1.GetEndOfLifeStatusResponse, error) {
+	var res v1.GetEndOfLifeStatusResponse
+	if err := c.client.CallUnary(ctx, scanServiceGetEndOfLifeStatusSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) ListCves(ctx context.Context, req *v1.ListCvesRequest) (*v1.ListCvesResponse, error) {
+	var res v1.ListCvesResponse
+	if err := c.client.CallUnary(ctx, scanServiceListCvesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) GetCve(ctx context.Context, req *v1.GetCveRequest) (*v1.GetCveResponse, error) {
+	var res v1.GetCveResponse
+	if err := c.client.CallUnary(ctx, scanServiceGetCveSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) ListPolicies(ctx context.Context, req *v1.ListPoliciesRequest) (*v1.ListPoliciesResponse, error) {
+	var res v1.ListPoliciesResponse
+	if err := c.client.CallUnary(ctx, scanServiceListPoliciesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) PutPolicy(ctx context.Context, req *v1.PutPolicyRequest) (*v1.PutPolicyResponse, error) {
+	var res v1.PutPolicyResponse
+	if err := c.client.CallUnary(ctx, scanServicePutPolicySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) DeletePolicy(ctx context.Context, req *v1.DeletePolicyRequest) (*v1.DeletePolicyResponse, error) {
+	var res v1.DeletePolicyResponse
+	if err := c.client.CallUnary(ctx, scanServiceDeletePolicySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) ListWatches(ctx context.Context, req *v1.ListWatchesRequest) (*v1.ListWatchesResponse, error) {
+	var res v1.ListWatchesResponse
+	if err := c.client.CallUnary(ctx, scanServiceListWatchesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) PutWatch(ctx context.Context, req *v1.PutWatchRequest) (*v1.PutWatchResponse, error) {
+	var res v1.PutWatchResponse
+	if err := c.client.CallUnary(ctx, scanServicePutWatchSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) DeleteWatch(ctx context.Context, req *v1.DeleteWatchRequest) (*v1.DeleteWatchResponse, error) {
+	var res v1.DeleteWatchResponse
+	if err := c.client.CallUnary(ctx, scanServiceDeleteWatchSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) ListIgnoreRules(ctx context.Context, req *v1.ListIgnoreRulesRequest) (*v1.ListIgnoreRulesResponse, error) {
+	var res v1.ListIgnoreRulesResponse
+	if err := c.client.CallUnary(ctx, scanServiceListIgnoreRulesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) CreateIgnoreRule(ctx context.Context, req *v1.CreateIgnoreRuleRequest) (*v1.CreateIgnoreRuleResponse, error) {
+	var res v1.CreateIgnoreRuleResponse
+	if err := c.client.CallUnary(ctx, scanServiceCreateIgnoreRuleSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *scanServiceClient) DeleteIgnoreRule(ctx context.Context, req *v1.DeleteIgnoreRuleRequest) (*v1.DeleteIgnoreRuleResponse, error) {
+	var res v1.DeleteIgnoreRuleResponse
+	if err := c.client.CallUnary(ctx, scanServiceDeleteIgnoreRuleSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type scanServiceHandler struct{ svc ScanServiceHandler }
+
+func (h scanServiceHandler) getItemScan(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetItemScanRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetItemScan(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) explainDownload(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ExplainDownloadRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ExplainDownload(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) checkPackage(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.CheckPackageRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.CheckPackage(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) scanBuildRun(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ScanBuildRunRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ScanBuildRun(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) getBuildRunScan(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetBuildRunScanRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetBuildRunScan(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) scanPackages(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ScanPackagesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ScanPackages(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) getPackagesScan(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetPackagesScanRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetPackagesScan(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) exportVex(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ExportVexRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ExportVex(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) importVex(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ImportVexRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ImportVex(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) getItemSbom(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetItemSbomRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetItemSbom(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) listFindings(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListFindingsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListFindings(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) listOperationalRisks(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListOperationalRisksRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListOperationalRisks(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) getEndOfLifeStatus(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetEndOfLifeStatusRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetEndOfLifeStatus(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) listCves(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListCvesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListCves(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) getCve(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetCveRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetCve(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) listPolicies(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListPoliciesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListPolicies(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) putPolicy(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PutPolicyRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.PutPolicy(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) deletePolicy(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DeletePolicyRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.DeletePolicy(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) listWatches(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListWatchesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListWatches(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) putWatch(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PutWatchRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.PutWatch(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) deleteWatch(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DeleteWatchRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.DeleteWatch(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) listIgnoreRules(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListIgnoreRulesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListIgnoreRules(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) createIgnoreRule(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.CreateIgnoreRuleRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.CreateIgnoreRule(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h scanServiceHandler) deleteIgnoreRule(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DeleteIgnoreRuleRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.DeleteIgnoreRule(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }
