@@ -147,6 +147,8 @@ func (s *suite) rawAs(
 		resp, out, err = c.SendPut(url, body, d) //nolint:bodyclose // the SDK reads and closes the body
 	case http.MethodDelete:
 		resp, out, err = c.SendDelete(url, body, d) //nolint:bodyclose // the SDK reads and closes the body
+	case http.MethodHead:
+		resp, out, err = c.SendHead(url, d) //nolint:bodyclose // the SDK reads and closes the body
 	default:
 		t.Fatalf("method %s", method)
 	}
@@ -811,6 +813,10 @@ func TestArtifactoryREST(t *testing.T) {
 		s.raw(t, http.MethodGet, "api/terraform/archive/"+local+"/x", nil, 403)
 		s.raw(t, http.MethodGet, "api/terraform/provider-archive/"+local+"/x", nil, 403)
 		s.raw(t, http.MethodPut, "api/huggingfaceml/"+local+"/lfs/"+strings.Repeat("0", 64), []byte("x"), 403)
+		xorb := "api/huggingfaceml/" + local + "/api/xet/v1/xorbs/default/" + strings.Repeat("0", 64)
+		s.raw(t, http.MethodHead, xorb, nil, 401)
+		s.raw(t, http.MethodPost, xorb, []byte("x"), 401)
+		s.raw(t, http.MethodPost, "api/huggingfaceml/"+local+"/api/xet/v1/shards", []byte("x"), 401)
 		s.raw(t, http.MethodPost, "api/release/import/", []byte("not a bundle"), 400, 415)
 	})
 
