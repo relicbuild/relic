@@ -57,7 +57,7 @@ RUN npm install -g @yarnpkg/cli-dist@4.18.1 pnpm@12.14.0 @modelcontextprotocol/i
 RUN python3 -m venv /opt/conan && /opt/conan/bin/pip install --no-cache-dir conan==2.33.0 \
  && ln -s /opt/conan/bin/conan /usr/local/bin/conan
 
-RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed huggingface_hub==2.2.0
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed huggingface_hub==1.19.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends cargo && rm -rf /var/lib/apt/lists/*
 
