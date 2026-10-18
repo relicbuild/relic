@@ -45,7 +45,7 @@ if [[ $# -eq 0 ]]; then
   done
   if in_tier sdk-artifactory-rest; then selected+=(sdk-artifactory-rest); fi
 fi
-is_selected() { [[ " ${selected[*]} " == *" $1 "* ]]; }
+is_selected() { [[ " ${selected[*]-} " == *" $1 "* ]]; }
 own_daemon=()
 for d in docker native-docker; do
   if is_selected "$d"; then own_daemon+=("$d"); fi
