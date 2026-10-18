@@ -2,6 +2,8 @@ module relic
 
 go 1.27.0
 
+toolchain go1.27.2
+
 require (
 	cel.dev/cel-go v0.32.0
 	charm.land/bubbles/v2 v2.2.1
@@ -22,7 +24,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.4.8
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.2
 	github.com/aws/smithy-go v1.28.1
-	github.com/cavaliergopher/rpm v1.3.0
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/crewjam/saml v0.5.1
 	github.com/exaring/otelpgx v0.12.0

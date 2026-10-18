@@ -2,6 +2,8 @@ module relic/api/adapters/artifactory/relic-indexer
 
 go 1.27.0
 
+toolchain go1.27.2
+
 require (
 	github.com/anchore/syft v1.52.0
 	modernc.org/sqlite v1.60.1

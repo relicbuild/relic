@@ -10,7 +10,7 @@ RUN --mount=type=cache,id=relic-pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile --store-dir /pnpm/store && pnpm generate \
  && node scripts/third-party-notices.ts > /src/web-notices.txt
 
-FROM --platform=$BUILDPLATFORM golang:1.27.1-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine AS build
 ARG TARGETOS TARGETARCH
 WORKDIR /src
 COPY go.mod go.sum* ./
@@ -24,7 +24,7 @@ ARG VERSION=dev
 RUN --mount=type=cache,id=relic-go-mod,target=/go/pkg/mod --mount=type=cache,id=relic-go-build,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/relic ./cmd/relic
 
-FROM --platform=$BUILDPLATFORM golang:1.27.1-alpine AS indexer
+FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine AS indexer
 ARG INDEXER_PLATFORMS
 WORKDIR /src
 COPY go.mod go.sum* ./
@@ -38,7 +38,7 @@ RUN --mount=type=cache,id=relic-go-mod,target=/go/pkg/mod --mount=type=cache,id=
       CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w" -o /out/relic-indexer-$os-$arch$ext . || exit 1; \
     done
 
-FROM --platform=$BUILDPLATFORM golang:1.27.1-alpine AS govulncheck
+FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine AS govulncheck
 ARG TARGETOS TARGETARCH
 RUN --mount=type=cache,id=relic-go-mod,target=/go/pkg/mod --mount=type=cache,id=relic-go-build,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go install golang.org/x/vuln/cmd/govulncheck@v1.8.0 \
