@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-
-	rpmheader "github.com/cavaliergopher/rpm"
 )
 
 // ErrInvalid reports a file that is not a readable RPM package.
@@ -25,9 +23,60 @@ const (
 )
 
 const (
-	tagChangelogTime = 1080
-	tagChangelogName = 1081
-	tagChangelogText = 1082
+	tagName            = 1000
+	tagVersion         = 1001
+	tagRelease         = 1002
+	tagEpoch           = 1003
+	tagSummary         = 1004
+	tagDescription     = 1005
+	tagBuildTime       = 1006
+	tagBuildHost       = 1007
+	tagSize            = 1009
+	tagVendor          = 1011
+	tagLicense         = 1014
+	tagPackager        = 1015
+	tagGroup           = 1016
+	tagURL             = 1020
+	tagArch            = 1022
+	tagOldFileNames    = 1027
+	tagFileModes       = 1030
+	tagFileFlags       = 1037
+	tagSourceRPM       = 1044
+	tagArchiveSize     = 1046
+	tagProvideName     = 1047
+	tagRequireFlags    = 1048
+	tagRequireName     = 1049
+	tagRequireVersion  = 1050
+	tagConflictFlags   = 1053
+	tagConflictName    = 1054
+	tagConflictVersion = 1055
+	tagChangelogTime   = 1080
+	tagChangelogName   = 1081
+	tagChangelogText   = 1082
+	tagObsoleteName    = 1090
+	tagProvideFlags    = 1112
+	tagProvideVersion  = 1113
+	tagObsoleteFlags   = 1114
+	tagObsoleteVersion = 1115
+	tagDirIndexes      = 1116
+	tagBaseNames       = 1117
+	tagDirNames        = 1118
+	tagLongSize        = 5009
+	tagRecommendName   = 5046
+	tagSuggestName     = 5049
+	tagSupplementName  = 5052
+	tagEnhanceName     = 5055
+)
+
+const (
+	signatureTagLongArchiveSize = 271
+	signatureTagArchiveSize     = 1007
+)
+
+const (
+	fileFlagGhost = 1 << 6
+	fileTypeMask  = 0o170000
+	fileTypeDir   = 0o040000
 )
 
 const maxChangelogEntries = 10
@@ -98,92 +147,256 @@ func (p Package) EVR() string {
 
 // Parse reads the header of an RPM package.
 func Parse(r io.Reader) (Package, error) {
-	h, err := rpmheader.Read(io.LimitReader(r, maxHeaderBytes))
+	p, err := parse(io.LimitReader(r, maxHeaderBytes))
 	if err != nil {
 		return Package{}, fmt.Errorf("%w: %w", ErrInvalid, err)
-	}
-
-	if h.Name() == "" || h.Version() == "" {
-		return Package{}, fmt.Errorf("%w: no name or version", ErrInvalid)
-	}
-
-	start, end := h.HeaderRange()
-
-	p := Package{
-		Name:          h.Name(),
-		Arch:          h.Architecture(),
-		Epoch:         h.Epoch(),
-		Version:       h.Version(),
-		Release:       h.Release(),
-		Summary:       h.Summary(),
-		Description:   h.Description(),
-		Packager:      h.Packager(),
-		URL:           h.URL(),
-		License:       h.License(),
-		Vendor:        h.Vendor(),
-		Group:         strings.Join(h.Groups(), ", "),
-		BuildHost:     h.BuildHost(),
-		SourceRPM:     h.SourceRPM(),
-		BuildTime:     h.BuildTime().Unix(),
-		InstalledSize: h.Size(),
-		ArchiveSize:   h.ArchiveSize(),
-		HeaderStart:   start,
-		HeaderEnd:     end,
-		Provides:      dependencies(h.Provides(), false),
-		Requires:      dependencies(h.Requires(), true),
-		Conflicts:     dependencies(h.Conflicts(), false),
-		Obsoletes:     dependencies(h.Obsoletes(), false),
-		Recommends:    dependencies(h.Recommends(), false),
-		Suggests:      dependencies(h.Suggests(), false),
-		Supplements:   dependencies(h.Supplements(), false),
-		Enhances:      dependencies(h.Enhances(), false),
-		Changelog:     changelog(&h.Header),
-	}
-
-	for _, f := range h.Files() {
-		file := File{
-			Path: f.Name(),
-		}
-
-		switch {
-		case f.Flags()&rpmheader.FileFlagGhost != 0:
-			file.Type = "ghost"
-		case f.IsDir():
-			file.Type = "dir"
-		}
-
-		p.Files = append(p.Files, file)
 	}
 
 	return p, nil
 }
 
-func dependencies(deps []rpmheader.Dependency, requires bool) []Dependency {
+func parse(r io.Reader) (Package, error) {
+	if err := readLead(r); err != nil {
+		return Package{}, err
+	}
+
+	signature, err := readHeader(r, true)
+	if err != nil {
+		return Package{}, fmt.Errorf("signature: %w", err)
+	}
+
+	h, err := readHeader(r, false)
+	if err != nil {
+		return Package{}, err
+	}
+
+	if h.text(tagName) == "" || h.text(tagVersion) == "" {
+		return Package{}, errors.New("no name or version")
+	}
+
+	p := Package{
+		Name:          h.text(tagName),
+		Arch:          h.text(tagArch),
+		Epoch:         int(h.number(tagEpoch)),
+		Version:       h.text(tagVersion),
+		Release:       h.text(tagRelease),
+		Summary:       h.text(tagSummary),
+		Description:   h.text(tagDescription),
+		Packager:      h.text(tagPackager),
+		URL:           h.text(tagURL),
+		License:       h.text(tagLicense),
+		Vendor:        h.text(tagVendor),
+		Group:         h.text(tagGroup),
+		BuildHost:     h.text(tagBuildHost),
+		SourceRPM:     h.text(tagSourceRPM),
+		BuildTime:     h.number(tagBuildTime),
+		InstalledSize: firstPositive(h.number(tagLongSize), h.number(tagSize)),
+		ArchiveSize: firstPositive(
+			signature.number(signatureTagLongArchiveSize),
+			signature.number(signatureTagArchiveSize),
+			h.number(signatureTagLongArchiveSize),
+			h.number(tagArchiveSize),
+		),
+		HeaderStart: leadSize + signature.size,
+		HeaderEnd:   leadSize + signature.size + h.size,
+		Changelog:   changelog(h),
+	}
+
+	relations := []struct {
+		deps     *[]Dependency
+		tag      uint32
+		requires bool
+	}{
+		{
+			deps: &p.Provides,
+			tag:  tagProvideName,
+		},
+		{
+			deps:     &p.Requires,
+			tag:      tagRequireName,
+			requires: true,
+		},
+		{
+			deps: &p.Conflicts,
+			tag:  tagConflictName,
+		},
+		{
+			deps: &p.Obsoletes,
+			tag:  tagObsoleteName,
+		},
+		{
+			deps: &p.Recommends,
+			tag:  tagRecommendName,
+		},
+		{
+			deps: &p.Suggests,
+			tag:  tagSuggestName,
+		},
+		{
+			deps: &p.Supplements,
+			tag:  tagSupplementName,
+		},
+		{
+			deps: &p.Enhances,
+			tag:  tagEnhanceName,
+		},
+	}
+	for _, relation := range relations {
+		deps, err := dependencies(h, relation.tag, relation.requires)
+		if err != nil {
+			return Package{}, err
+		}
+
+		*relation.deps = deps
+	}
+
+	if p.Files, err = files(h); err != nil {
+		return Package{}, err
+	}
+
+	return p, nil
+}
+
+func firstPositive(values ...int64) uint64 {
+	for _, v := range values {
+		if v > 0 {
+			return uint64(v)
+		}
+	}
+
+	return 0
+}
+
+func dependencies(h header, nameTag uint32, requires bool) ([]Dependency, error) {
+	names := h.strings[nameTag]
+	flagTag, versionTag := dependencyTags(nameTag)
+	flags := h.numbers[flagTag]
+	versions := h.strings[versionTag]
+
+	if len(flags) != len(names) || len(versions) != len(names) {
+		return nil, fmt.Errorf(
+			"tag %d: %d names, %d flags and %d versions",
+			nameTag,
+			len(names),
+			len(flags),
+			len(versions),
+		)
+	}
+
 	var out []Dependency
 
-	for _, d := range deps {
-		if requires && strings.HasPrefix(d.Name(), "rpmlib(") {
+	for i, name := range names {
+		if requires && strings.HasPrefix(name, "rpmlib(") {
 			continue
 		}
 
+		epoch, version, release := parseEVR(versions[i])
+
 		dep := Dependency{
-			Name:    d.Name(),
-			Flags:   senseFlags(d.Flags()),
-			Version: d.Version(),
-			Release: d.Release(),
-			Pre:     requires && d.Flags()&(sensePrereq|senseScriptPre|senseScriptPst) != 0,
+			Name:    name,
+			Flags:   senseFlags(flags[i]),
+			Version: version,
+			Release: release,
+			Pre:     requires && flags[i]&(sensePrereq|senseScriptPre|senseScriptPst) != 0,
 		}
 		if dep.Version != "" {
-			dep.Epoch = d.Epoch()
+			dep.Epoch = epoch
 		}
 
 		out = append(out, dep)
 	}
 
-	return out
+	return out, nil
 }
 
-func senseFlags(flags int) string {
+func dependencyTags(nameTag uint32) (flagTag, versionTag uint32) {
+	switch nameTag {
+	case tagProvideName:
+		return tagProvideFlags, tagProvideVersion
+	case tagRequireName:
+		return tagRequireFlags, tagRequireVersion
+	case tagConflictName:
+		return tagConflictFlags, tagConflictVersion
+	case tagObsoleteName:
+		return tagObsoleteFlags, tagObsoleteVersion
+	}
+
+	return nameTag + 2, nameTag + 1
+}
+
+func parseEVR(evr string) (epoch int, version, release string) {
+	if e, rest, found := strings.Cut(evr, ":"); found {
+		epoch, evr = parseEpoch(e), rest
+	}
+
+	version, release, _ = strings.Cut(evr, "-")
+
+	return epoch, version, release
+}
+
+func parseEpoch(digits string) int {
+	epoch := 0
+
+	for _, digit := range digits {
+		if digit < '0' || digit > '9' {
+			return 0
+		}
+
+		epoch = epoch*10 + int(digit-'0')
+	}
+
+	return epoch
+}
+
+func files(h header) ([]File, error) {
+	paths := h.strings[tagOldFileNames]
+
+	if names := h.strings[tagBaseNames]; len(names) > 0 {
+		dirs := h.strings[tagDirNames]
+		indexes := h.numbers[tagDirIndexes]
+
+		if len(indexes) != len(names) {
+			return nil, fmt.Errorf("%d file names and %d directory indexes", len(names), len(indexes))
+		}
+
+		paths = make([]string, len(names))
+		for i, name := range names {
+			if indexes[i] < 0 || indexes[i] >= int64(len(dirs)) {
+				return nil, fmt.Errorf("file %q: directory index %d of %d", name, indexes[i], len(dirs))
+			}
+
+			paths[i] = dirs[indexes[i]] + name
+		}
+	}
+
+	modes := h.numbers[tagFileModes]
+	flags := h.numbers[tagFileFlags]
+
+	if len(paths) > 0 && (len(modes) != len(paths) || len(flags) != len(paths)) {
+		return nil, fmt.Errorf("%d files, %d modes and %d flags", len(paths), len(modes), len(flags))
+	}
+
+	var out []File
+
+	for i, path := range paths {
+		file := File{
+			Path: path,
+		}
+
+		switch {
+		case flags[i]&fileFlagGhost != 0:
+			file.Type = "ghost"
+		case modes[i]&fileTypeMask == fileTypeDir:
+			file.Type = "dir"
+		}
+
+		out = append(out, file)
+	}
+
+	return out, nil
+}
+
+func senseFlags(flags int64) string {
 	switch flags & (senseLess | senseGreater | senseEqual) {
 	case senseEqual:
 		return "EQ"
@@ -200,10 +413,10 @@ func senseFlags(flags int) string {
 	return ""
 }
 
-func changelog(h *rpmheader.Header) []ChangelogEntry {
-	times := h.GetTag(tagChangelogTime).Int64Slice()
-	names := h.GetTag(tagChangelogName).StringSlice()
-	texts := h.GetTag(tagChangelogText).StringSlice()
+func changelog(h header) []ChangelogEntry {
+	times := h.numbers[tagChangelogTime]
+	names := h.strings[tagChangelogName]
+	texts := h.strings[tagChangelogText]
 
 	n := min(len(times), len(names), len(texts), maxChangelogEntries)
 	out := make([]ChangelogEntry, 0, n)
