@@ -60,6 +60,7 @@ func (strictJSON) UnmarshalRead(_ context.Context, src io.Reader, m any) error {
 
 func strictRESTJSON(resolver connectproto.TypeResolver) vanguard.RESTCodec {
 	codec := vanguard.NewJSONCodec(resolver)
+	codec.MarshalOptions.EmitUnpopulated = false
 	codec.UnmarshalOptions.DiscardUnknown = false
 
 	return codec
