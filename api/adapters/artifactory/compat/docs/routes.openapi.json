@@ -1071,6 +1071,121 @@
         "x-relic-access": "authenticated"
       }
     },
+    "/artifactory/api/huggingfaceml/{repo}/api/xet/v1/shards": {
+      "post": {
+        "operationId": "postArtifactoryApiHuggingfacemlRepoApiXetV1Shards",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "POST /artifactory/api/huggingfaceml/{repo}/api/xet/v1/shards",
+        "tags": [
+          "Artifactory: huggingfaceml"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/artifactory/api/huggingfaceml/{repo}/api/xet/v1/xorbs/{prefix}/{hash}": {
+      "head": {
+        "operationId": "headArtifactoryApiHuggingfacemlRepoApiXetV1XorbsPrefixHash",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "prefix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "hash",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "HEAD /artifactory/api/huggingfaceml/{repo}/api/xet/v1/xorbs/{prefix}/{hash}",
+        "tags": [
+          "Artifactory: huggingfaceml"
+        ],
+        "x-relic-access": "public"
+      },
+      "post": {
+        "operationId": "postArtifactoryApiHuggingfacemlRepoApiXetV1XorbsPrefixHash",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "prefix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "hash",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "POST /artifactory/api/huggingfaceml/{repo}/api/xet/v1/xorbs/{prefix}/{hash}",
+        "tags": [
+          "Artifactory: huggingfaceml"
+        ],
+        "x-relic-access": "public"
+      }
+    },
     "/artifactory/api/huggingfaceml/{repo}/lfs/{oid}": {
       "put": {
         "operationId": "putArtifactoryApiHuggingfacemlRepoLfsOid",
@@ -2353,6 +2468,121 @@
         },
         "security": [],
         "summary": "GET /healthz",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/huggingface/{repo}/api/xet/v1/shards": {
+      "post": {
+        "operationId": "postHuggingfaceRepoApiXetV1Shards",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "POST /huggingface/{repo}/api/xet/v1/shards",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/huggingface/{repo}/api/xet/v1/xorbs/{prefix}/{hash}": {
+      "head": {
+        "operationId": "headHuggingfaceRepoApiXetV1XorbsPrefixHash",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "prefix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "hash",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "HEAD /huggingface/{repo}/api/xet/v1/xorbs/{prefix}/{hash}",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "public"
+      },
+      "post": {
+        "operationId": "postHuggingfaceRepoApiXetV1XorbsPrefixHash",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "prefix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "hash",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "POST /huggingface/{repo}/api/xet/v1/xorbs/{prefix}/{hash}",
         "tags": [
           "System"
         ],

@@ -824,6 +824,51 @@ func TestAllowExpiredBearer(t *testing.T) {
 	}
 }
 
+func TestLeaveBearer(t *testing.T) {
+	t.Parallel()
+	a := newTestAuthenticator(t)
+	a.LeaveBearer("own_", "/own/")
+
+	tests := []struct {
+		name, path, token string
+		wantErr           error
+	}{
+		{
+			name:  "a token with the prefix on its path stays anonymous",
+			path:  "/mount/repo/own/v1/thing",
+			token: "own_anything",
+		},
+		{
+			name:    "a token with the prefix elsewhere is verified",
+			path:    "/api/v1/repositories",
+			token:   "own_anything",
+			wantErr: ErrBadCredentials,
+		},
+		{
+			name:    "other tokens on the path are verified",
+			path:    "/mount/repo/own/v1/thing",
+			token:   "other_anything",
+			wantErr: ErrBadCredentials,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, tt.path, nil)
+			r.Header.Set("Authorization", "Bearer "+tt.token)
+
+			p, err := a.Authenticate(r)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Authenticate error = %v, want %v", err, tt.wantErr)
+			}
+
+			if err == nil && !p.Anonymous() {
+				t.Fatalf("principal = %+v, want anonymous", p)
+			}
+		})
+	}
+}
+
 func TestLimitIssueBoundsTheLifetime(t *testing.T) {
 	t.Parallel()
 
