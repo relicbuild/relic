@@ -55,7 +55,15 @@ func (h *Handler) hfAPI(w http.ResponseWriter, r *http.Request, m Mount) {
 	case len(parts) >= 3 && parts[0] == "api":
 		kind, ok := hf.ParseKind(parts[1])
 
-		id, op, arg, found := hfSplit(parts[2:], "revision", "tree", "preupload", "commit")
+		id, op, arg, found := hfSplit(
+			parts[2:],
+			"revision",
+			"tree",
+			"preupload",
+			"commit",
+			"xet-read-token",
+			"xet-write-token",
+		)
 		if bare := strings.Join(parts[2:], "/"); !found && len(parts) <= 4 && hf.ValidID(bare) {
 			id, op, arg, found = bare, "revision", []string{
 				hfDefaultRevision,
@@ -184,6 +192,13 @@ func (h *Handler) hfRepoAPI(
 		h.hfPreupload(w, r, rp)
 	case op == "commit" && r.Method == http.MethodPost:
 		h.hfCommit(w, r, m, rp, kind, id, strings.Join(arg, "/"))
+	case (op == "xet-read-token" || op == "xet-write-token") && r.Method == http.MethodGet:
+		rev := strings.Join(arg, "/")
+		if rev == "" {
+			rev = hfDefaultRevision
+		}
+
+		h.hfXetTokenIssue(w, r, m, rp, kind, id, op, rev)
 	default:
 		hfError(w, http.StatusNotFound, "EntryNotFound", "not found")
 	}

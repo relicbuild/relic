@@ -824,6 +824,44 @@ func TestAllowExpiredBearer(t *testing.T) {
 	}
 }
 
+func TestLeaveBearer(t *testing.T) {
+	t.Parallel()
+	a := newTestAuthenticator(t)
+	a.LeaveBearer("own_")
+
+	tests := []struct {
+		name, token string
+		wantErr     error
+	}{
+		{
+			"a token with the prefix stays anonymous",
+			"own_anything",
+			nil,
+		},
+		{
+			"other tokens are still verified",
+			"other_anything",
+			ErrBadCredentials,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/anywhere", nil)
+			r.Header.Set("Authorization", "Bearer "+tt.token)
+
+			p, err := a.Authenticate(r)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Authenticate error = %v, want %v", err, tt.wantErr)
+			}
+
+			if err == nil && !p.Anonymous() {
+				t.Fatalf("principal = %+v, want anonymous", p)
+			}
+		})
+	}
+}
+
 func TestLimitIssueBoundsTheLifetime(t *testing.T) {
 	t.Parallel()
 

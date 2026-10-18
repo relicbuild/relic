@@ -32,6 +32,20 @@ func (s *Service) XorbStored(ctx context.Context, repoKey string, h xet.Hash) bo
 	return err == nil
 }
 
+// XorbSize is the length of the xorb with hash h in repoKey.
+func (s *Service) XorbSize(ctx context.Context, repoKey string, h xet.Hash) (int64, error) {
+	if !s.XorbStored(ctx, repoKey, h) {
+		return 0, repository.ErrNotFound
+	}
+
+	item, err := s.repos.Stat(ctx, repoKey, xorbPath(h))
+	if err != nil {
+		return 0, err
+	}
+
+	return item.Size, nil
+}
+
 // StoreXorb stores a xorb a client uploaded to repoKey, with the index of
 // its chunks, after checking it hashes to h. It reports false when repoKey
 // already held the xorb.

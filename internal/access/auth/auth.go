@@ -173,6 +173,7 @@ type Authenticator struct {
 
 	apiKeys        []apiKeyHeader
 	expiredBearers map[string]bool
+	leftBearers    []string
 }
 
 type apiKeyHeader struct {
@@ -186,6 +187,12 @@ func (a *Authenticator) AcceptAPIKey(header, prefix string) {
 		header: header,
 		prefix: prefix,
 	})
+}
+
+// LeaveBearer makes requests whose bearer token starts with prefix
+// anonymous: the handlers they reach verify those tokens themselves.
+func (a *Authenticator) LeaveBearer(prefix string) {
+	a.leftBearers = append(a.leftBearers, prefix)
 }
 
 // AllowExpiredBearer lets POST requests to path through with a bearer token
@@ -276,6 +283,12 @@ func (a *Authenticator) Authenticate(r *http.Request) (Principal, error) {
 	}
 
 	if token, ok := BearerToken(header); ok {
+		for _, prefix := range a.leftBearers {
+			if strings.HasPrefix(token, prefix) {
+				return Principal{}, nil
+			}
+		}
+
 		p, err := a.bearer(r.Context(), token)
 		telemetry.AuthAttempt("bearer", attemptResult(err))
 

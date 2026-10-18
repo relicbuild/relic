@@ -46,6 +46,11 @@ func TestRouteAccess(t *testing.T) {
 		"GET /artifactory/api/conan/{repo}/v1/ping": true,
 		// huggingface_hub PUTs LFS objects without credentials; signed URL.
 		"PUT /artifactory/api/huggingfaceml/{repo}/lfs/{oid}": true,
+		// The Xet CAS verifies the short-lived Xet tokens it issues.
+		"POST /artifactory/api/huggingfaceml/{repo}/api/xet/v1/xorbs/{prefix}/{hash}": true,
+		"HEAD /artifactory/api/huggingfaceml/{repo}/api/xet/v1/xorbs/{prefix}/{hash}": true,
+		"POST /artifactory/api/huggingfaceml/{repo}/api/xet/v1/shards":                true,
+		"/artifactory/api/huggingfaceml/{repo}/api/xet/":                              true,
 	}
 
 	for _, r := range rt.Routes() {

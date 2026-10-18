@@ -54,6 +54,12 @@ func (h *Handler) RegisterConan(rt *httpserver.Router, m Mount) {
 // RegisterHuggingFace serves the Hugging Face Hub API.
 func (h *Handler) RegisterHuggingFace(rt *httpserver.Router, m Mount) {
 	rt.HandleFunc("PUT "+m.Prefix+"{repo}/lfs/{oid}", auth.Public, h.hfLFSUpload)
+	// The Xet CAS authenticates its own short-lived tokens.
+	cas := m.Prefix + "{repo}" + hfXetCASPath
+	rt.HandleFunc("POST "+cas+"/v1/xorbs/{prefix}/{hash}", auth.Public, h.hfXetUploadXorb)
+	rt.HandleFunc("HEAD "+cas+"/v1/xorbs/{prefix}/{hash}", auth.Public, h.hfXetHeadXorb)
+	rt.HandleFunc("POST "+cas+"/v1/shards", auth.Public, h.hfXetUploadShard)
+	rt.HandleFunc(cas+"/", auth.Public, h.hfXetNotServed)
 	rt.HandleFunc(m.Prefix, auth.Authenticated, mounted(m, h.hfAPI))
 }
 
@@ -148,6 +154,7 @@ func (h *Handler) native(prefix string) Mount {
 // ConfigureAuth teaches the authenticator what the package clients send at Relic's mounts.
 func ConfigureAuth(a *auth.Authenticator) {
 	a.AcceptAPIKey("X-NuGet-ApiKey", "/nuget/")
+	a.LeaveBearer(hfXetTokenPrefix)
 }
 
 // RegisterPaths counts the requests under Relic's mounts toward the
