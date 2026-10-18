@@ -5,7 +5,7 @@ FROM ${RELIC_IMAGE} AS relic
 
 FROM debian:trixie-slim
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl git jq zip unzip xz-utils nodejs npm openjdk-21-jdk-headless maven docker-cli golang-go python3 python3-venv python3-pip twine \
+ && apt-get install -y --no-install-recommends ca-certificates curl git jq zip unzip xz-utils openjdk-21-jdk-headless maven docker-cli golang-go python3 python3-venv python3-pip twine \
  && rm -rf /var/lib/apt/lists/*
 
 ARG JF_VERSION=2.127.0
@@ -42,7 +42,16 @@ RUN curl -fsSL -o /tmp/dotnet.tgz "https://builds.dotnet.microsoft.com/dotnet/Sd
 
 RUN apt-get update && apt-get install -y --no-install-recommends ruby ruby-bundler && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @yarnpkg/cli-dist@4.18.1 pnpm@12.14.0 \
+ARG TARGETARCH
+ARG NODE_VERSION=24.22.0
+ARG NODE_SHA256_X64=cc2f601cee82d9a5a233302fe307abc600727035fd7d2c3a3571755989e95008
+ARG NODE_SHA256_ARM64=fef00bb4d36e1c50104a9775a10359beee98f162b4104dd12472c75065c6a143
+RUN if [ "$TARGETARCH" = arm64 ]; then arch=arm64 sum=$NODE_SHA256_ARM64; else arch=x64 sum=$NODE_SHA256_X64; fi \
+ && curl -fsSL -o /tmp/node.tar.xz "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${arch}.tar.xz" \
+ && echo "${sum}  /tmp/node.tar.xz" | sha256sum -c - \
+ && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 --exclude='*.md' --exclude=LICENSE && rm /tmp/node.tar.xz
+
+RUN npm install -g @yarnpkg/cli-dist@4.18.1 pnpm@12.14.0 @modelcontextprotocol/inspector@2.11.0 \
  && pip3 install --no-cache-dir --break-system-packages --ignore-installed poetry==2.5.1 pipenv==2026.10.0
 
 RUN python3 -m venv /opt/conan && /opt/conan/bin/pip install --no-cache-dir conan==2.33.0 \
@@ -51,20 +60,6 @@ RUN python3 -m venv /opt/conan && /opt/conan/bin/pip install --no-cache-dir cona
 RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed huggingface_hub==2.2.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends cargo && rm -rf /var/lib/apt/lists/*
-
-# MCP Inspector needs a newer Node than Debian's; it gets its own, so the
-# package manager scenarios keep Debian's Node.
-ARG TARGETARCH
-ARG NODE_LTS_VERSION=24.22.0
-ARG NODE_LTS_SHA256_X64=cc2f601cee82d9a5a233302fe307abc600727035fd7d2c3a3571755989e95008
-ARG NODE_LTS_SHA256_ARM64=fef00bb4d36e1c50104a9775a10359beee98f162b4104dd12472c75065c6a143
-RUN if [ "$TARGETARCH" = arm64 ]; then arch=arm64 sum=$NODE_LTS_SHA256_ARM64; else arch=x64 sum=$NODE_LTS_SHA256_X64; fi \
- && curl -fsSL -o /tmp/node-lts.tar.xz "https://nodejs.org/dist/v${NODE_LTS_VERSION}/node-v${NODE_LTS_VERSION}-linux-${arch}.tar.xz" \
- && echo "${sum}  /tmp/node-lts.tar.xz" | sha256sum -c - \
- && mkdir -p /opt/node-lts && tar -xJf /tmp/node-lts.tar.xz -C /opt/node-lts --strip-components=1 && rm /tmp/node-lts.tar.xz \
- && PATH=/opt/node-lts/bin:$PATH npm install -g @modelcontextprotocol/inspector@2.11.0 \
- && printf '#!/bin/sh\nPATH=/opt/node-lts/bin:$PATH exec /opt/node-lts/bin/mcp-inspector "$@"\n' >/usr/local/bin/mcp-inspector \
- && chmod +x /usr/local/bin/mcp-inspector
 
 ARG HELMFILE_VERSION=1.8.2
 ARG HELMFILE_SHA256=f179485c5bb9f8e20fbd8ea16d8807915988aba4d60131ee864fb3232452716e
@@ -113,7 +108,7 @@ RUN cd /tmp/maven-seed \
 
 ENV MAVEN_ARGS=-Dmaven.repo.local.tail=/opt/m2-seed MAVEN_OPTS=-Dmaven.repo.local.tail=/opt/m2-seed
 RUN apt-get update && apt-get install -y --no-install-recommends rpm && rm -rf /var/lib/apt/lists/*
-ENV JF=/usr/local/bin/jf CI=true JFROG_CLI_REPORT_USAGE=false \
+ENV JF=/usr/local/bin/jf CI=true JFROG_CLI_REPORT_USAGE=false NODE_USE_SYSTEM_CA=1 \
     DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 COPY api/adapters/artifactory/compat/e2e/run-in-container.sh /run.sh
