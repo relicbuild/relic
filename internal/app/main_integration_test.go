@@ -25,7 +25,8 @@ import (
 	"relic/internal/platform/database/databasetest"
 	"relic/internal/platform/objectstore/objectstoretest"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 )
 
 func TestMain(m *testing.M) { databasetest.Main(m) }
@@ -251,6 +252,16 @@ func relicHTTP(user, password string) *http.Client {
 			password,
 		},
 	}
+}
+
+// apiClient calls the Relic API of the server at serverURL with hc.
+func apiClient(hc connecthttp.HTTPClient, serverURL string) *connect.Client {
+	return connect.NewClient(
+		connecthttp.NewTransport(
+			hc,
+			serverURL+"/api",
+		),
+	)
 }
 
 func code(err error) connect.Code {

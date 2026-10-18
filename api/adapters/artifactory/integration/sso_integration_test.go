@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/crewjam/saml"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -55,9 +55,9 @@ func TestSingleSignOn(t *testing.T) {
 	ctx := t.Context()
 	idp := ssotest.NewOIDC(t, "relic", "client-secret-2")
 
-	providers := relicv1connect.NewIdentityProviderServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	providers := relicv1connect.NewIdentityProviderServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
-	put, err := providers.PutIdentityProvider(ctx, connect.NewRequest(&relicv1.PutIdentityProviderRequest{
+	put, err := providers.PutIdentityProvider(ctx, &relicv1.PutIdentityProviderRequest{
 		IdentityProvider: &relicv1.IdentityProvider{
 			Name:            "corp",
 			DisplayName:     "Corp SSO",
@@ -71,21 +71,21 @@ func TestSingleSignOn(t *testing.T) {
 				},
 			},
 		},
-	}))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if got := put.Msg.GetIdentityProvider(); got.GetOidc().GetClientSecret() != "" ||
+	if got := put.GetIdentityProvider(); got.GetOidc().GetClientSecret() != "" ||
 		got.GetCallbackPath() != "/api/v1/sso/corp/callback" {
 		t.Errorf("saved provider = %v; want no secret and the callback path", got)
 	}
 
-	public := relicv1connect.NewSessionServiceClient(http.DefaultClient, srv.URL+"/api")
+	public := relicv1connect.NewSessionServiceClient(apiClient(http.DefaultClient, srv.URL))
 
-	list, err := public.ListSignInProviders(ctx, connect.NewRequest(&relicv1.ListSignInProvidersRequest{}))
-	if err != nil || len(list.Msg.GetProviders()) != 1 ||
-		list.Msg.GetProviders()[0].GetDisplayName() != "Corp SSO" {
+	list, err := public.ListSignInProviders(ctx, &relicv1.ListSignInProvidersRequest{})
+	if err != nil || len(list.GetProviders()) != 1 ||
+		list.GetProviders()[0].GetDisplayName() != "Corp SSO" {
 		t.Fatalf("sign-in providers = %v, %v", list, err)
 	}
 
@@ -96,16 +96,17 @@ func TestSingleSignOn(t *testing.T) {
 
 	b := browser(t)
 
-	landed := landingURL(t, b, srv.URL+list.Msg.GetProviders()[0].GetStartPath()+"?return=/browse")
+	landed := landingURL(t, b, srv.URL+list.GetProviders()[0].GetStartPath()+"?return=/browse")
 	if landed.Path != "/browse" {
 		t.Fatalf("the sign-in ended at %s", landed)
 	}
 
-	whoami := connect.NewRequest(&relicv1.GetCurrentUserRequest{})
-	whoami.Header().Set("X-Relic-UI", "1")
+	whoami := &relicv1.GetCurrentUserRequest{}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("X-Relic-UI", "1")
 
-	me, err := relicv1connect.NewSessionServiceClient(b, srv.URL+"/api").GetCurrentUser(ctx, whoami)
-	if err != nil || me.Msg.GetPrincipal().GetUsername() != "dana" {
+	me, err := relicv1connect.NewSessionServiceClient(apiClient(b, srv.URL)).GetCurrentUser(ctx, whoami)
+	if err != nil || me.GetPrincipal().GetUsername() != "dana" {
 		t.Fatalf("after single sign-on, the session is %v, %v", me, err)
 	}
 
@@ -114,23 +115,23 @@ func TestSingleSignOn(t *testing.T) {
 		t.Errorf("a callback this browser did not start ended at %s", forged)
 	}
 
-	log := relicv1connect.NewAuditServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	log := relicv1connect.NewAuditServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
-	events, err := log.ListAuditEvents(ctx, connect.NewRequest(&relicv1.ListAuditEventsRequest{
+	events, err := log.ListAuditEvents(ctx, &relicv1.ListAuditEventsRequest{
 		Action: "sso.sign-in",
-	}))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	var signedIn, refused bool
-	for _, e := range events.Msg.GetEvents() {
+	for _, e := range events.GetEvents() {
 		signedIn = signedIn || e.GetActor() == "dana" && e.GetOutcome() == relicv1.AuditOutcome_AUDIT_OUTCOME_SUCCESS
 		refused = refused || e.GetOutcome() == relicv1.AuditOutcome_AUDIT_OUTCOME_DENIED
 	}
 
 	if !signedIn || !refused {
-		t.Errorf("sign-in audit events = %v", events.Msg.GetEvents())
+		t.Errorf("sign-in audit events = %v", events.GetEvents())
 	}
 }
 
@@ -140,9 +141,9 @@ func TestSAMLSingleSignOn(t *testing.T) {
 	ctx := t.Context()
 	idp := ssotest.NewSAML(t)
 
-	providers := relicv1connect.NewIdentityProviderServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	providers := relicv1connect.NewIdentityProviderServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
-	put, err := providers.PutIdentityProvider(ctx, connect.NewRequest(&relicv1.PutIdentityProviderRequest{
+	put, err := providers.PutIdentityProvider(ctx, &relicv1.PutIdentityProviderRequest{
 		IdentityProvider: &relicv1.IdentityProvider{
 			Name:            "corp-saml",
 			Enabled:         true,
@@ -153,12 +154,12 @@ func TestSAMLSingleSignOn(t *testing.T) {
 				},
 			},
 		},
-	}))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if got := put.Msg.GetIdentityProvider(); got.GetCallbackPath() != "/api/v1/sso/corp-saml/acs" ||
+	if got := put.GetIdentityProvider(); got.GetCallbackPath() != "/api/v1/sso/corp-saml/acs" ||
 		!strings.Contains(got.GetSaml().GetCertificate(), "BEGIN CERTIFICATE") {
 		t.Errorf("saved provider = %v; want the ACS path and Relic's certificate", got)
 	}
@@ -230,11 +231,12 @@ func TestSAMLSingleSignOn(t *testing.T) {
 		t.Fatalf("the SAML sign-in ended at %s", done.Request.URL)
 	}
 
-	whoami := connect.NewRequest(&relicv1.GetCurrentUserRequest{})
-	whoami.Header().Set("X-Relic-UI", "1")
+	whoami := &relicv1.GetCurrentUserRequest{}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("X-Relic-UI", "1")
 
-	me, err := relicv1connect.NewSessionServiceClient(b, srv.URL+"/api").GetCurrentUser(ctx, whoami)
-	if err != nil || me.Msg.GetPrincipal().GetUsername() != "frank" {
+	me, err := relicv1connect.NewSessionServiceClient(apiClient(b, srv.URL)).GetCurrentUser(ctx, whoami)
+	if err != nil || me.GetPrincipal().GetUsername() != "frank" {
 		t.Fatalf("after SAML sign-on, the session is %v, %v", me, err)
 	}
 

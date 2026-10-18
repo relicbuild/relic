@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -23,32 +23,32 @@ func TestProjects(t *testing.T) {
 
 	const password = "Project-pass-12345"
 
-	sec := relicv1connect.NewSecurityServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	sec := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 	for _, name := range []string{
 		"pa-lead",
 		"pa-dev",
 		"pa-tester",
 		"pa-stranger",
 	} {
-		if _, err := sec.PutUser(ctx, connect.NewRequest(&relicv1.PutUserRequest{
+		if _, err := sec.PutUser(ctx, &relicv1.PutUserRequest{
 			User: &relicv1.User{
 				Name:     name,
 				Email:    name + "@example.com",
 				Password: password,
 			},
-		})); err != nil {
+		}); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	if _, err := sec.PutGroup(ctx, connect.NewRequest(&relicv1.PutGroupRequest{
+	if _, err := sec.PutGroup(ctx, &relicv1.PutGroupRequest{
 		Group: &relicv1.Group{
 			Name: "pa-qa",
 			Members: []string{
 				"pa-tester",
 			},
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -58,29 +58,29 @@ func TestProjects(t *testing.T) {
 			pw = "password"
 		}
 
-		return relicv1connect.NewProjectServiceClient(relicHTTP(user, pw), srv.URL+"/api")
+		return relicv1connect.NewProjectServiceClient(apiClient(relicHTTP(user, pw), srv.URL))
 	}
 	repos := func(user string) relicv1connect.RepositoryServiceClient {
-		return relicv1connect.NewRepositoryServiceClient(relicHTTP(user, password), srv.URL+"/api")
+		return relicv1connect.NewRepositoryServiceClient(apiClient(relicHTTP(user, password), srv.URL))
 	}
 
-	if _, err := projects("admin").PutProject(ctx, connect.NewRequest(&relicv1.PutProjectRequest{
+	if _, err := projects("admin").PutProject(ctx, &relicv1.PutProjectRequest{
 		Project: &relicv1.Project{
 			Key: "Bad-Key",
 		},
-	})); code(err) != connect.CodeInvalidArgument {
+	}); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("an invalid key: %v", err)
 	}
 
-	if _, err := projects("pa-lead").PutProject(ctx, connect.NewRequest(&relicv1.PutProjectRequest{
+	if _, err := projects("pa-lead").PutProject(ctx, &relicv1.PutProjectRequest{
 		Project: &relicv1.Project{
 			Key: "acme",
 		},
-	})); code(err) != connect.CodePermissionDenied {
+	}); code(err) != connect.CodePermissionDenied {
 		t.Errorf("a user creating a project: %v", err)
 	}
 
-	if _, err := projects("admin").PutProject(ctx, connect.NewRequest(&relicv1.PutProjectRequest{
+	if _, err := projects("admin").PutProject(ctx, &relicv1.PutProjectRequest{
 		Project: &relicv1.Project{
 			Key:               "acme",
 			Name:              "Acme",
@@ -101,19 +101,19 @@ func TestProjects(t *testing.T) {
 				},
 			},
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	newRepo := func(name, project string) *connect.Request[relicv1.CreateRepositoryRequest] {
-		return connect.NewRequest(&relicv1.CreateRepositoryRequest{
+	newRepo := func(name, project string) *relicv1.CreateRepositoryRequest {
+		return &relicv1.CreateRepositoryRequest{
 			Repository: &relicv1.Repository{
 				Name:    name,
 				Class:   relicv1.RepositoryClass_REPOSITORY_CLASS_LOCAL,
 				Format:  relicv1.Format_FORMAT_GENERIC,
 				Project: project,
 			},
-		})
+		}
 	}
 
 	if _, err := repos(
@@ -176,13 +176,13 @@ func TestProjects(t *testing.T) {
 		t.Errorf("the refused file = %d, want not found", got)
 	}
 
-	if _, err := projects("pa-dev").SetProjectMembers(ctx, connect.NewRequest(&relicv1.SetProjectMembersRequest{
+	if _, err := projects("pa-dev").SetProjectMembers(ctx, &relicv1.SetProjectMembersRequest{
 		Key: "acme",
-	})); code(err) != connect.CodePermissionDenied {
+	}); code(err) != connect.CodePermissionDenied {
 		t.Errorf("a developer changing members: %v", err)
 	}
 
-	got, err := projects("pa-lead").SetProjectMembers(ctx, connect.NewRequest(&relicv1.SetProjectMembersRequest{
+	got, err := projects("pa-lead").SetProjectMembers(ctx, &relicv1.SetProjectMembersRequest{
 		Key: "acme",
 		Members: []*relicv1.ProjectMember{
 			{
@@ -198,32 +198,32 @@ func TestProjects(t *testing.T) {
 				Role: relicv1.ProjectRole_PROJECT_ROLE_VIEWER,
 			},
 		},
-	}))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	p := got.Msg.GetProject()
+	p := got.GetProject()
 	if p.GetUsedBytes() != 5 || !slices.Equal(p.GetRepositories(), []string{
 		"acme-libs",
 	}) || len(p.GetMembers()) != 3 {
 		t.Errorf("project = %v", p)
 	}
 
-	if _, err := projects("pa-dev").AddProjectMember(ctx, connect.NewRequest(&relicv1.AddProjectMemberRequest{
+	if _, err := projects("pa-dev").AddProjectMember(ctx, &relicv1.AddProjectMemberRequest{
 		Key: "acme",
 		Member: &relicv1.ProjectMember{
 			Name: "pa-dev",
 			Role: relicv1.ProjectRole_PROJECT_ROLE_ADMIN,
 		},
-	})); code(err) != connect.CodePermissionDenied {
+	}); code(err) != connect.CodePermissionDenied {
 		t.Errorf("a developer adding a member: %v", err)
 	}
 
-	if _, err := projects("pa-dev").RemoveProjectMember(ctx, connect.NewRequest(&relicv1.RemoveProjectMemberRequest{
+	if _, err := projects("pa-dev").RemoveProjectMember(ctx, &relicv1.RemoveProjectMemberRequest{
 		Key:  "acme",
 		Name: "pa-lead",
-	})); code(err) != connect.CodePermissionDenied {
+	}); code(err) != connect.CodePermissionDenied {
 		t.Errorf("a developer removing a member: %v", err)
 	}
 
@@ -238,15 +238,15 @@ func TestProjects(t *testing.T) {
 		"pa-extra-8",
 	}
 	members := func() []string {
-		got, err := projects("pa-lead").GetProject(ctx, connect.NewRequest(&relicv1.GetProjectRequest{
+		got, err := projects("pa-lead").GetProject(ctx, &relicv1.GetProjectRequest{
 			Key: "acme",
-		}))
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		names := make([]string, 0, len(got.Msg.GetProject().GetMembers()))
-		for _, m := range got.Msg.GetProject().GetMembers() {
+		names := make([]string, 0, len(got.GetProject().GetMembers()))
+		for _, m := range got.GetProject().GetMembers() {
 			names = append(names, m.GetName())
 		}
 
@@ -272,13 +272,13 @@ func TestProjects(t *testing.T) {
 	}
 
 	changeConcurrently(func(name string) error {
-		_, err := projects("pa-lead").AddProjectMember(ctx, connect.NewRequest(&relicv1.AddProjectMemberRequest{
+		_, err := projects("pa-lead").AddProjectMember(ctx, &relicv1.AddProjectMemberRequest{
 			Key: "acme",
 			Member: &relicv1.ProjectMember{
 				Name: name,
 				Role: relicv1.ProjectRole_PROJECT_ROLE_VIEWER,
 			},
-		}))
+		})
 
 		return err
 	})
@@ -293,10 +293,10 @@ func TestProjects(t *testing.T) {
 	}
 
 	changeConcurrently(func(name string) error {
-		_, err := projects("pa-lead").RemoveProjectMember(ctx, connect.NewRequest(&relicv1.RemoveProjectMemberRequest{
+		_, err := projects("pa-lead").RemoveProjectMember(ctx, &relicv1.RemoveProjectMemberRequest{
 			Key:  "acme",
 			Name: name,
-		}))
+		})
 
 		return err
 	})
@@ -317,19 +317,19 @@ func TestProjects(t *testing.T) {
 		t.Errorf("a removed member still reads")
 	}
 
-	list, err := projects("pa-dev").ListProjects(ctx, connect.NewRequest(&relicv1.ListProjectsRequest{}))
-	if err != nil || len(list.Msg.GetProjects()) != 1 {
+	list, err := projects("pa-dev").ListProjects(ctx, &relicv1.ListProjectsRequest{})
+	if err != nil || len(list.GetProjects()) != 1 {
 		t.Errorf("a member's projects = %v, %v", list, err)
 	}
 
-	list, err = projects("pa-tester").ListProjects(ctx, connect.NewRequest(&relicv1.ListProjectsRequest{}))
-	if err != nil || len(list.Msg.GetProjects()) != 0 {
+	list, err = projects("pa-tester").ListProjects(ctx, &relicv1.ListProjectsRequest{})
+	if err != nil || len(list.GetProjects()) != 0 {
 		t.Errorf("a non-member's projects = %v, %v", list, err)
 	}
 
-	if _, err := repos("pa-lead").DeleteRepository(ctx, connect.NewRequest(&relicv1.DeleteRepositoryRequest{
+	if _, err := repos("pa-lead").DeleteRepository(ctx, &relicv1.DeleteRepositoryRequest{
 		Name: "acme-libs",
-	})); err != nil {
+	}); err != nil {
 		t.Errorf("a project admin deleting the project's repository: %v", err)
 	}
 }

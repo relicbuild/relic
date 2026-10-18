@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -18,36 +18,36 @@ func TestWaivers(t *testing.T) {
 	srv := server(t)
 	ctx := t.Context()
 
-	sec := relicv1connect.NewSecurityServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	sec := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 	for _, name := range []string{
 		"wanda",
 		"walt",
 	} {
-		if _, err := sec.PutUser(ctx, connect.NewRequest(&relicv1.PutUserRequest{
+		if _, err := sec.PutUser(ctx, &relicv1.PutUserRequest{
 			User: &relicv1.User{
 				Name:     name,
 				Email:    name + "@example.com",
 				Password: "Waiver-pass-12345",
 			},
-		})); err != nil {
+		}); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	admin := relicv1connect.NewWaiverServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
-	wanda := relicv1connect.NewWaiverServiceClient(relicHTTP("wanda", "Waiver-pass-12345"), srv.URL+"/api")
-	walt := relicv1connect.NewWaiverServiceClient(relicHTTP("walt", "Waiver-pass-12345"), srv.URL+"/api")
+	admin := relicv1connect.NewWaiverServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
+	wanda := relicv1connect.NewWaiverServiceClient(apiClient(relicHTTP("wanda", "Waiver-pass-12345"), srv.URL))
+	walt := relicv1connect.NewWaiverServiceClient(apiClient(relicHTTP("walt", "Waiver-pass-12345"), srv.URL))
 
 	request := func(c relicv1connect.WaiverServiceClient, reason string, rule *relicv1.IgnoreRule) (*relicv1.Waiver, error) {
-		resp, err := c.RequestWaiver(ctx, connect.NewRequest(&relicv1.RequestWaiverRequest{
+		resp, err := c.RequestWaiver(ctx, &relicv1.RequestWaiverRequest{
 			Rule:   rule,
 			Reason: reason,
-		}))
+		})
 		if err != nil {
 			return nil, err
 		}
 
-		return resp.Msg.GetWaiver(), nil
+		return resp.GetWaiver(), nil
 	}
 
 	lodash := &relicv1.IgnoreRule{
@@ -97,14 +97,14 @@ func TestWaivers(t *testing.T) {
 	}
 
 	list := func(c relicv1connect.WaiverServiceClient, status relicv1.WaiverStatus) []*relicv1.Waiver {
-		resp, err := c.ListWaivers(ctx, connect.NewRequest(&relicv1.ListWaiversRequest{
+		resp, err := c.ListWaivers(ctx, &relicv1.ListWaiversRequest{
 			Status: status,
-		}))
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		return resp.Msg.GetWaivers()
+		return resp.GetWaivers()
 	}
 
 	if got := list(
@@ -119,42 +119,42 @@ func TestWaivers(t *testing.T) {
 		t.Errorf("administrators see %d pending waivers, want 3", len(got))
 	}
 
-	if _, err := wanda.ApproveWaiver(ctx, connect.NewRequest(&relicv1.ApproveWaiverRequest{
+	if _, err := wanda.ApproveWaiver(ctx, &relicv1.ApproveWaiverRequest{
 		Id:   approved.GetId(),
 		Days: 30,
-	})); code(err) != connect.CodePermissionDenied {
+	}); code(err) != connect.CodePermissionDenied {
 		t.Errorf("a user approving: %v", err)
 	}
 
-	if _, err := wanda.WithdrawWaiver(ctx, connect.NewRequest(&relicv1.WithdrawWaiverRequest{
+	if _, err := wanda.WithdrawWaiver(ctx, &relicv1.WithdrawWaiverRequest{
 		Id: withdrawn.GetId(),
-	})); code(err) != connect.CodeNotFound || connectMessage(err) != "no pending waiver "+withdrawn.GetId()+" of yours" {
+	}); code(err) != connect.CodeNotFound || connectMessage(err) != "no pending waiver "+withdrawn.GetId()+" of yours" {
 		t.Errorf("withdrawing another user's waiver: %v", err)
 	}
 
-	if _, err := walt.WithdrawWaiver(ctx, connect.NewRequest(&relicv1.WithdrawWaiverRequest{
+	if _, err := walt.WithdrawWaiver(ctx, &relicv1.WithdrawWaiverRequest{
 		Id: withdrawn.GetId(),
-	})); err != nil {
+	}); err != nil {
 		t.Errorf("withdraw: %v", err)
 	}
 
-	if _, err := admin.ApproveWaiver(ctx, connect.NewRequest(&relicv1.ApproveWaiverRequest{
+	if _, err := admin.ApproveWaiver(ctx, &relicv1.ApproveWaiverRequest{
 		Id:   approved.GetId(),
 		Days: 400,
-	})); code(err) != connect.CodeInvalidArgument || connectMessage(err) != "a waiver lasts 1 to 365 days" {
+	}); code(err) != connect.CodeInvalidArgument || connectMessage(err) != "a waiver lasts 1 to 365 days" {
 		t.Errorf("approving for 400 days: %v", err)
 	}
 
-	resp, err := admin.ApproveWaiver(ctx, connect.NewRequest(&relicv1.ApproveWaiverRequest{
+	resp, err := admin.ApproveWaiver(ctx, &relicv1.ApproveWaiverRequest{
 		Id:   approved.GetId(),
 		Days: 30,
 		Note: "until the upgrade",
-	}))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	w := resp.Msg.GetWaiver()
+	w := resp.GetWaiver()
 	if w.GetStatus() != relicv1.WaiverStatus_WAIVER_STATUS_APPROVED || w.GetDecidedBy() != "admin" ||
 		w.GetIgnoreRuleId() == "" {
 		t.Fatalf("approved = %v", w)
@@ -164,16 +164,16 @@ func TestWaivers(t *testing.T) {
 		t.Errorf("approved waiver expires in %s, want 30 days", d)
 	}
 
-	scans := relicv1connect.NewScanServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	scans := relicv1connect.NewScanServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
-	rules, err := scans.ListIgnoreRules(ctx, connect.NewRequest(&relicv1.ListIgnoreRulesRequest{}))
+	rules, err := scans.ListIgnoreRules(ctx, &relicv1.ListIgnoreRulesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	var rule *relicv1.IgnoreRule
 
-	for _, r := range rules.Msg.GetRules() {
+	for _, r := range rules.GetRules() {
 		if r.GetId() == w.GetIgnoreRuleId() {
 			rule = r
 		}
@@ -184,18 +184,18 @@ func TestWaivers(t *testing.T) {
 		t.Fatalf("the approval's ignore rule = %v", rule)
 	}
 
-	if _, err := admin.RejectWaiver(ctx, connect.NewRequest(&relicv1.RejectWaiverRequest{
+	if _, err := admin.RejectWaiver(ctx, &relicv1.RejectWaiverRequest{
 		Id: approved.GetId(),
-	})); code(err) != connect.CodeFailedPrecondition {
+	}); code(err) != connect.CodeFailedPrecondition {
 		t.Errorf("rejecting an approved waiver: %v", err)
 	}
 
-	rej, err := admin.RejectWaiver(ctx, connect.NewRequest(&relicv1.RejectWaiverRequest{
+	rej, err := admin.RejectWaiver(ctx, &relicv1.RejectWaiverRequest{
 		Id:   rejected.GetId(),
 		Note: "fix the license instead",
-	}))
-	if err != nil || rej.Msg.GetWaiver().GetStatus() != relicv1.WaiverStatus_WAIVER_STATUS_REJECTED ||
-		rej.Msg.GetWaiver().GetIgnoreRuleId() != "" {
+	})
+	if err != nil || rej.GetWaiver().GetStatus() != relicv1.WaiverStatus_WAIVER_STATUS_REJECTED ||
+		rej.GetWaiver().GetIgnoreRuleId() != "" {
 		t.Fatalf("reject = %v, %v", rej, err)
 	}
 
@@ -207,16 +207,16 @@ func TestWaivers(t *testing.T) {
 		rejected.GetId(),
 		approved.GetId(),
 	} {
-		resp, err := admin.ListWaivers(ctx, connect.NewRequest(&relicv1.ListWaiversRequest{
+		resp, err := admin.ListWaivers(ctx, &relicv1.ListWaiversRequest{
 			Page:     int32(i + 1), //nolint:gosec // a loop index
 			PageSize: 1,
-		}))
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		if got := resp.Msg.GetWaivers(); len(got) != 1 || got[0].GetId() != want || resp.Msg.GetTotal() != 2 {
-			t.Errorf("page %d of one waiver = %v, total %d; want %s of 2", i+1, got, resp.Msg.GetTotal(), want)
+		if got := resp.GetWaivers(); len(got) != 1 || got[0].GetId() != want || resp.GetTotal() != 2 {
+			t.Errorf("page %d of one waiver = %v, total %d; want %s of 2", i+1, got, resp.GetTotal(), want)
 		}
 	}
 }

@@ -5,7 +5,7 @@ package integration
 import (
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -15,7 +15,7 @@ func TestRelicAPIKeepsLdapServersInUse(t *testing.T) {
 	t.Parallel()
 	srv := server(t)
 	ctx := t.Context()
-	lc := relicv1connect.NewLdapServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	lc := relicv1connect.NewLdapServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
 	put := &relicv1.LdapServer{
 		Name:    "corp",
@@ -25,9 +25,9 @@ func TestRelicAPIKeepsLdapServersInUse(t *testing.T) {
 			Filter: "uid={0}",
 		},
 	}
-	if _, err := lc.PutLdapServer(ctx, connect.NewRequest(&relicv1.PutLdapServerRequest{
+	if _, err := lc.PutLdapServer(ctx, &relicv1.PutLdapServerRequest{
 		LdapServer: put,
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -41,34 +41,34 @@ func TestRelicAPIKeepsLdapServersInUse(t *testing.T) {
 	}
 	if _, err := lc.PutLdapGroupMapping(
 		ctx,
-		connect.NewRequest(&relicv1.PutLdapGroupMappingRequest{
+		&relicv1.PutLdapGroupMappingRequest{
 			LdapGroupMapping: mapping,
-		}),
+		},
 	); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err := lc.DeleteLdapServer(ctx, connect.NewRequest(&relicv1.DeleteLdapServerRequest{
+	_, err := lc.DeleteLdapServer(ctx, &relicv1.DeleteLdapServerRequest{
 		Name: "corp",
-	}))
+	})
 	if code(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("delete in use = %v, want failed_precondition", err)
 	}
 
 	if _, err := lc.DeleteLdapGroupMapping(
 		ctx,
-		connect.NewRequest(&relicv1.DeleteLdapGroupMappingRequest{
+		&relicv1.DeleteLdapGroupMappingRequest{
 			Name: "corp-groups",
-		}),
+		},
 	); err != nil {
 		t.Fatal(err)
 	}
 
 	if _, err := lc.DeleteLdapServer(
 		ctx,
-		connect.NewRequest(&relicv1.DeleteLdapServerRequest{
+		&relicv1.DeleteLdapServerRequest{
 			Name: "corp",
-		}),
+		},
 	); err != nil {
 		t.Errorf("delete unused = %v", err)
 	}

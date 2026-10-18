@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -457,13 +457,13 @@ func TestSecurityRegressions(t *testing.T) {
 			t.Errorf("move without read = %d %s, want 403", resp.StatusCode, body)
 		}
 
-		deeArts := relicv1connect.NewArtifactServiceClient(relicHTTP("dee", "Dee-pass-1"), srv.URL+"/api")
-		if _, err := deeArts.MoveItem(t.Context(), connect.NewRequest(&relicv1.MoveItemRequest{
+		deeArts := relicv1connect.NewArtifactServiceClient(apiClient(relicHTTP("dee", "Dee-pass-1"), srv.URL))
+		if _, err := deeArts.MoveItem(t.Context(), &relicv1.MoveItemRequest{
 			Repository:   "drop-local",
 			Path:         "hidden.txt",
 			ToRepository: "scratch-local",
 			ToPath:       "hidden.txt",
-		})); code(err) != connect.CodeNotFound {
+		}); code(err) != connect.CodeNotFound {
 			t.Errorf("Relic API move without read = %v, want NotFound", err)
 		}
 

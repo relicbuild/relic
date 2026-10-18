@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -130,7 +130,7 @@ func TestCopyAndMoveCheckEveryFile(t *testing.T) {
 		return resp.StatusCode, body
 	}
 	artifacts := func(u restrictedUser) relicv1connect.ArtifactServiceClient {
-		return relicv1connect.NewArtifactServiceClient(relicHTTP(u.name, u.password), srv.URL+"/api")
+		return relicv1connect.NewArtifactServiceClient(apiClient(relicHTTP(u.name, u.password), srv.URL))
 	}
 
 	t.Run("copying a folder with an unreadable file is refused", func(t *testing.T) {
@@ -143,12 +143,12 @@ func TestCopyAndMoveCheckEveryFile(t *testing.T) {
 			t.Errorf("REST copy = %d %s, want 403", status, body)
 		}
 
-		_, err := artifacts(copier).CopyItem(t.Context(), connect.NewRequest(&relicv1.CopyItemRequest{
+		_, err := artifacts(copier).CopyItem(t.Context(), &relicv1.CopyItemRequest{
 			Repository:   "guarded-local",
 			Path:         "src",
 			ToRepository: "guarded-local",
 			ToPath:       "api-copy",
-		}))
+		})
 		if code(err) != connect.CodePermissionDenied {
 			t.Errorf("Relic API copy = %v, want PermissionDenied", err)
 		}
@@ -173,12 +173,12 @@ func TestCopyAndMoveCheckEveryFile(t *testing.T) {
 			t.Errorf("REST move = %d %s, want 403", status, body)
 		}
 
-		_, err := artifacts(mover).MoveItem(t.Context(), connect.NewRequest(&relicv1.MoveItemRequest{
+		_, err := artifacts(mover).MoveItem(t.Context(), &relicv1.MoveItemRequest{
 			Repository:   "guarded-local",
 			Path:         "src",
 			ToRepository: "guarded-local",
 			ToPath:       "api-moved",
-		}))
+		})
 		if code(err) != connect.CodePermissionDenied {
 			t.Errorf("Relic API move = %v, want PermissionDenied", err)
 		}
@@ -198,12 +198,12 @@ func TestCopyAndMoveCheckEveryFile(t *testing.T) {
 			t.Errorf("REST copy over a file = %d %s, want 403", status, body)
 		}
 
-		_, err := artifacts(copier).CopyItem(t.Context(), connect.NewRequest(&relicv1.CopyItemRequest{
+		_, err := artifacts(copier).CopyItem(t.Context(), &relicv1.CopyItemRequest{
 			Repository:   "other-local",
 			Path:         "empty.txt",
 			ToRepository: "guarded-local",
 			ToPath:       "dst/open.txt",
-		}))
+		})
 		if code(err) != connect.CodePermissionDenied {
 			t.Errorf("Relic API copy over a file = %v, want PermissionDenied", err)
 		}
@@ -216,12 +216,12 @@ func TestCopyAndMoveCheckEveryFile(t *testing.T) {
 	t.Run("a destination the caller cannot write is named as such", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := artifacts(copier).CopyItem(t.Context(), connect.NewRequest(&relicv1.CopyItemRequest{
+		_, err := artifacts(copier).CopyItem(t.Context(), &relicv1.CopyItemRequest{
 			Repository:   "guarded-local",
 			Path:         "dst/open.txt",
 			ToRepository: "guarded-local",
 			ToPath:       "src/secret/open.txt",
-		}))
+		})
 		if code(err) != connect.CodePermissionDenied ||
 			!strings.Contains(err.Error(), "guarded-local/src/secret/open.txt") {
 			t.Errorf("Relic API copy to an unwritable destination = %v, want PermissionDenied naming it", err)
@@ -235,23 +235,23 @@ func TestCopyAndMoveCheckEveryFile(t *testing.T) {
 			"hidden-local",
 			"missing-local",
 		} {
-			_, err := artifacts(copier).CopyItem(t.Context(), connect.NewRequest(&relicv1.CopyItemRequest{
+			_, err := artifacts(copier).CopyItem(t.Context(), &relicv1.CopyItemRequest{
 				Repository:   "guarded-local",
 				Path:         "dst/open.txt",
 				ToRepository: key,
 				ToPath:       "open.txt",
-			}))
+			})
 			if code(err) != connect.CodeNotFound ||
 				!strings.Contains(err.Error(), "destination "+key+"/open.txt not found") {
 				t.Errorf("Relic API copy to %s = %v, want NotFound naming the destination", key, err)
 			}
 
-			_, err = artifacts(mover).MoveItem(t.Context(), connect.NewRequest(&relicv1.MoveItemRequest{
+			_, err = artifacts(mover).MoveItem(t.Context(), &relicv1.MoveItemRequest{
 				Repository:   "guarded-local",
 				Path:         "dst/open.txt",
 				ToRepository: key,
 				ToPath:       "open.txt",
-			}))
+			})
 			if code(err) != connect.CodeNotFound ||
 				!strings.Contains(err.Error(), "destination "+key+"/open.txt not found") {
 				t.Errorf("Relic API move to %s = %v, want NotFound naming the destination", key, err)
@@ -269,21 +269,21 @@ func TestCopyAndMoveCheckEveryFile(t *testing.T) {
 			t.Errorf("REST copy to a new file = %d %s, want 200", status, body)
 		}
 
-		if _, err := artifacts(copier).CopyItem(t.Context(), connect.NewRequest(&relicv1.CopyItemRequest{
+		if _, err := artifacts(copier).CopyItem(t.Context(), &relicv1.CopyItemRequest{
 			Repository:   "guarded-local",
 			Path:         "dst",
 			ToRepository: "guarded-local",
 			ToPath:       "dst-copy",
-		})); err != nil {
+		}); err != nil {
 			t.Errorf("Relic API copy of a readable folder = %v", err)
 		}
 
-		if _, err := artifacts(mover).CopyItem(t.Context(), connect.NewRequest(&relicv1.CopyItemRequest{
+		if _, err := artifacts(mover).CopyItem(t.Context(), &relicv1.CopyItemRequest{
 			Repository:   "other-local",
 			Path:         "empty.txt",
 			ToRepository: "guarded-local",
 			ToPath:       "dst-copy/open.txt",
-		})); err != nil {
+		}); err != nil {
 			t.Errorf("Relic API copy over a deletable file = %v", err)
 		}
 	})

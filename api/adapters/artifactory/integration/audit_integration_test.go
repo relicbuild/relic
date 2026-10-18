@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -21,26 +21,26 @@ func TestAuditLog(t *testing.T) {
 	t.Parallel()
 	srv, db := serverDB(t)
 	ctx := t.Context()
-	admin := relicv1connect.NewSecurityServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	admin := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
-	if _, err := admin.PutUser(ctx, connect.NewRequest(&relicv1.PutUserRequest{
+	if _, err := admin.PutUser(ctx, &relicv1.PutUserRequest{
 		User: &relicv1.User{
 			Name:     "carol",
 			Email:    "carol@example.com",
 			Password: "Carol-pw-1",
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := admin.ListUsers(ctx, connect.NewRequest(&relicv1.ListUsersRequest{})); err != nil {
+	if _, err := admin.ListUsers(ctx, &relicv1.ListUsersRequest{}); err != nil {
 		t.Fatal(err)
 	}
 
-	carol := relicv1connect.NewSecurityServiceClient(relicHTTP("carol", "Carol-pw-1"), srv.URL+"/api")
-	if _, err := carol.DeleteUser(ctx, connect.NewRequest(&relicv1.DeleteUserRequest{
+	carol := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("carol", "Carol-pw-1"), srv.URL))
+	if _, err := carol.DeleteUser(ctx, &relicv1.DeleteUserRequest{
 		Name: "admin",
-	})); code(err) != connect.CodePermissionDenied {
+	}); code(err) != connect.CodePermissionDenied {
 		t.Fatalf("carol deletes admin: %v", err)
 	}
 
@@ -64,29 +64,30 @@ func TestAuditLog(t *testing.T) {
 
 	_ = resp.Body.Close()
 
-	login := relicv1connect.NewSessionServiceClient(http.DefaultClient, srv.URL+"/api")
-	req := connect.NewRequest(&relicv1.LoginRequest{
+	login := relicv1connect.NewSessionServiceClient(apiClient(http.DefaultClient, srv.URL))
+	req := &relicv1.LoginRequest{
 		Username: "carol",
 		Password: "wrong",
-	})
-	req.Header().Set("X-Relic-UI", "1")
+	}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("X-Relic-UI", "1")
 
 	if _, err := login.Login(ctx, req); code(err) != connect.CodeUnauthenticated {
 		t.Fatalf("login with a wrong password: %v", err)
 	}
 
-	log := relicv1connect.NewAuditServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	log := relicv1connect.NewAuditServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
-	list, err := log.ListAuditEvents(ctx, connect.NewRequest(&relicv1.ListAuditEventsRequest{
+	list, err := log.ListAuditEvents(ctx, &relicv1.ListAuditEventsRequest{
 		Since: timestamppb.New(time.Now().Add(-time.Hour)),
-	}))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := log.ListAuditEvents(ctx, connect.NewRequest(&relicv1.ListAuditEventsRequest{
+	if _, err := log.ListAuditEvents(ctx, &relicv1.ListAuditEventsRequest{
 		Outcome: relicv1.AuditOutcome(99),
-	})); code(err) != connect.CodeInvalidArgument {
+	}); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("an unknown outcome filter = %v, want InvalidArgument", err)
 	}
 
@@ -95,8 +96,8 @@ func TestAuditLog(t *testing.T) {
 		outcome               relicv1.AuditOutcome
 	}
 
-	got := make([]event, 0, len(list.Msg.GetEvents()))
-	for _, e := range list.Msg.GetEvents() {
+	got := make([]event, 0, len(list.GetEvents()))
+	for _, e := range list.GetEvents() {
 		got = append(got, event{
 			actor:   e.GetActor(),
 			action:  e.GetAction(),
@@ -145,36 +146,36 @@ func TestAuditLog(t *testing.T) {
 		}
 	}
 
-	denied, err := log.ListAuditEvents(ctx, connect.NewRequest(&relicv1.ListAuditEventsRequest{
+	denied, err := log.ListAuditEvents(ctx, &relicv1.ListAuditEventsRequest{
 		Actor:    "carol",
 		Outcome:  relicv1.AuditOutcome_AUDIT_OUTCOME_DENIED,
 		PageSize: 1,
-	}))
-	if err != nil || len(denied.Msg.GetEvents()) != 1 || denied.Msg.GetTotal() != 2 {
+	})
+	if err != nil || len(denied.GetEvents()) != 1 || denied.GetTotal() != 2 {
 		t.Fatalf("first page of carol's denied events = %v, %v", denied, err)
 	}
 
-	next, err := log.ListAuditEvents(ctx, connect.NewRequest(&relicv1.ListAuditEventsRequest{
+	next, err := log.ListAuditEvents(ctx, &relicv1.ListAuditEventsRequest{
 		Actor:    "carol",
 		Outcome:  relicv1.AuditOutcome_AUDIT_OUTCOME_DENIED,
 		Page:     2,
 		PageSize: 1,
-	}))
-	if err != nil || len(next.Msg.GetEvents()) != 1 ||
-		next.Msg.GetEvents()[0].GetId() == denied.Msg.GetEvents()[0].GetId() {
+	})
+	if err != nil || len(next.GetEvents()) != 1 ||
+		next.GetEvents()[0].GetId() == denied.GetEvents()[0].GetId() {
 		t.Fatalf("second page of carol's denied events = %v, %v", next, err)
 	}
 
-	if _, err := log.ListAuditEvents(ctx, connect.NewRequest(&relicv1.ListAuditEventsRequest{
+	if _, err := log.ListAuditEvents(ctx, &relicv1.ListAuditEventsRequest{
 		Page:     3_000_000,
 		PageSize: 1000,
-	})); code(err) != connect.CodeInvalidArgument {
+	}); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("a page whose offset overflows = %v, want InvalidArgument", err)
 	}
 
 	if _, err := carol.ListUsers(
 		ctx,
-		connect.NewRequest(&relicv1.ListUsersRequest{}),
+		&relicv1.ListUsersRequest{},
 	); code(
 		err,
 	) != connect.CodePermissionDenied {

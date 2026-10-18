@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -19,7 +20,8 @@ import (
 	"relic/internal/platform/database/databasetest"
 	"relic/internal/platform/objectstore/objectstoretest"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 )
 
 func TestMain(m *testing.M) { databasetest.Main(m) }
@@ -130,6 +132,24 @@ func relicHTTP(user, password string) *http.Client {
 			password,
 		},
 	}
+}
+
+// apiClient calls the Relic API of the server at serverURL with hc.
+func apiClient(hc connecthttp.HTTPClient, serverURL string) *connect.Client {
+	return connect.NewClient(
+		connecthttp.NewTransport(
+			hc,
+			serverURL+"/api",
+		),
+	)
+}
+
+// withRequestHeader returns ctx carrying a client call's request header.
+func withRequestHeader(ctx context.Context, key, value string) context.Context {
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set(key, value)
+
+	return ctx
 }
 
 func code(err error) connect.Code {

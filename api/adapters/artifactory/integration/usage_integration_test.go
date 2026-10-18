@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -52,18 +52,18 @@ func TestUsageReport(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	system := relicv1connect.NewSystemServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	system := relicv1connect.NewSystemServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
-	res, err := system.GetUsageReport(ctx, connect.NewRequest(&relicv1.GetUsageReportRequest{
+	res, err := system.GetUsageReport(ctx, &relicv1.GetUsageReportRequest{
 		Days: 7,
-	}))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	var libs *relicv1.RepositoryUsage
 
-	for _, r := range res.Msg.GetRepositories() {
+	for _, r := range res.GetRepositories() {
 		if r.GetRepository() == "usage-libs" {
 			libs = r
 		}
@@ -73,13 +73,13 @@ func TestUsageReport(t *testing.T) {
 		t.Errorf("usage-libs = %v", libs)
 	}
 
-	if top := res.Msg.GetTopDownloaders(); len(top) != 1 || top[0].GetUser() != "ci" {
+	if top := res.GetTopDownloaders(); len(top) != 1 || top[0].GetUser() != "ci" {
 		t.Errorf("top downloaders = %v", top)
 	}
 
-	if _, err := relicv1connect.NewSystemServiceClient(relicHTTP("", ""), srv.URL+"/api").GetUsageReport(
+	if _, err := relicv1connect.NewSystemServiceClient(apiClient(relicHTTP("", ""), srv.URL)).GetUsageReport(
 		ctx,
-		connect.NewRequest(&relicv1.GetUsageReportRequest{}),
+		&relicv1.GetUsageReportRequest{},
 	); code(err) != connect.CodeUnauthenticated {
 		t.Errorf("an anonymous report: %v", err)
 	}

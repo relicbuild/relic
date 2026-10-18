@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -46,18 +46,18 @@ func TestAgentRegistry(t *testing.T) {
 	srv := server(t)
 	ctx := t.Context()
 
-	repos := relicv1connect.NewRepositoryServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	repos := relicv1connect.NewRepositoryServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 	for name, format := range map[string]relicv1.Format{
 		"agent-mcp":    relicv1.Format_FORMAT_MCP,
 		"agent-skills": relicv1.Format_FORMAT_SKILLS,
 	} {
-		if _, err := repos.CreateRepository(ctx, connect.NewRequest(&relicv1.CreateRepositoryRequest{
+		if _, err := repos.CreateRepository(ctx, &relicv1.CreateRepositoryRequest{
 			Repository: &relicv1.Repository{
 				Name:   name,
 				Class:  relicv1.RepositoryClass_REPOSITORY_CLASS_LOCAL,
 				Format: format,
 			},
-		})); err != nil {
+		}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -91,19 +91,19 @@ func TestAgentRegistry(t *testing.T) {
 		"notes.txt": "no skill here",
 	}))
 
-	registry := relicv1connect.NewAgentRegistryServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	registry := relicv1connect.NewAgentRegistryServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
 	list := func(c relicv1connect.AgentRegistryServiceClient, repo string) []*relicv1.RegistryEntry {
 		t.Helper()
 
-		r, err := c.ListRegistryEntries(ctx, connect.NewRequest(&relicv1.ListRegistryEntriesRequest{
+		r, err := c.ListRegistryEntries(ctx, &relicv1.ListRegistryEntriesRequest{
 			Repository: repo,
-		}))
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		return r.Msg.GetEntries()
+		return r.GetEntries()
 	}
 
 	entries := list(registry, "agent-mcp")
@@ -137,10 +137,10 @@ func TestAgentRegistry(t *testing.T) {
 	}
 
 	approve := func(c relicv1connect.AgentRegistryServiceClient, repo, path string) error {
-		_, err := c.ApproveRegistryEntry(ctx, connect.NewRequest(&relicv1.ApproveRegistryEntryRequest{
+		_, err := c.ApproveRegistryEntry(ctx, &relicv1.ApproveRegistryEntryRequest{
 			Repository: repo,
 			Path:       path,
-		}))
+		})
 
 		return err
 	}
@@ -153,41 +153,41 @@ func TestAgentRegistry(t *testing.T) {
 		}
 	}
 
-	if _, err := registry.ApproveRegistryEntry(ctx, connect.NewRequest(&relicv1.ApproveRegistryEntryRequest{
+	if _, err := registry.ApproveRegistryEntry(ctx, &relicv1.ApproveRegistryEntryRequest{
 		Repository: "agent-mcp",
 		Path:       "weather/1.0.0/server.json",
 		Sha256:     strings.Repeat("0", 64),
-	})); code(err) != connect.CodeInvalidArgument {
+	}); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("approving content other than the reviewed one: %v", err)
 	}
 
-	if _, err := registry.ApproveRegistryEntry(ctx, connect.NewRequest(&relicv1.ApproveRegistryEntryRequest{
+	if _, err := registry.ApproveRegistryEntry(ctx, &relicv1.ApproveRegistryEntryRequest{
 		Repository: "agent-mcp",
 		Path:       "weather/1.0.0/server.json",
 		Sha256:     reviewed,
-	})); reviewed == "" || err != nil {
+	}); reviewed == "" || err != nil {
 		t.Errorf("approving the reviewed content %q: %v", reviewed, err)
 	}
 
-	if _, err := registry.RevokeRegistryApproval(ctx, connect.NewRequest(&relicv1.RevokeRegistryApprovalRequest{
+	if _, err := registry.RevokeRegistryApproval(ctx, &relicv1.RevokeRegistryApprovalRequest{
 		Repository: "agent-mcp",
 		Path:       "weather/1.0.0/server.json",
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	sec := relicv1connect.NewSecurityServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
-	if _, err := sec.PutUser(ctx, connect.NewRequest(&relicv1.PutUserRequest{
+	sec := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
+	if _, err := sec.PutUser(ctx, &relicv1.PutUserRequest{
 		User: &relicv1.User{
 			Name:     "skilled",
 			Email:    "skilled@example.com",
 			Password: "Skilled-pass-12345",
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := sec.PutPermission(ctx, connect.NewRequest(&relicv1.PutPermissionRequest{
+	if _, err := sec.PutPermission(ctx, &relicv1.PutPermissionRequest{
 		Permission: &relicv1.Permission{
 			Name: "agent-registries",
 			Rules: []*relicv1.PermissionRule{
@@ -212,11 +212,11 @@ func TestAgentRegistry(t *testing.T) {
 				},
 			},
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	user := relicv1connect.NewAgentRegistryServiceClient(relicHTTP("skilled", "Skilled-pass-12345"), srv.URL+"/api")
+	user := relicv1connect.NewAgentRegistryServiceClient(apiClient(relicHTTP("skilled", "Skilled-pass-12345"), srv.URL))
 	if err := approve(user, "agent-skills", "pdf-forms.zip"); code(err) != connect.CodePermissionDenied {
 		t.Errorf("a user approving: %v", err)
 	}
@@ -324,10 +324,10 @@ func TestAgentRegistry(t *testing.T) {
 		t.Errorf("after the approved 1.1.0 changed, latest = %d %v; want 1.0.0", code, latest)
 	}
 
-	if _, err := registry.RevokeRegistryApproval(ctx, connect.NewRequest(&relicv1.RevokeRegistryApprovalRequest{
+	if _, err := registry.RevokeRegistryApproval(ctx, &relicv1.RevokeRegistryApprovalRequest{
 		Repository: "agent-mcp",
 		Path:       "weather/1.0.0/server.json",
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -335,11 +335,11 @@ func TestAgentRegistry(t *testing.T) {
 		t.Errorf("after the revocation latest = %d, want not found", code)
 	}
 
-	artifacts := relicv1connect.NewArtifactServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
-	if _, err := artifacts.DeleteItem(ctx, connect.NewRequest(&relicv1.DeleteItemRequest{
+	artifacts := relicv1connect.NewArtifactServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
+	if _, err := artifacts.DeleteItem(ctx, &relicv1.DeleteItemRequest{
 		Repository: "agent-skills",
 		Path:       "pdf-forms.zip",
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 

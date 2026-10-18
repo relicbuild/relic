@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -37,39 +37,39 @@ func TestRelicAPISystem(t *testing.T) {
 			body:   `{"email":"dev@example.com","password":"Dev-pass-12345"}`,
 		},
 	)
-	anon := relicv1connect.NewSystemServiceClient(relicHTTP("", ""), srv.URL+"/api")
-	admin := relicv1connect.NewSystemServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
-	dev := relicv1connect.NewSystemServiceClient(relicHTTP("dev", "Dev-pass-12345"), srv.URL+"/api")
+	anon := relicv1connect.NewSystemServiceClient(apiClient(relicHTTP("", ""), srv.URL))
+	admin := relicv1connect.NewSystemServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
+	dev := relicv1connect.NewSystemServiceClient(apiClient(relicHTTP("dev", "Dev-pass-12345"), srv.URL))
 	ctx := t.Context()
 
-	v, err := anon.GetVersion(ctx, connect.NewRequest(&relicv1.GetVersionRequest{}))
-	if err != nil || v.Msg.GetVersion() == "" {
+	v, err := anon.GetVersion(ctx, &relicv1.GetVersionRequest{})
+	if err != nil || v.GetVersion() == "" {
 		t.Fatalf("version = %v %v", v, err)
 	}
 
 	if _, err := anon.GetSystemStatus(
 		ctx,
-		connect.NewRequest(&relicv1.GetSystemStatusRequest{}),
+		&relicv1.GetSystemStatusRequest{},
 	); code(err) != connect.CodeUnauthenticated {
 		t.Errorf("anonymous status: %v", err)
 	}
 
 	if _, err := dev.GetSystemStatus(
 		ctx,
-		connect.NewRequest(&relicv1.GetSystemStatusRequest{}),
+		&relicv1.GetSystemStatusRequest{},
 	); code(err) != connect.CodePermissionDenied {
 		t.Errorf("non-admin status: %v", err)
 	}
 
-	st, err := admin.GetSystemStatus(ctx, connect.NewRequest(&relicv1.GetSystemStatusRequest{}))
-	if err != nil || st.Msg.GetStorage() == nil || len(st.Msg.GetChecks()) == 0 || st.Msg.GetScanner() == nil {
+	st, err := admin.GetSystemStatus(ctx, &relicv1.GetSystemStatusRequest{})
+	if err != nil || st.GetStorage() == nil || len(st.GetChecks()) == 0 || st.GetScanner() == nil {
 		t.Fatalf("status = %v %v", st, err)
 	}
 
-	bad := relicv1connect.NewSystemServiceClient(relicHTTP("admin", "wrong"), srv.URL+"/api")
+	bad := relicv1connect.NewSystemServiceClient(apiClient(relicHTTP("admin", "wrong"), srv.URL))
 	if _, err := bad.GetVersion(
 		ctx,
-		connect.NewRequest(&relicv1.GetVersionRequest{}),
+		&relicv1.GetVersionRequest{},
 	); code(err) != connect.CodeUnauthenticated {
 		t.Errorf("bad credentials: %v", err)
 	}
@@ -99,52 +99,53 @@ func TestRelicAPISession(t *testing.T) {
 	client := &http.Client{
 		Transport: jar,
 	}
-	sessions := relicv1connect.NewSessionServiceClient(client, srv.URL+"/api")
+	sessions := relicv1connect.NewSessionServiceClient(apiClient(client, srv.URL))
 
-	login := connect.NewRequest(&relicv1.LoginRequest{
+	login := &relicv1.LoginRequest{
 		Username: "admin",
 		Password: "password",
-	})
+	}
 	if _, err := sessions.Login(ctx, login); code(err) != connect.CodePermissionDenied {
 		t.Fatalf("login without the UI header: %v", err)
 	}
 
-	login.Header().Set("X-Relic-UI", "1")
+	uiCtx, uiInfo := connect.NewClientContext(ctx)
+	uiInfo.RequestHeader().Set("X-Relic-UI", "1")
 
 	if _, err := sessions.Login(
 		ctx,
-		connect.NewRequest(&relicv1.LoginRequest{
+		&relicv1.LoginRequest{
 			Username: "admin",
 			Password: "nope",
-		}),
+		},
 	); code(err) != connect.CodePermissionDenied {
 		t.Fatalf("bad password without header: %v", err)
 	}
 
-	bad := connect.NewRequest(&relicv1.LoginRequest{
+	bad := &relicv1.LoginRequest{
 		Username: "admin",
 		Password: "nope",
-	})
-	bad.Header().Set("X-Relic-UI", "1")
-
-	if _, err := sessions.Login(ctx, bad); code(err) != connect.CodeUnauthenticated {
+	}
+	if _, err := sessions.Login(uiCtx, bad); code(err) != connect.CodeUnauthenticated {
 		t.Fatalf("bad password: %v", err)
 	}
 
-	resp, err := sessions.Login(ctx, login)
-	if err != nil || resp.Msg.GetPrincipal().GetUsername() != "admin" || jar.cookie == "" {
+	resp, err := sessions.Login(uiCtx, login)
+	if err != nil || resp.GetPrincipal().GetUsername() != "admin" || jar.cookie == "" {
 		t.Fatalf("login = %v %v, cookie %q", resp, err, jar.cookie)
 	}
 
-	me := func(header bool) (*connect.Response[relicv1.GetCurrentUserResponse], error) {
-		req := connect.NewRequest(&relicv1.GetCurrentUserRequest{})
+	me := func(header bool) (*relicv1.GetCurrentUserResponse, error) {
+		req := &relicv1.GetCurrentUserRequest{}
+
+		ctx, info := connect.NewClientContext(ctx)
 		if header {
-			req.Header().Set("X-Relic-UI", "1")
+			info.RequestHeader().Set("X-Relic-UI", "1")
 		}
 
 		return sessions.GetCurrentUser(ctx, req)
 	}
-	if got, err := me(true); err != nil || !got.Msg.GetPrincipal().GetAdmin() {
+	if got, err := me(true); err != nil || !got.GetPrincipal().GetAdmin() {
 		t.Errorf("me = %v %v", got, err)
 	}
 
@@ -220,12 +221,10 @@ func TestRelicAPISession(t *testing.T) {
 		t.Errorf("uploaded file = %q", body)
 	}
 
-	out := connect.NewRequest(&relicv1.LogoutRequest{})
-	out.Header().Set("X-Relic-UI", "1")
-
+	out := &relicv1.LogoutRequest{}
 	cookie := jar.cookie
 
-	if _, err := sessions.Logout(ctx, out); err != nil {
+	if _, err := sessions.Logout(uiCtx, out); err != nil {
 		t.Fatal(err)
 	}
 
@@ -266,11 +265,11 @@ func TestRelicAPIRepositories(t *testing.T) {
 	t.Parallel()
 	srv, db := serverDB(t)
 	ctx := t.Context()
-	repos := relicv1connect.NewRepositoryServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	repos := relicv1connect.NewRepositoryServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 	create := func(r *relicv1.Repository) error {
-		_, err := repos.CreateRepository(ctx, connect.NewRequest(&relicv1.CreateRepositoryRequest{
+		_, err := repos.CreateRepository(ctx, &relicv1.CreateRepositoryRequest{
 			Repository: r,
-		}))
+		})
 
 		return err
 	}
@@ -368,10 +367,10 @@ func TestRelicAPIRepositories(t *testing.T) {
 		},
 	)
 
-	gomod, err := repos.GetRepository(ctx, connect.NewRequest(&relicv1.GetRepositoryRequest{
+	gomod, err := repos.GetRepository(ctx, &relicv1.GetRepositoryRequest{
 		Name: "golibs",
-	}))
-	if err != nil || gomod.Msg.GetRepository().GetFormat() != relicv1.Format_FORMAT_GOMOD {
+	})
+	if err != nil || gomod.GetRepository().GetFormat() != relicv1.Format_FORMAT_GOMOD {
 		t.Errorf("go repository = %v %v", gomod, err)
 	}
 
@@ -387,11 +386,11 @@ func TestRelicAPIRepositories(t *testing.T) {
 		t.Errorf("Relic's own format name through the Artifactory API: %d", resp.StatusCode)
 	}
 
-	got, err := repos.GetRepository(ctx, connect.NewRequest(&relicv1.GetRepositoryRequest{
+	got, err := repos.GetRepository(ctx, &relicv1.GetRepositoryRequest{
 		Name: "central",
-	}))
-	if err != nil || got.Msg.GetRepository().GetRemote().GetUrl() != "https://repo1.maven.org/maven2" ||
-		got.Msg.GetRepository().GetRemote().GetPassword() != "" {
+	})
+	if err != nil || got.GetRepository().GetRemote().GetUrl() != "https://repo1.maven.org/maven2" ||
+		got.GetRepository().GetRemote().GetPassword() != "" {
 		t.Fatalf("get central = %v %v", got, err)
 	}
 
@@ -415,14 +414,14 @@ func TestRelicAPIRepositories(t *testing.T) {
 		},
 	)
 
-	upd := got.Msg.GetRepository()
+	upd := got.GetRepository()
 
 	upd.Description, upd.Remote.Offline = "maven central", true
 	if _, err := repos.UpdateRepository(
 		ctx,
-		connect.NewRequest(&relicv1.UpdateRepositoryRequest{
+		&relicv1.UpdateRepositoryRequest{
 			Repository: upd,
-		}),
+		},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -463,55 +462,55 @@ func TestRelicAPIRepositories(t *testing.T) {
 			body:   `{"name":"dev-libs","repo":{"repositories":["libs"],"actions":{"users":{"dev":["read"]}}}}`,
 		},
 	)
-	dev := relicv1connect.NewRepositoryServiceClient(relicHTTP("dev", "Dev-pass-12345"), srv.URL+"/api")
+	dev := relicv1connect.NewRepositoryServiceClient(apiClient(relicHTTP("dev", "Dev-pass-12345"), srv.URL))
 
-	list, err := dev.ListRepositories(ctx, connect.NewRequest(&relicv1.ListRepositoriesRequest{}))
-	if err != nil || len(list.Msg.GetRepositories()) != 1 || list.Msg.GetRepositories()[0].GetName() != "libs" {
+	list, err := dev.ListRepositories(ctx, &relicv1.ListRepositoriesRequest{})
+	if err != nil || len(list.GetRepositories()) != 1 || list.GetRepositories()[0].GetName() != "libs" {
 		t.Errorf("dev list = %v %v", list, err)
 	}
 
 	if _, err := dev.GetRepository(
 		ctx,
-		connect.NewRequest(&relicv1.GetRepositoryRequest{
+		&relicv1.GetRepositoryRequest{
 			Name: "central",
-		}),
+		},
 	); code(err) != connect.CodeNotFound {
 		t.Errorf("dev get unreadable: %v", err)
 	}
 
 	if _, err := dev.DeleteRepository(
 		ctx,
-		connect.NewRequest(&relicv1.DeleteRepositoryRequest{
+		&relicv1.DeleteRepositoryRequest{
 			Name: "libs",
-		}),
+		},
 	); code(err) != connect.CodePermissionDenied {
 		t.Errorf("dev delete: %v", err)
 	}
 
 	filtered, err := repos.ListRepositories(
 		ctx,
-		connect.NewRequest(&relicv1.ListRepositoriesRequest{
+		&relicv1.ListRepositoriesRequest{
 			Class: relicv1.RepositoryClass_REPOSITORY_CLASS_REMOTE,
-		}),
+		},
 	)
-	if err != nil || len(filtered.Msg.GetRepositories()) != 1 {
+	if err != nil || len(filtered.GetRepositories()) != 1 {
 		t.Errorf("remote filter = %v %v", filtered, err)
 	}
 
 	if _, err := repos.DeleteRepository(
 		ctx,
-		connect.NewRequest(&relicv1.DeleteRepositoryRequest{
+		&relicv1.DeleteRepositoryRequest{
 			Name: "maven",
-		}),
+		},
 	); err != nil {
 		t.Fatal(err)
 	}
 
 	if _, err := repos.GetRepository(
 		ctx,
-		connect.NewRequest(&relicv1.GetRepositoryRequest{
+		&relicv1.GetRepositoryRequest{
 			Name: "maven",
-		}),
+		},
 	); code(err) != connect.CodeNotFound {
 		t.Errorf("after delete: %v", err)
 	}
@@ -633,29 +632,29 @@ func TestRelicAPIArtifacts(t *testing.T) {
 		t.Errorf("upload with an invalid property key = %d, want 400", code)
 	}
 
-	uploaded, err := relicv1connect.NewArtifactServiceClient(&http.Client{
+	uploaded, err := relicv1connect.NewArtifactServiceClient(apiClient(&http.Client{
 		Transport: dev,
-	}, srv.URL+"/api").GetProperties(ctx, connect.NewRequest(&relicv1.GetPropertiesRequest{
+	}, srv.URL)).GetProperties(ctx, &relicv1.GetPropertiesRequest{
 		Repository: "libs",
 		Path:       "app/2.0/app.bin",
-	}))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if got := uploaded.Msg.GetProperties(); strings.Join(got["build.name"].GetValues(), ",") != "team/app" ||
+	if got := uploaded.GetProperties(); strings.Join(got["build.name"].GetValues(), ",") != "team/app" ||
 		strings.Join(got["build.number"].GetValues(), ",") != "7" {
 		t.Errorf("properties set by the upload = %v", got)
 	}
 
-	_, err = relicv1connect.NewArtifactServiceClient(&http.Client{
+	_, err = relicv1connect.NewArtifactServiceClient(apiClient(&http.Client{
 		Transport: dev,
-	}, srv.URL+"/api").CopyItem(ctx, connect.NewRequest(&relicv1.CopyItemRequest{
+	}, srv.URL)).CopyItem(ctx, &relicv1.CopyItemRequest{
 		Repository:   "libs",
 		Path:         "app/2.0/app.bin",
 		ToRepository: "libs",
 		ToPath:       "app/1.0/app.txt",
-	}))
+	})
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Errorf("copy over a file without delete = %v, want permission denied", err)
 	}
@@ -703,35 +702,35 @@ func TestRelicAPIArtifacts(t *testing.T) {
 
 	put(admin, "libs/secret/key.txt", "s")
 
-	arts := relicv1connect.NewArtifactServiceClient(&http.Client{
+	arts := relicv1connect.NewArtifactServiceClient(apiClient(&http.Client{
 		Transport: dev,
-	}, srv.URL+"/api")
-	adminArts := relicv1connect.NewArtifactServiceClient(&http.Client{
+	}, srv.URL))
+	adminArts := relicv1connect.NewArtifactServiceClient(apiClient(&http.Client{
 		Transport: admin,
-	}, srv.URL+"/api")
+	}, srv.URL))
 
 	st, err := arts.StatItem(
 		ctx,
-		connect.NewRequest(&relicv1.StatItemRequest{
+		&relicv1.StatItemRequest{
 			Repository: "libs",
 			Path:       "app/1.0/app.txt",
-		}),
+		},
 	)
-	if err != nil || st.Msg.GetItem().GetSize() != 5 || st.Msg.GetItem().GetChecksums().GetSha256() == "" {
+	if err != nil || st.GetItem().GetSize() != 5 || st.GetItem().GetChecksums().GetSha256() == "" {
 		t.Fatalf("stat = %v %v", st, err)
 	}
 
-	kids, err := arts.ListChildren(ctx, connect.NewRequest(&relicv1.ListChildrenRequest{
+	kids, err := arts.ListChildren(ctx, &relicv1.ListChildrenRequest{
 		Repository: "libs",
-	}))
-	if err != nil || len(kids.Msg.GetItems()) != 1 || kids.Msg.GetItems()[0].GetName() != "app" {
+	})
+	if err != nil || len(kids.GetItems()) != 1 || kids.GetItems()[0].GetName() != "app" {
 		t.Errorf("children = %v %v", kids, err)
 	}
 
-	found, err := arts.SearchItems(ctx, connect.NewRequest(&relicv1.SearchItemsRequest{
+	found, err := arts.SearchItems(ctx, &relicv1.SearchItemsRequest{
 		Name: ".txt",
-	}))
-	if err != nil || len(found.Msg.GetItems()) != 1 {
+	})
+	if err != nil || len(found.GetItems()) != 1 {
 		t.Errorf("dev search = %v %v", found, err)
 	}
 
@@ -744,104 +743,92 @@ func TestRelicAPIArtifacts(t *testing.T) {
 	}
 	if _, err := arts.SetProperties(
 		ctx,
-		connect.NewRequest(
-			&relicv1.SetPropertiesRequest{
-				Repository: "libs",
-				Path:       "app/1.0/app.txt",
-				Properties: props,
-			},
-		),
+		&relicv1.SetPropertiesRequest{
+			Repository: "libs",
+			Path:       "app/1.0/app.txt",
+			Properties: props,
+		},
 	); code(err) != connect.CodePermissionDenied {
 		t.Errorf("set properties without annotate: %v", err)
 	}
 
 	if _, err := adminArts.SetProperties(
 		ctx,
-		connect.NewRequest(
-			&relicv1.SetPropertiesRequest{
-				Repository: "libs",
-				Path:       "app/1.0/app.txt",
-				Properties: props,
-			},
-		),
+		&relicv1.SetPropertiesRequest{
+			Repository: "libs",
+			Path:       "app/1.0/app.txt",
+			Properties: props,
+		},
 	); err != nil {
 		t.Fatal(err)
 	}
 
 	got, err := arts.GetProperties(
 		ctx,
-		connect.NewRequest(&relicv1.GetPropertiesRequest{
+		&relicv1.GetPropertiesRequest{
 			Repository: "libs",
 			Path:       "app/1.0/app.txt",
-		}),
+		},
 	)
-	if err != nil || got.Msg.GetProperties()["qa"].GetValues()[0] != "passed" {
+	if err != nil || got.GetProperties()["qa"].GetValues()[0] != "passed" {
 		t.Errorf("properties = %v %v", got, err)
 	}
 
 	if _, err := adminArts.DeleteProperties(
 		ctx,
-		connect.NewRequest(
-			&relicv1.DeletePropertiesRequest{
-				Repository: "libs",
-				Path:       "app/1.0/app.txt",
-				Keys: []string{
-					"qa",
-				},
+		&relicv1.DeletePropertiesRequest{
+			Repository: "libs",
+			Path:       "app/1.0/app.txt",
+			Keys: []string{
+				"qa",
 			},
-		),
+		},
 	); err != nil {
 		t.Fatal(err)
 	}
 
 	if _, err := arts.CopyItem(
 		ctx,
-		connect.NewRequest(
-			&relicv1.CopyItemRequest{
-				Repository:   "libs",
-				Path:         "app/1.0",
-				ToRepository: "libs",
-				ToPath:       "app/1.1",
-			},
-		),
+		&relicv1.CopyItemRequest{
+			Repository:   "libs",
+			Path:         "app/1.0",
+			ToRepository: "libs",
+			ToPath:       "app/1.1",
+		},
 	); err != nil {
 		t.Fatalf("copy: %v", err)
 	}
 
 	if _, err := arts.MoveItem(
 		ctx,
-		connect.NewRequest(
-			&relicv1.MoveItemRequest{
-				Repository:   "libs",
-				Path:         "app/1.1",
-				ToRepository: "libs",
-				ToPath:       "app/1.2",
-			},
-		),
+		&relicv1.MoveItemRequest{
+			Repository:   "libs",
+			Path:         "app/1.1",
+			ToRepository: "libs",
+			ToPath:       "app/1.2",
+		},
 	); code(err) != connect.CodePermissionDenied {
 		t.Errorf("move without delete: %v", err)
 	}
 
 	if _, err := adminArts.MoveItem(
 		ctx,
-		connect.NewRequest(
-			&relicv1.MoveItemRequest{
-				Repository:   "libs",
-				Path:         "app/1.1",
-				ToRepository: "other",
-				ToPath:       "app/1.1",
-			},
-		),
+		&relicv1.MoveItemRequest{
+			Repository:   "libs",
+			Path:         "app/1.1",
+			ToRepository: "other",
+			ToPath:       "app/1.1",
+		},
 	); err != nil {
 		t.Fatal(err)
 	}
 
 	if _, err := arts.DeleteItem(
 		ctx,
-		connect.NewRequest(&relicv1.DeleteItemRequest{
+		&relicv1.DeleteItemRequest{
 			Repository: "libs",
 			Path:       "app/1.0",
-		}),
+		},
 	); code(err) != connect.CodePermissionDenied {
 		t.Errorf("delete without delete: %v", err)
 	}
@@ -860,39 +847,39 @@ func TestRelicAPIArtifacts(t *testing.T) {
 
 	if _, err := arts.DeleteItem(
 		ctx,
-		connect.NewRequest(&relicv1.DeleteItemRequest{
+		&relicv1.DeleteItemRequest{
 			Repository: "libs",
 			Path:       "app/1.0",
-		}),
+		},
 	); code(err) != connect.CodePermissionDenied {
 		t.Errorf("folder delete with an undeletable file below: %v", err)
 	}
 
 	if _, err := adminArts.DeleteItem(
 		ctx,
-		connect.NewRequest(&relicv1.DeleteItemRequest{
+		&relicv1.DeleteItemRequest{
 			Repository: "libs",
-		}),
+		},
 	); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("delete the root: %v", err)
 	}
 
 	if _, err := adminArts.DeleteItem(
 		ctx,
-		connect.NewRequest(&relicv1.DeleteItemRequest{
+		&relicv1.DeleteItemRequest{
 			Repository: "libs",
 			Path:       "app/1.0",
-		}),
+		},
 	); err != nil {
 		t.Fatal(err)
 	}
 
 	if _, err := adminArts.StatItem(
 		ctx,
-		connect.NewRequest(&relicv1.StatItemRequest{
+		&relicv1.StatItemRequest{
 			Repository: "libs",
 			Path:       "app/1.0/app.txt",
-		}),
+		},
 	); code(err) != connect.CodeNotFound {
 		t.Errorf("after delete: %v", err)
 	}
@@ -903,51 +890,47 @@ func TestRelicAPISecurity(t *testing.T) {
 	srv := server(t)
 	ctx := t.Context()
 
-	sec := relicv1connect.NewSecurityServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	sec := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 	if _, err := sec.PutUser(
 		ctx,
-		connect.NewRequest(&relicv1.PutUserRequest{
+		&relicv1.PutUserRequest{
 			User: &relicv1.User{
 				Name:  "ann",
 				Email: "ann@example.com",
 			},
-		}),
+		},
 	); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("new user without password: %v", err)
 	}
 
 	u, err := sec.PutUser(
 		ctx,
-		connect.NewRequest(
-			&relicv1.PutUserRequest{
-				User: &relicv1.User{
-					Name:     "ann",
-					Email:    "ann@example.com",
-					Password: "Ann-pass-12345",
-				},
+		&relicv1.PutUserRequest{
+			User: &relicv1.User{
+				Name:     "ann",
+				Email:    "ann@example.com",
+				Password: "Ann-pass-12345",
 			},
-		),
+		},
 	)
-	if err != nil || !u.Msg.GetCreated() || u.Msg.GetUser().GetRealm() != relicv1.Realm_REALM_INTERNAL ||
-		u.Msg.GetUser().GetPassword() != "" {
+	if err != nil || !u.GetCreated() || u.GetUser().GetRealm() != relicv1.Realm_REALM_INTERNAL ||
+		u.GetUser().GetPassword() != "" {
 		t.Fatalf("put user = %v %v", u, err)
 	}
 
 	g, err := sec.PutGroup(
 		ctx,
-		connect.NewRequest(
-			&relicv1.PutGroupRequest{
-				Group: &relicv1.Group{
-					Name:        "devs",
-					Description: "developers",
-					Members: []string{
-						"ann",
-					},
+		&relicv1.PutGroupRequest{
+			Group: &relicv1.Group{
+				Name:        "devs",
+				Description: "developers",
+				Members: []string{
+					"ann",
 				},
 			},
-		),
+		},
 	)
-	if err != nil || g.Msg.GetGroup().GetMembers()[0] != "ann" {
+	if err != nil || g.GetGroup().GetMembers()[0] != "ann" {
 		t.Fatalf("put group = %v %v", g, err)
 	}
 
@@ -980,9 +963,9 @@ func TestRelicAPISecurity(t *testing.T) {
 			},
 		},
 	}
-	if _, err := sec.PutPermission(ctx, connect.NewRequest(&relicv1.PutPermissionRequest{
+	if _, err := sec.PutPermission(ctx, &relicv1.PutPermissionRequest{
 		Permission: p,
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1004,9 +987,9 @@ func TestRelicAPISecurity(t *testing.T) {
 
 	if _, err := sec.PutPermission(
 		ctx,
-		connect.NewRequest(&relicv1.PutPermissionRequest{
+		&relicv1.PutPermissionRequest{
 			Permission: p,
-		}),
+		},
 	); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("unknown action: %v", err)
 	}
@@ -1018,31 +1001,31 @@ func TestRelicAPISecurity(t *testing.T) {
 
 	if _, err := sec.PutPermission(
 		ctx,
-		connect.NewRequest(&relicv1.PutPermissionRequest{
+		&relicv1.PutPermissionRequest{
 			Permission: p,
-		}),
+		},
 	); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("two repository rules: %v", err)
 	}
 
-	users, err := sec.ListUsers(ctx, connect.NewRequest(&relicv1.ListUsersRequest{}))
-	if err != nil || len(users.Msg.GetUsers()) < 2 {
+	users, err := sec.ListUsers(ctx, &relicv1.ListUsersRequest{})
+	if err != nil || len(users.GetUsers()) < 2 {
 		t.Errorf("users = %v %v", users, err)
 	}
 
-	perms, err := sec.ListPermissions(ctx, connect.NewRequest(&relicv1.ListPermissionsRequest{}))
-	if err != nil || len(perms.Msg.GetPermissions()) != 1 {
+	perms, err := sec.ListPermissions(ctx, &relicv1.ListPermissionsRequest{})
+	if err != nil || len(perms.GetPermissions()) != 1 {
 		t.Errorf("permissions = %v %v", perms, err)
 	}
 
 	racing := make(chan error, 8)
 	for range cap(racing) {
 		go func() {
-			_, err := sec.PutPermission(ctx, connect.NewRequest(&relicv1.PutPermissionRequest{
+			_, err := sec.PutPermission(ctx, &relicv1.PutPermissionRequest{
 				Permission: &relicv1.Permission{
 					Name: "racing",
 				},
-			}))
+			})
 			racing <- err
 		}()
 	}
@@ -1053,28 +1036,28 @@ func TestRelicAPISecurity(t *testing.T) {
 		}
 	}
 
-	ann := relicv1connect.NewSecurityServiceClient(relicHTTP("ann", "Ann-pass-12345"), srv.URL+"/api")
+	ann := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("ann", "Ann-pass-12345"), srv.URL))
 	if _, err := ann.ListUsers(
 		ctx,
-		connect.NewRequest(&relicv1.ListUsersRequest{}),
+		&relicv1.ListUsersRequest{},
 	); code(err) != connect.CodePermissionDenied {
 		t.Errorf("non-admin list users: %v", err)
 	}
 
 	if _, err := ann.CreateToken(
 		ctx,
-		connect.NewRequest(&relicv1.CreateTokenRequest{
+		&relicv1.CreateTokenRequest{
 			ExpiresDays: 9999,
-		}),
+		},
 	); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("token too long: %v", err)
 	}
 
-	tok, err := ann.CreateToken(ctx, connect.NewRequest(&relicv1.CreateTokenRequest{
+	tok, err := ann.CreateToken(ctx, &relicv1.CreateTokenRequest{
 		Description: "ci",
 		ExpiresDays: 1,
-	}))
-	if err != nil || tok.Msg.GetAccessToken() == "" || tok.Msg.GetExpiresIn() != 86400 {
+	})
+	if err != nil || tok.GetAccessToken() == "" || tok.GetExpiresIn() != 86400 {
 		t.Fatalf("token = %v %v", tok, err)
 	}
 
@@ -1086,7 +1069,7 @@ func TestRelicAPISecurity(t *testing.T) {
 			path:   "/artifactory/api/repositories",
 			noAuth: true,
 			headers: map[string]string{
-				"Authorization": "Bearer " + tok.Msg.GetAccessToken(),
+				"Authorization": "Bearer " + tok.GetAccessToken(),
 			},
 		},
 	)
@@ -1096,11 +1079,11 @@ func TestRelicAPISecurity(t *testing.T) {
 
 	if _, err := ann.CreateToken(
 		ctx,
-		connect.NewRequest(&relicv1.CreateTokenRequest{
+		&relicv1.CreateTokenRequest{
 			Scope: &relicv1.TokenScope{
 				Kind: relicv1.TokenScopeKind(99),
 			},
-		}),
+		},
 	); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("a token of an unknown scope kind = %v, want InvalidArgument", err)
 	}
@@ -1118,22 +1101,22 @@ func TestRelicAPISecurity(t *testing.T) {
 	} {
 		if _, err := ann.CreateToken(
 			ctx,
-			connect.NewRequest(&relicv1.CreateTokenRequest{
+			&relicv1.CreateTokenRequest{
 				Scope: scope,
-			}),
+			},
 		); code(err) != connect.CodePermissionDenied {
 			t.Errorf("%s scope: %v", name, err)
 		}
 	}
 
-	if _, err := relicv1connect.NewProjectServiceClient(relicHTTP("admin", "password"), srv.URL+"/api").PutProject(
+	if _, err := relicv1connect.NewProjectServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL)).PutProject(
 		ctx,
-		connect.NewRequest(&relicv1.PutProjectRequest{
+		&relicv1.PutProjectRequest{
 			Project: &relicv1.Project{
 				Key:  "tokens",
 				Name: "Tokens",
 			},
-		}),
+		},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -1144,10 +1127,10 @@ func TestRelicAPISecurity(t *testing.T) {
 	} {
 		if _, err := ann.CreateToken(
 			ctx,
-			connect.NewRequest(&relicv1.CreateTokenRequest{
+			&relicv1.CreateTokenRequest{
 				ExpiresDays: 1,
 				Project:     key,
-			}),
+			},
 		); code(err) != connect.CodeNotFound {
 			t.Errorf("token labelled with %s = %v, want NotFound", name, err)
 		}
@@ -1155,22 +1138,22 @@ func TestRelicAPISecurity(t *testing.T) {
 
 	if _, err := sec.CreateToken(
 		ctx,
-		connect.NewRequest(&relicv1.CreateTokenRequest{
+		&relicv1.CreateTokenRequest{
 			ExpiresDays: 1,
 			Project:     "tokens",
-		}),
+		},
 	); err != nil {
 		t.Errorf("token labelled with a project an administrator sees = %v", err)
 	}
 
-	forever, err := ann.CreateToken(ctx, connect.NewRequest(&relicv1.CreateTokenRequest{
+	forever, err := ann.CreateToken(ctx, &relicv1.CreateTokenRequest{
 		Description: "forever",
-	}))
-	if err != nil || forever.Msg.GetExpiresIn() != int64(auth.MaxUserTokenLifetime/time.Second) {
+	})
+	if err != nil || forever.GetExpiresIn() != int64(auth.MaxUserTokenLifetime/time.Second) {
 		t.Errorf("never-expiring token of a user = %v %v", forever, err)
 	}
 
-	scoped, err := ann.CreateToken(ctx, connect.NewRequest(&relicv1.CreateTokenRequest{
+	scoped, err := ann.CreateToken(ctx, &relicv1.CreateTokenRequest{
 		Description: "devs",
 		ExpiresDays: 1,
 		Scope: &relicv1.TokenScope{
@@ -1179,90 +1162,91 @@ func TestRelicAPISecurity(t *testing.T) {
 				"devs",
 			},
 		},
-	}))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	viaScoped := relicv1connect.NewSecurityServiceClient(relicHTTP("ann", scoped.Msg.GetAccessToken()), srv.URL+"/api")
+	viaScoped := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("ann", scoped.GetAccessToken()), srv.URL))
 
 	minted, err := viaScoped.CreateToken(
 		ctx,
-		connect.NewRequest(&relicv1.CreateTokenRequest{
+		&relicv1.CreateTokenRequest{
 			Description: "wider",
 			ExpiresDays: 1,
-		}),
+		},
 	)
-	if err != nil || minted.Msg.GetScope().GetKind() != relicv1.TokenScopeKind_TOKEN_SCOPE_KIND_GROUPS ||
-		strings.Join(minted.Msg.GetScope().GetGroups(), ",") != "devs" {
+	if err != nil || minted.GetScope().GetKind() != relicv1.TokenScopeKind_TOKEN_SCOPE_KIND_GROUPS ||
+		strings.Join(minted.GetScope().GetGroups(), ",") != "devs" {
 		t.Errorf("token minted by a group-scoped token = %v %v", minted, err)
 	}
 
 	const cliSession = "0b7e3f4a-5c6d-4e8f-9a0b-1c2d3e4f5a6b"
 
-	sessions := relicv1connect.NewSessionServiceClient(http.DefaultClient, srv.URL+"/api")
-	if _, err := sessions.StartWebLogin(ctx, connect.NewRequest(&relicv1.StartWebLoginRequest{
+	sessions := relicv1connect.NewSessionServiceClient(apiClient(http.DefaultClient, srv.URL))
+	if _, err := sessions.StartWebLogin(ctx, &relicv1.StartWebLoginRequest{
 		Session: cliSession,
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := relicv1connect.NewSessionServiceClient(
-		relicHTTP("ann", scoped.Msg.GetAccessToken()),
-		srv.URL+"/api",
-	).ApproveLogin(ctx, connect.NewRequest(&relicv1.ApproveLoginRequest{
+	if _, err := relicv1connect.NewSessionServiceClient(apiClient(
+		relicHTTP("ann", scoped.GetAccessToken()),
+		srv.URL,
+	)).ApproveLogin(ctx, &relicv1.ApproveLoginRequest{
 		Session: cliSession,
 		Code:    cliSession[len(cliSession)-4:],
-	})); code(err) != connect.CodePermissionDenied {
+	}); code(err) != connect.CodePermissionDenied {
 		t.Errorf("a group-scoped token approving a CLI sign-in: %v", err)
 	}
 
-	signIn := connect.NewRequest(&relicv1.LoginRequest{
+	signIn := &relicv1.LoginRequest{
 		Username: "ann",
-		Password: scoped.Msg.GetAccessToken(),
-	})
-	signIn.Header().Set(auth.UIHeader, "1")
+		Password: scoped.GetAccessToken(),
+	}
+	signInCtx, signInInfo := connect.NewClientContext(ctx)
+	signInInfo.RequestHeader().Set(auth.UIHeader, "1")
 
-	uiSession, err := sessions.Login(ctx, signIn)
+	if _, err := sessions.Login(signInCtx, signIn); err != nil {
+		t.Fatal(err)
+	}
+
+	sessionCookie, err := http.ParseSetCookie(signInInfo.ResponseHeader().Get("Set-Cookie"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	sessionCookie, err := http.ParseSetCookie(uiSession.Header().Get("Set-Cookie"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	approveWithSession := connect.NewRequest(&relicv1.ApproveLoginRequest{
+	approveWithSession := &relicv1.ApproveLoginRequest{
 		Session: cliSession,
 		Code:    cliSession[len(cliSession)-4:],
-	})
-	approveWithSession.Header().Set("Cookie", sessionCookie.Name+"="+sessionCookie.Value)
-	approveWithSession.Header().Set(auth.UIHeader, "1")
+	}
+	approveCtx, approveInfo := connect.NewClientContext(ctx)
+	approveInfo.RequestHeader().Set("Cookie", sessionCookie.Name+"="+sessionCookie.Value)
+	approveInfo.RequestHeader().Set(auth.UIHeader, "1")
 
-	if _, err := sessions.ApproveLogin(ctx, approveWithSession); code(err) != connect.CodePermissionDenied {
+	if _, err := sessions.ApproveLogin(approveCtx, approveWithSession); code(err) != connect.CodePermissionDenied {
 		t.Errorf("a UI session signed in with a group-scoped token approving a CLI sign-in: %v", err)
 	}
 
 	for _, err := range []error{
 		func() error {
-			_, err := sec.DeletePermission(ctx, connect.NewRequest(&relicv1.DeletePermissionRequest{
+			_, err := sec.DeletePermission(ctx, &relicv1.DeletePermissionRequest{
 				Name: "devs-libs",
-			}))
+			})
 
 			return err
 		}(),
 		func() error {
-			_, err := sec.DeleteGroup(ctx, connect.NewRequest(&relicv1.DeleteGroupRequest{
+			_, err := sec.DeleteGroup(ctx, &relicv1.DeleteGroupRequest{
 				Name: "devs",
-			}))
+			})
 
 			return err
 		}(),
 		func() error {
-			_, err := sec.DeleteUser(ctx, connect.NewRequest(&relicv1.DeleteUserRequest{
+			_, err := sec.DeleteUser(ctx, &relicv1.DeleteUserRequest{
 				Name: "ann",
-			}))
+			})
 
 			return err
 		}(),
@@ -1274,9 +1258,9 @@ func TestRelicAPISecurity(t *testing.T) {
 
 	if _, err := sec.GetUser(
 		ctx,
-		connect.NewRequest(&relicv1.GetUserRequest{
+		&relicv1.GetUserRequest{
 			Name: "ann",
-		}),
+		},
 	); code(err) != connect.CodeNotFound {
 		t.Errorf("deleted user: %v", err)
 	}
@@ -1295,7 +1279,7 @@ func TestRelicAPIReplicationsAndBuilds(t *testing.T) {
 			body:   `{"rclass":"local","packageType":"generic"}`,
 		},
 	)
-	reps := relicv1connect.NewReplicationServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	reps := relicv1connect.NewReplicationServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
 	r := &relicv1.Replication{
 		Repository:     "libs",
@@ -1308,9 +1292,9 @@ func TestRelicAPIReplicationsAndBuilds(t *testing.T) {
 	}
 	if _, err := reps.PutReplication(
 		ctx,
-		connect.NewRequest(&relicv1.PutReplicationRequest{
+		&relicv1.PutReplicationRequest{
 			Replication: r,
-		}),
+		},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -1334,9 +1318,9 @@ func TestRelicAPIReplicationsAndBuilds(t *testing.T) {
 		r.Schedule = bad
 		if _, err := reps.PutReplication(
 			ctx,
-			connect.NewRequest(&relicv1.PutReplicationRequest{
+			&relicv1.PutReplicationRequest{
 				Replication: r,
-			}),
+			},
 		); code(err) != connect.CodeInvalidArgument {
 			t.Errorf("schedule %q: %v", bad, err)
 		}
@@ -1347,19 +1331,19 @@ func TestRelicAPIReplicationsAndBuilds(t *testing.T) {
 
 	if _, err := reps.PutReplication(
 		ctx,
-		connect.NewRequest(&relicv1.PutReplicationRequest{
+		&relicv1.PutReplicationRequest{
 			Replication: r,
-		}),
+		},
 	); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("unknown direction: %v", err)
 	}
 
 	r.Direction = relicv1.ReplicationDirection_REPLICATION_DIRECTION_UNSPECIFIED
 
-	got, err := reps.GetReplication(ctx, connect.NewRequest(&relicv1.GetReplicationRequest{
+	got, err := reps.GetReplication(ctx, &relicv1.GetReplicationRequest{
 		Repository: "libs",
-	}))
-	if m := got.Msg.GetReplication(); err != nil || !m.GetHasPassword() || m.GetPassword() != "" || !m.GetOnChange() ||
+	})
+	if m := got.GetReplication(); err != nil || !m.GetHasPassword() || m.GetPassword() != "" || !m.GetOnChange() ||
 		m.GetLastStatus() != relicv1.ReplicationStatus_REPLICATION_STATUS_NEVER {
 		t.Errorf("replication = %v %v", got, err)
 	}
@@ -1374,11 +1358,11 @@ func TestRelicAPIReplicationsAndBuilds(t *testing.T) {
 		},
 	)
 
-	got, err = reps.GetReplication(ctx, connect.NewRequest(&relicv1.GetReplicationRequest{
+	got, err = reps.GetReplication(ctx, &relicv1.GetReplicationRequest{
 		Repository: "libs",
-	}))
-	if err != nil || got.Msg.GetReplication().GetSchedule() != "30 2 * * 1-5" ||
-		got.Msg.GetReplication().GetTimeoutSeconds() != 2 {
+	})
+	if err != nil || got.GetReplication().GetSchedule() != "30 2 * * 1-5" ||
+		got.GetReplication().GetTimeoutSeconds() != 2 {
 		t.Errorf("schedule from Quartz = %v %v", got, err)
 	}
 
@@ -1408,18 +1392,18 @@ func TestRelicAPIReplicationsAndBuilds(t *testing.T) {
 
 	if _, err := reps.DeleteReplication(
 		ctx,
-		connect.NewRequest(&relicv1.DeleteReplicationRequest{
+		&relicv1.DeleteReplicationRequest{
 			Repository: "libs",
-		}),
+		},
 	); err != nil {
 		t.Fatal(err)
 	}
 
 	if _, err := reps.GetReplication(
 		ctx,
-		connect.NewRequest(&relicv1.GetReplicationRequest{
+		&relicv1.GetReplicationRequest{
 			Repository: "libs",
-		}),
+		},
 	); code(err) != connect.CodeNotFound {
 		t.Errorf("after delete: %v", err)
 	}
@@ -1458,28 +1442,28 @@ func TestRelicAPIReplicationsAndBuilds(t *testing.T) {
 		"include-patterns":["app/**"],"actions":{"users":{"dev":["read"]}}}}`,
 		},
 	)
-	builds := relicv1connect.NewBuildServiceClient(relicHTTP("dev", "Dev-pass-12345"), srv.URL+"/api")
+	builds := relicv1connect.NewBuildServiceClient(apiClient(relicHTTP("dev", "Dev-pass-12345"), srv.URL))
 
-	list, err := builds.ListBuilds(ctx, connect.NewRequest(&relicv1.ListBuildsRequest{}))
-	if err != nil || len(list.Msg.GetBuilds()) != 1 || list.Msg.GetBuilds()[0].GetName() != "app" {
+	list, err := builds.ListBuilds(ctx, &relicv1.ListBuildsRequest{})
+	if err != nil || len(list.GetBuilds()) != 1 || list.GetBuilds()[0].GetName() != "app" {
 		t.Errorf("builds = %v %v", list, err)
 	}
 
 	if runs, err := builds.ListBuildRuns(
 		ctx,
-		connect.NewRequest(&relicv1.ListBuildRunsRequest{
+		&relicv1.ListBuildRunsRequest{
 			Name: "app",
-		}),
+		},
 	); err != nil ||
-		len(runs.Msg.GetRuns()) != 1 {
+		len(runs.GetRuns()) != 1 {
 		t.Errorf("runs = %v %v", runs, err)
 	}
 
 	if _, err := builds.ListBuildRuns(
 		ctx,
-		connect.NewRequest(&relicv1.ListBuildRunsRequest{
+		&relicv1.ListBuildRunsRequest{
 			Name: "secret",
-		}),
+		},
 	); code(err) != connect.CodeNotFound {
 		t.Errorf("unreadable build: %v", err)
 	}
@@ -1489,7 +1473,7 @@ func TestRelicAPIScan(t *testing.T) {
 	t.Parallel()
 	srv := server(t)
 	ctx := t.Context()
-	scans := relicv1connect.NewScanServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	scans := relicv1connect.NewScanServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
 	pol := &relicv1.Policy{
 		Name: "critical",
@@ -1503,16 +1487,16 @@ func TestRelicAPIScan(t *testing.T) {
 			},
 		},
 	}
-	if _, err := scans.PutPolicy(ctx, connect.NewRequest(&relicv1.PutPolicyRequest{
+	if _, err := scans.PutPolicy(ctx, &relicv1.PutPolicyRequest{
 		Policy: pol,
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
 	pol.Description = "updated"
-	if _, err := scans.PutPolicy(ctx, connect.NewRequest(&relicv1.PutPolicyRequest{
+	if _, err := scans.PutPolicy(ctx, &relicv1.PutPolicyRequest{
 		Policy: pol,
-	})); err != nil {
+	}); err != nil {
 		t.Fatalf("replace: %v", err)
 	}
 
@@ -1530,17 +1514,15 @@ func TestRelicAPIScan(t *testing.T) {
 
 	if _, err := scans.PutWatch(
 		ctx,
-		connect.NewRequest(
-			&relicv1.PutWatchRequest{
-				Watch: &relicv1.Watch{
-					Name:   "w",
-					Active: true,
-					Policies: []string{
-						"nope",
-					},
+		&relicv1.PutWatchRequest{
+			Watch: &relicv1.Watch{
+				Name:   "w",
+				Active: true,
+				Policies: []string{
+					"nope",
 				},
 			},
-		),
+		},
 	); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("unknown policy: %v", err)
 	}
@@ -1558,20 +1540,20 @@ func TestRelicAPIScan(t *testing.T) {
 			"critical",
 		},
 	}
-	if _, err := scans.PutWatch(ctx, connect.NewRequest(&relicv1.PutWatchRequest{
+	if _, err := scans.PutWatch(ctx, &relicv1.PutWatchRequest{
 		Watch: w,
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if ws, err := scans.ListWatches(ctx, connect.NewRequest(&relicv1.ListWatchesRequest{})); err != nil ||
-		ws.Msg.GetWatches()[0].GetPolicies()[0] != "critical" {
+	if ws, err := scans.ListWatches(ctx, &relicv1.ListWatchesRequest{}); err != nil ||
+		ws.GetWatches()[0].GetPolicies()[0] != "critical" {
 		t.Errorf("watches = %v %v", ws, err)
 	}
 
 	rule, err := scans.CreateIgnoreRule(
 		ctx,
-		connect.NewRequest(&relicv1.CreateIgnoreRuleRequest{
+		&relicv1.CreateIgnoreRuleRequest{
 			Rule: &relicv1.IgnoreRule{
 				Notes: "accepted",
 				Cves: []string{
@@ -1587,11 +1569,11 @@ func TestRelicAPIScan(t *testing.T) {
 					},
 				},
 			},
-		}),
+		},
 	)
-	if err != nil || rule.Msg.GetRule().GetId() == "" ||
-		rule.Msg.GetRule().GetPackages()[0] != "pkg:maven/org.apache/log4j@2.14.1" ||
-		rule.Msg.GetRule().GetBuilds()[0].GetNumber() != "7" {
+	if err != nil || rule.GetRule().GetId() == "" ||
+		rule.GetRule().GetPackages()[0] != "pkg:maven/org.apache/log4j@2.14.1" ||
+		rule.GetRule().GetBuilds()[0].GetNumber() != "7" {
 		t.Fatalf("ignore rule = %v %v", rule, err)
 	}
 
@@ -1600,7 +1582,7 @@ func TestRelicAPIScan(t *testing.T) {
 		srv,
 		call{
 			method: "GET",
-			path:   "/xray/api/v1/ignore_rules/" + rule.Msg.GetRule().GetId(),
+			path:   "/xray/api/v1/ignore_rules/" + rule.GetRule().GetId(),
 		},
 	); !strings.Contains(b, `"name": "gav://org.apache:log4j"`) ||
 		!strings.Contains(b, `"version": "2.14.1"`) {
@@ -1609,18 +1591,18 @@ func TestRelicAPIScan(t *testing.T) {
 
 	if _, err := scans.DeletePolicy(
 		ctx,
-		connect.NewRequest(&relicv1.DeletePolicyRequest{
+		&relicv1.DeletePolicyRequest{
 			Name: "critical",
-		}),
+		},
 	); code(err) != connect.CodeFailedPrecondition {
 		t.Errorf("delete a watched policy: %v", err)
 	}
 
 	if _, err := scans.DeleteIgnoreRule(
 		ctx,
-		connect.NewRequest(&relicv1.DeleteIgnoreRuleRequest{
-			Id: rule.Msg.GetRule().GetId(),
-		}),
+		&relicv1.DeleteIgnoreRuleRequest{
+			Id: rule.GetRule().GetId(),
+		},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -1642,30 +1624,30 @@ func TestRelicAPIScan(t *testing.T) {
 
 	s, err := scans.GetItemScan(
 		ctx,
-		connect.NewRequest(&relicv1.GetItemScanRequest{
+		&relicv1.GetItemScanRequest{
 			Repository: "libs",
 			Path:       "app.jar",
-		}),
+		},
 	)
-	if err != nil || s.Msg.GetScan().GetStatus() != relicv1.ScanStatus_SCAN_STATUS_QUEUED {
+	if err != nil || s.GetScan().GetStatus() != relicv1.ScanStatus_SCAN_STATUS_QUEUED {
 		t.Errorf("unscanned = %v %v", s, err)
 	}
 
-	if f, err := scans.ListFindings(ctx, connect.NewRequest(&relicv1.ListFindingsRequest{})); err != nil ||
-		f.Msg.GetTotal() != 0 {
+	if f, err := scans.ListFindings(ctx, &relicv1.ListFindingsRequest{}); err != nil ||
+		f.GetTotal() != 0 {
 		t.Errorf("findings = %v %v", f, err)
 	}
 
-	if c, err := scans.ListCves(ctx, connect.NewRequest(&relicv1.ListCvesRequest{})); err != nil ||
-		c.Msg.GetTotal() != 0 {
+	if c, err := scans.ListCves(ctx, &relicv1.ListCvesRequest{}); err != nil ||
+		c.GetTotal() != 0 {
 		t.Errorf("cves = %v %v", c, err)
 	}
 
 	if _, err := scans.GetCve(
 		ctx,
-		connect.NewRequest(&relicv1.GetCveRequest{
+		&relicv1.GetCveRequest{
 			Id: "CVE-2000-0001",
-		}),
+		},
 	); code(err) != connect.CodeNotFound {
 		t.Errorf("unknown CVE: %v", err)
 	}
@@ -1675,7 +1657,7 @@ func TestRelicAPILdap(t *testing.T) {
 	t.Parallel()
 	srv, db := serverDB(t)
 	ctx := t.Context()
-	ldapc := relicv1connect.NewLdapServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	ldapc := relicv1connect.NewLdapServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
 	dir := &relicv1.LdapServer{
 		Name:    "corp",
@@ -1689,30 +1671,28 @@ func TestRelicAPILdap(t *testing.T) {
 	}
 	if _, err := ldapc.PutLdapServer(
 		ctx,
-		connect.NewRequest(&relicv1.PutLdapServerRequest{
+		&relicv1.PutLdapServerRequest{
 			LdapServer: dir,
-		}),
+		},
 	); err != nil {
 		t.Fatal(err)
 	}
 
 	if _, err := ldapc.PutLdapServer(
 		ctx,
-		connect.NewRequest(
-			&relicv1.PutLdapServerRequest{
-				LdapServer: &relicv1.LdapServer{
-					Name: "bad",
-					Url:  "http://x",
-				},
+		&relicv1.PutLdapServerRequest{
+			LdapServer: &relicv1.LdapServer{
+				Name: "bad",
+				Url:  "http://x",
 			},
-		),
+		},
 	); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("bad URL: %v", err)
 	}
 
-	list, err := ldapc.ListLdapServers(ctx, connect.NewRequest(&relicv1.ListLdapServersRequest{}))
-	if err != nil || len(list.Msg.GetLdapServers()) != 1 || !list.Msg.GetLdapServers()[0].GetHasManagerPassword() ||
-		list.Msg.GetLdapServers()[0].GetSearch().GetManagerPassword() != "" {
+	list, err := ldapc.ListLdapServers(ctx, &relicv1.ListLdapServersRequest{})
+	if err != nil || len(list.GetLdapServers()) != 1 || !list.GetLdapServers()[0].GetHasManagerPassword() ||
+		list.GetLdapServers()[0].GetSearch().GetManagerPassword() != "" {
 		t.Fatalf("directories = %v %v", list, err)
 	}
 
@@ -1736,9 +1716,9 @@ func TestRelicAPILdap(t *testing.T) {
 	}
 	if _, err := ldapc.PutLdapGroupMapping(
 		ctx,
-		connect.NewRequest(&relicv1.PutLdapGroupMappingRequest{
+		&relicv1.PutLdapGroupMappingRequest{
 			LdapGroupMapping: m,
-		}),
+		},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -1751,7 +1731,7 @@ func TestRelicAPILdap(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := ldapc.PutLdapGroupMapping(ctx, connect.NewRequest(&relicv1.PutLdapGroupMappingRequest{
+	if _, err := ldapc.PutLdapGroupMapping(ctx, &relicv1.PutLdapGroupMappingRequest{
 		LdapGroupMapping: &relicv1.LdapGroupMapping{
 			Name:            "legacy",
 			LdapServer:      "corp",
@@ -1759,7 +1739,7 @@ func TestRelicAPILdap(t *testing.T) {
 			MemberAttribute: "member",
 			Strategy:        relicv1.GroupStrategy_GROUP_STRATEGY_STATIC,
 		},
-	})); err == nil {
+	}); err == nil {
 		t.Error("a mapping whose stored settings could not be read was replaced")
 	}
 
@@ -1785,9 +1765,9 @@ func TestRelicAPILdap(t *testing.T) {
 		},
 	)
 
-	ms, err := ldapc.ListLdapGroupMappings(ctx, connect.NewRequest(&relicv1.ListLdapGroupMappingsRequest{}))
-	if err != nil || len(ms.Msg.GetLdapGroupMappings()) != 2 ||
-		ms.Msg.GetLdapGroupMappings()[1].GetStrategy() != relicv1.GroupStrategy_GROUP_STRATEGY_HIERARCHY {
+	ms, err := ldapc.ListLdapGroupMappings(ctx, &relicv1.ListLdapGroupMappingsRequest{})
+	if err != nil || len(ms.GetLdapGroupMappings()) != 2 ||
+		ms.GetLdapGroupMappings()[1].GetStrategy() != relicv1.GroupStrategy_GROUP_STRATEGY_HIERARCHY {
 		t.Errorf("mappings = %v %v", ms, err)
 	}
 
@@ -1803,13 +1783,13 @@ func TestRelicAPILdap(t *testing.T) {
 
 	res, err := ldapc.TestLdapSignIn(
 		ctx,
-		connect.NewRequest(&relicv1.TestLdapSignInRequest{
+		&relicv1.TestLdapSignInRequest{
 			LdapServer: dir,
 			Username:   "ann",
 			Password:   "x",
-		}),
+		},
 	)
-	if err != nil || res.Msg.GetOk() || res.Msg.GetError() == "" {
+	if err != nil || res.GetOk() || res.GetError() == "" {
 		t.Errorf("test sign-in against nothing = %v %v", res, err)
 	}
 
@@ -1819,9 +1799,9 @@ func TestRelicAPILdap(t *testing.T) {
 	} {
 		if _, err := ldapc.DeleteLdapGroupMapping(
 			ctx,
-			connect.NewRequest(&relicv1.DeleteLdapGroupMappingRequest{
+			&relicv1.DeleteLdapGroupMappingRequest{
 				Name: m,
-			}),
+			},
 		); err != nil {
 			t.Fatal(err)
 		}
@@ -1829,18 +1809,18 @@ func TestRelicAPILdap(t *testing.T) {
 
 	if _, err := ldapc.DeleteLdapServer(
 		ctx,
-		connect.NewRequest(&relicv1.DeleteLdapServerRequest{
+		&relicv1.DeleteLdapServerRequest{
 			Name: "corp",
-		}),
+		},
 	); err != nil {
 		t.Fatal(err)
 	}
 
 	if _, err := ldapc.DeleteLdapServer(
 		ctx,
-		connect.NewRequest(&relicv1.DeleteLdapServerRequest{
+		&relicv1.DeleteLdapServerRequest{
 			Name: "corp",
-		}),
+		},
 	); code(err) != connect.CodeNotFound {
 		t.Errorf("second delete: %v", err)
 	}
@@ -1904,7 +1884,7 @@ func TestRelicAPIUIParity(t *testing.T) {
 		body:   tbuf.String(),
 	})
 
-	arts := relicv1connect.NewArtifactServiceClient(admin, srv.URL+"/api")
+	arts := relicv1connect.NewArtifactServiceClient(apiClient(admin, srv.URL))
 	do(t, srv, call{
 		method: "PUT",
 		path:   "/artifactory/api/storage/libs/app/app.zip?properties=qa=passed",
@@ -1912,26 +1892,26 @@ func TestRelicAPIUIParity(t *testing.T) {
 
 	det, err := arts.GetItemDetails(
 		ctx,
-		connect.NewRequest(&relicv1.GetItemDetailsRequest{
+		&relicv1.GetItemDetailsRequest{
 			Repository: "libs",
 			Path:       "app/app.zip",
-		}),
+		},
 	)
-	if err != nil || !det.Msg.GetCanDelete() || !det.Msg.GetCanAnnotate() ||
-		det.Msg.GetProperties()["qa"].GetValues()[0] != "passed" ||
-		det.Msg.GetScan().GetStatus() != relicv1.ScanStatus_SCAN_STATUS_QUEUED ||
-		det.Msg.GetFormat() != relicv1.Format_FORMAT_GENERIC {
+	if err != nil || !det.GetCanDelete() || !det.GetCanAnnotate() ||
+		det.GetProperties()["qa"].GetValues()[0] != "passed" ||
+		det.GetScan().GetStatus() != relicv1.ScanStatus_SCAN_STATUS_QUEUED ||
+		det.GetFormat() != relicv1.Format_FORMAT_GENERIC {
 		t.Fatalf("details = %v %v", det, err)
 	}
 
 	entries, err := arts.ListArchiveEntries(
 		ctx,
-		connect.NewRequest(&relicv1.ListArchiveEntriesRequest{
+		&relicv1.ListArchiveEntriesRequest{
 			Repository: "libs",
 			Path:       "app/app.zip",
-		}),
+		},
 	)
-	if err != nil || entries.Msg.GetKind() != "zip" || len(entries.Msg.GetEntries()) != 1 {
+	if err != nil || entries.GetKind() != "zip" || len(entries.GetEntries()) != 1 {
 		t.Fatalf("entries = %v %v", entries, err)
 	}
 
@@ -1949,20 +1929,20 @@ func TestRelicAPIUIParity(t *testing.T) {
 
 	if _, err := arts.ListArchiveEntries(
 		ctx,
-		connect.NewRequest(&relicv1.ListArchiveEntriesRequest{
+		&relicv1.ListArchiveEntriesRequest{
 			Repository: "npm-local",
 			Path:       "left-pad",
-		}),
+		},
 	); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("folder as archive: %v", err)
 	}
 
 	grants, err := arts.GetEffectivePermissions(
 		ctx,
-		connect.NewRequest(&relicv1.GetEffectivePermissionsRequest{
+		&relicv1.GetEffectivePermissionsRequest{
 			Repository: "libs",
 			Path:       "app/app.zip",
-		}),
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1970,48 +1950,46 @@ func TestRelicAPIUIParity(t *testing.T) {
 
 	_ = grants
 
-	scans := relicv1connect.NewScanServiceClient(admin, srv.URL+"/api")
+	scans := relicv1connect.NewScanServiceClient(apiClient(admin, srv.URL))
 	if _, err := scans.GetItemSbom(
 		ctx,
-		connect.NewRequest(&relicv1.GetItemSbomRequest{
+		&relicv1.GetItemSbomRequest{
 			Repository: "libs",
 			Path:       "app/app.zip",
-		}),
+		},
 	); code(err) != connect.CodeNotFound {
 		t.Errorf("sbom of an unscanned file: %v", err)
 	}
 
-	pkgs := relicv1connect.NewPackageServiceClient(admin, srv.URL+"/api")
+	pkgs := relicv1connect.NewPackageServiceClient(apiClient(admin, srv.URL))
 
 	np, err := pkgs.GetNpmPackage(
 		ctx,
-		connect.NewRequest(
-			&relicv1.GetNpmPackageRequest{
-				Repository: "npm-local",
-				Path:       "left-pad/-/left-pad-1.3.0.tgz",
-			},
-		),
+		&relicv1.GetNpmPackageRequest{
+			Repository: "npm-local",
+			Path:       "left-pad/-/left-pad-1.3.0.tgz",
+		},
 	)
-	if err != nil || np.Msg.GetName() != "left-pad" || np.Msg.GetDependencies()["x"] != "^1" {
+	if err != nil || np.GetName() != "left-pad" || np.GetDependencies()["x"] != "^1" {
 		t.Errorf("npm package = %v %v", np, err)
 	}
 
 	if _, err := pkgs.GetContainerImage(
 		ctx,
-		connect.NewRequest(&relicv1.GetContainerImageRequest{
+		&relicv1.GetContainerImageRequest{
 			Repository: "libs",
 			Path:       "app",
-		}),
+		},
 	); code(err) != connect.CodeNotFound {
 		t.Errorf("image of a plain folder: %v", err)
 	}
 
 	if _, err := pkgs.GetPythonPackage(
 		ctx,
-		connect.NewRequest(&relicv1.GetPythonPackageRequest{
+		&relicv1.GetPythonPackageRequest{
 			Repository: "libs",
 			Path:       "app/app.zip",
-		}),
+		},
 	); code(err) != connect.CodeNotFound {
 		t.Errorf("python package in a generic repository: %v", err)
 	}
@@ -2028,72 +2006,72 @@ func TestRelicAPIUIParity(t *testing.T) {
 		},
 	)
 
-	run, err := relicv1connect.NewBuildServiceClient(admin, srv.URL+"/api").
-		GetBuildRun(ctx, connect.NewRequest(&relicv1.GetBuildRunRequest{
+	run, err := relicv1connect.NewBuildServiceClient(apiClient(admin, srv.URL)).
+		GetBuildRun(ctx, &relicv1.GetBuildRunRequest{
 			Name:   "app",
 			Number: "7",
-		}))
-	if err != nil || run.Msg.GetAgent() != "jf 2.124.0" || run.Msg.GetStarted() == nil ||
-		len(run.Msg.GetModules()) != 1 ||
-		run.Msg.GetModules()[0].GetDependencies()[0].GetScopes()[0] != "compile" ||
-		run.Msg.GetVcs()[0].GetRevision() != "abc" {
+		})
+	if err != nil || run.GetAgent() != "jf 2.124.0" || run.GetStarted() == nil ||
+		len(run.GetModules()) != 1 ||
+		run.GetModules()[0].GetDependencies()[0].GetScopes()[0] != "compile" ||
+		run.GetVcs()[0].GetRevision() != "abc" {
 		t.Errorf("run = %v %v", run, err)
 	}
 
-	sys := relicv1connect.NewSystemServiceClient(admin, srv.URL+"/api")
+	sys := relicv1connect.NewSystemServiceClient(apiClient(admin, srv.URL))
 
-	ov, err := sys.GetDashboardSummary(ctx, connect.NewRequest(&relicv1.GetDashboardSummaryRequest{}))
-	if err != nil || ov.Msg.GetRepositories()["local"] != 3 || ov.Msg.GetBuilds() != 1 {
+	ov, err := sys.GetDashboardSummary(ctx, &relicv1.GetDashboardSummaryRequest{})
+	if err != nil || ov.GetRepositories()["local"] != 3 || ov.GetBuilds() != 1 {
 		t.Errorf("overview = %v %v", ov, err)
 	}
 
-	trash := relicv1connect.NewTrashServiceClient(admin, srv.URL+"/api")
+	trash := relicv1connect.NewTrashServiceClient(apiClient(admin, srv.URL))
 
 	if _, err := arts.DeleteItem(
 		ctx,
-		connect.NewRequest(&relicv1.DeleteItemRequest{
+		&relicv1.DeleteItemRequest{
 			Repository: "libs",
 			Path:       "app/app.zip",
-		}),
+		},
 	); err != nil {
 		t.Fatal(err)
 	}
 
-	list, err := trash.ListTrash(ctx, connect.NewRequest(&relicv1.ListTrashRequest{}))
-	if err != nil || len(list.Msg.GetEntries()) != 1 || list.Msg.GetEntries()[0].GetOriginalRepository() != "libs" {
+	list, err := trash.ListTrash(ctx, &relicv1.ListTrashRequest{})
+	if err != nil || len(list.GetEntries()) != 1 || list.GetEntries()[0].GetOriginalRepository() != "libs" {
 		t.Fatalf("trash = %v %v", list, err)
 	}
 
 	if _, err := trash.RestoreTrash(
 		ctx,
-		connect.NewRequest(&relicv1.RestoreTrashRequest{
-			Path: list.Msg.GetEntries()[0].GetPath(),
-		}),
+		&relicv1.RestoreTrashRequest{
+			Path: list.GetEntries()[0].GetPath(),
+		},
 	); err != nil {
 		t.Fatal(err)
 	}
 
 	if _, err := arts.StatItem(
 		ctx,
-		connect.NewRequest(&relicv1.StatItemRequest{
+		&relicv1.StatItemRequest{
 			Repository: "libs",
 			Path:       "app/app.zip",
-		}),
+		},
 	); err != nil {
 		t.Errorf("after restore: %v", err)
 	}
 
-	if _, err := trash.EmptyTrash(ctx, connect.NewRequest(&relicv1.EmptyTrashRequest{})); err != nil {
+	if _, err := trash.EmptyTrash(ctx, &relicv1.EmptyTrashRequest{}); err != nil {
 		t.Fatal(err)
 	}
 
-	sessions := relicv1connect.NewSessionServiceClient(admin, srv.URL+"/api")
+	sessions := relicv1connect.NewSessionServiceClient(apiClient(admin, srv.URL))
 	if _, err := sessions.ApproveLogin(
 		ctx,
-		connect.NewRequest(&relicv1.ApproveLoginRequest{
+		&relicv1.ApproveLoginRequest{
 			Session: "nope",
 			Code:    "1234",
-		}),
+		},
 	); code(err) != connect.CodeNotFound {
 		t.Errorf("unknown jf login: %v", err)
 	}

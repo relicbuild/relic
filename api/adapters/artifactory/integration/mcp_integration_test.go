@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -98,18 +97,18 @@ func TestMCPServer(t *testing.T) {
 		})
 	}
 
-	sec := relicv1connect.NewSecurityServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
-	if _, err := sec.PutUser(ctx, connect.NewRequest(&relicv1.PutUserRequest{
+	sec := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
+	if _, err := sec.PutUser(ctx, &relicv1.PutUserRequest{
 		User: &relicv1.User{
 			Name:     "agent",
 			Email:    "agent@example.com",
 			Password: "Agent-pass-12345",
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := sec.PutPermission(ctx, connect.NewRequest(&relicv1.PutPermissionRequest{
+	if _, err := sec.PutPermission(ctx, &relicv1.PutPermissionRequest{
 		Permission: &relicv1.Permission{
 			Name: "mcp-open-read",
 			Rules: []*relicv1.PermissionRule{
@@ -133,7 +132,7 @@ func TestMCPServer(t *testing.T) {
 				},
 			},
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 

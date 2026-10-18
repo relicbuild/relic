@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -81,16 +81,16 @@ func TestPromoteContainerImageNeedsDeleteToReplaceATag(t *testing.T) {
 	}
 	released := manifest()
 
-	writer := relicv1connect.NewPackageServiceClient(relicHTTP("writer", "Writer-pass-123"), srv.URL+"/api")
+	writer := relicv1connect.NewPackageServiceClient(apiClient(relicHTTP("writer", "Writer-pass-123"), srv.URL))
 
-	_, err := writer.PromoteContainerImage(t.Context(), connect.NewRequest(&relicv1.PromoteContainerImageRequest{
+	_, err := writer.PromoteContainerImage(t.Context(), &relicv1.PromoteContainerImageRequest{
 		Repository:       "tagover-dev",
 		Image:            "team/app",
 		Tag:              "1.0",
 		TargetRepository: "tagover-prod",
 		TargetTag:        "stable",
 		Copy:             true,
-	}))
+	})
 	if code(err) != connect.CodePermissionDenied {
 		t.Errorf("Relic API promotion over a tag without delete = %v, want permission denied", err)
 	}
@@ -113,14 +113,14 @@ func TestPromoteContainerImageNeedsDeleteToReplaceATag(t *testing.T) {
 		t.Error("tagover-prod/team/app:stable changed after the refused promotions")
 	}
 
-	if _, err := writer.PromoteContainerImage(t.Context(), connect.NewRequest(&relicv1.PromoteContainerImageRequest{
+	if _, err := writer.PromoteContainerImage(t.Context(), &relicv1.PromoteContainerImageRequest{
 		Repository:       "tagover-dev",
 		Image:            "team/app",
 		Tag:              "1.0",
 		TargetRepository: "tagover-prod",
 		TargetTag:        "candidate",
 		Copy:             true,
-	})); err != nil {
+	}); err != nil {
 		t.Errorf("promotion to a new tag with write = %v", err)
 	}
 }

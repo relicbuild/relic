@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -571,20 +571,20 @@ func TestUIDockerImage(t *testing.T) {
 		t.Fatalf("push manifest = %d %s", resp.StatusCode, body)
 	}
 
-	pkgs := relicv1connect.NewPackageServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	pkgs := relicv1connect.NewPackageServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
 	img, err := pkgs.GetContainerImage(
 		t.Context(),
-		connect.NewRequest(&relicv1.GetContainerImageRequest{
+		&relicv1.GetContainerImageRequest{
 			Repository: "docker-local",
 			Path:       "org/app/1.0",
-		}),
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	got := img.Msg
+	got := img
 	if got.GetDigest() != digestOf(m) || got.GetOs() != "linux" || got.GetArchitecture() != "amd64" ||
 		got.GetTotalSize() != 130 ||
 		got.GetLabels()["org.opencontainers.image.source"] != "https://example.org/app" ||
@@ -597,10 +597,10 @@ func TestUIDockerImage(t *testing.T) {
 
 	if _, err := pkgs.GetContainerImage(
 		t.Context(),
-		connect.NewRequest(&relicv1.GetContainerImageRequest{
+		&relicv1.GetContainerImageRequest{
 			Repository: "docker-local",
 			Path:       "org",
-		}),
+		},
 	); code(err) != connect.CodeNotFound {
 		t.Errorf("non-image folder: %v, want not found", err)
 	}

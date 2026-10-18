@@ -16,8 +16,6 @@ import (
 
 	"relic/api/adapters/artifactory/access"
 
-	"connectrpc.com/connect"
-
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
 	"relic/internal/access/auth"
@@ -219,46 +217,44 @@ func TestLDAPSignIn(t *testing.T) {
 	})
 	t.Run("the Relic API", func(t *testing.T) {
 		ctx := t.Context()
-		lc := relicv1connect.NewLdapServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+		lc := relicv1connect.NewLdapServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
-		dirs, err := lc.ListLdapServers(ctx, connect.NewRequest(&relicv1.ListLdapServersRequest{}))
-		if err != nil || len(dirs.Msg.GetLdapServers()) != 1 || !dirs.Msg.GetLdapServers()[0].GetHasManagerPassword() ||
-			dirs.Msg.GetLdapServers()[0].GetSearch().GetManagerPassword() != "" {
+		dirs, err := lc.ListLdapServers(ctx, &relicv1.ListLdapServersRequest{})
+		if err != nil || len(dirs.GetLdapServers()) != 1 || !dirs.GetLdapServers()[0].GetHasManagerPassword() ||
+			dirs.GetLdapServers()[0].GetSearch().GetManagerPassword() != "" {
 			t.Fatalf("directories = %v %v", dirs, err)
 		}
 
-		maps, err := lc.ListLdapGroupMappings(ctx, connect.NewRequest(&relicv1.ListLdapGroupMappingsRequest{}))
-		if err != nil || len(maps.Msg.GetLdapGroupMappings()) != 1 ||
-			maps.Msg.GetLdapGroupMappings()[0].GetName() != "corp-groups" {
+		maps, err := lc.ListLdapGroupMappings(ctx, &relicv1.ListLdapGroupMappingsRequest{})
+		if err != nil || len(maps.GetLdapGroupMappings()) != 1 ||
+			maps.GetLdapGroupMappings()[0].GetName() != "corp-groups" {
 			t.Errorf("group mappings = %v %v", maps, err)
 		}
 
-		corp := dirs.Msg.GetLdapServers()[0]
+		corp := dirs.GetLdapServers()[0]
 
 		res, err := lc.TestLdapSignIn(
 			ctx,
-			connect.NewRequest(
-				&relicv1.TestLdapSignInRequest{
-					LdapServer: corp,
-					Username:   "alice",
-					Password:   "alice-pass",
-				},
-			),
+			&relicv1.TestLdapSignInRequest{
+				LdapServer: corp,
+				Username:   "alice",
+				Password:   "alice-pass",
+			},
 		)
-		if err != nil || !res.Msg.GetOk() || !slices.Contains(res.Msg.GetGroups(), "devs") ||
-			!strings.Contains(res.Msg.GetDn(), "uid=alice") {
+		if err != nil || !res.GetOk() || !slices.Contains(res.GetGroups(), "devs") ||
+			!strings.Contains(res.GetDn(), "uid=alice") {
 			t.Errorf("test = %v %v", res, err)
 		}
 
 		res, err = lc.TestLdapSignIn(
 			ctx,
-			connect.NewRequest(&relicv1.TestLdapSignInRequest{
+			&relicv1.TestLdapSignInRequest{
 				LdapServer: corp,
 				Username:   "alice",
 				Password:   "wrong",
-			}),
+			},
 		)
-		if err != nil || res.Msg.GetOk() {
+		if err != nil || res.GetOk() {
 			t.Errorf("failed test = %v %v", res, err)
 		}
 	})
@@ -363,14 +359,12 @@ func TestLDAPSignIn(t *testing.T) {
 			t.Errorf("docker login = %d", resp.StatusCode)
 		}
 
-		login := connect.NewRequest(&relicv1.LoginRequest{
+		login := &relicv1.LoginRequest{
 			Username: "carol",
 			Password: "carol-pass",
-		})
-		login.Header().Set(auth.UIHeader, "1")
-
-		if _, err := relicv1connect.NewSessionServiceClient(relicHTTP("", ""), srv.URL+"/api").
-			Login(t.Context(), login); err != nil {
+		}
+		if _, err := relicv1connect.NewSessionServiceClient(apiClient(relicHTTP("", ""), srv.URL)).
+			Login(withRequestHeader(t.Context(), auth.UIHeader, "1"), login); err != nil {
 			t.Errorf("UI sign-in: %v", err)
 		}
 	})

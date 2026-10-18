@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -71,16 +71,16 @@ func TestRelicAPIVirtualTree(t *testing.T) {
 	}
 
 	list := func(c relicv1connect.ArtifactServiceClient, path string) ([]entry, error) {
-		res, err := c.ListChildren(ctx, connect.NewRequest(&relicv1.ListChildrenRequest{
+		res, err := c.ListChildren(ctx, &relicv1.ListChildrenRequest{
 			Repository: "all",
 			Path:       path,
-		}))
+		})
 		if err != nil {
 			return nil, err
 		}
 
 		var out []entry
-		for _, it := range res.Msg.GetItems() {
+		for _, it := range res.GetItems() {
 			out = append(out, entry{
 				it.GetName(),
 				it.GetRepository(),
@@ -90,7 +90,7 @@ func TestRelicAPIVirtualTree(t *testing.T) {
 		return out, nil
 	}
 
-	admin := relicv1connect.NewArtifactServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	admin := relicv1connect.NewArtifactServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 	if got, err := list(admin, ""); err != nil || !slices.Equal(got, []entry{
 		{
 			"app",
@@ -120,12 +120,12 @@ func TestRelicAPIVirtualTree(t *testing.T) {
 
 	d, err := admin.GetItemDetails(
 		ctx,
-		connect.NewRequest(&relicv1.GetItemDetailsRequest{
+		&relicv1.GetItemDetailsRequest{
 			Repository: "all",
 			Path:       "app/b.txt",
-		}),
+		},
 	)
-	if err != nil || d.Msg.GetItem().GetRepository() != "two" || d.Msg.GetItem().GetPath() != "app/b.txt" {
+	if err != nil || d.GetItem().GetRepository() != "two" || d.GetItem().GetPath() != "app/b.txt" {
 		t.Errorf("details through the virtual repository = %v %v", d, err)
 	}
 
@@ -147,7 +147,7 @@ func TestRelicAPIVirtualTree(t *testing.T) {
 			body:   `{"name":"vera","repo":{"repositories":["one","all"],"actions":{"users":{"vera":["read"]}}}}`,
 		},
 	)
-	vera := relicv1connect.NewArtifactServiceClient(relicHTTP("vera", "Vera-pass-1234"), srv.URL+"/api")
+	vera := relicv1connect.NewArtifactServiceClient(apiClient(relicHTTP("vera", "Vera-pass-1234"), srv.URL))
 
 	want = []entry{
 		{
@@ -165,10 +165,10 @@ func TestRelicAPIVirtualTree(t *testing.T) {
 
 	if _, err := vera.GetItemDetails(
 		ctx,
-		connect.NewRequest(&relicv1.GetItemDetailsRequest{
+		&relicv1.GetItemDetailsRequest{
 			Repository: "all",
 			Path:       "app/b.txt",
-		}),
+		},
 	); code(err) != connect.CodeNotFound {
 		t.Errorf("details of an unreadable member's file = %v, want not_found", err)
 	}

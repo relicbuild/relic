@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -174,15 +174,15 @@ func TestCVEIntelligence(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	scans := relicv1connect.NewScanServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	scans := relicv1connect.NewScanServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
 	t.Run("the list carries the facts", func(t *testing.T) {
-		page, err := scans.ListCves(ctx, connect.NewRequest(&relicv1.ListCvesRequest{}))
-		if err != nil || page.Msg.GetTotal() != 2 || len(page.Msg.GetCves()) != 2 {
+		page, err := scans.ListCves(ctx, &relicv1.ListCvesRequest{})
+		if err != nil || page.GetTotal() != 2 || len(page.GetCves()) != 2 {
 			t.Fatalf("= %v %v", page, err)
 		}
 
-		top := page.Msg.GetCves()[0]
+		top := page.GetCves()[0]
 		if top.GetId() != "CVE-2021-44228" || top.GetTitle() != "Log4Shell" ||
 			top.GetSeverity() != relicv1.Severity_SEVERITY_CRITICAL ||
 			!top.GetKev() ||
@@ -197,14 +197,14 @@ func TestCVEIntelligence(t *testing.T) {
 			t.Errorf("top = %v", top)
 		}
 
-		if low := page.Msg.GetCves()[1]; low.GetId() != "CVE-2024-0001" || low.GetKev() ||
+		if low := page.GetCves()[1]; low.GetId() != "CVE-2024-0001" || low.GetKev() ||
 			low.GetSeverity() != relicv1.Severity_SEVERITY_LOW ||
 			low.GetArtifacts() != 1 ||
 			low.GetTitle() != "" {
 			t.Errorf("second = %v", low)
 		}
 
-		if f := page.Msg.GetFeeds(); len(f) != 2 || f[0].GetVersion() != "2026-09-25" ||
+		if f := page.GetFeeds(); len(f) != 2 || f[0].GetVersion() != "2026-09-25" ||
 			f[1].GetVersion() != "2026.09.25" {
 			t.Errorf("feeds = %v", f)
 		}
@@ -291,27 +291,27 @@ func TestCVEIntelligence(t *testing.T) {
 			},
 		}
 		for _, tc := range tests {
-			page, err := scans.ListCves(ctx, connect.NewRequest(tc.req))
+			page, err := scans.ListCves(ctx, tc.req)
 
 			first := ""
-			if err == nil && len(page.Msg.GetCves()) > 0 {
-				first = page.Msg.GetCves()[0].GetId()
+			if err == nil && len(page.GetCves()) > 0 {
+				first = page.GetCves()[0].GetId()
 			}
 
-			if err != nil || page.Msg.GetTotal() != tc.total || first != tc.firstID {
+			if err != nil || page.GetTotal() != tc.total || first != tc.firstID {
 				t.Errorf("%s: %v %v, want total %d first %q", tc.name, page, err, tc.total, tc.firstID)
 			}
 		}
 	})
 	t.Run("one CVE", func(t *testing.T) {
-		got, err := scans.GetCve(ctx, connect.NewRequest(&relicv1.GetCveRequest{
+		got, err := scans.GetCve(ctx, &relicv1.GetCveRequest{
 			Id: "cve-2021-44228",
-		}))
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		d := got.Msg.GetCve()
+		d := got.GetCve()
 		if d.GetDescription() != "JNDI lookups" || d.GetAutomatable() != "yes" || len(d.GetCwes()) != 1 ||
 			len(d.GetReferences()) != 1 ||
 			d.GetKevAdded() == nil ||
@@ -322,19 +322,19 @@ func TestCVEIntelligence(t *testing.T) {
 
 		if _, err := scans.GetCve(
 			ctx,
-			connect.NewRequest(&relicv1.GetCveRequest{
+			&relicv1.GetCveRequest{
 				Id: "CVE-2000-1",
-			}),
+			},
 		); code(err) != connect.CodeNotFound {
 			t.Errorf("unknown CVE: %v", err)
 		}
 	})
 	t.Run("findings show EPSS and KEV", func(t *testing.T) {
-		f, err := scans.ListFindings(ctx, connect.NewRequest(&relicv1.ListFindingsRequest{
+		f, err := scans.ListFindings(ctx, &relicv1.ListFindingsRequest{
 			Query: "GHSA",
-		}))
-		if err != nil || len(f.Msg.GetFindings()) == 0 || f.Msg.GetFindings()[0].GetEpss() != 0.94358 ||
-			!f.Msg.GetFindings()[0].GetKev() {
+		})
+		if err != nil || len(f.GetFindings()) == 0 || f.GetFindings()[0].GetEpss() != 0.94358 ||
+			!f.GetFindings()[0].GetKev() {
 			t.Errorf("findings = %v %v", f, err)
 		}
 	})
@@ -401,13 +401,13 @@ func TestCVEIntelligence(t *testing.T) {
 			},
 		}
 		for _, tc := range tests {
-			f, err := scans.ListFindings(ctx, connect.NewRequest(tc.req))
-			if err != nil || f.Msg.GetTotal() != tc.want || int64(len(f.Msg.GetFindings())) != tc.want {
+			f, err := scans.ListFindings(ctx, tc.req)
+			if err != nil || f.GetTotal() != tc.want || int64(len(f.GetFindings())) != tc.want {
 				t.Errorf(
 					"%s: total %d, %d rows, %v; want %d",
 					tc.name,
-					f.Msg.GetTotal(),
-					len(f.Msg.GetFindings()),
+					f.GetTotal(),
+					len(f.GetFindings()),
 					err,
 					tc.want,
 				)
@@ -445,10 +445,10 @@ func TestCVEIntelligence(t *testing.T) {
 			},
 		)
 
-		viewer := relicv1connect.NewScanServiceClient(relicHTTP("viewer", "Viewer-pass-1"), srv.URL+"/api")
+		viewer := relicv1connect.NewScanServiceClient(apiClient(relicHTTP("viewer", "Viewer-pass-1"), srv.URL))
 		if _, err := viewer.ListCves(
 			ctx,
-			connect.NewRequest(&relicv1.ListCvesRequest{}),
+			&relicv1.ListCvesRequest{},
 		); code(err) != connect.CodePermissionDenied {
 			t.Errorf("non-admin: %v", err)
 		}

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -29,7 +29,7 @@ func TestOperationalRisk(t *testing.T) {
 
 	srv, db := serverDB(t)
 	ctx := t.Context()
-	scans := relicv1connect.NewScanServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	scans := relicv1connect.NewScanServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
 	do(t, srv, call{
 		method: "PUT",
@@ -95,8 +95,8 @@ func TestOperationalRisk(t *testing.T) {
 		t.Fatalf("import = %d %s", resp.StatusCode, body)
 	}
 
-	st, err := scans.GetEndOfLifeStatus(ctx, connect.NewRequest(&relicv1.GetEndOfLifeStatusRequest{}))
-	if err != nil || st.Msg.GetSource() != endoflife.SourceImport || st.Msg.GetProducts() != 2 {
+	st, err := scans.GetEndOfLifeStatus(ctx, &relicv1.GetEndOfLifeStatusRequest{})
+	if err != nil || st.GetSource() != endoflife.SourceImport || st.GetProducts() != 2 {
 		t.Fatalf("status = %v, %v", st, err)
 	}
 
@@ -107,16 +107,16 @@ func TestOperationalRisk(t *testing.T) {
 		t.Fatalf("check = %d, %v", n, err)
 	}
 
-	item, err := scans.GetItemScan(ctx, connect.NewRequest(&relicv1.GetItemScanRequest{
+	item, err := scans.GetItemScan(ctx, &relicv1.GetItemScanRequest{
 		Repository: "eol-libs",
 		Path:       "app/app-1.0.tar.gz",
-	}))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	byProduct := map[string]*relicv1.OperationalRisk{}
-	for _, r := range item.Msg.GetScan().GetRisks() {
+	for _, r := range item.GetScan().GetRisks() {
 		byProduct[r.GetProduct()] = r
 	}
 
@@ -130,25 +130,25 @@ func TestOperationalRisk(t *testing.T) {
 	}
 
 	if len(byProduct) != 2 {
-		t.Errorf("risks = %v, want Django and Alpine only", item.Msg.GetScan().GetRisks())
+		t.Errorf("risks = %v, want Django and Alpine only", item.GetScan().GetRisks())
 	}
 
-	list, err := scans.ListOperationalRisks(ctx, connect.NewRequest(&relicv1.ListOperationalRisksRequest{
+	list, err := scans.ListOperationalRisks(ctx, &relicv1.ListOperationalRisksRequest{
 		Kind:  endoflife.KindEndOfLife,
 		Query: "djan",
-	}))
-	if err != nil || list.Msg.GetTotal() != 1 || list.Msg.GetRisks()[0].GetPath() != "app/app-1.0.tar.gz" ||
-		list.Msg.GetRisks()[0].GetRepository() != "eol-libs" {
+	})
+	if err != nil || list.GetTotal() != 1 || list.GetRisks()[0].GetPath() != "app/app-1.0.tar.gz" ||
+		list.GetRisks()[0].GetRepository() != "eol-libs" {
 		t.Errorf("listing = %v, %v", list, err)
 	}
 
-	if _, err := scans.ListOperationalRisks(ctx, connect.NewRequest(&relicv1.ListOperationalRisksRequest{
+	if _, err := scans.ListOperationalRisks(ctx, &relicv1.ListOperationalRisksRequest{
 		Kind: "ancient",
-	})); code(err) != connect.CodeInvalidArgument {
+	}); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("an unknown kind: %v", err)
 	}
 
-	if _, err := scans.PutPolicy(ctx, connect.NewRequest(&relicv1.PutPolicyRequest{
+	if _, err := scans.PutPolicy(ctx, &relicv1.PutPolicyRequest{
 		Policy: &relicv1.Policy{
 			Name: "no-end-of-life",
 			Kind: relicv1.PolicyKind_POLICY_KIND_SECURITY,
@@ -161,11 +161,11 @@ func TestOperationalRisk(t *testing.T) {
 				},
 			},
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := scans.PutWatch(ctx, connect.NewRequest(&relicv1.PutWatchRequest{
+	if _, err := scans.PutWatch(ctx, &relicv1.PutWatchRequest{
 		Watch: &relicv1.Watch{
 			Name:   "eol",
 			Active: true,
@@ -181,7 +181,7 @@ func TestOperationalRisk(t *testing.T) {
 				"no-end-of-life",
 			},
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -195,15 +195,15 @@ func TestOperationalRisk(t *testing.T) {
 	checkDjango := func(version string) *relicv1.CheckPackageResponse {
 		t.Helper()
 
-		r, err := scans.CheckPackage(ctx, connect.NewRequest(&relicv1.CheckPackageRequest{
+		r, err := scans.CheckPackage(ctx, &relicv1.CheckPackageRequest{
 			Purl:       "pkg:pypi/django@" + version,
 			Repository: "eol-libs",
-		}))
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		return r.Msg
+		return r
 	}
 
 	if r := checkDjango("4.2.11"); r.GetAllowed() || len(r.GetRefusals()) != 1 ||
@@ -220,14 +220,14 @@ func TestOperationalRisk(t *testing.T) {
 		"pkg:pypi/django@4.2.11",
 		"pkg:generic/alpine@3.17.4",
 	} {
-		if _, err := scans.CreateIgnoreRule(ctx, connect.NewRequest(&relicv1.CreateIgnoreRuleRequest{
+		if _, err := scans.CreateIgnoreRule(ctx, &relicv1.CreateIgnoreRuleRequest{
 			Rule: &relicv1.IgnoreRule{
 				Notes: "upgrade planned",
 				Packages: []string{
 					purl,
 				},
 			},
-		})); err != nil {
+		}); err != nil {
 			t.Fatal(err)
 		}
 	}
