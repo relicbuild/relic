@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ComponentView } from '~/utils/view-models'
-import { NO_LICENSE, filterComponents, licenseFacets } from '~/utils/components-filter'
+import { NO_LICENSE, filterComponents, licenseBadges, licenseFacets } from '~/utils/components-filter'
 
 const comp = (name: string, licenseIds: string[], violating = false, type = 'npm'): ComponentView => ({
   name, version: '1', type, licenses: licenseIds.length ? [licenseIds.join(' OR ')] : [], licenseIds, locations: [],
@@ -35,5 +35,18 @@ describe('filterComponents', () => {
     { name: 'another type', f: { ...all, type: 'npm' }, want: ['dual', 'mit', 'gpl'] }
   ])('$name', ({ f, want }) => {
     expect(names(f)).toEqual(want)
+  })
+})
+
+describe('licenseBadges', () => {
+  const violation = (license: string) => ({ license, watch: 'w', policy: 'permissive-licenses', rule: 'r', failBuild: false, blockDownload: true })
+
+  it.each([
+    { name: 'licenses without violations', c: comp('mit', ['MIT']), want: [{ license: 'MIT', violations: [] }] },
+    { name: 'a violated license', c: { ...comp('gpl', ['GPL-3.0-only']), violations: [violation('GPL-3.0-only')] }, want: [{ license: 'GPL-3.0-only', violations: [violation('GPL-3.0-only')] }] },
+    { name: 'a component without a license that violates a policy', c: { ...comp('bare', []), violations: [violation('')] }, want: [{ license: 'No license', violations: [violation('')] }] },
+    { name: 'a component without a license or violations', c: comp('bare', []), want: [] }
+  ])('$name', ({ c, want }) => {
+    expect(licenseBadges(c)).toEqual(want)
   })
 })

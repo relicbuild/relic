@@ -189,7 +189,7 @@ watch([tab, hasSbom, () => `${holder.value}/${props.path}`], ([t, has, item]) =>
 </script>
 
 <template>
-  <div>
+  <div class="flex min-h-0 flex-1 flex-col">
     <LoadError
       v-if="error"
       :error="error"
@@ -199,7 +199,7 @@ watch([tab, hasSbom, () => `${holder.value}/${props.path}`], ([t, has, item]) =>
 
     <USkeleton v-else-if="status === 'pending' && !artifact" class="h-48" />
 
-    <div v-else-if="artifact" class="relative">
+    <div v-else-if="artifact" class="relative flex min-h-0 flex-1 flex-col">
       <!-- The actions sit over the tab bar's end, outside its tablist, which
            may hold tabs only. -->
       <div class="absolute end-0 top-0 flex h-10 items-center gap-1">
@@ -228,8 +228,8 @@ watch([tab, hasSbom, () => `${holder.value}/${props.path}`], ([t, has, item]) =>
         v-model="tab"
         :items="tabs"
         variant="link"
-        class="w-full"
-        :ui="{ list: 'pe-36' }"
+        class="min-h-0 w-full flex-1"
+        :ui="{ list: 'pe-36', content: tab === 'sbom' ? 'flex min-h-0 flex-1 flex-col' : '' }"
       >
         <template #general>
           <dl class="grid grid-cols-1 gap-x-6 gap-y-3 py-4 sm:grid-cols-[max-content_1fr]">

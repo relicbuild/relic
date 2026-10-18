@@ -36,6 +36,14 @@ const rows = computed(() => filterComponents(props.components, {
   search: search.value, type: type.value, licenses: licenses.value, status: status.value
 }))
 
+const page = ref(1)
+const pageSize = ref(50)
+const pageRows = computed(() => paginate(rows.value, page.value, pageSize.value))
+
+watch([search, type, licenses, status], () => {
+  page.value = 1
+})
+
 const active = computed(() =>
   [search.value.trim() !== '', type.value !== 'All', licenses.value.length > 0, status.value !== 'all'].filter(Boolean).length)
 
@@ -61,7 +69,7 @@ const columns: TableColumn<ComponentView>[] = [
 </script>
 
 <template>
-  <div class="flex flex-col gap-3 py-4">
+  <div class="flex min-h-0 flex-1 flex-col gap-3 pt-4">
     <div class="flex flex-wrap items-center gap-2">
       <UInput
         v-model="search"
@@ -116,7 +124,6 @@ const columns: TableColumn<ComponentView>[] = [
           icon="i-lucide-scale"
           :label="`${pluralize(violating, 'component')} violate license policies`"
         />
-        <span class="text-sm text-muted tabular-nums">{{ pluralize(rows.length, 'component') }}</span>
         <UDropdownMenu :items="exports" :content="{ align: 'end' }">
           <UButton
             icon="i-lucide-download"
@@ -130,11 +137,11 @@ const columns: TableColumn<ComponentView>[] = [
       </div>
     </div>
     <UTable
-      :data="rows"
+      :data="pageRows"
       :columns="columns"
       :loading="loading"
       sticky
-      class="max-h-[60vh]"
+      :ui="denseTable"
     >
       <template #name-cell="{ row }">
         <span class="font-medium text-highlighted">{{ row.original.name }}</span>
@@ -147,20 +154,28 @@ const columns: TableColumn<ComponentView>[] = [
       </template>
       <template #licenses-cell="{ row }">
         <div class="flex flex-wrap items-center gap-1">
-          <span>{{ row.original.licenses.join(', ') || '—' }}</span>
-          <UTooltip
-            v-for="v in row.original.violations"
-            :key="JSON.stringify([v.watch, v.policy, v.license])"
-            :text="violationText(v)"
-          >
+          <template v-for="badge in licenseBadges(row.original)" :key="badge.license">
+            <UTooltip
+              v-if="badge.violations.length"
+              :text="badge.violations.map(violationText).join(' · ')"
+            >
+              <UBadge
+                color="error"
+                variant="subtle"
+                size="sm"
+                :icon="badge.violations.some(v => v.blockDownload) ? 'i-lucide-ban' : 'i-lucide-triangle-alert'"
+                :label="badge.license"
+              />
+            </UTooltip>
             <UBadge
-              color="error"
-              variant="subtle"
+              v-else
+              color="neutral"
+              variant="outline"
               size="sm"
-              :icon="v.blockDownload ? 'i-lucide-ban' : 'i-lucide-triangle-alert'"
-              :label="v.policy"
+              :label="badge.license"
             />
-          </UTooltip>
+          </template>
+          <span v-if="!row.original.licenses.length && !row.original.violations.length" class="text-muted">—</span>
         </div>
       </template>
       <template #locations-cell="{ row }">
@@ -174,5 +189,12 @@ const columns: TableColumn<ComponentView>[] = [
         />
       </template>
     </UTable>
+    <TablePagination
+      v-model:page="page"
+      v-model:page-size="pageSize"
+      :total="rows.length"
+      noun="components"
+      class="-mx-4 -mb-4 sm:-mx-6 sm:-mb-6"
+    />
   </div>
 </template>

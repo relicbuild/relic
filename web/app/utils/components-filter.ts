@@ -1,4 +1,4 @@
-import type { ComponentView } from '~/utils/view-models'
+import type { ComponentView, LicenseViolationView } from '~/utils/view-models'
 
 // NO_LICENSE selects components without any license in a license filter.
 export const NO_LICENSE = '\u0000none'
@@ -37,4 +37,13 @@ export function filterComponents(components: ComponentView[], f: ComponentFilter
       || c.licenseIds.some(id => picked.has(id.toLowerCase())))
     && (f.status === 'all' || (f.status === 'violating') === (c.violations.length > 0))
   )
+}
+
+// licenseBadges lists a component's licenses, each with the violations of
+// that license; violations of a component without a license come under
+// "No license".
+export function licenseBadges(c: ComponentView): { license: string, violations: LicenseViolationView[] }[] {
+  const badges = c.licenses.map(license => ({ license, violations: c.violations.filter(v => v.license === license) }))
+  const unnamed = c.violations.filter(v => !c.licenses.includes(v.license))
+  return unnamed.length ? [...badges, { license: 'No license', violations: unnamed }] : badges
 }
