@@ -150,7 +150,7 @@ image=localhost:$port/k8s-docker/curl:1
 echo "$password" | docker login "localhost:$port" -u admin --password-stdin >/dev/null
 # Its own image ID: kubelet ties an image pulled with a secret to that secret,
 # and the HA client below runs curl without one.
-mkdir img && echo k8s >img/k8s.txt && printf 'FROM curlimages/curl:8.11.1\nCOPY k8s.txt /k8s.txt\n' >img/Dockerfile
+mkdir img && echo k8s >img/k8s.txt && printf 'FROM curlimages/curl:8.23.0\nCOPY k8s.txt /k8s.txt\n' >img/Dockerfile
 docker build -q -t "$image" img >/dev/null
 docker push -q "$image" >/dev/null
 docker rmi -f "$image" >/dev/null
@@ -213,7 +213,7 @@ helm history relic | grep -q deployed
 
 step "7. HA: three server replicas, SIGKILLed while four clients upload"
 helm upgrade relic chart --wait --timeout 10m --reuse-values --set server.replicas=3 --set server.podDisruptionBudget.enabled=false
-kubectl run client --image=curlimages/curl:8.11.1 --image-pull-policy=Never --restart=Never --command -- sleep 3600 >/dev/null
+kubectl run client --image=curlimages/curl:8.23.0 --image-pull-policy=Never --restart=Never --command -- sleep 3600 >/dev/null
 kubectl wait --for=condition=Ready pod/client --timeout=120s >/dev/null
 kubectl exec -i client -- sh -c 'cat >/tmp/ca.crt' <ca.crt
 curl "${auth[@]}" -X POST "$url/api/v1/repositories" -H 'Content-Type: application/json' \
@@ -289,7 +289,7 @@ spec:
   volumes: [{name: backup, persistentVolumeClaim: {claimName: backup}}]
   containers:
     - name: aws
-      image: alpine/k8s:1.31.2
+      image: alpine/k8s:1.37.1
       imagePullPolicy: Never
       command: ["sh", "-ec", "$command"]
       volumeMounts: [{name: backup, mountPath: /backup}]

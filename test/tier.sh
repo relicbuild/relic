@@ -66,7 +66,7 @@ if [[ "$tier" == k8s ]]; then
   images="$(mktemp -d)"
   temporary+=("$images")
   docker tag "$project-relic-server:latest" relic:k8s
-  for img in relic:k8s chrislusf/seaweedfs:4.48 curlimages/curl:8.11.1 alpine/k8s:1.31.2; do
+  for img in relic:k8s chrislusf/seaweedfs:4.48 curlimages/curl:8.23.0 alpine/k8s:1.37.1; do
     docker image inspect "$img" >/dev/null 2>&1 || docker pull -q "$img" >/dev/null
     docker save --platform linux/amd64 -o "$images/$(tr '/:' '__' <<<"$img").tar" "$img"
   done
