@@ -25,7 +25,10 @@ export default defineNuxtConfig({
   nitro: {
     devProxy: Object.fromEntries(
       relicAPIPrefixes.map(prefix => [prefix, { target: backend + prefix, changeOrigin: true }])
-    )
+    ),
+    prerender: {
+      ignore: ['/openapi.json', '/sitemap.md', '/raw/', '/.well-known/']
+    }
   },
 
   eslint: {
@@ -35,5 +38,11 @@ export default defineNuxtConfig({
         braceStyle: '1tbs'
       }
     }
+  },
+
+  // A self-hosted server has no address known at build time, and the
+  // documents that list absolute links would all point at localhost.
+  sitemap: {
+    zeroPrerender: true
   }
 })

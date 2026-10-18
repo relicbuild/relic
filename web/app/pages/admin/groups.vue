@@ -110,7 +110,6 @@ const columns = computed<TableColumn<GroupView>[]>(() => [
         />
         <USelectMenu
           v-model="member"
-          aria-label="Filter by member"
           :items="memberItems"
           value-key="value"
           icon="i-lucide-user"

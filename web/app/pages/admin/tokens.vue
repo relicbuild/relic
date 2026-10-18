@@ -98,7 +98,6 @@ const columns: TableColumn<AccessToken>[] = [
         />
         <USelectMenu
           v-model="user"
-          aria-label="Filter by user"
           :items="userItems"
           value-key="value"
           icon="i-lucide-user"

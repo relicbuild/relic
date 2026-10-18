@@ -89,6 +89,7 @@ enableTelemetry: false
 npmRegistryServer: "${registry%/}"
 npmAlwaysAuth: true
 npmAuthToken: "$token"
+npmPreapprovedPackages: ["relic-native-lib"]
 YAML
 yarn install --no-immutable # CI=true makes yarn immutable by default
 grep -q "relic-native-lib@npm:1.1.0" yarn.lock

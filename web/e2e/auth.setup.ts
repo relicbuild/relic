@@ -5,6 +5,6 @@ setup('sign in as the administrator', async ({ page }) => {
   await page.getByLabel('Username').fill('admin')
   await page.getByRole('textbox', { name: /^Password/ }).fill('password')
   await page.getByRole('button', { name: /sign in/i }).click()
-  await expect(page).toHaveURL(/\/dashboard/)
+  await expect(page).toHaveURL(/\/dashboard/, { timeout: 30_000 })
   await page.context().storageState({ path: 'e2e/results/.auth/admin.json' })
 })

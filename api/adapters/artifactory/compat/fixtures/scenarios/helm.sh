@@ -33,7 +33,7 @@ helm pull relic/demo --version 0.3.0
 test -f demo-0.3.0.tgz
 
 step "jf helm push over OCI with build info"
-echo "$SCENARIO_PASSWORD" | helm registry login "$SCENARIO_REGISTRY" -u "$SCENARIO_USER" --password-stdin "${REGISTRY_INSECURE[@]}"
+echo "$SCENARIO_PASSWORD" | helm registry login "$SCENARIO_REGISTRY" -u "$SCENARIO_USER" --password-stdin "${REGISTRY_PLAIN_HTTP[@]}"
 sed -i 's/^version: .*/version: 0.4.0/' demo/Chart.yaml
 jf helm package demo
 jf helm push demo-0.4.0.tgz "oci://$SCENARIO_REGISTRY/$OCI" "${REGISTRY_PLAIN_HTTP[@]}" --build-name "$BUILD-helm" --build-number 1

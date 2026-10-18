@@ -625,8 +625,13 @@ func TestChartDependencies(t *testing.T) {
 		t.Fatal(stderr)
 	}
 
-	if find(objs, "Cluster", "r-postgresql") == nil {
-		t.Error("no CloudNativePG Cluster r-postgresql")
+	cluster := find(objs, "Cluster", "r-postgresql")
+	if cluster == nil {
+		t.Fatal("no CloudNativePG Cluster r-postgresql")
+	}
+
+	if spec, _ := cluster.raw["spec"].(map[string]any); spec["postgresql"] == nil {
+		t.Error("the Cluster's spec.postgresql is empty, which the operator refuses")
 	}
 
 	if find(objs, "Deployment", "r-seaweedfs-s3") == nil || find(objs, "StatefulSet", "r-seaweedfs-master") == nil {

@@ -160,7 +160,7 @@ func TestGCSStore(t *testing.T) {
 
 	addr := startContainer(
 		t,
-		"fsouza/fake-gcs-server:1.52.2",
+		"fsouza/fake-gcs-server:1.56.1",
 		"4443/tcp",
 		testcontainers.WithCmd("-scheme", "http", "-port", "4443", "-backend", "memory"),
 	)

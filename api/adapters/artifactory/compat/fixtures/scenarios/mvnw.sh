@@ -67,13 +67,13 @@ POM
 step "jf mvnw with build info (wrapper and Maven distribution through Relic)"
 project "$WORK/jfmvnw" jfmvnw 5.0.0 "<dependency><groupId>org.apache.commons</groupId><artifactId>commons-lang3</artifactId><version>3.14.0</version></dependency>"
 (cd "$WORK/jfmvnw" &&
-  "${MVN[@]}" -N org.apache.maven.plugins:maven-wrapper-plugin:3.3.2:wrapper -Dtype=only-script -Dmaven=3.9.9 &&
-  sed -i "s|^distributionUrl=.*|distributionUrl=$art/$VIRTUAL/org/apache/maven/apache-maven/3.9.9/apache-maven-3.9.9-bin.zip|" .mvn/wrapper/maven-wrapper.properties &&
+  "${MVN[@]}" -N org.apache.maven.plugins:maven-wrapper-plugin:3.3.4:wrapper -Dtype=only-script -Dmaven=3.9.16 &&
+  sed -i "s|^distributionUrl=.*|distributionUrl=$art/$VIRTUAL/org/apache/maven/apache-maven/3.9.16/apache-maven-3.9.16-bin.zip|" .mvn/wrapper/maven-wrapper.properties &&
   JFROG_RUN_NATIVE=true MVNW_USERNAME="$SCENARIO_USER" MVNW_PASSWORD="$SCENARIO_PASSWORD" MAVEN_USER_HOME="$WORK/mvnw-home" \
     jf mvnw deploy -B -q -s "$WORK/m2/settings.xml" --build-name "$BUILD-mvnw" --build-number 1 &&
   jf rt bp "$BUILD-mvnw" 1)
-ls "$WORK"/mvnw-home/wrapper/dists/apache-maven-3.9.9*/*/bin/mvn >/dev/null
-jf rt s "$CENTRAL/org/apache/maven/apache-maven/3.9.9/apache-maven-3.9.9-bin.zip" | expect_count 1
+ls "$WORK"/mvnw-home/wrapper/dists/apache-maven-3.9.16*/*/bin/mvn >/dev/null
+jf rt s "$CENTRAL/org/apache/maven/apache-maven/3.9.16/apache-maven-3.9.16-bin.zip" | expect_count 1
 jf rt s "$REL/relic/scenario/jfmvnw/5.0.0/*" | expect_count 2
 jf rt curl -s "/api/build/$BUILD-mvnw/1" | jq -e '.buildInfo.modules[0].artifacts | length == 2' >/dev/null
 

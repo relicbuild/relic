@@ -55,10 +55,10 @@ docker pull -q "$reg/$PROD/relic/app:stable" >/dev/null
 docker run --rm "$reg/$PROD/relic/app:stable" 2>/dev/null || true # scratch has no shell; pulling is the check
 
 step "jf docker pull of a multi-arch Docker Hub image through the virtual"
-jf docker pull "$reg/$VIRTUAL/busybox:1.37" --build-name "$BUILD-docker-hub" --build-number 1
+jf docker pull "$reg/$VIRTUAL/busybox:1.38" --build-name "$BUILD-docker-hub" --build-number 1
 jf rt bp "$BUILD-docker-hub" 1
 jf rt curl -s "/api/build/$BUILD-docker-hub/1" | jq -e '.buildInfo.modules[0].dependencies | length >= 2' >/dev/null
-jf rt s "$HUB/library/busybox/1.37/list.manifest.json" | expect_count 1
+jf rt s "$HUB/library/busybox/1.38/list.manifest.json" | expect_count 1
 
-docker rmi "$image:1.0" "$reg/$PROD/relic/app:stable" "$reg/$VIRTUAL/busybox:1.37" >/dev/null 2>&1 || true
+docker rmi "$image:1.0" "$reg/$PROD/relic/app:stable" "$reg/$VIRTUAL/busybox:1.38" >/dev/null 2>&1 || true
 for r in "${ALL[@]}"; do delete_repo "$r"; done

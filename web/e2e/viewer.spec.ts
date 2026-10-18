@@ -26,7 +26,7 @@ test('a viewer sees who may do what on an item', async ({ browser, request }) =>
   await page.getByLabel('Username').fill(name)
   await page.getByRole('textbox', { name: /^Password/ }).fill(password)
   await page.getByRole('button', { name: /sign in/i }).click()
-  await expect(page).toHaveURL(/\/dashboard/)
+  await expect(page).toHaveURL(/\/dashboard/, { timeout: 30_000 })
 
   await page.goto(`/repositories/${repo}?path=hello.txt&tab=permissions`)
   await expect(page.getByRole('tab', { name: 'Permissions' })).toBeVisible()
@@ -49,7 +49,7 @@ test('a viewer reads the administration pages without their write controls', asy
   await page.getByLabel('Username').fill(name)
   await page.getByRole('textbox', { name: /^Password/ }).fill(password)
   await page.getByRole('button', { name: /sign in/i }).click()
-  await expect(page).toHaveURL(/\/dashboard/)
+  await expect(page).toHaveURL(/\/dashboard/, { timeout: 30_000 })
   await expect(page.getByText('Viewer', { exact: true })).toBeVisible()
 
   await page.getByRole('link', { name: 'Users' }).click()

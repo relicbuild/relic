@@ -15,7 +15,7 @@ curl -fsS "localhost:$RELIC_PORT/readyz" >/dev/null 2>&1 || { echo "relic-server
 
 step "k6 (${DURATION:-2m})"
 docker run --rm --network host -v "$root/api/adapters/artifactory/compat/load:/load:ro" -e RELIC_URL="http://localhost:$RELIC_PORT" -e RELIC_PASSWORD="$password" -e DURATION="${DURATION:-2m}" \
-  grafana/k6:1.3.0 run --quiet --summary-trend-stats "avg,p(95),p(99),max" /load/relic.js
+  grafana/k6:2.3.0 run --quiet --summary-trend-stats "avg,p(95),p(99),max" /load/relic.js
 
 step "let GC catch up (grace 20 s, interval 15 s)"
 sleep 60

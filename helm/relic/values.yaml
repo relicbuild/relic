@@ -42,6 +42,8 @@ postgresql:
   enabled: true
   # The Cluster is <release>-postgresql, its Secret <release>-postgresql-app.
   nameOverride: postgresql
+  version:
+    postgresql: "18"
   cluster:
     instances: 3
     initdb:
@@ -49,6 +51,11 @@ postgresql:
       owner: relic
     storage:
       size: 10Gi
+    # The cluster chart leaves spec.postgresql empty, which the operator refuses, unless a setting is given;
+    # this one is PostgreSQL's default.
+    postgresql:
+      parameters:
+        password_encryption: scram-sha-256
 
 # Object storage: SeaweedFS from its official chart
 # (https://github.com/seaweedfs/seaweedfs/tree/master/k8s/charts/seaweedfs).

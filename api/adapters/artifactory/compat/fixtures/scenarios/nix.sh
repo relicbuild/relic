@@ -21,7 +21,7 @@ box=relic-scenario-nix-$RANDOM
 trap 'docker rm -f "$box" >/dev/null 2>&1 || true; for r in "$VIRTUAL" "$LOCAL" "$REMOTE"; do delete_repo "$r"; done; rm -rf "$WORK"' EXIT
 docker create --name "$box" --network host -e U="$SCENARIO_USER" -e P="$SCENARIO_PASSWORD" -e HOST="$host" \
   -e API="$SCENARIO_TLS_URL/artifactory/api/nix" -e URL="$SCENARIO_TLS_URL" -e LOCAL="$LOCAL" -e REMOTE="$REMOTE" -e VIRTUAL="$VIRTUAL" \
-  -e B="$BUILD-nix" nixos/nix:2.35.2 sleep 900 >/dev/null
+  -e B="$BUILD-nix" nixos/nix:2.35.3 sleep 900 >/dev/null
 docker cp "$JF" "$box:/tmp/jf"
 docker cp "$TLS_CA" "$box:/tmp/relic-ca.crt"
 docker start "$box" >/dev/null
