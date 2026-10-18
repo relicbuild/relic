@@ -73,7 +73,6 @@ web/                    Nuxt 4 + Nuxt UI v4 single-page app embedded in the bina
                         a Cloudflare Worker (wrangler.jsonc) that Workers Builds deploys from main
 deploy/                 docker-compose dev stack (PostgreSQL, SeaweedFS; profile observability),
                         docker-compose.single-node.yml (SQLite and a directory), cloudflare/
-  demo/                 the read-only demo at demo.relic.build: demo.yaml, the seed, Caddy, the weekly rebuild
   observability/        Grafana dashboards (generated), Prometheus alert rules and their tests,
                         the Compose profile's configuration
 helm/relic/             the Helm chart; PostgreSQL (cnpg/cluster with the bundled CloudNativePG
