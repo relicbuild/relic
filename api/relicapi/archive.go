@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -29,7 +29,7 @@ func archiveItem(ctx context.Context, d Dependencies, key, p string) (repository
 
 	kind := archive.KindOf(it.Name)
 	if it.IsFolder() || kind == "" {
-		return repository.Item{}, "", connect.NewError(connect.CodeInvalidArgument, errors.New("not an archive"))
+		return repository.Item{}, "", connect.NewError(connect.CodeInvalidArgument, "not an archive")
 	}
 
 	return it, kind, nil
@@ -109,15 +109,15 @@ func archiveError(err error) error {
 
 	return connect.NewError(
 		connect.CodeFailedPrecondition,
-		errors.New("cannot read the archive: "+err.Error()),
+		"cannot read the archive: "+err.Error(),
 	)
 }
 
 func (s *artifactServer) ListArchiveEntries(
 	ctx context.Context,
-	req *connect.Request[relicv1.ListArchiveEntriesRequest],
-) (*connect.Response[relicv1.ListArchiveEntriesResponse], error) {
-	it, kind, err := archiveItem(ctx, s.d, req.Msg.GetRepository(), cleanPath(req.Msg.GetPath()))
+	req *relicv1.ListArchiveEntriesRequest,
+) (*relicv1.ListArchiveEntriesResponse, error) {
+	it, kind, err := archiveItem(ctx, s.d, req.GetRepository(), cleanPath(req.GetPath()))
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +154,7 @@ func (s *artifactServer) ListArchiveEntries(
 		)
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 // ArchivePath serves one archive entry's content as text:
@@ -168,17 +168,17 @@ func (d Dependencies) archiveEntry(w http.ResponseWriter, r *http.Request) {
 	entry := strings.Trim(r.URL.Query().Get("entry"), "/")
 	switch {
 	case auth.FromContext(ctx).Anonymous():
-		writeHTTPError(w, connect.NewError(connect.CodeUnauthenticated, errors.New("sign in first")))
+		writeHTTPError(w, connect.NewError(connect.CodeUnauthenticated, "sign in first"))
 		return
 	case r.Method != http.MethodGet:
-		writeHTTPError(w, connect.NewError(connect.CodeUnimplemented, errors.New("method not allowed")))
+		writeHTTPError(w, connect.NewError(connect.CodeUnimplemented, "method not allowed"))
 		return
 	case entry == "":
 		writeHTTPError(
 			w,
 			connect.NewError(
 				connect.CodeInvalidArgument,
-				errors.New("entry is required; list entries with ArtifactService.ListArchiveEntries"),
+				"entry is required; list entries with ArtifactService.ListArchiveEntries",
 			),
 		)
 
@@ -203,7 +203,7 @@ func (d Dependencies) archiveEntry(w http.ResponseWriter, r *http.Request) {
 				w,
 				connect.NewError(
 					connect.CodePermissionDenied,
-					errors.New("download blocked: "+decision.Reason),
+					"download blocked: "+decision.Reason,
 				),
 			)
 
@@ -225,13 +225,13 @@ func (d Dependencies) archiveEntry(w http.ResponseWriter, r *http.Request) {
 	})
 	switch {
 	case errors.Is(err, archive.ErrNotFound):
-		writeHTTPError(w, connect.NewError(connect.CodeNotFound, errors.New("no such entry")))
+		writeHTTPError(w, connect.NewError(connect.CodeNotFound, "no such entry"))
 	case errors.Is(err, archive.ErrTooLarge):
 		writeHTTPError(
 			w,
 			connect.NewError(
 				connect.CodeFailedPrecondition,
-				errors.New("the entry is larger than 1 MiB; download the archive instead"),
+				"the entry is larger than 1 MiB; download the archive instead",
 			),
 		)
 	case err != nil:

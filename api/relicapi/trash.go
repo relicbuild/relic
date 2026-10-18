@@ -3,9 +3,8 @@ package relicapi
 import (
 	"context"
 	"errors"
-	"fmt"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -19,13 +18,13 @@ type trashServer struct {
 
 func (s *trashServer) ListTrash(
 	ctx context.Context,
-	req *connect.Request[relicv1.ListTrashRequest],
-) (*connect.Response[relicv1.ListTrashResponse], error) {
-	m := req.Msg
+	req *relicv1.ListTrashRequest,
+) (*relicv1.ListTrashResponse, error) {
+	m := req
 	if kind := m.GetKind(); kind != "" && kind != repository.TypeFile && kind != repository.TypeFolder {
-		return nil, connect.NewError(
+		return nil, connect.Errorf(
 			connect.CodeInvalidArgument,
-			fmt.Errorf("kind %q: file or folder", kind),
+			"kind %q: file or folder", kind,
 		)
 	}
 
@@ -75,18 +74,18 @@ func (s *trashServer) ListTrash(
 		})
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *trashServer) RestoreTrash(
 	ctx context.Context,
-	req *connect.Request[relicv1.RestoreTrashRequest],
-) (*connect.Response[relicv1.RestoreTrashResponse], error) {
-	m := req.Msg
+	req *relicv1.RestoreTrashRequest,
+) (*relicv1.RestoreTrashResponse, error) {
+	m := req
 	if cleanPath(m.GetPath()) == "" || (m.GetToRepository() == "") != (cleanPath(m.GetToPath()) == "") {
 		return nil, connect.NewError(
 			connect.CodeInvalidArgument,
-			errors.New("give the item's path, and a destination as repository and path"),
+			"give the item's path, and a destination as repository and path",
 		)
 	}
 
@@ -100,7 +99,7 @@ func (s *trashServer) RestoreTrash(
 	if errors.Is(err, repository.ErrNoRestoreTarget) {
 		return nil, connect.NewError(
 			connect.CodeFailedPrecondition,
-			errors.New("the original location is unknown; choose a destination"),
+			"the original location is unknown; choose a destination",
 		)
 	}
 
@@ -108,32 +107,32 @@ func (s *trashServer) RestoreTrash(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.RestoreTrashResponse{}), nil
+	return &relicv1.RestoreTrashResponse{}, nil
 }
 
 func (s *trashServer) DeleteTrashEntry(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeleteTrashEntryRequest],
-) (*connect.Response[relicv1.DeleteTrashEntryResponse], error) {
-	p := cleanPath(req.Msg.GetPath())
+	req *relicv1.DeleteTrashEntryRequest,
+) (*relicv1.DeleteTrashEntryResponse, error) {
+	p := cleanPath(req.GetPath())
 	if p == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("use EmptyTrash to clear the trash can"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, "use EmptyTrash to clear the trash can")
 	}
 
 	if err := s.d.Repositories.Delete(ctx, s.d.Repositories.TrashRepository(), p); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeleteTrashEntryResponse{}), nil
+	return &relicv1.DeleteTrashEntryResponse{}, nil
 }
 
 func (s *trashServer) EmptyTrash(
 	ctx context.Context,
-	_ *connect.Request[relicv1.EmptyTrashRequest],
-) (*connect.Response[relicv1.EmptyTrashResponse], error) {
+	_ *relicv1.EmptyTrashRequest,
+) (*relicv1.EmptyTrashResponse, error) {
 	if err := s.d.Repositories.EmptyTrash(ctx); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.EmptyTrashResponse{}), nil
+	return &relicv1.EmptyTrashResponse{}, nil
 }

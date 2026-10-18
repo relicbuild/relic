@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -32,26 +32,28 @@ func principalOf(p auth.Principal) *relicv1.Principal {
 
 func (s *sessionServer) Login(
 	ctx context.Context,
-	req *connect.Request[relicv1.LoginRequest],
-) (*connect.Response[relicv1.LoginResponse], error) {
+	req *relicv1.LoginRequest,
+) (*relicv1.LoginResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+
 	r := httpRequest(ctx)
 	if s.d.Authenticator == nil || s.d.Tokens == nil || r == nil {
 		return nil, unimplemented("sign-in")
 	}
 	// A cross-site form cannot add the header without a CORS preflight,
 	// which Relic never grants.
-	if req.Header().Get(auth.UIHeader) == "" {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("missing "+auth.UIHeader+" header"))
+	if info.RequestHeader().Get(auth.UIHeader) == "" {
+		return nil, connect.NewError(connect.CodePermissionDenied, "missing "+auth.UIHeader+" header")
 	}
 
-	p, err := s.d.Authenticator.Password(r, req.Msg.GetUsername(), req.Msg.GetPassword())
+	p, err := s.d.Authenticator.Password(r, req.GetUsername(), req.GetPassword())
 
 	var throttled *auth.ThrottledError
 	switch {
 	case errors.Is(err, auth.ErrBadCredentials):
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid username or password"))
+		return nil, connect.NewError(connect.CodeUnauthenticated, "invalid username or password")
 	case errors.As(err, &throttled):
-		return nil, connect.NewError(connect.CodeResourceExhausted, err)
+		return nil, connect.NewError(connect.CodeResourceExhausted, err.Error()).WithCause(err)
 	case err != nil:
 		return nil, err
 	}
@@ -61,13 +63,12 @@ func (s *sessionServer) Login(
 		return nil, err
 	}
 
-	resp := connect.NewResponse(
-		&relicv1.LoginResponse{
-			Principal: principalOf(p),
-			Expires:   timestamppb.New(expires),
-		},
-	)
-	resp.Header().Add("Set-Cookie", cookie.String())
+	resp := &relicv1.LoginResponse{
+		Principal: principalOf(p),
+		Expires:   timestamppb.New(expires),
+	}
+
+	info.ResponseHeader().Add("Set-Cookie", cookie.String())
 
 	return resp, nil
 }
@@ -92,8 +93,10 @@ func (d Dependencies) uiSession(r *http.Request, p auth.Principal) (*http.Cookie
 
 func (s *sessionServer) Logout(
 	ctx context.Context,
-	req *connect.Request[relicv1.LogoutRequest],
-) (*connect.Response[relicv1.LogoutResponse], error) {
+	req *relicv1.LogoutRequest,
+) (*relicv1.LogoutResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+
 	r := httpRequest(ctx)
 	if s.d.Tokens == nil || r == nil {
 		return nil, unimplemented("sign-out")
@@ -111,19 +114,20 @@ func (s *sessionServer) Logout(
 		}
 	}
 
-	resp := connect.NewResponse(&relicv1.LogoutResponse{})
-	resp.Header().Add("Set-Cookie", sessionCookie(r, "", -1).String())
+	resp := &relicv1.LogoutResponse{}
+
+	info.ResponseHeader().Add("Set-Cookie", sessionCookie(r, "", -1).String())
 
 	return resp, nil
 }
 
 func (s *sessionServer) GetCurrentUser(
 	ctx context.Context,
-	_ *connect.Request[relicv1.GetCurrentUserRequest],
-) (*connect.Response[relicv1.GetCurrentUserResponse], error) {
-	return connect.NewResponse(&relicv1.GetCurrentUserResponse{
+	_ *relicv1.GetCurrentUserRequest,
+) (*relicv1.GetCurrentUserResponse, error) {
+	return &relicv1.GetCurrentUserResponse{
 		Principal: principalOf(auth.FromContext(ctx)),
-	}), nil
+	}, nil
 }
 
 func sessionCookie(r *http.Request, value string, maxAge int) *http.Cookie {
@@ -142,8 +146,8 @@ func sessionCookie(r *http.Request, value string, maxAge int) *http.Cookie {
 
 func (s *sessionServer) ApproveLogin(
 	ctx context.Context,
-	req *connect.Request[relicv1.ApproveLoginRequest],
-) (*connect.Response[relicv1.ApproveLoginResponse], error) {
+	req *relicv1.ApproveLoginRequest,
+) (*relicv1.ApproveLoginResponse, error) {
 	if s.d.WebLogins == nil {
 		return nil, unimplemented("sign-in approval")
 	}
@@ -152,45 +156,45 @@ func (s *sessionServer) ApproveLogin(
 	if approver.Scoped || approver.WorkloadIdentity != "" {
 		return nil, connect.NewError(
 			connect.CodePermissionDenied,
-			errors.New("a token scoped to groups or from a workload identity cannot approve a sign-in"),
+			"a token scoped to groups or from a workload identity cannot approve a sign-in",
 		)
 	}
 
-	err := s.d.WebLogins.Approve(ctx, req.Msg.GetSession(), req.Msg.GetCode(), approver.Username)
+	err := s.d.WebLogins.Approve(ctx, req.GetSession(), req.GetCode(), approver.Username)
 	switch {
 	case errors.Is(err, auth.ErrLoginCode):
 		return nil, connect.NewError(
 			connect.CodeInvalidArgument,
-			errors.New("the code does not match the one shown in your terminal"),
+			"the code does not match the one shown in your terminal",
 		)
 	case errors.Is(err, auth.ErrLoginUnknown):
 		return nil, connect.NewError(
 			connect.CodeNotFound,
-			errors.New("this sign-in request is unknown or has expired; sign in from the client again"),
+			"this sign-in request is unknown or has expired; sign in from the client again",
 		)
 	case err != nil:
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.ApproveLoginResponse{}), nil
+	return &relicv1.ApproveLoginResponse{}, nil
 }
 
 func (s *sessionServer) StartWebLogin(
 	ctx context.Context,
-	req *connect.Request[relicv1.StartWebLoginRequest],
-) (*connect.Response[relicv1.StartWebLoginResponse], error) {
+	req *relicv1.StartWebLoginRequest,
+) (*relicv1.StartWebLoginResponse, error) {
 	if s.d.WebLogins == nil {
 		return nil, unimplemented("sign-in in the browser")
 	}
 
-	session := req.Msg.GetSession()
+	session := req.GetSession()
 	if err := s.d.WebLogins.Request(ctx, session); errors.Is(err, auth.ErrLoginUnknown) {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
 	} else if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.StartWebLoginResponse{
+	return &relicv1.StartWebLoginResponse{
 		ApprovePath: "/login?" + url.Values{
 			"cliSession": []string{
 				session,
@@ -200,48 +204,48 @@ func (s *sessionServer) StartWebLogin(
 			},
 		}.Encode(),
 		Code: strings.ToLower(session[len(session)-4:]),
-	}), nil
+	}, nil
 }
 
 func (s *sessionServer) PollWebLogin(
 	ctx context.Context,
-	req *connect.Request[relicv1.PollWebLoginRequest],
-) (*connect.Response[relicv1.PollWebLoginResponse], error) {
+	req *relicv1.PollWebLoginRequest,
+) (*relicv1.PollWebLoginResponse, error) {
 	if s.d.WebLogins == nil {
 		return nil, unimplemented("sign-in in the browser")
 	}
 
-	description := req.Msg.GetDescription()
+	description := req.GetDescription()
 	if description == "" {
 		description = "relic CLI"
 	}
 
-	tok, err := s.d.WebLogins.Poll(ctx, req.Msg.GetSession(), description)
+	tok, err := s.d.WebLogins.Poll(ctx, req.GetSession(), description)
 
 	switch {
 	case errors.Is(err, auth.ErrLoginPending):
-		return connect.NewResponse(&relicv1.PollWebLoginResponse{}), nil
+		return &relicv1.PollWebLoginResponse{}, nil
 	case errors.Is(err, auth.ErrLoginUnknown):
 		return nil, connect.NewError(
 			connect.CodeNotFound,
-			errors.New("the sign-in is unknown or has expired; start again"),
+			"the sign-in is unknown or has expired; start again",
 		)
 	case err != nil:
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.PollWebLoginResponse{
+	return &relicv1.PollWebLoginResponse{
 		Approved:         true,
 		AccessToken:      tok.AccessToken,
 		ExpiresInSeconds: int64(tok.ExpiresIn / time.Second),
-	}), nil
+	}, nil
 }
 
 func (s *sessionServer) GetSignInNote(
 	_ context.Context,
-	_ *connect.Request[relicv1.GetSignInNoteRequest],
-) (*connect.Response[relicv1.GetSignInNoteResponse], error) {
-	return connect.NewResponse(&relicv1.GetSignInNoteResponse{
+	_ *relicv1.GetSignInNoteRequest,
+) (*relicv1.GetSignInNoteResponse, error) {
+	return &relicv1.GetSignInNoteResponse{
 		Note: s.d.SignInNote,
-	}), nil
+	}, nil
 }

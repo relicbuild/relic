@@ -2,10 +2,9 @@ package relicapi
 
 import (
 	"context"
-	"errors"
 	"slices"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -88,8 +87,8 @@ func seesAllProjects(p auth.Principal) bool { return p.Admin || p.Viewer }
 
 func (s *projectServer) ListProjects(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListProjectsRequest],
-) (*connect.Response[relicv1.ListProjectsResponse], error) {
+	_ *relicv1.ListProjectsRequest,
+) (*relicv1.ListProjectsResponse, error) {
 	list, err := s.d.Projects.List(ctx)
 	if err != nil {
 		return nil, err
@@ -116,21 +115,21 @@ func (s *projectServer) ListProjects(
 		out.Projects = append(out.Projects, m)
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *projectServer) GetProject(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetProjectRequest],
-) (*connect.Response[relicv1.GetProjectResponse], error) {
-	p, err := s.d.Projects.Get(ctx, req.Msg.GetKey())
+	req *relicv1.GetProjectRequest,
+) (*relicv1.GetProjectResponse, error) {
+	p, err := s.d.Projects.Get(ctx, req.GetKey())
 	if err != nil {
 		return nil, err
 	}
 
 	caller := auth.FromContext(ctx)
 	if !seesAllProjects(caller) && p.Role(caller) == "" {
-		return nil, connect.NewError(connect.CodeNotFound, project.ErrNotFound)
+		return nil, connect.NewError(connect.CodeNotFound, project.ErrNotFound.Error()).WithCause(project.ErrNotFound)
 	}
 
 	repos, err := s.d.Repositories.Projects(ctx)
@@ -143,16 +142,16 @@ func (s *projectServer) GetProject(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.GetProjectResponse{
+	return &relicv1.GetProjectResponse{
 		Project: m,
-	}), nil
+	}, nil
 }
 
 func (s *projectServer) PutProject(
 	ctx context.Context,
-	req *connect.Request[relicv1.PutProjectRequest],
-) (*connect.Response[relicv1.PutProjectResponse], error) {
-	m := req.Msg.GetProject()
+	req *relicv1.PutProjectRequest,
+) (*relicv1.PutProjectResponse, error) {
+	m := req.GetProject()
 
 	p, err := s.d.Projects.Put(ctx, project.Project{
 		Key:               m.GetKey(),
@@ -175,33 +174,33 @@ func (s *projectServer) PutProject(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.PutProjectResponse{
+	return &relicv1.PutProjectResponse{
 		Project: out,
-	}), nil
+	}, nil
 }
 
 func (s *projectServer) DeleteProject(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeleteProjectRequest],
-) (*connect.Response[relicv1.DeleteProjectResponse], error) {
-	if err := s.d.Projects.Delete(ctx, req.Msg.GetKey()); err != nil {
+	req *relicv1.DeleteProjectRequest,
+) (*relicv1.DeleteProjectResponse, error) {
+	if err := s.d.Projects.Delete(ctx, req.GetKey()); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeleteProjectResponse{}), nil
+	return &relicv1.DeleteProjectResponse{}, nil
 }
 
 func (s *projectServer) SetProjectMembers(
 	ctx context.Context,
-	req *connect.Request[relicv1.SetProjectMembersRequest],
-) (*connect.Response[relicv1.SetProjectMembersResponse], error) {
-	key := req.Msg.GetKey()
+	req *relicv1.SetProjectMembersRequest,
+) (*relicv1.SetProjectMembersResponse, error) {
+	key := req.GetKey()
 
 	if err := administersProject(ctx, s.d, key); err != nil {
 		return nil, err
 	}
 
-	p, err := s.d.Projects.SetMembers(ctx, key, domainProjectMembers(req.Msg.GetMembers()))
+	p, err := s.d.Projects.SetMembers(ctx, key, domainProjectMembers(req.GetMembers()))
 	if err != nil {
 		return nil, err
 	}
@@ -216,23 +215,23 @@ func (s *projectServer) SetProjectMembers(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.SetProjectMembersResponse{
+	return &relicv1.SetProjectMembersResponse{
 		Project: out,
-	}), nil
+	}, nil
 }
 
 func (s *projectServer) AddProjectMember(
 	ctx context.Context,
-	req *connect.Request[relicv1.AddProjectMemberRequest],
-) (*connect.Response[relicv1.AddProjectMemberResponse], error) {
-	key := req.Msg.GetKey()
+	req *relicv1.AddProjectMemberRequest,
+) (*relicv1.AddProjectMemberResponse, error) {
+	key := req.GetKey()
 
 	if err := administersProject(ctx, s.d, key); err != nil {
 		return nil, err
 	}
 
 	members := domainProjectMembers([]*relicv1.ProjectMember{
-		req.Msg.GetMember(),
+		req.GetMember(),
 	})
 
 	p, err := s.d.Projects.AddMember(ctx, key, members[0])
@@ -245,22 +244,22 @@ func (s *projectServer) AddProjectMember(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.AddProjectMemberResponse{
+	return &relicv1.AddProjectMemberResponse{
 		Project: out,
-	}), nil
+	}, nil
 }
 
 func (s *projectServer) RemoveProjectMember(
 	ctx context.Context,
-	req *connect.Request[relicv1.RemoveProjectMemberRequest],
-) (*connect.Response[relicv1.RemoveProjectMemberResponse], error) {
-	key := req.Msg.GetKey()
+	req *relicv1.RemoveProjectMemberRequest,
+) (*relicv1.RemoveProjectMemberResponse, error) {
+	key := req.GetKey()
 
 	if err := administersProject(ctx, s.d, key); err != nil {
 		return nil, err
 	}
 
-	p, err := s.d.Projects.RemoveMember(ctx, key, req.Msg.GetName(), req.Msg.GetGroup())
+	p, err := s.d.Projects.RemoveMember(ctx, key, req.GetName(), req.GetGroup())
 	if err != nil {
 		return nil, err
 	}
@@ -270,9 +269,9 @@ func (s *projectServer) RemoveProjectMember(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.RemoveProjectMemberResponse{
+	return &relicv1.RemoveProjectMemberResponse{
 		Project: out,
-	}), nil
+	}, nil
 }
 
 func (s *projectServer) projectWithRepositories(ctx context.Context, p project.Project) (*relicv1.Project, error) {
@@ -295,7 +294,7 @@ func administersProject(ctx context.Context, d Dependencies, key string) error {
 	if !ok {
 		return connect.NewError(
 			connect.CodePermissionDenied,
-			errors.New("only administrators and the project's admins may do this"),
+			"only administrators and the project's admins may do this",
 		)
 	}
 

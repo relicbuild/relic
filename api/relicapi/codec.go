@@ -1,48 +1,50 @@
 package relicapi
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connectproto"
 	"connectrpc.com/vanguard"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
-// Connect registers JSON under two names ("json" and "json; charset=utf-8"); both are replaced.
-type strictJSON struct {
-	name string
-}
+// strictJSON is Connect's JSON codec refusing empty payloads and unknown fields.
+type strictJSON struct{}
 
-func strictJSONCodecs() connect.HandlerOption {
-	return connect.WithHandlerOptions(
-		connect.WithCodec(strictJSON{
-			"json",
-		}),
-		connect.WithCodec(strictJSON{
-			"json; charset=utf-8",
-		}),
-	)
-}
+func (strictJSON) Name() string { return connect.CodecNameJSON }
 
-func (c strictJSON) Name() string { return c.name }
-
-func (strictJSON) IsBinary() bool { return false }
-
-func (strictJSON) Marshal(m any) ([]byte, error) {
-	msg, ok := m.(proto.Message)
-	if !ok {
-		return nil, fmt.Errorf("%T is not a protobuf message", m)
-	}
-
-	return protojson.Marshal(msg)
-}
-
-func (strictJSON) Unmarshal(data []byte, m any) error {
+func (strictJSON) MarshalWrite(_ context.Context, dst io.Writer, m any) error {
 	msg, ok := m.(proto.Message)
 	if !ok {
 		return fmt.Errorf("%T is not a protobuf message", m)
+	}
+
+	data, err := protojson.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("marshal %T: %w", m, err)
+	}
+
+	if _, err := dst.Write(data); err != nil {
+		return fmt.Errorf("write %T: %w", m, err)
+	}
+
+	return nil
+}
+
+func (strictJSON) UnmarshalRead(_ context.Context, src io.Reader, m any) error {
+	msg, ok := m.(proto.Message)
+	if !ok {
+		return fmt.Errorf("%T is not a protobuf message", m)
+	}
+
+	data, err := io.ReadAll(src)
+	if err != nil {
+		return fmt.Errorf("read %T: %w", m, err)
 	}
 
 	if len(data) == 0 {
@@ -56,7 +58,7 @@ func (strictJSON) Unmarshal(data []byte, m any) error {
 	return nil
 }
 
-func strictRESTJSON(resolver vanguard.TypeResolver) vanguard.Codec {
+func strictRESTJSON(resolver connectproto.TypeResolver) vanguard.RESTCodec {
 	codec := vanguard.NewJSONCodec(resolver)
 	codec.UnmarshalOptions.DiscardUnknown = false
 

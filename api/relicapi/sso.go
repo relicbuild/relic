@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"net/url"
 
-	"connectrpc.com/connect"
-
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/internal/access/audit"
 	"relic/internal/access/auth"
@@ -94,8 +92,8 @@ func domainIdentityProvider(m *relicv1.IdentityProvider) sso.Provider {
 
 func (s *identityProviderServer) ListIdentityProviders(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListIdentityProvidersRequest],
-) (*connect.Response[relicv1.ListIdentityProvidersResponse], error) {
+	_ *relicv1.ListIdentityProvidersRequest,
+) (*relicv1.ListIdentityProvidersResponse, error) {
 	if s.d.SSO == nil {
 		return nil, unimplemented("single sign-on")
 	}
@@ -112,36 +110,36 @@ func (s *identityProviderServer) ListIdentityProviders(
 		out.IdentityProviders = append(out.IdentityProviders, identityProviderMessage(p))
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *identityProviderServer) GetIdentityProvider(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetIdentityProviderRequest],
-) (*connect.Response[relicv1.GetIdentityProviderResponse], error) {
+	req *relicv1.GetIdentityProviderRequest,
+) (*relicv1.GetIdentityProviderResponse, error) {
 	if s.d.SSO == nil {
 		return nil, unimplemented("single sign-on")
 	}
 
-	p, err := s.d.SSO.Provider(ctx, req.Msg.GetName())
+	p, err := s.d.SSO.Provider(ctx, req.GetName())
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.GetIdentityProviderResponse{
+	return &relicv1.GetIdentityProviderResponse{
 		IdentityProvider: identityProviderMessage(p),
-	}), nil
+	}, nil
 }
 
 func (s *identityProviderServer) PutIdentityProvider(
 	ctx context.Context,
-	req *connect.Request[relicv1.PutIdentityProviderRequest],
-) (*connect.Response[relicv1.PutIdentityProviderResponse], error) {
+	req *relicv1.PutIdentityProviderRequest,
+) (*relicv1.PutIdentityProviderResponse, error) {
 	if s.d.SSO == nil {
 		return nil, unimplemented("single sign-on")
 	}
 
-	p := domainIdentityProvider(req.Msg.GetIdentityProvider())
+	p := domainIdentityProvider(req.GetIdentityProvider())
 	if err := s.d.SSO.PutProvider(ctx, p); err != nil {
 		return nil, err
 	}
@@ -151,33 +149,33 @@ func (s *identityProviderServer) PutIdentityProvider(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.PutIdentityProviderResponse{
+	return &relicv1.PutIdentityProviderResponse{
 		IdentityProvider: identityProviderMessage(saved),
-	}), nil
+	}, nil
 }
 
 func (s *identityProviderServer) DeleteIdentityProvider(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeleteIdentityProviderRequest],
-) (*connect.Response[relicv1.DeleteIdentityProviderResponse], error) {
+	req *relicv1.DeleteIdentityProviderRequest,
+) (*relicv1.DeleteIdentityProviderResponse, error) {
 	if s.d.SSO == nil {
 		return nil, unimplemented("single sign-on")
 	}
 
-	if err := s.d.SSO.DeleteProvider(ctx, req.Msg.GetName()); err != nil {
+	if err := s.d.SSO.DeleteProvider(ctx, req.GetName()); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeleteIdentityProviderResponse{}), nil
+	return &relicv1.DeleteIdentityProviderResponse{}, nil
 }
 
 func (s *sessionServer) ListSignInProviders(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListSignInProvidersRequest],
-) (*connect.Response[relicv1.ListSignInProvidersResponse], error) {
+	_ *relicv1.ListSignInProvidersRequest,
+) (*relicv1.ListSignInProvidersResponse, error) {
 	out := &relicv1.ListSignInProvidersResponse{}
 	if s.d.SSO == nil {
-		return connect.NewResponse(out), nil
+		return out, nil
 	}
 
 	providers, err := s.d.SSO.Providers(ctx)
@@ -202,7 +200,7 @@ func (s *sessionServer) ListSignInProviders(
 		})
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (d Dependencies) ssoStart(w http.ResponseWriter, r *http.Request) {

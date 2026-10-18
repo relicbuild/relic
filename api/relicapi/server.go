@@ -12,7 +12,9 @@ import (
 	"strings"
 	"uuid"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
+	"connectrpc.com/connect/v2/connectproto"
 	"connectrpc.com/vanguard"
 
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -115,7 +117,7 @@ type Dependencies struct {
 
 	Log *slog.Logger
 	// Interceptors run before the access check.
-	Interceptors []connect.Interceptor
+	Interceptors []connect.ServerInterceptor
 }
 
 func (d Dependencies) auditRecorder() audit.Recorder {
@@ -126,105 +128,116 @@ func (d Dependencies) auditRecorder() audit.Recorder {
 	return d.Audit
 }
 
+// serverInterceptors run on every call, the first outermost.
+func (d Dependencies) serverInterceptors(recorder audit.Recorder) []connect.ServerInterceptor {
+	return append(
+		slices.Clone(d.Interceptors),
+		receiveRequest(),
+		auditInterceptor(recorder),
+		accessInterceptor(),
+		errorInterceptor(d.Log),
+	)
+}
+
 // Handler returns the API, to be mounted at Prefix.
 func Handler(d Dependencies) http.Handler {
-	opts := connect.WithHandlerOptions(
-		connect.WithInterceptors(
-			append(
-				slices.Clone(d.Interceptors),
-				auditInterceptor(d.auditRecorder()),
-				accessInterceptor(),
-				errorInterceptor(d.Log),
-			)...,
+	server := connect.NewServer(d.serverInterceptors(d.auditRecorder())...)
+	relicv1connect.RegisterSystemServiceHandler(server, &systemServer{
+		d,
+	})
+	relicv1connect.RegisterSessionServiceHandler(server, &sessionServer{
+		d,
+	})
+	relicv1connect.RegisterRepositoryServiceHandler(server, &repositoryServer{
+		d,
+	})
+	relicv1connect.RegisterSecurityServiceHandler(server, &securityServer{
+		d,
+	})
+	relicv1connect.RegisterLdapServiceHandler(server, &ldapServer{
+		d,
+	})
+	relicv1connect.RegisterReplicationServiceHandler(server, &replicationServer{
+		d,
+	})
+	relicv1connect.RegisterCleanupServiceHandler(server, &cleanupServer{
+		d,
+	})
+	relicv1connect.RegisterHoldServiceHandler(server, &holdServer{
+		d,
+	})
+	relicv1connect.RegisterAuditServiceHandler(server, &auditServer{
+		d,
+	})
+	relicv1connect.RegisterIdentityProviderServiceHandler(server, &identityProviderServer{
+		d,
+	})
+	relicv1connect.RegisterWorkloadIdentityServiceHandler(server, &workloadIdentityServer{
+		d,
+	})
+	relicv1connect.RegisterQuarantineServiceHandler(server, &quarantineServer{
+		d,
+	})
+	relicv1connect.RegisterWaiverServiceHandler(server, &waiverServer{
+		d,
+	})
+	relicv1connect.RegisterPromotionGateServiceHandler(server, &promotionGateServer{
+		d,
+	})
+	relicv1connect.RegisterPolicyDecisionServiceHandler(server, &policyDecisionServer{
+		d,
+	})
+	relicv1connect.RegisterWebhookServiceHandler(server, &webhookServer{
+		d,
+	})
+	relicv1connect.RegisterProjectServiceHandler(server, &projectServer{
+		d,
+	})
+	relicv1connect.RegisterAgentRegistryServiceHandler(server, &agentRegistryServer{
+		d,
+	})
+	relicv1connect.RegisterBuildServiceHandler(server, &buildServer{
+		d,
+	})
+	relicv1connect.RegisterArtifactServiceHandler(server, &artifactServer{
+		d,
+	})
+	relicv1connect.RegisterScanServiceHandler(server, &scanServer{
+		d,
+	})
+	relicv1connect.RegisterPackageServiceHandler(server, &packageServer{
+		d,
+	})
+	relicv1connect.RegisterTrashServiceHandler(server, &trashServer{
+		d,
+	})
+	relicv1connect.RegisterReleaseServiceHandler(server, &releaseServer{
+		d,
+	})
+	relicv1connect.RegisterEvidenceServiceHandler(server, &evidenceServer{
+		d,
+	})
+	relicv1connect.RegisterSigningKeyServiceHandler(server, &keyServer{
+		d,
+	})
+
+	api := http.NewServeMux()
+	connecthttp.Mount(
+		api,
+		server,
+		connecthttp.WithCodecs(
+			connectproto.NewBinaryCodec(),
+			strictJSON{},
 		),
-		strictJSONCodecs(),
+		connecthttp.WithReadMaxBytes(0),
 	)
 
-	var services []*vanguard.Service
-
-	mount := func(path string, h http.Handler) {
-		services = append(services, vanguard.NewService(path, h))
-	}
-	mount(relicv1connect.NewSystemServiceHandler(&systemServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewSessionServiceHandler(&sessionServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewRepositoryServiceHandler(&repositoryServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewSecurityServiceHandler(&securityServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewLdapServiceHandler(&ldapServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewReplicationServiceHandler(&replicationServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewCleanupServiceHandler(&cleanupServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewHoldServiceHandler(&holdServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewAuditServiceHandler(&auditServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewIdentityProviderServiceHandler(&identityProviderServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewWorkloadIdentityServiceHandler(&workloadIdentityServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewQuarantineServiceHandler(&quarantineServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewWaiverServiceHandler(&waiverServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewPromotionGateServiceHandler(&promotionGateServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewPolicyDecisionServiceHandler(&policyDecisionServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewWebhookServiceHandler(&webhookServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewProjectServiceHandler(&projectServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewAgentRegistryServiceHandler(&agentRegistryServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewBuildServiceHandler(&buildServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewArtifactServiceHandler(&artifactServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewScanServiceHandler(&scanServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewPackageServiceHandler(&packageServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewTrashServiceHandler(&trashServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewReleaseServiceHandler(&releaseServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewEvidenceServiceHandler(&evidenceServer{
-		d,
-	}, opts))
-	mount(relicv1connect.NewSigningKeyServiceHandler(&keyServer{
-		d,
-	}, opts))
-
-	api, err := vanguard.NewTranscoder(services, vanguard.WithCodec(strictRESTJSON))
+	err := vanguard.Mount(
+		api,
+		server,
+		vanguard.WithCodec(strictRESTJSON),
+		vanguard.WithMaxReadBytes(0),
+	)
 	if err != nil {
 		panic(fmt.Sprintf("relic api: %v", err))
 	}
@@ -246,28 +259,14 @@ func Handler(d Dependencies) http.Handler {
 	return withRequest(mux)
 }
 
-// connectPaths routes Connect requests under Prefix, and hands REST requests
-// their path as sent: the transcoder unescapes path variables itself, so a
-// name holding an escaped '/' stays one segment.
+// connectPaths routes Connect, gRPC and gRPC-Web requests under Prefix to
+// their procedures; REST requests keep their path.
 func connectPaths(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if escaped := r.URL.EscapedPath(); escaped != r.URL.Path {
-			r2 := r.Clone(r.Context())
-			r2.URL.Path, r2.URL.RawPath = escaped, ""
-			r = r2
-		}
-
 		if strings.HasPrefix(r.URL.Path, Prefix+"relic.v1.") {
 			r2 := r.Clone(r.Context())
 			r2.URL.Path = strings.TrimPrefix(r.URL.Path, strings.TrimSuffix(Prefix, "/"))
 			r2.URL.RawPath = ""
-
-			ct := r2.Header.Get("Content-Type")
-			if r2.Header.Get("Connect-Protocol-Version") == "" && !strings.HasPrefix(ct, "application/grpc") &&
-				!strings.HasPrefix(ct, "application/connect+") {
-				r2.Header.Set("Connect-Protocol-Version", "1")
-			}
-
 			r = r2
 		}
 

@@ -3,11 +3,10 @@ package relicapi
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math"
 	"net/url"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/internal/artifacts/repository"
@@ -40,8 +39,8 @@ func replicationMessage(r replication.Replication) *relicv1.Replication {
 
 func (s *replicationServer) ListReplications(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListReplicationsRequest],
-) (*connect.Response[relicv1.ListReplicationsResponse], error) {
+	_ *relicv1.ListReplicationsRequest,
+) (*relicv1.ListReplicationsResponse, error) {
 	list, err := s.d.Replications.List(ctx)
 	if err != nil {
 		return nil, err
@@ -54,28 +53,28 @@ func (s *replicationServer) ListReplications(
 		out.Replications = append(out.Replications, replicationMessage(r))
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *replicationServer) GetReplication(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetReplicationRequest],
-) (*connect.Response[relicv1.GetReplicationResponse], error) {
-	r, err := s.d.Replications.Get(ctx, req.Msg.GetRepository())
+	req *relicv1.GetReplicationRequest,
+) (*relicv1.GetReplicationResponse, error) {
+	r, err := s.d.Replications.Get(ctx, req.GetRepository())
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.GetReplicationResponse{
+	return &relicv1.GetReplicationResponse{
 		Replication: replicationMessage(r),
-	}), nil
+	}, nil
 }
 
 func (s *replicationServer) PutReplication(
 	ctx context.Context,
-	req *connect.Request[relicv1.PutReplicationRequest],
-) (*connect.Response[relicv1.PutReplicationResponse], error) {
-	m := req.Msg.GetReplication()
+	req *relicv1.PutReplicationRequest,
+) (*relicv1.PutReplicationResponse, error) {
+	m := req.GetReplication()
 
 	rp, err := s.d.Repositories.GetRepository(ctx, m.GetRepository())
 	if err != nil {
@@ -85,7 +84,7 @@ func (s *replicationServer) PutReplication(
 	if rp.Class != repository.ClassLocal {
 		return nil, connect.NewError(
 			connect.CodeInvalidArgument,
-			errors.New("only local repositories can be push-replicated"),
+			"only local repositories can be push-replicated",
 		)
 	}
 
@@ -94,19 +93,19 @@ func (s *replicationServer) PutReplication(
 	case err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "":
 		return nil, connect.NewError(
 			connect.CodeInvalidArgument,
-			errors.New("the target URL must be an http or https URL"),
+			"the target URL must be an http or https URL",
 		)
 	case u.User != nil:
 		return nil, connect.NewError(
 			connect.CodeInvalidArgument,
-			errors.New("put credentials in username and password, not the URL"),
+			"put credentials in username and password, not the URL",
 		)
 	}
 
 	if err := replication.ValidSchedule(m.GetSchedule()); err != nil {
-		return nil, connect.NewError(
+		return nil, connect.Errorf(
 			connect.CodeInvalidArgument,
-			fmt.Errorf("invalid schedule %q: a standard 5-field cron expression is expected", m.GetSchedule()),
+			"invalid schedule %q: a standard 5-field cron expression is expected", m.GetSchedule(),
 		)
 	}
 
@@ -126,9 +125,9 @@ func (s *replicationServer) PutReplication(
 
 	direction, ok := toDomain[replication.Direction](m.GetDirection())
 	if !ok && m.GetDirection() != relicv1.ReplicationDirection_REPLICATION_DIRECTION_UNSPECIFIED {
-		return nil, connect.NewError(
+		return nil, connect.Errorf(
 			connect.CodeInvalidArgument,
-			fmt.Errorf("unknown replication direction %d", m.GetDirection()),
+			"unknown replication direction %d", m.GetDirection(),
 		)
 	}
 
@@ -144,35 +143,35 @@ func (s *replicationServer) PutReplication(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.PutReplicationResponse{}), nil
+	return &relicv1.PutReplicationResponse{}, nil
 }
 
 func (s *replicationServer) DeleteReplication(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeleteReplicationRequest],
-) (*connect.Response[relicv1.DeleteReplicationResponse], error) {
-	if err := s.d.Replications.Delete(ctx, req.Msg.GetRepository()); err != nil {
+	req *relicv1.DeleteReplicationRequest,
+) (*relicv1.DeleteReplicationResponse, error) {
+	if err := s.d.Replications.Delete(ctx, req.GetRepository()); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeleteReplicationResponse{}), nil
+	return &relicv1.DeleteReplicationResponse{}, nil
 }
 
 func (s *replicationServer) RunReplication(
 	ctx context.Context,
-	req *connect.Request[relicv1.RunReplicationRequest],
-) (*connect.Response[relicv1.RunReplicationResponse], error) {
-	if _, err := s.d.Replications.Get(ctx, req.Msg.GetRepository()); err != nil {
+	req *relicv1.RunReplicationRequest,
+) (*relicv1.RunReplicationResponse, error) {
+	if _, err := s.d.Replications.Get(ctx, req.GetRepository()); err != nil {
 		return nil, err
 	}
 
 	if s.d.QueueReplication == nil {
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("no job queue"))
+		return nil, connect.NewError(connect.CodeUnavailable, "no job queue")
 	}
 
-	if err := s.d.QueueReplication(ctx, req.Msg.GetRepository()); err != nil {
+	if err := s.d.QueueReplication(ctx, req.GetRepository()); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.RunReplicationResponse{}), nil
+	return &relicv1.RunReplicationResponse{}, nil
 }

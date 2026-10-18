@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 )
 
 // restDecodeErrors answers 400 invalid_argument where the transcoder reports

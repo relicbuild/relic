@@ -3,7 +3,6 @@ package relicapi
 import (
 	"context"
 
-	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -15,8 +14,8 @@ type keyServer struct {
 
 func (s *keyServer) ListKeyPairs(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListKeyPairsRequest],
-) (*connect.Response[relicv1.ListKeyPairsResponse], error) {
+	_ *relicv1.ListKeyPairsRequest,
+) (*relicv1.ListKeyPairsResponse, error) {
 	pairs, err := s.d.SigningKeys.List(ctx)
 	if err != nil {
 		return nil, err
@@ -37,19 +36,19 @@ func (s *keyServer) ListKeyPairs(
 		)
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *keyServer) GetPublicKey(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetPublicKeyRequest],
-) (*connect.Response[relicv1.GetPublicKeyResponse], error) {
-	pub, err := s.d.SigningKeys.PublicKey(ctx, req.Msg.GetName())
+	req *relicv1.GetPublicKeyRequest,
+) (*relicv1.GetPublicKeyResponse, error) {
+	pub, err := s.d.SigningKeys.PublicKey(ctx, req.GetName())
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.GetPublicKeyResponse{
+	return &relicv1.GetPublicKeyResponse{
 		PublicKey: pub,
-	}), nil
+	}, nil
 }

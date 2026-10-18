@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/internal/access/ldap"
@@ -72,8 +72,8 @@ func mappingMessage(g ldap.GroupMapping) *relicv1.LdapGroupMapping {
 
 func (s *ldapServer) ListLdapServers(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListLdapServersRequest],
-) (*connect.Response[relicv1.ListLdapServersResponse], error) {
+	_ *relicv1.ListLdapServersRequest,
+) (*relicv1.ListLdapServersResponse, error) {
 	all, err := s.d.LDAP.Servers(ctx)
 	if err != nil {
 		return nil, err
@@ -86,14 +86,14 @@ func (s *ldapServer) ListLdapServers(
 		out.LdapServers = append(out.LdapServers, directoryMessage(st))
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *ldapServer) PutLdapServer(
 	ctx context.Context,
-	req *connect.Request[relicv1.PutLdapServerRequest],
-) (*connect.Response[relicv1.PutLdapServerResponse], error) {
-	st := directoryOf(req.Msg.GetLdapServer())
+	req *relicv1.PutLdapServerRequest,
+) (*relicv1.PutLdapServerResponse, error) {
+	st := directoryOf(req.GetLdapServer())
 	if old, err := s.d.LDAP.Server(ctx, st.Name); err == nil {
 		st.Extensions = old.Extensions
 	} else if !errors.Is(err, ldap.ErrNotFound) {
@@ -104,14 +104,14 @@ func (s *ldapServer) PutLdapServer(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.PutLdapServerResponse{}), nil
+	return &relicv1.PutLdapServerResponse{}, nil
 }
 
 // DeleteLdapServer refuses to delete a server that group mappings read.
 func (s *ldapServer) DeleteLdapServer(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeleteLdapServerRequest],
-) (*connect.Response[relicv1.DeleteLdapServerResponse], error) {
+	req *relicv1.DeleteLdapServerRequest,
+) (*relicv1.DeleteLdapServerResponse, error) {
 	mappings, err := s.d.LDAP.GroupMappings(ctx)
 	if err != nil {
 		return nil, err
@@ -120,33 +120,32 @@ func (s *ldapServer) DeleteLdapServer(
 	var users []string
 
 	for _, m := range mappings {
-		if m.Server == req.Msg.GetName() {
+		if m.Server == req.GetName() {
 			users = append(users, m.Name)
 		}
 	}
 
 	if len(users) > 0 {
-		return nil, connect.NewError(
+		return nil, connect.Errorf(
 			connect.CodeFailedPrecondition,
-			fmt.Errorf(
-				"LDAP server %s is used by the group mappings %s; delete them or point them at another server first",
-				req.Msg.GetName(),
-				strings.Join(users, ", "),
-			),
+
+			"LDAP server %s is used by the group mappings %s; delete them or point them at another server first",
+			req.GetName(),
+			strings.Join(users, ", "),
 		)
 	}
 
-	if err := s.d.LDAP.DeleteLdapServer(ctx, req.Msg.GetName()); err != nil {
+	if err := s.d.LDAP.DeleteLdapServer(ctx, req.GetName()); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeleteLdapServerResponse{}), nil
+	return &relicv1.DeleteLdapServerResponse{}, nil
 }
 
 func (s *ldapServer) ListLdapGroupMappings(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListLdapGroupMappingsRequest],
-) (*connect.Response[relicv1.ListLdapGroupMappingsResponse], error) {
+	_ *relicv1.ListLdapGroupMappingsRequest,
+) (*relicv1.ListLdapGroupMappingsResponse, error) {
 	all, err := s.d.LDAP.GroupMappings(ctx)
 	if err != nil {
 		return nil, err
@@ -159,14 +158,14 @@ func (s *ldapServer) ListLdapGroupMappings(
 		out.LdapGroupMappings = append(out.LdapGroupMappings, mappingMessage(g))
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *ldapServer) PutLdapGroupMapping(
 	ctx context.Context,
-	req *connect.Request[relicv1.PutLdapGroupMappingRequest],
-) (*connect.Response[relicv1.PutLdapGroupMappingResponse], error) {
-	m := req.Msg.GetLdapGroupMapping()
+	req *relicv1.PutLdapGroupMappingRequest,
+) (*relicv1.PutLdapGroupMappingResponse, error) {
+	m := req.GetLdapGroupMapping()
 	strategy, _ := toDomain[ldap.GroupStrategy](m.GetStrategy())
 
 	g := ldap.GroupMapping{
@@ -193,46 +192,42 @@ func (s *ldapServer) PutLdapGroupMapping(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.PutLdapGroupMappingResponse{}), nil
+	return &relicv1.PutLdapGroupMappingResponse{}, nil
 }
 
 func (s *ldapServer) DeleteLdapGroupMapping(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeleteLdapGroupMappingRequest],
-) (*connect.Response[relicv1.DeleteLdapGroupMappingResponse], error) {
-	if err := s.d.LDAP.DeleteLdapGroupMapping(ctx, req.Msg.GetName()); err != nil {
+	req *relicv1.DeleteLdapGroupMappingRequest,
+) (*relicv1.DeleteLdapGroupMappingResponse, error) {
+	if err := s.d.LDAP.DeleteLdapGroupMapping(ctx, req.GetName()); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeleteLdapGroupMappingResponse{}), nil
+	return &relicv1.DeleteLdapGroupMappingResponse{}, nil
 }
 
 func (s *ldapServer) TestLdapSignIn(
 	ctx context.Context,
-	req *connect.Request[relicv1.TestLdapSignInRequest],
-) (*connect.Response[relicv1.TestLdapSignInResponse], error) {
-	e, err := s.d.LDAP.Test(ctx, directoryOf(req.Msg.GetLdapServer()), req.Msg.GetUsername(), req.Msg.GetPassword())
+	req *relicv1.TestLdapSignInRequest,
+) (*relicv1.TestLdapSignInResponse, error) {
+	e, err := s.d.LDAP.Test(ctx, directoryOf(req.GetLdapServer()), req.GetUsername(), req.GetPassword())
 	switch {
 	case errors.Is(err, ldap.ErrInvalidCredentials):
-		return connect.NewResponse(
-			&relicv1.TestLdapSignInResponse{
-				Error: "The directory did not accept these credentials.",
-			},
-		), nil
+		return &relicv1.TestLdapSignInResponse{
+			Error: "The directory did not accept these credentials.",
+		}, nil
 	case errors.Is(err, ldap.ErrUnavailable):
-		return connect.NewResponse(&relicv1.TestLdapSignInResponse{
+		return &relicv1.TestLdapSignInResponse{
 			Error: err.Error(),
-		}), nil
+		}, nil
 	case err != nil:
 		return nil, err
 	}
 
-	return connect.NewResponse(
-		&relicv1.TestLdapSignInResponse{
-			Ok:     true,
-			Dn:     e.DN,
-			Email:  e.Email,
-			Groups: e.Groups,
-		},
-	), nil
+	return &relicv1.TestLdapSignInResponse{
+		Ok:     true,
+		Dn:     e.DN,
+		Email:  e.Email,
+		Groups: e.Groups,
+	}, nil
 }

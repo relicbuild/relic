@@ -3,8 +3,6 @@ package relicapi
 import (
 	"testing"
 
-	"connectrpc.com/connect"
-
 	relicv1 "relic/api/gen/relic/v1"
 )
 
@@ -34,12 +32,12 @@ func TestGetSignInNote(t *testing.T) {
 				},
 			}
 
-			resp, err := s.GetSignInNote(t.Context(), connect.NewRequest(&relicv1.GetSignInNoteRequest{}))
+			resp, err := s.GetSignInNote(t.Context(), &relicv1.GetSignInNoteRequest{})
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			if got := resp.Msg.GetNote(); got != tt.note {
+			if got := resp.GetNote(); got != tt.note {
 				t.Errorf("note = %q, want %q", got, tt.note)
 			}
 		})

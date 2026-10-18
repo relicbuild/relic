@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"connectrpc.com/otelconnect"
 )
 
@@ -32,30 +32,30 @@ var (
 
 // ConnectInterceptors instrument the Relic API: a span per call (a child of
 // the HTTP server span) and the relic_rpc_* series.
-func ConnectInterceptors() []connect.Interceptor {
-	spans, err := otelconnect.NewInterceptor(otelconnect.WithoutMetrics(), otelconnect.WithPropagator(propagator))
+func ConnectInterceptors() []connect.ServerInterceptor {
+	spans, err := otelconnect.NewServerInterceptor(otelconnect.WithoutMetrics(), otelconnect.WithPropagator(propagator))
 	if err != nil {
-		return []connect.Interceptor{
+		return []connect.ServerInterceptor{
 			rpcMetrics(),
 		}
 	}
 
-	return []connect.Interceptor{
+	return []connect.ServerInterceptor{
 		spans,
 		rpcMetrics(),
 	}
 }
 
-func rpcMetrics() connect.UnaryInterceptorFunc {
-	return func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+func rpcMetrics() connect.ServerInterceptor {
+	return func(next connect.ServerFunc) connect.ServerFunc {
+		return func(ctx context.Context, spec connect.Spec, stream connect.ServerStream) error {
 			start := time.Now()
-			resp, err := next(ctx, req)
-			service, method := splitProcedure(req.Spec().Procedure)
+			err := next(ctx, spec, stream)
+			service, method := splitProcedure(spec.Procedure)
 			rpcRequests.WithLabelValues(service, method, rpcCode(err)).Inc()
 			observe(ctx, rpcDuration.WithLabelValues(service, method), time.Since(start).Seconds())
 
-			return resp, err
+			return err
 		}
 	}
 }

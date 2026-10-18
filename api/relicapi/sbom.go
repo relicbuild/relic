@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	"relic/internal/access/audit"
 	"relic/internal/access/auth"
@@ -46,14 +46,14 @@ func (d Dependencies) sbom(w http.ResponseWriter, r *http.Request) {
 	if key == "" || p == "" {
 		writeHTTPError(
 			w,
-			connect.NewError(connect.CodeInvalidArgument, errors.New("expected "+SBOMPath+"<repository>/<path>")),
+			connect.NewError(connect.CodeInvalidArgument, "expected "+SBOMPath+"<repository>/<path>"),
 		)
 
 		return
 	}
 
 	if auth.FromContext(r.Context()).Anonymous() {
-		writeHTTPError(w, connect.NewError(connect.CodeUnauthenticated, errors.New("sign in first")))
+		writeHTTPError(w, connect.NewError(connect.CodeUnauthenticated, "sign in first"))
 		return
 	}
 
@@ -64,7 +64,7 @@ func (d Dependencies) sbom(w http.ResponseWriter, r *http.Request) {
 		d.importSBOM(w, r, key, p)
 	default:
 		w.Header().Set("Allow", "GET, PUT")
-		writeHTTPError(w, connect.NewError(connect.CodeUnimplemented, errors.New("method not allowed")))
+		writeHTTPError(w, connect.NewError(connect.CodeUnimplemented, "method not allowed"))
 	}
 }
 
@@ -80,7 +80,7 @@ func (d Dependencies) exportSBOM(w http.ResponseWriter, r *http.Request, key, p 
 	if !ok {
 		writeHTTPError(
 			w,
-			connect.NewError(connect.CodeInvalidArgument, errors.New("format is cyclonedx, spdx or syft")),
+			connect.NewError(connect.CodeInvalidArgument, "format is cyclonedx, spdx or syft"),
 		)
 
 		return
@@ -109,7 +109,7 @@ func (d Dependencies) exportSBOM(w http.ResponseWriter, r *http.Request, key, p 
 	}
 
 	if !found || errors.Is(err, scan.ErrNoScan) || (err == nil && a.SBOM == nil) {
-		writeHTTPError(w, connect.NewError(connect.CodeNotFound, errors.New("no SBOM for this item")))
+		writeHTTPError(w, connect.NewError(connect.CodeNotFound, "no SBOM for this item"))
 		return
 	}
 
@@ -120,7 +120,7 @@ func (d Dependencies) exportSBOM(w http.ResponseWriter, r *http.Request, key, p 
 
 	doc, err := scan.ExportSBOM(a.SBOM, format, key+"/"+p, time.Now())
 	if errors.Is(err, scan.ErrSBOM) {
-		writeHTTPError(w, connect.NewError(connect.CodeFailedPrecondition, err))
+		writeHTTPError(w, connect.NewError(connect.CodeFailedPrecondition, err.Error()).WithCause(err))
 		return
 	}
 
@@ -163,7 +163,7 @@ func (d Dependencies) storeSBOM(w http.ResponseWriter, r *http.Request, key, p s
 	}
 
 	if !found {
-		return connect.NewError(connect.CodeInvalidArgument, errors.New(key+"/"+p+" is a folder"))
+		return connect.NewError(connect.CodeInvalidArgument, key+"/"+p+" is a folder")
 	}
 
 	if err := canDeployEveryCopy(ctx, d, target.Checksums.SHA256); err != nil {
@@ -172,12 +172,12 @@ func (d Dependencies) storeSBOM(w http.ResponseWriter, r *http.Request, key, p s
 
 	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, scan.MaxSBOMSize))
 	if err != nil {
-		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("read the SBOM: %w", err))
+		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("read the SBOM: %w", err).Error())
 	}
 
 	err = d.ScanResults.ImportSBOM(ctx, target.Checksums.SHA256, target.Name, raw)
 	if errors.Is(err, scan.ErrSBOM) {
-		return connect.NewError(connect.CodeInvalidArgument, err)
+		return connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
 	}
 
 	if err != nil {
@@ -190,7 +190,7 @@ func (d Dependencies) storeSBOM(w http.ResponseWriter, r *http.Request, key, p s
 
 			return connect.NewError(
 				connect.CodeUnavailable,
-				errors.New("the SBOM is stored but not matched yet: import it again"),
+				"the SBOM is stored but not matched yet: import it again",
 			)
 		}
 	}
@@ -212,7 +212,7 @@ func canDeployEveryCopy(ctx context.Context, d Dependencies, sha256Hex string) e
 
 	denied := connect.NewError(
 		connect.CodePermissionDenied,
-		errors.New("this content is also stored where you may not deploy: ask an administrator to import its SBOM"),
+		"this content is also stored where you may not deploy: ask an administrator to import its SBOM",
 	)
 	if len(copies) >= repository.FilesWithContentLimit {
 		return denied

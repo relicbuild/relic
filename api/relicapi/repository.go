@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -194,18 +194,18 @@ func (s *repositoryServer) canRead(ctx context.Context, r repository.Repository)
 
 func (s *repositoryServer) ListRepositories(
 	ctx context.Context,
-	req *connect.Request[relicv1.ListRepositoriesRequest],
-) (*connect.Response[relicv1.ListRepositoriesResponse], error) {
-	format, err := formatOf(req.Msg.GetFormat())
+	req *relicv1.ListRepositoriesRequest,
+) (*relicv1.ListRepositoriesResponse, error) {
+	format, err := formatOf(req.GetFormat())
 	if err != nil {
 		return nil, err
 	}
 
-	class, ok := classes[req.Msg.GetClass()]
-	if !ok && req.Msg.GetClass() != relicv1.RepositoryClass_REPOSITORY_CLASS_UNSPECIFIED {
-		return nil, connect.NewError(
+	class, ok := classes[req.GetClass()]
+	if !ok && req.GetClass() != relicv1.RepositoryClass_REPOSITORY_CLASS_UNSPECIFIED {
+		return nil, connect.Errorf(
 			connect.CodeInvalidArgument,
-			fmt.Errorf("unknown repository class %d", req.Msg.GetClass()),
+			"unknown repository class %d", req.GetClass(),
 		)
 	}
 
@@ -228,14 +228,14 @@ func (s *repositoryServer) ListRepositories(
 		}
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *repositoryServer) GetRepository(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetRepositoryRequest],
-) (*connect.Response[relicv1.GetRepositoryResponse], error) {
-	r, err := s.d.Repositories.GetRepository(ctx, req.Msg.GetName())
+	req *relicv1.GetRepositoryRequest,
+) (*relicv1.GetRepositoryResponse, error) {
+	r, err := s.d.Repositories.GetRepository(ctx, req.GetName())
 	if err != nil {
 		return nil, err
 	}
@@ -259,11 +259,11 @@ func (s *repositoryServer) GetRepository(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.GetRepositoryResponse{
+	return &relicv1.GetRepositoryResponse{
 		Repository: m,
 		CanUpload:  canUpload,
 		CanDelete:  canDelete,
-	}), nil
+	}, nil
 }
 
 // callerRights reports whether the caller may upload to and delete from some
@@ -314,9 +314,9 @@ func (s *repositoryServer) callerRights(
 
 func (s *repositoryServer) GetRepositorySigningKey(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetRepositorySigningKeyRequest],
-) (*connect.Response[relicv1.GetRepositorySigningKeyResponse], error) {
-	r, err := s.d.Repositories.GetRepository(ctx, req.Msg.GetName())
+	req *relicv1.GetRepositorySigningKeyRequest,
+) (*relicv1.GetRepositorySigningKeyResponse, error) {
+	r, err := s.d.Repositories.GetRepository(ctx, req.GetName())
 	if err != nil {
 		return nil, err
 	}
@@ -334,7 +334,7 @@ func (s *repositoryServer) GetRepositorySigningKey(
 	if keyPair == "" || s.d.SigningKeys == nil {
 		return nil, connect.NewError(
 			connect.CodeNotFound,
-			errors.New("repository "+r.Name+" signs no metadata"),
+			"repository "+r.Name+" signs no metadata",
 		)
 	}
 
@@ -351,17 +351,17 @@ func (s *repositoryServer) GetRepositorySigningKey(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.GetRepositorySigningKeyResponse{
+	return &relicv1.GetRepositorySigningKeyResponse{
 		KeyPair:   keyPair,
 		PublicKey: publicKey,
-	}), nil
+	}, nil
 }
 
 func (s *repositoryServer) GetClientEndpoints(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetClientEndpointsRequest],
-) (*connect.Response[relicv1.GetClientEndpointsResponse], error) {
-	r, err := s.d.Repositories.GetRepository(ctx, req.Msg.GetName())
+	req *relicv1.GetClientEndpointsRequest,
+) (*relicv1.GetClientEndpointsResponse, error) {
+	r, err := s.d.Repositories.GetRepository(ctx, req.GetName())
 	if err != nil {
 		return nil, err
 	}
@@ -384,7 +384,7 @@ func (s *repositoryServer) GetClientEndpoints(
 		out.PackageManager, out.ContainerRegistry = s.d.ClientEndpoints(origin, r)
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func requestOrigin(r *http.Request) string {
@@ -402,9 +402,9 @@ func requestOrigin(r *http.Request) string {
 
 func (s *repositoryServer) CreateRepository(
 	ctx context.Context,
-	req *connect.Request[relicv1.CreateRepositoryRequest],
-) (*connect.Response[relicv1.CreateRepositoryResponse], error) {
-	r, err := repositoryOf(req.Msg.GetRepository())
+	req *relicv1.CreateRepositoryRequest,
+) (*relicv1.CreateRepositoryResponse, error) {
+	r, err := repositoryOf(req.GetRepository())
 	if err != nil {
 		return nil, err
 	}
@@ -424,16 +424,16 @@ func (s *repositoryServer) CreateRepository(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.CreateRepositoryResponse{
+	return &relicv1.CreateRepositoryResponse{
 		Repository: RepositoryMessage(created),
-	}), nil
+	}, nil
 }
 
 func (s *repositoryServer) UpdateRepository(
 	ctx context.Context,
-	req *connect.Request[relicv1.UpdateRepositoryRequest],
-) (*connect.Response[relicv1.UpdateRepositoryResponse], error) {
-	r, err := repositoryOf(req.Msg.GetRepository())
+	req *relicv1.UpdateRepositoryRequest,
+) (*relicv1.UpdateRepositoryResponse, error) {
+	r, err := repositoryOf(req.GetRepository())
 	if err != nil {
 		return nil, err
 	}
@@ -463,16 +463,16 @@ func (s *repositoryServer) UpdateRepository(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.UpdateRepositoryResponse{
+	return &relicv1.UpdateRepositoryResponse{
 		Repository: RepositoryMessage(updated),
-	}), nil
+	}, nil
 }
 
 func (s *repositoryServer) DeleteRepository(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeleteRepositoryRequest],
-) (*connect.Response[relicv1.DeleteRepositoryResponse], error) {
-	existing, err := readableRepository(ctx, s.d, req.Msg.GetName())
+	req *relicv1.DeleteRepositoryRequest,
+) (*relicv1.DeleteRepositoryResponse, error) {
+	existing, err := readableRepository(ctx, s.d, req.GetName())
 	if err != nil {
 		return nil, err
 	}
@@ -481,11 +481,11 @@ func (s *repositoryServer) DeleteRepository(
 		return nil, err
 	}
 
-	if err := s.d.Repositories.DeleteRepository(ctx, req.Msg.GetName()); err != nil {
+	if err := s.d.Repositories.DeleteRepository(ctx, req.GetName()); err != nil {
 		return nil, err
 	}
 
 	s.d.Security.Invalidate()
 
-	return connect.NewResponse(&relicv1.DeleteRepositoryResponse{}), nil
+	return &relicv1.DeleteRepositoryResponse{}, nil
 }

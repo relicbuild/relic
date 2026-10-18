@@ -2,9 +2,8 @@ package relicapi
 
 import (
 	"context"
-	"errors"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -64,9 +63,9 @@ func trustedKeyMessage(k evidence.TrustedKey) *relicv1.TrustedKey {
 
 func (s *evidenceServer) ListEvidence(
 	ctx context.Context,
-	req *connect.Request[relicv1.ListEvidenceRequest],
-) (*connect.Response[relicv1.ListEvidenceResponse], error) {
-	key, p := req.Msg.GetRepository(), cleanPath(req.Msg.GetPath())
+	req *relicv1.ListEvidenceRequest,
+) (*relicv1.ListEvidenceResponse, error) {
+	key, p := req.GetRepository(), cleanPath(req.GetPath())
 	if err := can(ctx, s.d, key, p, auth.ActionRead); err != nil {
 		return nil, err
 	}
@@ -85,18 +84,18 @@ func (s *evidenceServer) ListEvidence(
 		out.Evidence = append(out.Evidence, evidenceMessage(e))
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *evidenceServer) CreateEvidence(
 	ctx context.Context,
-	req *connect.Request[relicv1.CreateEvidenceRequest],
-) (*connect.Response[relicv1.CreateEvidenceResponse], error) {
-	m := req.Msg
+	req *relicv1.CreateEvidenceRequest,
+) (*relicv1.CreateEvidenceResponse, error) {
+	m := req
 
 	key, p := m.GetRepository(), cleanPath(m.GetPath())
 	if p == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("path names the subject file"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, "path names the subject file")
 	}
 
 	if err := can(ctx, s.d, key, p, auth.ActionAnnotate); err != nil {
@@ -127,15 +126,15 @@ func (s *evidenceServer) CreateEvidence(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.CreateEvidenceResponse{
+	return &relicv1.CreateEvidenceResponse{
 		Evidence: evidenceMessage(e),
-	}), nil
+	}, nil
 }
 
 func (s *evidenceServer) ListTrustedKeys(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListTrustedKeysRequest],
-) (*connect.Response[relicv1.ListTrustedKeysResponse], error) {
+	_ *relicv1.ListTrustedKeysRequest,
+) (*relicv1.ListTrustedKeysResponse, error) {
 	keys, err := s.d.Evidence.TrustedKeys(ctx)
 	if err != nil {
 		return nil, err
@@ -148,30 +147,30 @@ func (s *evidenceServer) ListTrustedKeys(
 		out.Keys = append(out.Keys, trustedKeyMessage(k))
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *evidenceServer) AddTrustedKey(
 	ctx context.Context,
-	req *connect.Request[relicv1.AddTrustedKeyRequest],
-) (*connect.Response[relicv1.AddTrustedKeyResponse], error) {
-	k, err := s.d.Evidence.AddTrustedKey(ctx, req.Msg.GetAlias(), req.Msg.GetPublicKey(), auth.FromContext(ctx).Name())
+	req *relicv1.AddTrustedKeyRequest,
+) (*relicv1.AddTrustedKeyResponse, error) {
+	k, err := s.d.Evidence.AddTrustedKey(ctx, req.GetAlias(), req.GetPublicKey(), auth.FromContext(ctx).Name())
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.AddTrustedKeyResponse{
+	return &relicv1.AddTrustedKeyResponse{
 		Key: trustedKeyMessage(k),
-	}), nil
+	}, nil
 }
 
 func (s *evidenceServer) DeleteTrustedKey(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeleteTrustedKeyRequest],
-) (*connect.Response[relicv1.DeleteTrustedKeyResponse], error) {
-	if err := s.d.Evidence.DeleteTrustedKey(ctx, req.Msg.GetKid()); err != nil {
+	req *relicv1.DeleteTrustedKeyRequest,
+) (*relicv1.DeleteTrustedKeyResponse, error) {
+	if err := s.d.Evidence.DeleteTrustedKey(ctx, req.GetKid()); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeleteTrustedKeyResponse{}), nil
+	return &relicv1.DeleteTrustedKeyResponse{}, nil
 }

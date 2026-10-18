@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/internal/access/auth"
@@ -38,23 +38,23 @@ func operationalRiskMessage(r scan.OperationalRisk) *relicv1.OperationalRisk {
 
 func (s *scanServer) ListOperationalRisks(
 	ctx context.Context,
-	req *connect.Request[relicv1.ListOperationalRisksRequest],
-) (*connect.Response[relicv1.ListOperationalRisksResponse], error) {
-	switch req.Msg.GetKind() {
+	req *relicv1.ListOperationalRisksRequest,
+) (*relicv1.ListOperationalRisksResponse, error) {
+	switch req.GetKind() {
 	case "", "end_of_life", "deprecated", "unmaintained":
 	default:
 		return nil, connect.NewError(
 			connect.CodeInvalidArgument,
-			errors.New("kind is end_of_life, deprecated or unmaintained"),
+			"kind is end_of_life, deprecated or unmaintained",
 		)
 	}
 
-	n, size := page(req.Msg.GetPage(), req.Msg.GetPageSize())
+	n, size := page(req.GetPage(), req.GetPageSize())
 
 	rows, total, err := s.d.ScanResults.RisksPage(ctx, scan.RisksQuery{
-		Kind:       req.Msg.GetKind(),
-		Query:      req.Msg.GetQuery(),
-		Repository: req.Msg.GetRepository(),
+		Kind:       req.GetKind(),
+		Query:      req.GetQuery(),
+		Repository: req.GetRepository(),
 		Skip:       (n - 1) * size,
 		Max:        size,
 	})
@@ -73,15 +73,15 @@ func (s *scanServer) ListOperationalRisks(
 		out.Risks = append(out.Risks, m)
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *scanServer) GetEndOfLifeStatus(
 	ctx context.Context,
-	_ *connect.Request[relicv1.GetEndOfLifeStatusRequest],
-) (*connect.Response[relicv1.GetEndOfLifeStatusResponse], error) {
+	_ *relicv1.GetEndOfLifeStatusRequest,
+) (*relicv1.GetEndOfLifeStatusResponse, error) {
 	if s.d.EndOfLife == nil {
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("scanning is not available"))
+		return nil, connect.NewError(connect.CodeUnavailable, "scanning is not available")
 	}
 
 	st, err := s.d.EndOfLife.Status(ctx)
@@ -97,7 +97,7 @@ func (s *scanServer) GetEndOfLifeStatus(
 		out.Fetched, out.Changed = ts(&st.Fetched), ts(&st.Changed)
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (d Dependencies) importEndOfLifeData(w http.ResponseWriter, r *http.Request) {
@@ -105,7 +105,7 @@ func (d Dependencies) importEndOfLifeData(w http.ResponseWriter, r *http.Request
 
 	switch {
 	case p.Anonymous():
-		writeHTTPError(w, connect.NewError(connect.CodeUnauthenticated, errors.New("sign in first")))
+		writeHTTPError(w, connect.NewError(connect.CodeUnauthenticated, "sign in first"))
 
 		return
 	case !p.Admin:
@@ -113,20 +113,20 @@ func (d Dependencies) importEndOfLifeData(w http.ResponseWriter, r *http.Request
 			w,
 			connect.NewError(
 				connect.CodePermissionDenied,
-				errors.New("importing end-of-life data needs an administrator"),
+				"importing end-of-life data needs an administrator",
 			),
 		)
 
 		return
 	case d.EndOfLifeData == nil:
-		writeHTTPError(w, connect.NewError(connect.CodeUnavailable, errors.New("scanning is not available")))
+		writeHTTPError(w, connect.NewError(connect.CodeUnavailable, "scanning is not available"))
 
 		return
 	}
 
 	n, err := d.EndOfLifeData.Import(r.Context(), http.MaxBytesReader(w, r.Body, maxEndOfLifeDump))
 	if errors.Is(err, endoflife.ErrInvalidDump) {
-		writeHTTPError(w, connect.NewError(connect.CodeInvalidArgument, err))
+		writeHTTPError(w, connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err))
 
 		return
 	}

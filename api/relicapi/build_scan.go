@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/internal/access/auth"
@@ -84,9 +84,9 @@ func buildScanRequest(ctx context.Context, d Dependencies, doc buildinfo.Documen
 
 func (s *scanServer) ScanBuildRun(
 	ctx context.Context,
-	req *connect.Request[relicv1.ScanBuildRunRequest],
-) (*connect.Response[relicv1.ScanBuildRunResponse], error) {
-	m := req.Msg
+	req *relicv1.ScanBuildRunRequest,
+) (*relicv1.ScanBuildRunResponse, error) {
+	m := req
 
 	doc, err := buildRun(ctx, s.d, m.GetProject(), m.GetName(), m.GetNumber())
 	if err != nil {
@@ -94,7 +94,7 @@ func (s *scanServer) ScanBuildRun(
 	}
 
 	if s.d.Scans == nil || s.d.QueueGraphScan == nil {
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("scanning is not available"))
+		return nil, connect.NewError(connect.CodeUnavailable, "scanning is not available")
 	}
 
 	graph, err := buildScanRequest(ctx, s.d, doc)
@@ -120,14 +120,14 @@ func (s *scanServer) ScanBuildRun(
 		return nil, errors.Join(err, s.d.Scans.FailGraph(context.WithoutCancel(ctx), id, err))
 	}
 
-	return connect.NewResponse(&relicv1.ScanBuildRunResponse{}), nil
+	return &relicv1.ScanBuildRunResponse{}, nil
 }
 
 func (s *scanServer) GetBuildRunScan(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetBuildRunScanRequest],
-) (*connect.Response[relicv1.GetBuildRunScanResponse], error) {
-	m := req.Msg
+	req *relicv1.GetBuildRunScanRequest,
+) (*relicv1.GetBuildRunScanResponse, error) {
+	m := req
 
 	if _, err := buildRun(ctx, s.d, m.GetProject(), m.GetName(), m.GetNumber()); err != nil {
 		return nil, err
@@ -166,11 +166,11 @@ func (s *scanServer) GetBuildRunScan(
 		}
 	}
 
-	return connect.NewResponse(&relicv1.GetBuildRunScanResponse{
+	return &relicv1.GetBuildRunScanResponse{
 		Scan:       res.scan,
 		Violations: res.violations,
 		FailBuild:  res.failBuild,
-	}), nil
+	}, nil
 }
 
 type graphResult struct {

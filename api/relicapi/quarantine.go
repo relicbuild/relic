@@ -2,9 +2,8 @@ package relicapi
 
 import (
 	"context"
-	"errors"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -28,11 +27,11 @@ const quarantineListLimit = 1000
 
 func (s *quarantineServer) ListQuarantined(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListQuarantinedRequest],
-) (*connect.Response[relicv1.ListQuarantinedResponse], error) {
+	_ *relicv1.ListQuarantinedRequest,
+) (*relicv1.ListQuarantinedResponse, error) {
 	out := &relicv1.ListQuarantinedResponse{}
 	if s.d.DownloadBlocker == nil {
-		return connect.NewResponse(out), nil
+		return out, nil
 	}
 
 	held, err := s.d.DownloadBlocker.Quarantined(ctx, quarantineListLimit)
@@ -52,7 +51,7 @@ func (s *quarantineServer) ListQuarantined(
 		})
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *quarantineServer) decide(ctx context.Context, repo, p, reason string, release bool) error {
@@ -66,7 +65,7 @@ func (s *quarantineServer) decide(ctx context.Context, repo, p, reason string, r
 	}
 
 	if it.IsFolder() {
-		return connect.NewError(connect.CodeInvalidArgument, errors.New(repo+"/"+p+" is a folder"))
+		return connect.NewError(connect.CodeInvalidArgument, repo+"/"+p+" is a folder")
 	}
 
 	return s.d.DownloadBlocker.Decide(ctx, repo, it.Checksums.SHA256, release, reason, auth.FromContext(ctx).Name())
@@ -74,24 +73,24 @@ func (s *quarantineServer) decide(ctx context.Context, repo, p, reason string, r
 
 func (s *quarantineServer) ReleaseQuarantined(
 	ctx context.Context,
-	req *connect.Request[relicv1.ReleaseQuarantinedRequest],
-) (*connect.Response[relicv1.ReleaseQuarantinedResponse], error) {
-	m := req.Msg
+	req *relicv1.ReleaseQuarantinedRequest,
+) (*relicv1.ReleaseQuarantinedResponse, error) {
+	m := req
 	if err := s.decide(ctx, m.GetRepository(), m.GetPath(), m.GetReason(), true); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.ReleaseQuarantinedResponse{}), nil
+	return &relicv1.ReleaseQuarantinedResponse{}, nil
 }
 
 func (s *quarantineServer) RejectQuarantined(
 	ctx context.Context,
-	req *connect.Request[relicv1.RejectQuarantinedRequest],
-) (*connect.Response[relicv1.RejectQuarantinedResponse], error) {
-	m := req.Msg
+	req *relicv1.RejectQuarantinedRequest,
+) (*relicv1.RejectQuarantinedResponse, error) {
+	m := req
 	if err := s.decide(ctx, m.GetRepository(), m.GetPath(), m.GetReason(), false); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.RejectQuarantinedResponse{}), nil
+	return &relicv1.RejectQuarantinedResponse{}, nil
 }

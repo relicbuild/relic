@@ -3,7 +3,7 @@ package relicapi
 import (
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 )
@@ -20,9 +20,9 @@ func TestUnknownEnumValuesAreRejected(t *testing.T) {
 			call: func() error {
 				_, err := (&policyDecisionServer{}).ListPolicyDecisions(
 					t.Context(),
-					connect.NewRequest(&relicv1.ListPolicyDecisionsRequest{
+					&relicv1.ListPolicyDecisionsRequest{
 						Kind: relicv1.PolicyDecisionKind(99),
-					}),
+					},
 				)
 
 				return err
@@ -33,9 +33,9 @@ func TestUnknownEnumValuesAreRejected(t *testing.T) {
 			call: func() error {
 				_, err := (&repositoryServer{}).ListRepositories(
 					t.Context(),
-					connect.NewRequest(&relicv1.ListRepositoriesRequest{
+					&relicv1.ListRepositoriesRequest{
 						Class: relicv1.RepositoryClass(99),
-					}),
+					},
 				)
 
 				return err
