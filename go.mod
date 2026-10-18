@@ -2,6 +2,8 @@ module relic
 
 go 1.27.0
 
+toolchain go1.27.2
+
 require (
 	cel.dev/cel-go v0.32.0
 	charm.land/bubbles/v2 v2.2.1

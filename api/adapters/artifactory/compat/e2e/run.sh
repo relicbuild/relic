@@ -92,7 +92,7 @@ if command -v go >/dev/null; then
   (cd "$root" && "${harness[@]}")
 else
   docker run --rm -v "$root:/src:ro" -v "$bin:/out" -w /src -e GOFLAGS=-buildvcs=false -e GOCACHE=/tmp/go-cache \
-    -e GOMODCACHE=/tmp/go-mod golang:1.27.1-alpine sh -c 'CGO_ENABLED=0 go test -c -tags e2e -o /out/e2e.test ./api/adapters/artifactory/compat/e2e/harness'
+    -e GOMODCACHE=/tmp/go-mod golang:1.27.2-alpine sh -c 'CGO_ENABLED=0 go test -c -tags e2e -o /out/e2e.test ./api/adapters/artifactory/compat/e2e/harness'
 fi
 
 export RELIC_OTLP_ENDPOINT="${RELIC_OTLP_ENDPOINT:-http://relic-e2e-otel:4318}"
@@ -161,7 +161,7 @@ if [[ $sdk -eq 1 ]]; then
   else
     sdk_test=(docker run --rm --network "$network" -v "$root:/src:ro" -w /src/api/adapters/artifactory/compat/sdk -e GOFLAGS=-buildvcs=false
       -e GOCACHE=/tmp/go-cache -e GOMODCACHE=/tmp/go-mod -e RELIC_SDK_URL="$sdk_container_url" -e RELIC_USER -e RELIC_PASSWORD
-      golang:1.27.1-alpine go test -tags=e2e -count=1 -v ./...)
+      golang:1.27.2-alpine go test -tags=e2e -count=1 -v ./...)
   fi
   ( if "${sdk_test[@]}" >"$results/logs/sdk-artifactory-rest.log" 2>&1; then echo pass; else echo fail; fi >"$results/sdk.result" ) &
   sdk_pid=$!
