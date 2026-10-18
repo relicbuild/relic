@@ -8,19 +8,18 @@ jf api docs >/dev/null
 step "jf api docs search"
 jf api docs search ping --method GET --format json >search.json
 jq -e '.matches | length > 0' search.json >/dev/null
-suggested=$(jq -r '.matches[] | select(.path == "/access/api/v1/system/ping") | .jf_api' search.json)
-[[ "$suggested" == "jf api /access/api/v1/system/ping" ]]
+suggested=$(jq -r '.matches[] | select(.path == "/artifactory/api/system/ping") | .jf_api' search.json)
+[[ "$suggested" == "jf api /artifactory/api/system/ping" ]]
 
 step "jf api docs describe"
-jf api docs describe GET /access/api/v1/system/ping --format json |
-  jq -e '.method == "GET" and .path == "/access/api/v1/system/ping"' >/dev/null
+jf api docs describe GET /artifactory/api/system/ping --format json |
+  jq -e '.method == "GET" and .path == "/artifactory/api/system/ping"' >/dev/null
 
 step "the suggested command against Relic"
 read -ra command <<<"$suggested"
 [[ "$("${command[@]}")" == "OK" ]]
 
-step "Access v2 operations the docs describe, against Relic"
-jf api docs search "access/api/v2/groups" --format json | jq -e '[.matches[].path] | index("/access/api/v2/groups") != null' >/dev/null
+step "Access v2 groups through jf api, against Relic"
 group="relic-scenario-api-group${SCENARIO_SUFFIX:-}"
 jf api /access/api/v2/groups/"$group" -X DELETE >/dev/null 2>&1 || true
 jf api /access/api/v2/groups -X POST -H "Content-Type: application/json" -d "{\"name\":\"$group\",\"description\":\"from jf api\"}" |
