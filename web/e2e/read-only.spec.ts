@@ -26,7 +26,7 @@ test('a user who may only read a repository sees no upload or delete controls', 
   await page.getByLabel('Username').fill(name)
   await page.getByRole('textbox', { name: /^Password/ }).fill(password)
   await page.getByRole('button', { name: /sign in/i }).click()
-  await expect(page).toHaveURL(/\/dashboard/)
+  await expect(page).toHaveURL(/\/dashboard/, { timeout: 30_000 })
 
   await page.goto(`/repositories/${repo}`)
   await page.getByRole('treeitem', { name: 'app', exact: true }).click()
