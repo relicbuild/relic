@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"io"
 )
@@ -84,6 +83,7 @@ type File struct {
 	Terms        []Term
 	Verification bool
 	// SHA256 is the file's SHA-256 in hex, empty when the shard has none.
+	// Shards store it as a Hash, in the hash's word order.
 	SHA256 string
 }
 
@@ -234,7 +234,7 @@ func (s *shardReader) files() ([]File, error) {
 				return nil, err
 			}
 
-			f.SHA256 = hex.EncodeToString(entry[:HashSize])
+			f.SHA256 = entryHash(entry).String()
 		}
 
 		files = append(files, f)
@@ -310,12 +310,12 @@ func (s Shard) MarshalBinary() ([]byte, error) {
 		}
 
 		if f.SHA256 != "" {
-			sum, err := hex.DecodeString(f.SHA256)
-			if err != nil || len(sum) != HashSize {
-				return nil, fmt.Errorf("%w: sha256 %q", ErrInvalid, f.SHA256)
+			sum, err := ParseHash(f.SHA256)
+			if err != nil {
+				return nil, err
 			}
 
-			out = appendEntry(out, Hash(sum))
+			out = appendEntry(out, sum)
 		}
 	}
 
