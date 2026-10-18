@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -38,16 +37,16 @@ func webhookDeliveriesCmd(g *globals) *cobra.Command {
 
 			res, err := c.webhooks.ListWebhookDeliveries(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.ListWebhookDeliveriesRequest{
+				&relicv1.ListWebhookDeliveriesRequest{
 					Webhook: name,
 					Limit:   limit,
-				}),
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("list deliveries: %w", err)
 			}
 
-			return printMessage(cmd.OutOrStdout(), output, res.Msg, func(w io.Writer) error {
+			return printMessage(cmd.OutOrStdout(), output, res, func(w io.Writer) error {
 				table := terminal.Table{
 					Headers: []string{
 						"ID",
@@ -65,7 +64,7 @@ func webhookDeliveriesCmd(g *globals) *cobra.Command {
 					},
 				}
 
-				for _, d := range res.Msg.GetDeliveries() {
+				for _, d := range res.GetDeliveries() {
 					table.Rows = append(table.Rows, []string{
 						d.GetId(),
 						d.GetWebhook(),
@@ -100,14 +99,14 @@ func webhookPingCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			res, err := c.webhooks.PingWebhook(cmd.Context(), connect.NewRequest(&relicv1.PingWebhookRequest{
+			res, err := c.webhooks.PingWebhook(cmd.Context(), &relicv1.PingWebhookRequest{
 				Name: args[0],
-			}))
+			})
 			if err != nil {
 				return fmt.Errorf("ping %s: %w", args[0], err)
 			}
 
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "queued delivery %s\n", res.Msg.GetDelivery())
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "queued delivery %s\n", res.GetDelivery())
 
 			return err
 		},

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -46,18 +45,18 @@ func risksCmd(g *globals) *cobra.Command {
 
 			res, err := c.scans.ListOperationalRisks(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.ListOperationalRisksRequest{
+				&relicv1.ListOperationalRisksRequest{
 					Kind:       kind,
 					Query:      query,
 					Repository: repository,
 					PageSize:   limit,
-				}),
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("list operational risks: %w", err)
 			}
 
-			return printMessage(cmd.OutOrStdout(), output, res.Msg, func(w io.Writer) error {
+			return printMessage(cmd.OutOrStdout(), output, res, func(w io.Writer) error {
 				table := terminal.Table{
 					Headers: []string{
 						"SEVERITY",
@@ -69,7 +68,7 @@ func risksCmd(g *globals) *cobra.Command {
 					},
 				}
 
-				for _, r := range res.Msg.GetRisks() {
+				for _, r := range res.GetRisks() {
 					table.Rows = append(table.Rows, []string{
 						strings.TrimPrefix(strings.ToLower(r.GetSeverity().String()), "severity_"),
 						r.GetKind(),
@@ -84,7 +83,7 @@ func risksCmd(g *globals) *cobra.Command {
 					return err
 				}
 
-				_, err := fmt.Fprintf(w, "%d of %d\n", len(res.Msg.GetRisks()), res.Msg.GetTotal())
+				_, err := fmt.Fprintf(w, "%d of %d\n", len(res.GetRisks()), res.GetTotal())
 
 				return err
 			})
@@ -189,13 +188,13 @@ func endOfLifeStatusCmd(g *globals) *cobra.Command {
 
 			r, err := c.scans.GetEndOfLifeStatus(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.GetEndOfLifeStatusRequest{}),
+				&relicv1.GetEndOfLifeStatusRequest{},
 			)
 			if err != nil {
 				return fmt.Errorf("end-of-life status: %w", err)
 			}
 
-			s := r.Msg
+			s := r
 
 			return printMessage(cmd.OutOrStdout(), output, s, func(w io.Writer) error {
 				if s.GetSource() == "" {

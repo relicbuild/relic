@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -655,24 +655,24 @@ func serverStatus(cmd *cobra.Command, g *globals) (*statusResult, error) {
 
 	start := time.Now()
 
-	v, err := c.system.GetVersion(cmd.Context(), connect.NewRequest(&relicv1.GetVersionRequest{}))
+	v, err := c.system.GetVersion(cmd.Context(), &relicv1.GetVersionRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("status: %s: %w", c.url, err)
 	}
 
 	res := &statusResult{
 		URL:       c.url,
-		Version:   v.Msg.GetVersion(),
-		Revision:  v.Msg.GetRevision(),
+		Version:   v.GetVersion(),
+		Revision:  v.GetRevision(),
 		LatencyMS: time.Since(start).Milliseconds(),
 		Healthy:   true,
 	}
 
-	me, err := c.sessions.GetCurrentUser(cmd.Context(), connect.NewRequest(&relicv1.GetCurrentUserRequest{}))
+	me, err := c.sessions.GetCurrentUser(cmd.Context(), &relicv1.GetCurrentUserRequest{})
 	switch {
 	case err == nil:
-		res.User = me.Msg.GetPrincipal().GetUsername()
-		res.Admin = me.Msg.GetPrincipal().GetAdmin()
+		res.User = me.GetPrincipal().GetUsername()
+		res.Admin = me.GetPrincipal().GetAdmin()
 	case connect.CodeOf(err) != connect.CodeUnauthenticated:
 		return nil, fmt.Errorf("status: %w", err)
 	}
@@ -680,13 +680,13 @@ func serverStatus(cmd *cobra.Command, g *globals) (*statusResult, error) {
 	if res.Admin {
 		st, err := c.system.GetSystemStatus(
 			cmd.Context(),
-			connect.NewRequest(&relicv1.GetSystemStatusRequest{}),
+			&relicv1.GetSystemStatusRequest{},
 		)
 		if err != nil {
 			return nil, fmt.Errorf("status: %w", err)
 		}
 
-		res.Checks = st.Msg.GetChecks()
+		res.Checks = st.GetChecks()
 		for _, ch := range res.Checks {
 			res.Healthy = res.Healthy && ch.GetOk()
 		}

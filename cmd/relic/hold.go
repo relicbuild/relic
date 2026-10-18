@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -44,11 +43,11 @@ func holdAddCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			if _, err := c.holds.PutHold(cmd.Context(), connect.NewRequest(&relicv1.PutHoldRequest{
+			if _, err := c.holds.PutHold(cmd.Context(), &relicv1.PutHoldRequest{
 				Repository: repo,
 				Path:       path,
 				Reason:     reason,
-			})); err != nil {
+			}); err != nil {
 				return fmt.Errorf("hold %s: %w", args[0], err)
 			}
 
@@ -81,10 +80,10 @@ func holdRemoveCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			if _, err := c.holds.DeleteHold(cmd.Context(), connect.NewRequest(&relicv1.DeleteHoldRequest{
+			if _, err := c.holds.DeleteHold(cmd.Context(), &relicv1.DeleteHoldRequest{
 				Repository: repo,
 				Path:       path,
-			})); err != nil {
+			}); err != nil {
 				return fmt.Errorf("release %s: %w", args[0], err)
 			}
 
@@ -109,12 +108,12 @@ func holdListCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			res, err := c.holds.ListHolds(cmd.Context(), connect.NewRequest(&relicv1.ListHoldsRequest{}))
+			res, err := c.holds.ListHolds(cmd.Context(), &relicv1.ListHoldsRequest{})
 			if err != nil {
 				return fmt.Errorf("list holds: %w", err)
 			}
 
-			return printMessage(cmd.OutOrStdout(), output, res.Msg, func(w io.Writer) error {
+			return printMessage(cmd.OutOrStdout(), output, res, func(w io.Writer) error {
 				table := terminal.Table{
 					Headers: []string{
 						"ITEM",
@@ -124,7 +123,7 @@ func holdListCmd(g *globals) *cobra.Command {
 					},
 				}
 
-				for _, h := range res.Msg.GetHolds() {
+				for _, h := range res.GetHolds() {
 					table.Rows = append(table.Rows, []string{
 						h.GetRepository() + "/" + h.GetPath(),
 						tableCell(h.GetReason()),

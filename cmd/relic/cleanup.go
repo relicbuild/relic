@@ -5,7 +5,6 @@ import (
 	"io"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -30,15 +29,15 @@ func cleanupPreviewCmd(g *globals) *cobra.Command {
 
 			res, err := c.cleanup.PreviewCleanupPolicy(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.PreviewCleanupPolicyRequest{
+				&relicv1.PreviewCleanupPolicyRequest{
 					Name: args[0],
-				}),
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("preview %s: %w", args[0], err)
 			}
 
-			return printMessage(cmd.OutOrStdout(), output, res.Msg, func(w io.Writer) error {
+			return printMessage(cmd.OutOrStdout(), output, res, func(w io.Writer) error {
 				table := terminal.Table{
 					Headers: []string{
 						"REPOSITORY",
@@ -51,7 +50,7 @@ func cleanupPreviewCmd(g *globals) *cobra.Command {
 					},
 				}
 
-				for _, cand := range res.Msg.GetCandidates() {
+				for _, cand := range res.GetCandidates() {
 					table.Rows = append(table.Rows, []string{
 						cand.GetRepository(),
 						cand.GetPath(),
@@ -83,14 +82,14 @@ func cleanupRunCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			res, err := c.cleanup.RunCleanupPolicy(cmd.Context(), connect.NewRequest(&relicv1.RunCleanupPolicyRequest{
+			res, err := c.cleanup.RunCleanupPolicy(cmd.Context(), &relicv1.RunCleanupPolicyRequest{
 				Name: args[0],
-			}))
+			})
 			if err != nil {
 				return fmt.Errorf("run %s: %w", args[0], err)
 			}
 
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "moved %d items to the trash\n", res.Msg.GetMoved())
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "moved %d items to the trash\n", res.GetMoved())
 
 			return err
 		},

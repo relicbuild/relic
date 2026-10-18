@@ -6,6 +6,9 @@ import (
 	"net/http"
 
 	"relic/api/gen/relic/v1/relicv1connect"
+
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 )
 
 type client struct {
@@ -68,34 +71,42 @@ func newClient(url, certificateAuthority string, creds credentials) *client {
 	}
 	api := url + "/api"
 
+	rpc := connect.NewClient(
+		connecthttp.NewTransport(
+			hc,
+			api,
+			connecthttp.WithReadMaxBytes(0),
+		),
+	)
+
 	return &client{
 		url:                url,
 		http:               hc,
-		artifacts:          relicv1connect.NewArtifactServiceClient(hc, api),
-		builds:             relicv1connect.NewBuildServiceClient(hc, api),
-		evidence:           relicv1connect.NewEvidenceServiceClient(hc, api),
-		ldap:               relicv1connect.NewLdapServiceClient(hc, api),
-		packages:           relicv1connect.NewPackageServiceClient(hc, api),
-		releases:           relicv1connect.NewReleaseServiceClient(hc, api),
-		replications:       relicv1connect.NewReplicationServiceClient(hc, api),
-		cleanup:            relicv1connect.NewCleanupServiceClient(hc, api),
-		holds:              relicv1connect.NewHoldServiceClient(hc, api),
-		audit:              relicv1connect.NewAuditServiceClient(hc, api),
-		identityProviders:  relicv1connect.NewIdentityProviderServiceClient(hc, api),
-		workloadIdentities: relicv1connect.NewWorkloadIdentityServiceClient(hc, api),
-		quarantine:         relicv1connect.NewQuarantineServiceClient(hc, api),
-		waiver:             relicv1connect.NewWaiverServiceClient(hc, api),
-		promotionGates:     relicv1connect.NewPromotionGateServiceClient(hc, api),
-		policyDecisions:    relicv1connect.NewPolicyDecisionServiceClient(hc, api),
-		webhooks:           relicv1connect.NewWebhookServiceClient(hc, api),
-		projects:           relicv1connect.NewProjectServiceClient(hc, api),
-		agentRegistry:      relicv1connect.NewAgentRegistryServiceClient(hc, api),
-		repositories:       relicv1connect.NewRepositoryServiceClient(hc, api),
-		scans:              relicv1connect.NewScanServiceClient(hc, api),
-		security:           relicv1connect.NewSecurityServiceClient(hc, api),
-		sessions:           relicv1connect.NewSessionServiceClient(hc, api),
-		signingKeys:        relicv1connect.NewSigningKeyServiceClient(hc, api),
-		system:             relicv1connect.NewSystemServiceClient(hc, api),
+		artifacts:          relicv1connect.NewArtifactServiceClient(rpc),
+		builds:             relicv1connect.NewBuildServiceClient(rpc),
+		evidence:           relicv1connect.NewEvidenceServiceClient(rpc),
+		ldap:               relicv1connect.NewLdapServiceClient(rpc),
+		packages:           relicv1connect.NewPackageServiceClient(rpc),
+		releases:           relicv1connect.NewReleaseServiceClient(rpc),
+		replications:       relicv1connect.NewReplicationServiceClient(rpc),
+		cleanup:            relicv1connect.NewCleanupServiceClient(rpc),
+		holds:              relicv1connect.NewHoldServiceClient(rpc),
+		audit:              relicv1connect.NewAuditServiceClient(rpc),
+		identityProviders:  relicv1connect.NewIdentityProviderServiceClient(rpc),
+		workloadIdentities: relicv1connect.NewWorkloadIdentityServiceClient(rpc),
+		quarantine:         relicv1connect.NewQuarantineServiceClient(rpc),
+		waiver:             relicv1connect.NewWaiverServiceClient(rpc),
+		promotionGates:     relicv1connect.NewPromotionGateServiceClient(rpc),
+		policyDecisions:    relicv1connect.NewPolicyDecisionServiceClient(rpc),
+		webhooks:           relicv1connect.NewWebhookServiceClient(rpc),
+		projects:           relicv1connect.NewProjectServiceClient(rpc),
+		agentRegistry:      relicv1connect.NewAgentRegistryServiceClient(rpc),
+		repositories:       relicv1connect.NewRepositoryServiceClient(rpc),
+		scans:              relicv1connect.NewScanServiceClient(rpc),
+		security:           relicv1connect.NewSecurityServiceClient(rpc),
+		sessions:           relicv1connect.NewSessionServiceClient(rpc),
+		signingKeys:        relicv1connect.NewSigningKeyServiceClient(rpc),
+		system:             relicv1connect.NewSystemServiceClient(rpc),
 	}
 }
 

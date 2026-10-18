@@ -13,7 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -25,20 +26,24 @@ type versionServer struct {
 }
 
 func (versionServer) GetVersion(
-	context.Context,
-	*connect.Request[relicv1.GetVersionRequest],
-) (*connect.Response[relicv1.GetVersionResponse], error) {
-	return connect.NewResponse(&relicv1.GetVersionResponse{
+	context.Context, *relicv1.GetVersionRequest,
+) (*relicv1.GetVersionResponse, error) {
+	return &relicv1.GetVersionResponse{
 		Version: "v9.9.9",
-	}), nil
+	}, nil
 }
 
 func runningServer(t *testing.T) (string, []byte) {
 	t.Helper()
 
-	path, h := relicv1connect.NewSystemServiceHandler(versionServer{})
+	api := connect.NewServer()
+	relicv1connect.RegisterSystemServiceHandler(api, versionServer{})
+
+	procedures := http.NewServeMux()
+	connecthttp.Mount(procedures, api)
+
 	mux := http.NewServeMux()
-	mux.Handle("/api"+path, http.StripPrefix("/api", h))
+	mux.Handle("/api/", http.StripPrefix("/api", procedures))
 
 	directory, err := servertls.OpenDirectory(t.Context(), t.TempDir(), []string{
 		"127.0.0.1",

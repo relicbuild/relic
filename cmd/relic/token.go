@@ -5,7 +5,6 @@ import (
 	"io"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -69,7 +68,7 @@ func tokenCreateCmd(g *globals) *cobra.Command {
 
 			r, err := c.security.CreateToken(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.CreateTokenRequest{
+				&relicv1.CreateTokenRequest{
 					Description: description,
 					ExpiresDays: expiresDays,
 					Scope: &relicv1.TokenScope{
@@ -77,14 +76,14 @@ func tokenCreateCmd(g *globals) *cobra.Command {
 						Groups: groups,
 					},
 					Project: project,
-				}),
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("token create: %w", err)
 			}
 
-			return printMessage(cmd.OutOrStdout(), output, r.Msg, func(w io.Writer) error {
-				_, err := fmt.Fprintln(w, r.Msg.GetAccessToken())
+			return printMessage(cmd.OutOrStdout(), output, r, func(w io.Writer) error {
+				_, err := fmt.Fprintln(w, r.GetAccessToken())
 
 				return err
 			})
@@ -134,16 +133,16 @@ func tokenListCmd(g *globals) *cobra.Command {
 
 			r, err := c.security.ListTokens(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.ListTokensRequest{
+				&relicv1.ListTokensRequest{
 					Username:       user,
 					IncludeRevoked: revoked,
-				}),
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("token list: %w", err)
 			}
 
-			return printMessage(cmd.OutOrStdout(), output, r.Msg, func(w io.Writer) error {
+			return printMessage(cmd.OutOrStdout(), output, r, func(w io.Writer) error {
 				table := terminal.Table{
 					Headers: []string{
 						"ID",
@@ -155,7 +154,7 @@ func tokenListCmd(g *globals) *cobra.Command {
 				}
 
 				now := time.Now()
-				for _, t := range r.Msg.GetTokens() {
+				for _, t := range r.GetTokens() {
 					table.Rows = append(table.Rows, tokenRow(t, now))
 				}
 
@@ -206,13 +205,13 @@ func tokenRevokeCmd(g *globals) *cobra.Command {
 				return nil, cobra.ShellCompDirectiveNoFileComp
 			}
 
-			r, err := c.security.ListTokens(cmd.Context(), connect.NewRequest(&relicv1.ListTokensRequest{}))
+			r, err := c.security.ListTokens(cmd.Context(), &relicv1.ListTokensRequest{})
 			if err != nil {
 				return nil, cobra.ShellCompDirectiveNoFileComp
 			}
 
 			var out []string
-			for _, t := range r.Msg.GetTokens() {
+			for _, t := range r.GetTokens() {
 				out = append(out, t.GetId()+"\t"+t.GetDescription())
 			}
 
@@ -227,9 +226,9 @@ func tokenRevokeCmd(g *globals) *cobra.Command {
 			for _, id := range args {
 				if _, err := c.security.RevokeToken(
 					cmd.Context(),
-					connect.NewRequest(&relicv1.RevokeTokenRequest{
+					&relicv1.RevokeTokenRequest{
 						Id: id,
-					}),
+					},
 				); err != nil {
 					return fmt.Errorf("token revoke %s: %w", id, err)
 				}

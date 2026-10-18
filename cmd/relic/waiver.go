@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -55,16 +54,16 @@ func waiverRequestCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			res, err := c.waiver.RequestWaiver(cmd.Context(), connect.NewRequest(&relicv1.RequestWaiverRequest{
+			res, err := c.waiver.RequestWaiver(cmd.Context(), &relicv1.RequestWaiverRequest{
 				Rule:   &rule,
 				Reason: reason,
-			}))
+			})
 			if err != nil {
 				return fmt.Errorf("request waiver: %w", err)
 			}
 
-			return printMessage(cmd.OutOrStdout(), output, res.Msg.GetWaiver(), func(w io.Writer) error {
-				_, err := fmt.Fprintf(w, "requested waiver %s\n", res.Msg.GetWaiver().GetId())
+			return printMessage(cmd.OutOrStdout(), output, res.GetWaiver(), func(w io.Writer) error {
+				_, err := fmt.Fprintf(w, "requested waiver %s\n", res.GetWaiver().GetId())
 
 				return err
 			})
@@ -119,28 +118,28 @@ func waiverListCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			res, err := c.waiver.ListWaivers(cmd.Context(), connect.NewRequest(&relicv1.ListWaiversRequest{
+			res, err := c.waiver.ListWaivers(cmd.Context(), &relicv1.ListWaiversRequest{
 				Status:   st,
 				Mine:     mine,
 				Page:     page,
 				PageSize: pageSize,
-			}))
+			})
 			if err != nil {
 				return fmt.Errorf("list waivers: %w", err)
 			}
 
-			if err := printMessage(cmd.OutOrStdout(), output, res.Msg, func(w io.Writer) error {
-				return printWaivers(w, res.Msg.GetWaivers())
+			if err := printMessage(cmd.OutOrStdout(), output, res, func(w io.Writer) error {
+				return printWaivers(w, res.GetWaivers())
 			}); err != nil {
 				return err
 			}
 
-			if shown := int64(page-1)*int64(pageSize) + int64(len(res.Msg.GetWaivers())); shown < res.Msg.GetTotal() {
+			if shown := int64(page-1)*int64(pageSize) + int64(len(res.GetWaivers())); shown < res.GetTotal() {
 				_, err = fmt.Fprintf(
 					cmd.ErrOrStderr(),
 					"%d of %d waivers; --page %d lists more\n",
 					shown,
-					res.Msg.GetTotal(),
+					res.GetTotal(),
 					page+1,
 				)
 			}
@@ -243,11 +242,11 @@ func waiverApproveCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			res, err := c.waiver.ApproveWaiver(cmd.Context(), connect.NewRequest(&relicv1.ApproveWaiverRequest{
+			res, err := c.waiver.ApproveWaiver(cmd.Context(), &relicv1.ApproveWaiverRequest{
 				Id:   args[0],
 				Days: days,
 				Note: note,
-			}))
+			})
 			if err != nil {
 				return fmt.Errorf("approve %s: %w", args[0], err)
 			}
@@ -256,8 +255,8 @@ func waiverApproveCmd(g *globals) *cobra.Command {
 				cmd.OutOrStdout(),
 				"approved %s: ignore rule %s expires %s\n",
 				args[0],
-				res.Msg.GetWaiver().GetIgnoreRuleId(),
-				res.Msg.GetWaiver().GetExpires().AsTime().Local().Format(time.DateOnly),
+				res.GetWaiver().GetIgnoreRuleId(),
+				res.GetWaiver().GetExpires().AsTime().Local().Format(time.DateOnly),
 			)
 
 			return err
@@ -283,10 +282,10 @@ func waiverRejectCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			if _, err := c.waiver.RejectWaiver(cmd.Context(), connect.NewRequest(&relicv1.RejectWaiverRequest{
+			if _, err := c.waiver.RejectWaiver(cmd.Context(), &relicv1.RejectWaiverRequest{
 				Id:   args[0],
 				Note: note,
-			})); err != nil {
+			}); err != nil {
 				return fmt.Errorf("reject %s: %w", args[0], err)
 			}
 
@@ -312,9 +311,9 @@ func waiverWithdrawCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			if _, err := c.waiver.WithdrawWaiver(cmd.Context(), connect.NewRequest(&relicv1.WithdrawWaiverRequest{
+			if _, err := c.waiver.WithdrawWaiver(cmd.Context(), &relicv1.WithdrawWaiverRequest{
 				Id: args[0],
-			})); err != nil {
+			}); err != nil {
 				return fmt.Errorf("withdraw %s: %w", args[0], err)
 			}
 

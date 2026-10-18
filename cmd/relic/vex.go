@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -56,30 +55,30 @@ func vexExportCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			r, err := c.scans.ExportVex(cmd.Context(), connect.NewRequest(&relicv1.ExportVexRequest{
+			r, err := c.scans.ExportVex(cmd.Context(), &relicv1.ExportVexRequest{
 				Format:             f,
 				IncludeUnreachable: unreachable,
-			}))
+			})
 			if err != nil {
 				return fmt.Errorf("vex export: %w", err)
 			}
 
-			if r.Msg.GetSkipped() > 0 {
+			if r.GetSkipped() > 0 {
 				_, _ = fmt.Fprintf(
 					cmd.ErrOrStderr(),
 					"%d ignore rules left out: without both a vulnerability and a package, limited in scope, "+
 						"or expiring\n",
-					r.Msg.GetSkipped(),
+					r.GetSkipped(),
 				)
 			}
 
 			if file == "" {
-				_, err := fmt.Fprintln(cmd.OutOrStdout(), r.Msg.GetDocument())
+				_, err := fmt.Fprintln(cmd.OutOrStdout(), r.GetDocument())
 
 				return err
 			}
 
-			return writeFileAtomic(file, strings.NewReader(r.Msg.GetDocument()+"\n"), 0o644)
+			return writeFileAtomic(file, strings.NewReader(r.GetDocument()+"\n"), 0o644)
 		},
 	}
 	cmd.Flags().StringVar(&file, "file", "", "write the document to this file instead of standard output")
@@ -133,14 +132,14 @@ func vexImportCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			r, err := c.scans.ImportVex(cmd.Context(), connect.NewRequest(&relicv1.ImportVexRequest{
+			r, err := c.scans.ImportVex(cmd.Context(), &relicv1.ImportVexRequest{
 				Document: string(b),
-			}))
+			})
 			if err != nil {
 				return fmt.Errorf("vex import: %w", err)
 			}
 
-			return printMessage(cmd.OutOrStdout(), output, r.Msg, func(w io.Writer) error {
+			return printMessage(cmd.OutOrStdout(), output, r, func(w io.Writer) error {
 				table := terminal.Table{
 					Headers: []string{
 						"IGNORE RULE",
@@ -149,7 +148,7 @@ func vexImportCmd(g *globals) *cobra.Command {
 					},
 				}
 
-				for _, rule := range r.Msg.GetRules() {
+				for _, rule := range r.GetRules() {
 					table.Rows = append(table.Rows, []string{
 						rule.GetId(),
 						strings.Join(rule.GetVulnerabilities(), ", "),
@@ -166,8 +165,8 @@ func vexImportCmd(g *globals) *cobra.Command {
 				_, err := fmt.Fprintf(
 					w,
 					"%d ignore rules created, %d statements left out\n",
-					len(r.Msg.GetRules()),
-					r.Msg.GetSkipped(),
+					len(r.GetRules()),
+					r.GetSkipped(),
 				)
 
 				return err

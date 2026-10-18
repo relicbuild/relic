@@ -17,7 +17,6 @@ import (
 	"slices"
 	"strings"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -1003,26 +1002,26 @@ func userHome() string {
 func setupEnvFor(cmd *cobra.Command, g *globals, c *client, client setupClient, repo string) (setupEnv, error) {
 	ctx := cmd.Context()
 
-	r, err := c.repositories.GetRepository(ctx, connect.NewRequest(&relicv1.GetRepositoryRequest{
+	r, err := c.repositories.GetRepository(ctx, &relicv1.GetRepositoryRequest{
 		Name: repo,
-	}))
+	})
 	if err != nil {
 		return setupEnv{}, fmt.Errorf("setup: %w", err)
 	}
 
-	format := r.Msg.GetRepository().GetFormat()
+	format := r.GetRepository().GetFormat()
 	if !slices.Contains(client.formats, format) {
 		return setupEnv{}, fmt.Errorf("setup: %s is a %s repository", repo, formatName(format))
 	}
 
-	ep, err := c.repositories.GetClientEndpoints(ctx, connect.NewRequest(&relicv1.GetClientEndpointsRequest{
+	ep, err := c.repositories.GetClientEndpoints(ctx, &relicv1.GetClientEndpointsRequest{
 		Name: repo,
-	}))
+	})
 	if err != nil {
 		return setupEnv{}, fmt.Errorf("setup: %w", err)
 	}
 
-	me, err := c.sessions.GetCurrentUser(ctx, connect.NewRequest(&relicv1.GetCurrentUserRequest{}))
+	me, err := c.sessions.GetCurrentUser(ctx, &relicv1.GetCurrentUserRequest{})
 	if err != nil {
 		return setupEnv{}, fmt.Errorf("setup: %w", err)
 	}
@@ -1036,7 +1035,7 @@ func setupEnvFor(cmd *cobra.Command, g *globals, c *client, client setupClient, 
 		return setupEnv{}, fmt.Errorf(
 			"setup: no token to give the client: sign in with relic auth login %s --user %s",
 			target.url,
-			me.Msg.GetPrincipal().GetUsername(),
+			me.GetPrincipal().GetUsername(),
 		)
 	}
 
@@ -1048,11 +1047,11 @@ func setupEnvFor(cmd *cobra.Command, g *globals, c *client, client setupClient, 
 	e := setupEnv{
 		repo:         repo,
 		format:       format,
-		url:          ep.Msg.GetPackageManager(),
-		registry:     ep.Msg.GetContainerRegistry(),
-		files:        ep.Msg.GetFiles(),
+		url:          ep.GetPackageManager(),
+		registry:     ep.GetContainerRegistry(),
+		files:        ep.GetFiles(),
 		host:         u.Host,
-		user:         me.Msg.GetPrincipal().GetUsername(),
+		user:         me.GetPrincipal().GetUsername(),
 		token:        target.token,
 		contextToken: target.contextToken,
 	}
@@ -1063,15 +1062,15 @@ func setupEnvFor(cmd *cobra.Command, g *globals, c *client, client setupClient, 
 	if slices.Contains(signedFormats, format) {
 		key, err := c.repositories.GetRepositorySigningKey(
 			ctx,
-			connect.NewRequest(&relicv1.GetRepositorySigningKeyRequest{
+			&relicv1.GetRepositorySigningKeyRequest{
 				Name: repo,
-			}),
+			},
 		)
 		if err != nil {
 			return setupEnv{}, fmt.Errorf("setup: the signing key of %s: %w", repo, err)
 		}
 
-		e.keyPair, e.publicKey = key.Msg.GetKeyPair(), key.Msg.GetPublicKey()
+		e.keyPair, e.publicKey = key.GetKeyPair(), key.GetPublicKey()
 	}
 
 	return e, nil
@@ -1080,15 +1079,15 @@ func setupEnvFor(cmd *cobra.Command, g *globals, c *client, client setupClient, 
 // clientToken issues the token a client gets in place of the context's own, which signing in again and
 // signing out revoke.
 func clientToken(cmd *cobra.Command, c *client, clientName, repo string, expiresDays int32) (string, error) {
-	resp, err := c.security.CreateToken(cmd.Context(), connect.NewRequest(&relicv1.CreateTokenRequest{
+	resp, err := c.security.CreateToken(cmd.Context(), &relicv1.CreateTokenRequest{
 		Description: "relic package setup " + clientName + " " + repo,
 		ExpiresDays: expiresDays,
-	}))
+	})
 	if err != nil {
 		return "", fmt.Errorf("setup: issue a token for %s: %w", clientName, err)
 	}
 
-	return resp.Msg.GetAccessToken(), nil
+	return resp.GetAccessToken(), nil
 }
 
 var signedFormats = []relicv1.Format{

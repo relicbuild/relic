@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -47,16 +46,16 @@ func decisionsCmd(g *globals) *cobra.Command {
 
 			res, err := c.policyDecisions.ListPolicyDecisions(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.ListPolicyDecisionsRequest{
+				&relicv1.ListPolicyDecisionsRequest{
 					Kind:  k,
 					Limit: limit,
-				}),
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("list decisions: %w", err)
 			}
 
-			return printMessage(cmd.OutOrStdout(), output, res.Msg, func(w io.Writer) error {
+			return printMessage(cmd.OutOrStdout(), output, res, func(w io.Writer) error {
 				table := terminal.Table{
 					Headers: []string{
 						"KIND",
@@ -72,7 +71,7 @@ func decisionsCmd(g *globals) *cobra.Command {
 					},
 				}
 
-				for _, d := range res.Msg.GetDecisions() {
+				for _, d := range res.GetDecisions() {
 					table.Rows = append(table.Rows, []string{
 						strings.ToLower(strings.TrimPrefix(d.GetKind().String(), "POLICY_DECISION_KIND_")),
 						d.GetSubject(),
@@ -156,18 +155,18 @@ func policyPreviewCmd(g *globals) *cobra.Command {
 
 				res, err := c.policyDecisions.PreviewPolicy(
 					cmd.Context(),
-					connect.NewRequest(&relicv1.PreviewPolicyRequest{
+					&relicv1.PreviewPolicyRequest{
 						Policy:       p,
 						Repositories: repositories,
 						Limit:        limit,
-					}),
+					},
 				)
 				if err != nil {
 					return fmt.Errorf("preview %s: %w", d, err)
 				}
 
-				out.Hits = append(out.Hits, res.Msg.GetHits()...)
-				out.Truncated = out.Truncated || res.Msg.GetTruncated()
+				out.Hits = append(out.Hits, res.GetHits()...)
+				out.Truncated = out.Truncated || res.GetTruncated()
 			}
 
 			if previewed == 0 {

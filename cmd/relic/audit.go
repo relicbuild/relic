@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -56,13 +55,13 @@ func auditListCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			res, err := c.audit.ListAuditEvents(cmd.Context(), connect.NewRequest(req))
+			res, err := c.audit.ListAuditEvents(cmd.Context(), req)
 			if err != nil {
 				return fmt.Errorf("list audit events: %w", err)
 			}
 
-			return printMessage(cmd.OutOrStdout(), output, res.Msg, func(w io.Writer) error {
-				return printAuditEvents(w, res.Msg.GetEvents())
+			return printMessage(cmd.OutOrStdout(), output, res, func(w io.Writer) error {
+				return printAuditEvents(w, res.GetEvents())
 			})
 		},
 	}

@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -39,13 +38,13 @@ func quarantineListCmd(g *globals) *cobra.Command {
 
 			res, err := c.quarantine.ListQuarantined(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.ListQuarantinedRequest{}),
+				&relicv1.ListQuarantinedRequest{},
 			)
 			if err != nil {
 				return fmt.Errorf("list quarantine: %w", err)
 			}
 
-			return printMessage(cmd.OutOrStdout(), output, res.Msg, func(w io.Writer) error {
+			return printMessage(cmd.OutOrStdout(), output, res, func(w io.Writer) error {
 				table := terminal.Table{
 					Headers: []string{
 						"FILE",
@@ -55,7 +54,7 @@ func quarantineListCmd(g *globals) *cobra.Command {
 					},
 				}
 
-				for _, f := range res.Msg.GetFiles() {
+				for _, f := range res.GetFiles() {
 					table.Rows = append(table.Rows, []string{
 						f.GetRepository() + "/" + f.GetPath(),
 						strings.ToLower(strings.TrimPrefix(f.GetState().String(), "QUARANTINE_STATE_")),
@@ -101,20 +100,20 @@ func quarantineDecideCmd(g *globals, release bool) *cobra.Command {
 			if release {
 				_, err = c.quarantine.ReleaseQuarantined(
 					cmd.Context(),
-					connect.NewRequest(&relicv1.ReleaseQuarantinedRequest{
+					&relicv1.ReleaseQuarantinedRequest{
 						Repository: repo,
 						Path:       p,
 						Reason:     reason,
-					}),
+					},
 				)
 			} else {
 				_, err = c.quarantine.RejectQuarantined(
 					cmd.Context(),
-					connect.NewRequest(&relicv1.RejectQuarantinedRequest{
+					&relicv1.RejectQuarantinedRequest{
 						Repository: repo,
 						Path:       p,
 						Reason:     reason,
-					}),
+					},
 				)
 			}
 

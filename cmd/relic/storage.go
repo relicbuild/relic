@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -53,12 +52,12 @@ func storageCheckCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			res, err := c.system.CheckStorage(cmd.Context(), connect.NewRequest(&relicv1.CheckStorageRequest{}))
+			res, err := c.system.CheckStorage(cmd.Context(), &relicv1.CheckStorageRequest{})
 			if err != nil {
 				return fmt.Errorf("storage check: %w", err)
 			}
 
-			id := res.Msg.GetJobId()
+			id := res.GetJobId()
 			if !wait {
 				_, err := fmt.Fprintf(cmd.OutOrStdout(), "storage check queued as job %d\n", id)
 
@@ -91,15 +90,15 @@ func storageCheckCmd(g *globals) *cobra.Command {
 
 func waitForStorageCheck(cmd *cobra.Command, c *client, id int64) (*storageReport, error) {
 	for {
-		res, err := c.system.ListBackgroundJobs(cmd.Context(), connect.NewRequest(&relicv1.ListBackgroundJobsRequest{
+		res, err := c.system.ListBackgroundJobs(cmd.Context(), &relicv1.ListBackgroundJobsRequest{
 			Kind:  "storage_check",
 			Limit: 50,
-		}))
+		})
 		if err != nil {
 			return nil, fmt.Errorf("storage check job %d: %w", id, err)
 		}
 
-		for _, j := range res.Msg.GetJobs() {
+		for _, j := range res.GetJobs() {
 			if j.GetId() != id || j.GetFinalized() == nil {
 				continue
 			}

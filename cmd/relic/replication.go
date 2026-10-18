@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -21,9 +20,9 @@ func replicationRunCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			if _, err := c.replications.RunReplication(cmd.Context(), connect.NewRequest(&relicv1.RunReplicationRequest{
+			if _, err := c.replications.RunReplication(cmd.Context(), &relicv1.RunReplicationRequest{
 				Repository: args[0],
-			})); err != nil {
+			}); err != nil {
 				return fmt.Errorf("run the replication of %s: %w", args[0], err)
 			}
 

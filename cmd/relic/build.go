@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -440,16 +439,16 @@ func buildAddDependenciesCmd(g *globals) *cobra.Command {
 
 					r, err := c.artifacts.StatItem(
 						cmd.Context(),
-						connect.NewRequest(&relicv1.StatItemRequest{
+						&relicv1.StatItemRequest{
 							Repository: repo,
 							Path:       p,
-						}),
+						},
 					)
 					if err != nil {
 						return fmt.Errorf("add-dependencies %s: %w", f, err)
 					}
 
-					sums, id = r.Msg.GetItem().GetChecksums(), path.Base(p)
+					sums, id = r.GetItem().GetChecksums(), path.Base(p)
 				} else {
 					var err error
 					if sums, err = fileChecksums(f); err != nil {
@@ -677,10 +676,10 @@ func buildAppendCmd(g *globals) *cobra.Command {
 
 			other, err := c.builds.GetBuildRun(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.GetBuildRunRequest{
+				&relicv1.GetBuildRunRequest{
 					Name:   args[2],
 					Number: args[3],
-				}),
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("append %s/%s: %w", args[2], args[3], err)
@@ -690,7 +689,7 @@ func buildAppendCmd(g *globals) *cobra.Command {
 				m := module(run, args[2]+"/"+args[3], "build")
 				m.Artifacts = nil
 
-				for _, om := range other.Msg.GetModules() {
+				for _, om := range other.GetModules() {
 					m.Artifacts = append(m.Artifacts, om.GetArtifacts()...)
 				}
 
@@ -745,10 +744,10 @@ func buildPublishCmd(g *globals) *cobra.Command {
 
 				if _, err := c.builds.PublishBuildRun(
 					cmd.Context(),
-					connect.NewRequest(&relicv1.PublishBuildRunRequest{
+					&relicv1.PublishBuildRunRequest{
 						Project: project,
 						Run:     run,
-					}),
+					},
 				); err != nil {
 					return fmt.Errorf("publish %s/%s: %w", name, number, err)
 				}
@@ -858,7 +857,7 @@ func buildDiscardCmd(g *globals) *cobra.Command {
 				req.MinStarted = timestamppb.New(time.Now().AddDate(0, 0, -int(maxAge)))
 			}
 
-			if _, err := c.builds.ApplyBuildRetention(cmd.Context(), connect.NewRequest(req)); err != nil {
+			if _, err := c.builds.ApplyBuildRetention(cmd.Context(), req); err != nil {
 				return fmt.Errorf("discard %s: %w", args[0], err)
 			}
 
@@ -914,7 +913,7 @@ func buildPromoteCmd(g *globals) *cobra.Command {
 
 			r, err := c.builds.PromoteBuildRun(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.PromoteBuildRunRequest{
+				&relicv1.PromoteBuildRunRequest{
 					Project:          project,
 					Name:             name,
 					Number:           number,
@@ -926,18 +925,18 @@ func buildPromoteCmd(g *globals) *cobra.Command {
 					Copy:             copyFiles,
 					DryRun:           dryRun,
 					Properties:       properties,
-				}),
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("promote %s/%s: %w", name, number, err)
 			}
 
-			failed := slices.ContainsFunc(r.Msg.GetMessages(), func(m *relicv1.PromotionMessage) bool {
+			failed := slices.ContainsFunc(r.GetMessages(), func(m *relicv1.PromotionMessage) bool {
 				return m.GetLevel() == "error"
 			})
 
-			if err := printMessage(cmd.OutOrStdout(), output, r.Msg, func(w io.Writer) error {
-				if len(r.Msg.GetMessages()) > 0 {
+			if err := printMessage(cmd.OutOrStdout(), output, r, func(w io.Writer) error {
+				if len(r.GetMessages()) > 0 {
 					table := terminal.Table{
 						Headers: []string{
 							"LEVEL",
@@ -945,7 +944,7 @@ func buildPromoteCmd(g *globals) *cobra.Command {
 						},
 					}
 
-					for _, m := range r.Msg.GetMessages() {
+					for _, m := range r.GetMessages() {
 						table.Rows = append(table.Rows, []string{
 							m.GetLevel(),
 							tableCell(m.GetText()),
@@ -1031,11 +1030,11 @@ func buildScanCmd(g *globals) *cobra.Command {
 
 			if _, err := c.scans.ScanBuildRun(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.ScanBuildRunRequest{
+				&relicv1.ScanBuildRunRequest{
 					Project: project,
 					Name:    name,
 					Number:  number,
-				}),
+				},
 			); err != nil {
 				return fmt.Errorf("scan %s/%s: %w", name, number, err)
 			}
@@ -1082,22 +1081,22 @@ func waitBuildScan(
 	for {
 		r, err := c.scans.GetBuildRunScan(
 			ctx,
-			connect.NewRequest(&relicv1.GetBuildRunScanRequest{
+			&relicv1.GetBuildRunScanRequest{
 				Project: project,
 				Name:    name,
 				Number:  number,
-			}),
+			},
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan %s/%s: %w", name, number, err)
 		}
 
-		if r.Msg.GetScan().GetStatus() != relicv1.ScanStatus_SCAN_STATUS_QUEUED {
-			if r.Msg.GetScan().GetStatus() == relicv1.ScanStatus_SCAN_STATUS_FAILED {
-				return nil, fmt.Errorf("scan %s/%s failed: %s", name, number, r.Msg.GetScan().GetReason())
+		if r.GetScan().GetStatus() != relicv1.ScanStatus_SCAN_STATUS_QUEUED {
+			if r.GetScan().GetStatus() == relicv1.ScanStatus_SCAN_STATUS_FAILED {
+				return nil, fmt.Errorf("scan %s/%s failed: %s", name, number, r.GetScan().GetReason())
 			}
 
-			return r.Msg, nil
+			return r, nil
 		}
 
 		select {
@@ -1156,7 +1155,7 @@ func imagePromoteCmd(g *globals) *cobra.Command {
 
 			if _, err := c.packages.PromoteContainerImage(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.PromoteContainerImageRequest{
+				&relicv1.PromoteContainerImageRequest{
 					Repository:       repo,
 					Image:            image,
 					Tag:              tag,
@@ -1164,7 +1163,7 @@ func imagePromoteCmd(g *globals) *cobra.Command {
 					TargetImage:      targetImage,
 					TargetTag:        targetTag,
 					Copy:             copyImage,
-				}),
+				},
 			); err != nil {
 				return fmt.Errorf("image promote %s: %w", args[0], err)
 			}
