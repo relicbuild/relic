@@ -61,6 +61,7 @@ func Setup(ctx context.Context, o Options) (*Telemetry, error) {
 	buildInfo.WithLabelValues(o.Version, o.Revision, o.Component).Set(1)
 
 	handler := newLogHandler(cfg, o.Stderr)
+	handleSDKErrors(slog.New(handler))
 
 	tracing := cfg.TracesEndpoint != "" || o.SpanExporter != nil
 	if tracing || cfg.LogsEndpoint != "" {

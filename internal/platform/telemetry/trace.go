@@ -64,7 +64,10 @@ func newTracerProvider(
 	}
 
 	return sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
+		sdktrace.WithSpanProcessor(endedSpans{}),
+		sdktrace.WithBatcher(countedExporter{
+			exporter,
+		}),
 		sdktrace.WithResource(res),
 		sdktrace.WithSampler(sampler(cfg)),
 	), nil
