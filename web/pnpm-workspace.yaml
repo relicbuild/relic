@@ -7,4 +7,4 @@ allowBuilds:
   unrs-resolver: false
   vue-demi: false
 patchedDependencies:
-  docus@5.13.0: patches/docus@5.13.0.patch
+  docus@5.15.0: patches/docus@5.15.0.patch

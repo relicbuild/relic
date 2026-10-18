@@ -1,0 +1,15 @@
+diff --git a/app/pages/[[lang]]/[...slug].vue b/app/pages/[[lang]]/[...slug].vue
+index dfd7d1eb10081cd9dfbb0b7aade1d2d733525d30..07df00ae027428d68e9e572b15a3ccb3e2a190d1 100644
+--- a/app/pages/[[lang]]/[...slug].vue
++++ b/app/pages/[[lang]]/[...slug].vue
+@@ -52,7 +52,9 @@ defineOgImage('Docs', {
+   description: formatOgDescription(title, description),
+ })
+ 
+-const github = computed(() => appConfig.github ? appConfig.github : null)
++// Only a known repository can be linked to: a build without git (a
++// container image) has no URL, and its edit link would be relative.
++const github = computed(() => appConfig.github?.url ? appConfig.github : null)
+ 
+ const editLink = computed(() => {
+   if (!github.value) {
