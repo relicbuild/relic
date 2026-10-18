@@ -247,7 +247,7 @@ entries only ever become `relic` ones.
   statement of a function literal goes on its own line. `struct{}`, `T{}`
   and `func() {}` stay as they are. `go tool unfold -changed -w`
   applies this to every Go file changed against `origin/main` (then run
-  `golangci-lint fmt ./...`); the CI workflow (run on demand) checks the
+  `golangci-lint fmt ./...`); the CI workflow (on every pull request, or on demand) checks the
   files changed since the latest tag, so every file you touch gets unfolded, and the rest of the repo
   follows as it is edited. `go tool unfold -w <dir>/...` unfolds a
   whole tree.
