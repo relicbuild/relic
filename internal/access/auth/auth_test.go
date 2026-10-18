@@ -827,27 +827,34 @@ func TestAllowExpiredBearer(t *testing.T) {
 func TestLeaveBearer(t *testing.T) {
 	t.Parallel()
 	a := newTestAuthenticator(t)
-	a.LeaveBearer("own_")
+	a.LeaveBearer("own_", "/own/")
 
 	tests := []struct {
-		name, token string
-		wantErr     error
+		name, path, token string
+		wantErr           error
 	}{
 		{
-			"a token with the prefix stays anonymous",
-			"own_anything",
-			nil,
+			name:  "a token with the prefix on its path stays anonymous",
+			path:  "/mount/repo/own/v1/thing",
+			token: "own_anything",
 		},
 		{
-			"other tokens are still verified",
-			"other_anything",
-			ErrBadCredentials,
+			name:    "a token with the prefix elsewhere is verified",
+			path:    "/api/v1/repositories",
+			token:   "own_anything",
+			wantErr: ErrBadCredentials,
+		},
+		{
+			name:    "other tokens on the path are verified",
+			path:    "/mount/repo/own/v1/thing",
+			token:   "other_anything",
+			wantErr: ErrBadCredentials,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/anywhere", nil)
+			r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, tt.path, nil)
 			r.Header.Set("Authorization", "Bearer "+tt.token)
 
 			p, err := a.Authenticate(r)
