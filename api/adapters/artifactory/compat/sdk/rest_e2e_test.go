@@ -603,6 +603,15 @@ func TestArtifactoryREST(t *testing.T) {
 			Name:   build,
 			Number: "3",
 		}, "", 1))
+
+		s.raw(t, http.MethodDelete, "api/build/"+build+"?buildNumbers=2&artifacts=0", nil, 200)
+
+		if _, found, err := s.sm.GetBuildInfo(services.BuildInfoParams{
+			BuildName:   build,
+			BuildNumber: "2",
+		}); err != nil || found {
+			t.Errorf("run 2 after DELETE api/build: found %v, %v", found, err)
+		}
 	})
 
 	t.Run("security", func(t *testing.T) {

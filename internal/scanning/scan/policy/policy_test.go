@@ -404,6 +404,55 @@ func TestEvaluate(t *testing.T) {
 	}
 }
 
+func TestValidateCVSSRange(t *testing.T) {
+	t.Parallel()
+
+	for name, tt := range map[string]struct {
+		from, to float64
+		valid    bool
+	}{
+		"the whole scale": {
+			from:  0,
+			to:    10,
+			valid: true,
+		},
+		"one score": {
+			from:  7,
+			to:    7,
+			valid: true,
+		},
+		"from above to": {
+			from: 9,
+			to:   2,
+		},
+		"below zero": {
+			from: -5,
+			to:   5,
+		},
+		"above ten": {
+			from: 5,
+			to:   50,
+		},
+	} {
+		err := Policy{
+			Name: "x",
+			Kind: KindSecurity,
+			Rules: []Rule{
+				{
+					Name: "r",
+					CVSS: &CVSSRange{
+						From: tt.from,
+						To:   tt.to,
+					},
+				},
+			},
+		}.Validate()
+		if (err == nil) != tt.valid || (err != nil && !errors.Is(err, ErrInvalid)) {
+			t.Errorf("%s: Validate = %v, want valid %v", name, err, tt.valid)
+		}
+	}
+}
+
 func TestValidate(t *testing.T) {
 	t.Parallel()
 
@@ -457,6 +506,45 @@ func TestValidate(t *testing.T) {
 			Rules: []Rule{
 				{
 					Name: "r",
+				},
+			},
+		},
+		{
+			Name: "x",
+			Kind: KindSecurity,
+			Rules: []Rule{
+				{
+					Name: "inverted",
+					CVSS: &CVSSRange{
+						From: 9,
+						To:   2,
+					},
+				},
+			},
+		},
+		{
+			Name: "x",
+			Kind: KindSecurity,
+			Rules: []Rule{
+				{
+					Name: "above ten",
+					CVSS: &CVSSRange{
+						From: 7,
+						To:   50,
+					},
+				},
+			},
+		},
+		{
+			Name: "x",
+			Kind: KindSecurity,
+			Rules: []Rule{
+				{
+					Name: "negative",
+					CVSS: &CVSSRange{
+						From: -1,
+						To:   5,
+					},
 				},
 			},
 		},
@@ -683,6 +771,20 @@ func TestEvaluateAnalyzerIssues(t *testing.T) {
 				Severity: scan.SeverityMedium,
 			},
 			want: "vuln-low",
+		},
+		"a malicious model": {
+			issue: Issue{
+				Analyzer: scan.AnalyzerModel,
+				Severity: scan.SeverityCritical,
+				Rule:     "pickle-unsafe-import",
+			},
+			want: "vuln-low",
+		},
+		"a model issue of no known severity": {
+			issue: Issue{
+				Analyzer: scan.AnalyzerModel,
+				Severity: scan.SeverityUnknown,
+			},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -1033,6 +1135,7 @@ func TestPolicyLoads(t *testing.T) {
 			},
 			want: previewLoads{
 				findings: true,
+				issues:   true,
 			},
 		},
 		"severity of reachable code": {
@@ -1048,6 +1151,7 @@ func TestPolicyLoads(t *testing.T) {
 			want: previewLoads{
 				findings:     true,
 				reachability: true,
+				issues:       true,
 			},
 		},
 		"secrets and end of life": {

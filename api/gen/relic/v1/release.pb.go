@@ -710,7 +710,10 @@ func (x *ReleasePromotion) GetCreatedMillis() int64 {
 }
 
 type ListReleasesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// project limits the list to one project's releases ("" for releases
+	// outside projects); unset lists every project's.
+	Project       *string `protobuf:"bytes,1,opt,name=project,proto3,oneof" json:"project,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -743,6 +746,13 @@ func (x *ListReleasesRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListReleasesRequest.ProtoReflect.Descriptor instead.
 func (*ListReleasesRequest) Descriptor() ([]byte, []int) {
 	return file_relic_v1_release_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ListReleasesRequest) GetProject() string {
+	if x != nil && x.Project != nil {
+		return *x.Project
+	}
+	return ""
 }
 
 type ListReleasesResponse struct {
@@ -1495,7 +1505,8 @@ type PromoteReleaseRequest struct {
 	Include []string `protobuf:"bytes,5,rep,name=include,proto3" json:"include,omitempty"`
 	// exclude leaves these repositories out.
 	Exclude []string `protobuf:"bytes,6,rep,name=exclude,proto3" json:"exclude,omitempty"`
-	// move removes the files from the previous environment.
+	// move asks for a move; the server performs it as a copy, so the files
+	// stay in the repositories of the previous environment.
 	Move          bool `protobuf:"varint,7,opt,name=move,proto3" json:"move,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1997,8 +2008,11 @@ const file_relic_v1_release_proto_rawDesc = "" +
 	"\n" +
 	"created_by\x18\x06 \x01(\tR\tcreatedBy\x124\n" +
 	"\acreated\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\acreated\x12%\n" +
-	"\x0ecreated_millis\x18\b \x01(\x03R\rcreatedMillis\"\x15\n" +
-	"\x13ListReleasesRequest\"E\n" +
+	"\x0ecreated_millis\x18\b \x01(\x03R\rcreatedMillis\"@\n" +
+	"\x13ListReleasesRequest\x12\x1d\n" +
+	"\aproject\x18\x01 \x01(\tH\x00R\aproject\x88\x01\x01B\n" +
+	"\n" +
+	"\b_project\"E\n" +
 	"\x14ListReleasesResponse\x12-\n" +
 	"\breleases\x18\x01 \x03(\v2\x11.relic.v1.ReleaseR\breleases\"J\n" +
 	"\x1aListReleaseVersionsRequest\x12\x18\n" +
@@ -2204,6 +2218,7 @@ func file_relic_v1_release_proto_init() {
 	file_relic_v1_artifact_proto_init()
 	file_relic_v1_item_query_proto_init()
 	file_relic_v1_options_proto_init()
+	file_relic_v1_release_proto_msgTypes[8].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

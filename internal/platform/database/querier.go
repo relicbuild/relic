@@ -217,6 +217,7 @@ type Querier interface {
 	ListBuildDependencies(ctx context.Context, buildID uuid.UUID) ([]BuildDependency, error)
 	ListBuildNames(ctx context.Context, project string) ([]ListBuildNamesRow, error)
 	ListBuildPromotions(ctx context.Context, buildID uuid.UUID) ([]BuildPromotion, error)
+	ListBuildRunIDsStartedAt(ctx context.Context, arg ListBuildRunIDsStartedAtParams) ([]uuid.UUID, error)
 	ListBuildRuns(ctx context.Context, arg ListBuildRunsParams) ([]ListBuildRunsRow, error)
 	// Sort keys: epss (default), cvss, published, affected, id.
 	ListCVEPage(ctx context.Context, arg ListCVEPageParams) ([]ListCVEPageRow, error)
@@ -309,6 +310,7 @@ type Querier interface {
 	// Marks unreferenced blobs past the grace period as deleting; rows a failed
 	// run left marked are marked again.
 	MarkCollectableBlobs(ctx context.Context, arg MarkCollectableBlobsParams) ([]string, error)
+	MoveBuildPromotions(ctx context.Context, arg MoveBuildPromotionsParams) error
 	NpmVersionExists(ctx context.Context, arg NpmVersionExistsParams) (bool, error)
 	OverwriteFile(ctx context.Context, arg OverwriteFileParams) error
 	ProjectUsedBytes(ctx context.Context, project string) (int64, error)
@@ -354,6 +356,7 @@ type Querier interface {
 	SearchNpmVersions(ctx context.Context, arg SearchNpmVersionsParams) ([]SearchNpmVersionsRow, error)
 	SetCVEEPSS(ctx context.Context, arg SetCVEEPSSParams) error
 	SetCVEKEV(ctx context.Context, arg SetCVEKEVParams) error
+	SetItemCreated(ctx context.Context, arg SetItemCreatedParams) error
 	SetMaliciousChecked(ctx context.Context, arg SetMaliciousCheckedParams) error
 	SetNpmDeprecated(ctx context.Context, arg SetNpmDeprecatedParams) (int64, error)
 	SetNpmDistTag(ctx context.Context, arg SetNpmDistTagParams) error

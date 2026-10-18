@@ -275,19 +275,23 @@ export type GetDashboardSummaryResponse = Message<"relic.v1.GetDashboardSummaryR
   repositories: { [key: string]: number };
 
   /**
+   * builds counts the readable builds outside projects.
+   *
    * @generated from field: int64 builds = 2;
    */
   builds: bigint;
 
   /**
-   * scans counts scanned contents by status.
+   * scans counts scanned contents by status; only administrators and viewers,
+   * who may list every finding, get it.
    *
    * @generated from field: map<string, int32> scans = 3;
    */
   scans: { [key: string]: number };
 
   /**
-   * findings counts findings by severity.
+   * findings counts findings by severity; only administrators and viewers get
+   * it.
    *
    * @generated from field: map<string, int32> findings = 4;
    */

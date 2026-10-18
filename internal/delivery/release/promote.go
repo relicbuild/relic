@@ -77,12 +77,13 @@ func (s *Service) Promote(
 		return Promotion{}, fmt.Errorf("%w: release version %s is %s, not completed", ErrInvalid, version, b.Status)
 	}
 
-	targets, err := s.environmentRepos(ctx, req)
+	stored, err := s.storedArtifacts(ctx, b)
 	if err != nil {
 		return Promotion{}, err
 	}
 
-	if _, err := s.checkGates(ctx, b, req.Environment, user); err != nil {
+	targets, err := s.environmentRepos(ctx, req)
+	if err != nil {
 		return Promotion{}, err
 	}
 
@@ -90,6 +91,13 @@ func (s *Service) Promote(
 	if req.Move {
 		msgs = append(msgs, "promotion type move is performed as copy")
 	}
+
+	type placement struct {
+		artifact Artifact
+		target   string
+	}
+
+	var placements []placement
 
 	sourceTypes := map[string]repository.Format{}
 	for _, a := range b.Artifacts {
@@ -103,8 +111,35 @@ func (s *Service) Promote(
 			return Promotion{}, fmt.Errorf("%w: cannot write %s/%s", ErrForbidden, target, a.Path)
 		}
 
-		if err := s.promoteArtifact(ctx, b, a, target, user); err != nil {
-			return Promotion{}, err
+		placements = append(placements, placement{
+			artifact: a,
+			target:   target,
+		})
+	}
+
+	if len(placements) == 0 && len(b.Artifacts) > 0 {
+		return Promotion{}, fmt.Errorf(
+			"%w: no repository in environment %s accepts any of the version's artifacts",
+			ErrInvalid,
+			req.Environment,
+		)
+	}
+
+	if _, err := s.checkGates(ctx, b, req.Environment, user); err != nil {
+		return Promotion{}, err
+	}
+
+	var copies []repository.CopyInput
+
+	for _, p := range placements {
+		if in, needed := s.artifactCopy(ctx, p.artifact, stored[p.artifact.Path], p.target, user, access); needed {
+			copies = append(copies, in)
+		}
+	}
+
+	if len(copies) > 0 {
+		if err := s.repos.CopyAll(ctx, copies); err != nil {
+			return Promotion{}, fmt.Errorf("promote to %s: %w", req.Environment, err)
 		}
 	}
 
@@ -244,29 +279,38 @@ func (s *Service) pickTarget(
 	return "", false
 }
 
-func (s *Service) promoteArtifact(ctx context.Context, b Release, a Artifact, target, user string) error {
+// artifactCopy is the copy that promotes a to target; needed is false when
+// target already holds it.
+func (s *Service) artifactCopy(
+	ctx context.Context,
+	a Artifact,
+	src repository.Item,
+	target, user string,
+	access Access,
+) (_ repository.CopyInput, needed bool) {
 	if cur, err := s.repos.Stat(ctx, target, a.Path); err == nil && cur.Checksums.SHA256 == a.SHA256 {
-		return nil
+		return repository.CopyInput{}, false
 	}
 
-	src, err := s.repos.Stat(ctx, b.Repository, b.artifactPath(a))
-	if err != nil {
-		return fmt.Errorf("release file %s: %w", a.Path, err)
-	}
+	return repository.CopyInput{
+		Source:                src,
+		DestinationRepository: target,
+		DestinationPath:       a.Path,
+		User:                  user,
+		RefuseFile:            s.refuseFile,
+		RefuseOverwrite: func(_ context.Context, existing repository.Item) error {
+			if access.canDelete(existing.Repository, existing.Path()) {
+				return nil
+			}
 
-	if err := s.repos.Copy(
-		ctx,
-		repository.CopyInput{
-			Source:                src,
-			DestinationRepository: target,
-			DestinationPath:       a.Path,
-			User:                  user,
+			return fmt.Errorf(
+				"%w: overwriting %s/%s needs delete permission",
+				ErrForbidden,
+				existing.Repository,
+				existing.Path(),
+			)
 		},
-	); err != nil {
-		return fmt.Errorf("promote %s to %s: %w", a.Path, target, err)
-	}
-
-	return nil
+	}, true
 }
 
 // Promotions lists a version's promotions, newest first.

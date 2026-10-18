@@ -58,14 +58,14 @@ for arch in amd64 arm64; do
   docker tag "$reg/$VIRTUAL/busybox:1.37" "$reg/$LOCAL/native/busybox:$arch"
   docker push -q "$reg/$LOCAL/native/busybox:$arch" >/dev/null
 done
-docker manifest create --insecure "$reg/$LOCAL/native/busybox:multi" \
+docker manifest create "${REGISTRY_INSECURE[@]}" "$reg/$LOCAL/native/busybox:multi" \
   "$reg/$LOCAL/native/busybox:amd64" "$reg/$LOCAL/native/busybox:arm64"
 docker manifest annotate "$reg/$LOCAL/native/busybox:multi" "$reg/$LOCAL/native/busybox:arm64" --os linux --arch arm64
-docker manifest push --insecure --purge "$reg/$LOCAL/native/busybox:multi"
-docker manifest inspect --insecure "$reg/$LOCAL/native/busybox:multi" | jq -e '[.manifests[].platform.architecture] | sort == ["amd64","arm64"]' >/dev/null
+docker manifest push "${REGISTRY_INSECURE[@]}" --purge "$reg/$LOCAL/native/busybox:multi"
+docker manifest inspect "${REGISTRY_INSECURE[@]}" "$reg/$LOCAL/native/busybox:multi" | jq -e '[.manifests[].platform.architecture] | sort == ["amd64","arm64"]' >/dev/null
 
 step "crane: auth, catalog, tags, digest, copy, config, delete"
-export CRANE="crane --insecure"
+export CRANE="crane ${REGISTRY_INSECURE[*]}"
 crane auth login "$reg" -u "$SCENARIO_USER" -p "$SCENARIO_PASSWORD"
 $CRANE catalog "$reg" | grep -q "^$LOCAL/native/app$"
 $CRANE ls "$reg/$LOCAL/native/busybox" | sort | tr '\n' ' ' | grep -q "amd64 arm64 multi"

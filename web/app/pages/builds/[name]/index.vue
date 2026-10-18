@@ -6,11 +6,13 @@ definePageMeta({ layout: 'dashboard' })
 
 const route = useRoute()
 const name = computed(() => String(route.params.name))
+const project = computed(() => typeof route.query.project === 'string' ? route.query.project : '')
 const relic = useRelic()
 const { data: runs, status, error, refresh } = await useAsyncData(
-  () => `runs:${name.value}`,
-  async () => (await relic.builds.listBuildRuns({ name: name.value })).runs.map((r): BuildRunView => ({ number: r.number, started: toIsoDate(r.started) })),
-  { watch: [name] }
+  () => `runs:${project.value}/${name.value}`,
+  async () => (await relic.builds.listBuildRuns({ project: project.value, name: name.value })).runs
+    .map((r): BuildRunView => ({ number: r.number, started: toIsoDate(r.started) })),
+  { watch: [project, name] }
 )
 
 const page = ref(1)
@@ -54,7 +56,7 @@ const columns: TableColumn<BuildRunView>[] = [
             icon="i-lucide-arrow-left"
             color="neutral"
             variant="ghost"
-            to="/builds"
+            :to="buildsLink(project)"
             aria-label="All builds"
           />
         </template>
@@ -102,7 +104,7 @@ const columns: TableColumn<BuildRunView>[] = [
         :ui="denseTable"
       >
         <template #number-cell="{ row }">
-          <ULink :to="`/builds/${encodeURIComponent(name)}/${encodeURIComponent(row.original.number)}`" class="font-medium text-highlighted">
+          <ULink :to="buildRunLink(name, row.original.number, project)" class="font-medium text-highlighted">
             {{ row.original.number }}
           </ULink>
         </template>

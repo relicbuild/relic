@@ -182,7 +182,7 @@ func policyPreviewCmd(g *globals) *cobra.Command {
 	cmd.Flags().
 		StringSliceVarP(&files, "filename", "f", nil, "YAML file with relic.build/v1 Policy resources; - reads standard input")
 	cmd.Flags().StringSliceVar(&repositories, "repository", nil, "preview only these repositories")
-	cmd.Flags().Int32Var(&limit, "limit", 1000, "the most files to list per policy")
+	cmd.Flags().Int32Var(&limit, "limit", 1000, "the most violations to list per policy")
 	_ = cmd.MarkFlagRequired("filename")
 	outputFlag(cmd, &output)
 

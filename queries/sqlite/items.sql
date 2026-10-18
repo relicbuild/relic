@@ -18,6 +18,9 @@ SET size = @size, sha1 = @sha1, sha256 = @sha256, md5 = @md5,
     modified = @now, modified_by = @username, updated = @now
 WHERE id = @id;
 
+-- name: SetItemCreated :exec
+UPDATE items SET created = @created, created_by = @created_by WHERE id = @id;
+
 -- name: EnsureFolders :many
 INSERT INTO items (id, repo_key, path, name, type, created, created_by, modified, modified_by, updated)
 SELECT w.value, @repo_key, p.value, n.value, 'folder', @now, @username, @now, @username, @now
@@ -107,11 +110,11 @@ WHERE i.type = 'file'
 LIMIT 100;
 
 -- name: SearchItemsByName :many
--- Items of one repository whose name contains a term (case-insensitive;
--- the caller escapes LIKE wildcards). ESCAPE '\' is
--- PostgreSQL's default, which SQLite lacks.
+-- Items of one repository whose name contains a term (case-insensitive
+-- beyond ASCII, as ILIKE is; the caller escapes LIKE wildcards). ESCAPE '\'
+-- is PostgreSQL's default, which SQLite lacks.
 SELECT * FROM items
-WHERE repo_key = @repo_key AND lower(name) LIKE lower(@pattern) ESCAPE '\' AND name <> '.'
+WHERE repo_key = @repo_key AND unicode_lower(name) LIKE unicode_lower(@pattern) ESCAPE '\' AND name <> '.'
 ORDER BY path, name
 LIMIT @max_rows;
 

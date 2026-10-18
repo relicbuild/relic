@@ -74,6 +74,9 @@ type Rule struct {
 	BlockUnscanned bool `json:"blockUnscanned,omitempty"`
 }
 
+// MaxCVSS is the highest CVSS score.
+const MaxCVSS = 10
+
 // CVSSRange is an inclusive CVSS score range.
 type CVSSRange struct {
 	From float64 `json:"from"`
@@ -159,6 +162,17 @@ func (p Policy) Validate() error {
 			if r.MinSeverity != "" && !r.MinSeverity.Known() {
 				return fmt.Errorf("%w: rule %s: unknown severity %q", ErrInvalid, r.Name, r.MinSeverity)
 			}
+
+			if c := r.CVSS; c != nil && (c.From < 0 || c.From > c.To || c.To > MaxCVSS) {
+				return fmt.Errorf(
+					"%w: rule %s: the CVSS range %g to %g must lie within 0 to %g, its start not above its end",
+					ErrInvalid,
+					r.Name,
+					c.From,
+					c.To,
+					float64(MaxCVSS),
+				)
+			}
 		case KindLicense:
 			if (len(r.AllowedLicenses) == 0) == (len(r.BannedLicenses) == 0) {
 				return fmt.Errorf("%w: rule %s needs exactly one of allowed and banned licenses", ErrInvalid, r.Name)
@@ -209,7 +223,7 @@ func (w Watch) Covers(kind ScopeKind, name string) bool {
 
 // Issue is a finding to evaluate: a vulnerability (Severity, CVSS; a
 // malicious package is one with Malicious set), an analyzer's issue
-// (Analyzer: secrets or misconfiguration, with Severity), an operational
+// (Analyzer: secrets, misconfiguration or model, with Severity), an operational
 // risk (Risk, with Severity) or a license (License).
 type Issue struct {
 	Analyzer string
@@ -312,7 +326,7 @@ func matches(kind Kind, r Rule, is Issue) bool {
 			return is.Risk == RiskDeprecated || is.Risk == RiskUnmaintained
 		case r.MinSeverity == "" && r.CVSS == nil && !r.Malicious && r.Condition != "":
 			return true
-		case is.Analyzer != "" || is.Risk != "":
+		case (is.Analyzer != "" && is.Analyzer != scan.AnalyzerModel) || is.Risk != "":
 			return false
 		case r.Malicious:
 			return is.Malicious

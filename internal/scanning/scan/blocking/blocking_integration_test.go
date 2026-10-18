@@ -227,6 +227,40 @@ func TestDownloadBlocking(t *testing.T) {
 		t.Errorf("recorded %d decisions, want 2: %+v", len(recorded), recorded)
 	}
 
+	failed, skipped := deploy("d-1.jar", "d"), deploy("e-1.jar", "e")
+
+	if _, err := db.ClaimUnscanned(ctx, database.ClaimUnscannedParams{
+		Now:         now,
+		NamePattern: "^[de]-1.jar$",
+		MaxRows:     10,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for sha, status := range map[string]string{
+		failed:  scan.StatusFailed,
+		skipped: scan.StatusSkipped,
+	} {
+		if err := db.FinishScanArtifact(ctx, database.FinishScanArtifactParams{
+			Sha256: sha,
+			Status: status,
+			Reason: "extract: gzip: invalid header",
+			Now:    now,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for sha, name := range map[string]string{
+		failed:  "d-1.jar",
+		skipped: "e-1.jar",
+	} {
+		d, err := b.Explain(ctx, "libs", name, sha)
+		if err != nil || !d.Blocked || d.Rule != "unscanned" {
+			t.Errorf("%s, never scanned successfully = %+v, %v; want blocked as unscanned", name, d, err)
+		}
+	}
+
 	admin := &policy.Admin{
 		DB: db,
 	}
@@ -246,6 +280,10 @@ func TestDownloadBlocking(t *testing.T) {
 	if err != nil || truncated || len(hits) != 1 || hits[0].Repository != "libs" || hits[0].Path != "a-1.jar" ||
 		hits[0].Rule != "high" || !hits[0].FailBuild || hits[0].Issue != "CVE-1 in pkg:maven/g/a@1" {
 		t.Errorf("preview = %+v, %v, %v", hits, truncated, err)
+	}
+
+	if hits, truncated, err := admin.Preview(ctx, preview, nil, 1); err != nil || truncated || len(hits) != 1 {
+		t.Errorf("preview limited to its one hit = %+v, truncated %v, %v; want not truncated", hits, truncated, err)
 	}
 
 	if hits, _, err := admin.Preview(ctx, preview, []string{
@@ -304,6 +342,10 @@ func TestDownloadBlocking(t *testing.T) {
 
 	if check(vulnerable, "a-1.jar") {
 		t.Error("blocked despite an ignore rule on its package")
+	}
+
+	if hits, _, err := admin.Preview(ctx, preview, nil, 10); err != nil || len(hits) != 0 {
+		t.Errorf("preview despite an ignore rule on the package = %+v, %v", hits, err)
 	}
 }
 

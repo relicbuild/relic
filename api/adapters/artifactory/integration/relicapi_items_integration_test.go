@@ -378,6 +378,7 @@ func TestRelicAPISearchItems(t *testing.T) {
 		"org/app/app-1.0.pom",
 		"org/lib/lib_%25.txt",
 		"secret/app-key.txt",
+		"docs/h%C3%A9llo%20w%C3%B6rld.txt",
 	} {
 		do(t, srv, call{
 			method: "PUT",
@@ -443,6 +444,14 @@ func TestRelicAPISearchItems(t *testing.T) {
 			},
 		},
 		{
+			"case-insensitive beyond ASCII",
+			admin,
+			"WÖRLD",
+			[]string{
+				"docs/héllo wörld.txt",
+			},
+		},
+		{
 			"LIKE wildcards are literal",
 			admin,
 			"_%",
@@ -467,14 +476,19 @@ func TestRelicAPISearchItems(t *testing.T) {
 		}
 	}
 
-	if _, err := admin.SearchItems(
-		ctx,
-		connect.NewRequest(&relicv1.SearchItemsRequest{
-			Repository: "libs",
-			Name:       "a",
-		}),
-	); code(err) != connect.CodeInvalidArgument {
-		t.Errorf("one-character search: %v", err)
+	for _, one := range []string{
+		"a",
+		"é",
+	} {
+		if _, err := admin.SearchItems(
+			ctx,
+			connect.NewRequest(&relicv1.SearchItemsRequest{
+				Repository: "libs",
+				Name:       one,
+			}),
+		); code(err) != connect.CodeInvalidArgument {
+			t.Errorf("one-character search %q: %v", one, err)
+		}
 	}
 }
 
@@ -575,6 +589,142 @@ func TestRelicAPIItemBuilds(t *testing.T) {
 	rita := relicv1connect.NewArtifactServiceClient(relicHTTP("rita", "Rita-pass-123"), srv.URL+"/api")
 	if d := details(&rita, "app.jar"); len(d.GetProducedBy()) != 0 {
 		t.Errorf("builds shown without build permission: %v", d.GetProducedBy())
+	}
+}
+
+func TestRelicAPISearchItemsOfAVirtualRepository(t *testing.T) {
+	t.Parallel()
+	srv := server(t)
+	ctx := t.Context()
+
+	for _, repo := range []struct {
+		key  string
+		body string
+	}{
+		{
+			key:  "libs",
+			body: `{"rclass":"local","packageType":"generic"}`,
+		},
+		{
+			key:  "extras",
+			body: `{"rclass":"local","packageType":"generic"}`,
+		},
+		{
+			key:  "inner",
+			body: `{"rclass":"virtual","packageType":"generic","repositories":["extras"]}`,
+		},
+		{
+			key:  "all",
+			body: `{"rclass":"virtual","packageType":"generic","repositories":["libs","inner"]}`,
+		},
+	} {
+		do(
+			t,
+			srv,
+			call{
+				method: "PUT",
+				path:   "/artifactory/api/repositories/" + repo.key,
+				body:   repo.body,
+			},
+		)
+	}
+
+	for _, f := range []string{
+		"libs/org/app-1.0.jar",
+		"extras/tools/app-tool.sh",
+		"extras/tools/other.sh",
+	} {
+		do(t, srv, call{
+			method: "PUT",
+			path:   "/artifactory/" + f,
+			body:   "x",
+		})
+	}
+
+	admin := relicv1connect.NewArtifactServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+
+	r, err := admin.SearchItems(ctx, connect.NewRequest(&relicv1.SearchItemsRequest{
+		Repository: "all",
+		Name:       "app",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := make([]string, 0, len(r.Msg.GetItems()))
+	for _, it := range r.Msg.GetItems() {
+		got = append(got, it.GetRepository()+"/"+it.GetPath())
+	}
+
+	want := []string{
+		"libs/org/app-1.0.jar",
+		"extras/tools/app-tool.sh",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("search of the virtual repository = %v, want %v", got, want)
+	}
+}
+
+func TestRelicAPIItemBuildsNameTheirProject(t *testing.T) {
+	t.Parallel()
+	srv := server(t)
+	ctx := t.Context()
+	do(
+		t,
+		srv,
+		call{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/libs",
+			body:   `{"rclass":"local","packageType":"generic"}`,
+		},
+	)
+	do(t, srv, call{
+		method: "PUT",
+		path:   "/artifactory/libs/app.jar",
+		body:   "app",
+	})
+
+	projects := relicv1connect.NewProjectServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	if _, err := projects.PutProject(ctx, connect.NewRequest(&relicv1.PutProjectRequest{
+		Project: &relicv1.Project{
+			Key: "shop",
+		},
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	sum := sha1.Sum([]byte("app")) //nolint:gosec // G401: wire checksum
+	build := `{"version":"1.0.1","name":"shop-app","number":"3","started":"2026-09-24T10:00:00.000+0000",` +
+		`"modules":[{"id":"shop:app","artifacts":[{"name":"app.jar","type":"jar","sha1":"` +
+		hex.EncodeToString(sum[:]) + `"}]}]}`
+
+	if resp, body := do(
+		t,
+		srv,
+		call{
+			method: "PUT",
+			path:   "/artifactory/api/build?project=shop",
+			body:   build,
+		},
+	); resp.StatusCode >= 300 {
+		t.Fatalf("publish = %d %s", resp.StatusCode, body)
+	}
+
+	artifacts := relicv1connect.NewArtifactServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+
+	d, err := artifacts.GetItemDetails(
+		ctx,
+		connect.NewRequest(&relicv1.GetItemDetailsRequest{
+			Repository: "libs",
+			Path:       "app.jar",
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if links := d.Msg.GetProducedBy(); len(links) != 1 || links[0].GetProject() != "shop" {
+		t.Errorf("app.jar produced by %v, want the run of shop-app in project shop", links)
 	}
 }
 

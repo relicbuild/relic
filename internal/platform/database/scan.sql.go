@@ -67,7 +67,7 @@ const countFindings = `-- name: CountFindings :one
 SELECT count(*) FROM scan_findings f
 WHERE EXISTS (SELECT 1 FROM items i WHERE i.sha256 = f.sha256 AND i.type = 'file' AND ($1::text = '' OR i.repo_key = $1))
   AND ($2::text = '' OR f.severity = $2)
-  AND ($3::text = '' OR f.vuln_id ILIKE '%' || $3 || '%' OR f.package_name ILIKE '%' || $3 || '%'
+  AND ($3::text = '' OR strpos(lower(f.vuln_id), lower($3)) > 0 OR strpos(lower(f.package_name), lower($3)) > 0
        OR $3 = ANY(f.cves))
   AND ($4::text = '' OR split_part(split_part(f.purl, '/', 1), ':', 2) = $4)
   AND (NOT $5::bool OR cardinality(f.fixed_versions) > 0)
@@ -128,7 +128,9 @@ func (q *Queries) DeleteOldGraphScans(ctx context.Context, before time.Time) err
 }
 
 const findingCounts = `-- name: FindingCounts :many
-SELECT severity, count(*) AS count FROM scan_findings GROUP BY severity
+SELECT f.severity, count(*) AS count FROM scan_findings f
+WHERE EXISTS (SELECT 1 FROM items i WHERE i.sha256 = f.sha256 AND i.type = 'file')
+GROUP BY f.severity
 `
 
 type FindingCountsRow struct {
@@ -639,7 +641,7 @@ JOIN LATERAL (SELECT repo_key, path, name FROM items
               WHERE sha256 = f.sha256 AND type = 'file' AND ($1::text = '' OR repo_key = $1)
               ORDER BY repo_key, path, name LIMIT 1) i ON true
 WHERE ($2::text = '' OR f.severity = $2)
-  AND ($3::text = '' OR f.vuln_id ILIKE '%' || $3 || '%' OR f.package_name ILIKE '%' || $3 || '%'
+  AND ($3::text = '' OR strpos(lower(f.vuln_id), lower($3)) > 0 OR strpos(lower(f.package_name), lower($3)) > 0
        OR $3 = ANY(f.cves))
   AND ($4::text = '' OR split_part(split_part(f.purl, '/', 1), ':', 2) = $4)
   AND (NOT $5::bool OR cardinality(f.fixed_versions) > 0)

@@ -323,6 +323,10 @@ func TestMessages(t *testing.T) {
 	got := Messages(
 		[]buildinfo.Message{
 			{
+				Level: buildinfo.LevelInfo,
+				Text:  "copied",
+			},
+			{
 				Level: buildinfo.LevelWarning,
 				Text:  "skipped",
 			},

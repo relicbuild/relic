@@ -1,8 +1,11 @@
 package scan
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -148,6 +151,352 @@ func TestImportedSBOMs(t *testing.T) {
 		if _, err := DetectSBOM([]byte(bad)); !errors.Is(err, ErrSBOM) {
 			t.Errorf("DetectSBOM(%q) = %v", bad, err)
 		}
+	}
+}
+
+func TestExportedLicenses(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		licenses  []string
+		cycloneDX string
+		spdx      string
+		extracted []string
+	}{
+		{
+			name: "a listed license",
+			licenses: []string{
+				"mit",
+			},
+			cycloneDX: `[{"license":{"id":"MIT"}}]`,
+			spdx:      "MIT",
+		},
+		{
+			name: "a license name",
+			licenses: []string{
+				"The Apache Software License, Version 2.0",
+			},
+			cycloneDX: `[{"license":{"name":"The Apache Software License, Version 2.0"}}]`,
+			spdx:      "LicenseRef-The-Apache-Software-License-Version-2.0-56e46a44",
+			extracted: []string{
+				"LicenseRef-The-Apache-Software-License-Version-2.0-56e46a44=The Apache Software License, Version 2.0",
+			},
+		},
+		{
+			name: "a listed license and a name",
+			licenses: []string{
+				"Custom, see LICENSE file",
+				"MIT",
+			},
+			cycloneDX: `[{"license":{"name":"Custom, see LICENSE file"}},{"license":{"id":"MIT"}}]`,
+			spdx:      "LicenseRef-Custom-see-LICENSE-file-dec874d5 AND MIT",
+			extracted: []string{
+				"LicenseRef-Custom-see-LICENSE-file-dec874d5=Custom, see LICENSE file",
+			},
+		},
+		{
+			name: "an expression and a listed license",
+			licenses: []string{
+				"MIT OR Apache-2.0",
+				"BSD-3-Clause",
+			},
+			cycloneDX: `[{"expression":"(MIT OR Apache-2.0) AND BSD-3-Clause"}]`,
+			spdx:      "(MIT OR Apache-2.0) AND BSD-3-Clause",
+		},
+		{
+			name: "a license reference",
+			licenses: []string{
+				"LicenseRef-Custom",
+			},
+			cycloneDX: `[{"expression":"LicenseRef-Custom"}]`,
+			spdx:      "LicenseRef-Custom",
+			extracted: []string{
+				"LicenseRef-Custom=NOASSERTION",
+			},
+		},
+		{
+			name: "a license with an exception",
+			licenses: []string{
+				"GPL-2.0-or-later WITH Classpath-exception-2.0",
+			},
+			cycloneDX: `[{"expression":"GPL-2.0-or-later WITH Classpath-exception-2.0"}]`,
+			spdx:      "GPL-2.0-or-later WITH Classpath-exception-2.0",
+		},
+		{
+			name: "an expression and a name",
+			licenses: []string{
+				"MIT OR Apache-2.0",
+				"Custom",
+			},
+			cycloneDX: `[{"expression":"(MIT OR Apache-2.0) AND LicenseRef-Custom-494ca78f"}]`,
+			spdx:      "(MIT OR Apache-2.0) AND LicenseRef-Custom-494ca78f",
+			extracted: []string{
+				"LicenseRef-Custom-494ca78f=Custom",
+			},
+		},
+		{
+			name:      "no license",
+			cycloneDX: `null`,
+			spdx:      "NOASSERTION",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			comps := []Component{
+				newComponent("foo", "1", "library", "pkg:npm/foo@1", tt.licenses, nil),
+			}
+			now := time.Unix(1_800_000_000, 0)
+
+			cdxDoc, err := cycloneDXDocument(comps, "libs/foo", now)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var bom struct {
+				Components []struct {
+					Licenses json.RawMessage `json:"licenses"`
+				} `json:"components"`
+			}
+			if err := json.Unmarshal(cdxDoc, &bom); err != nil {
+				t.Fatal(err)
+			}
+
+			got := string(bom.Components[0].Licenses)
+			if got == "" {
+				got = "null"
+			}
+
+			if compact(t, got) != compact(t, tt.cycloneDX) {
+				t.Errorf("CycloneDX licenses = %s, want %s", got, tt.cycloneDX)
+			}
+
+			spdxDoc, err := spdxDocument(comps, "libs/foo", now)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var spdx struct {
+				Packages []struct {
+					LicenseDeclared string `json:"licenseDeclared"`
+				} `json:"packages"`
+				Extracted []struct {
+					LicenseID     string `json:"licenseId"`
+					ExtractedText string `json:"extractedText"`
+				} `json:"hasExtractedLicensingInfos"`
+			}
+			if err := json.Unmarshal(spdxDoc, &spdx); err != nil {
+				t.Fatal(err)
+			}
+
+			if spdx.Packages[0].LicenseDeclared != tt.spdx {
+				t.Errorf("SPDX licenseDeclared = %q, want %q", spdx.Packages[0].LicenseDeclared, tt.spdx)
+			}
+
+			extracted := make([]string, 0, len(spdx.Extracted))
+			for _, e := range spdx.Extracted {
+				extracted = append(extracted, e.LicenseID+"="+e.ExtractedText)
+			}
+
+			if !slices.Equal(extracted, tt.extracted) {
+				t.Errorf("SPDX extracted licenses = %q, want %q", extracted, tt.extracted)
+			}
+		})
+	}
+}
+
+func TestExportedLicenseReferencesStayDistinct(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		licenses []string
+		texts    []string
+	}{
+		{
+			name: "names that differ only in punctuation",
+			licenses: []string{
+				"Foo Bar",
+				"Foo-Bar",
+				"Foo (Bar)",
+				"Foo/Bar",
+			},
+			texts: []string{
+				"Foo Bar",
+				"Foo-Bar",
+				"Foo (Bar)",
+				"Foo/Bar",
+			},
+		},
+		{
+			name: "a reference and a name it reads as",
+			licenses: []string{
+				"LicenseRef-Custom",
+				"Custom",
+			},
+			texts: []string{
+				"NOASSERTION",
+				"Custom",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			comps := make([]Component, 0, len(tt.licenses))
+			for i, l := range tt.licenses {
+				name := fmt.Sprintf("pkg%d", i)
+				comps = append(comps, newComponent(name, "1", "library", "pkg:npm/"+name+"@1", []string{
+					l,
+				}, nil))
+			}
+
+			spdxDoc, err := spdxDocument(comps, "libs/foo", time.Unix(1_800_000_000, 0))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var spdx struct {
+				Packages []struct {
+					Name            string `json:"name"`
+					LicenseDeclared string `json:"licenseDeclared"`
+				} `json:"packages"`
+				Extracted []struct {
+					LicenseID     string `json:"licenseId"`
+					ExtractedText string `json:"extractedText"`
+				} `json:"hasExtractedLicensingInfos"`
+			}
+			if err := json.Unmarshal(spdxDoc, &spdx); err != nil {
+				t.Fatal(err)
+			}
+
+			texts := map[string]string{}
+			for _, e := range spdx.Extracted {
+				if _, ok := texts[e.LicenseID]; ok {
+					t.Errorf("%s is defined twice", e.LicenseID)
+				}
+
+				texts[e.LicenseID] = e.ExtractedText
+			}
+
+			if len(texts) != len(tt.licenses) {
+				t.Errorf("defined %d license references, want %d: %v", len(texts), len(tt.licenses), texts)
+			}
+
+			for _, p := range spdx.Packages {
+				var i int
+				if _, err := fmt.Sscanf(p.Name, "pkg%d", &i); err != nil {
+					continue
+				}
+
+				if got := texts[p.LicenseDeclared]; got != tt.texts[i] {
+					t.Errorf("%s declares %s, defined as %q, want %q", p.Name, p.LicenseDeclared, got, tt.texts[i])
+				}
+			}
+		})
+	}
+}
+
+func compact(t *testing.T, s string) string {
+	t.Helper()
+
+	var v any
+	if err := json.Unmarshal([]byte(s), &v); err != nil {
+		t.Fatal(err)
+	}
+
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return string(b)
+}
+
+func TestSPDXExportOfNoComponentsHasEmptyRelationships(t *testing.T) {
+	t.Parallel()
+
+	stored, err := gzipBytes([]byte(`{"bomFormat":"CycloneDX","specVersion":"1.6","version":1,"components":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	doc, err := ExportSBOM(stored, SPDXJSON, "libs/empty", time.Unix(1_800_000_000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got struct {
+		Packages      []json.RawMessage `json:"packages"`
+		Relationships []json.RawMessage `json:"relationships"`
+	}
+	if err := json.Unmarshal(doc, &got); err != nil {
+		t.Fatal(err)
+	}
+
+	if got.Packages == nil || got.Relationships == nil {
+		t.Errorf("SPDX export of no components = %s, want empty packages and relationships arrays", doc)
+	}
+}
+
+func TestSyftExportLeavesOutWorkerPaths(t *testing.T) {
+	t.Parallel()
+
+	stored, err := gzipBytes([]byte(`{
+  "schema": {"version": "16.0.0"},
+  "artifacts": [
+    {"name": "log4j-core", "version": "2.14.1", "type": "java-archive",
+     "purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1",
+     "locations": [{"path": "/tmp/relic-scan-604771369/in/log4j-core-2.14.1.jar"}]}
+  ],
+  "source": {"type": "file", "name": "log4j-core-2.14.1.jar",
+             "metadata": {"path": "/tmp/relic-scan-604771369/in/log4j-core-2.14.1.jar"}},
+  "descriptor": {"name": "syft", "version": "1.52.0",
+                 "configuration": {"java": {"maven-local-repository-dir": "/tmp/.m2/repository"},
+                                   "golang": {"local-mod-cache-dir": "/tmp/go/pkg/mod"}}}
+}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	doc, err := ExportSBOM(stored, SyftJSON, "libs/log4j-core-2.14.1.jar", time.Unix(1_800_000_000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, leaked := range []string{
+		"relic-scan-",
+		"/tmp/",
+	} {
+		if strings.Contains(string(doc), leaked) {
+			t.Errorf("Syft export contains %q: %s", leaked, doc)
+		}
+	}
+
+	var got struct {
+		Source struct {
+			Metadata struct {
+				Path string `json:"path"`
+			} `json:"metadata"`
+		} `json:"source"`
+		Descriptor struct {
+			Name string `json:"name"`
+		} `json:"descriptor"`
+	}
+	if err := json.Unmarshal(doc, &got); err != nil {
+		t.Fatal(err)
+	}
+
+	if got.Source.Metadata.Path != "log4j-core-2.14.1.jar" || got.Descriptor.Name != "syft" {
+		t.Errorf("Syft export = %s, want the source named by its file name and the descriptor kept", doc)
+	}
+
+	comps, err := sbomComponents(doc)
+	if err != nil || len(comps) != 1 || comps[0].Name != "log4j-core" {
+		t.Errorf("components of the Syft export = %v, %v", comps, err)
 	}
 }
 

@@ -171,6 +171,34 @@ func TestLoadConfig(t *testing.T) {
 			wantErr: "RELIC_METRICS_LISTEN_ADDRESS",
 		},
 		{
+			name: "switches in any spelling of true",
+			env: map[string]string{
+				"RELIC_PROFILING_ENABLED":        "1",
+				"RELIC_METRICS_REPOSITORY_LABEL": "TRUE",
+			},
+			check: func(t *testing.T, c Config) {
+				t.Helper()
+
+				if !c.Pprof || !c.RepositoryLabel {
+					t.Errorf("config = %+v, want pprof and the repository label", c)
+				}
+			},
+		},
+		{
+			name: "a profiling switch that is neither true nor false",
+			env: map[string]string{
+				"RELIC_PROFILING_ENABLED": "yes",
+			},
+			wantErr: "RELIC_PROFILING_ENABLED",
+		},
+		{
+			name: "a repository label switch that is neither true nor false",
+			env: map[string]string{
+				"RELIC_METRICS_REPOSITORY_LABEL": "on",
+			},
+			wantErr: "RELIC_METRICS_REPOSITORY_LABEL",
+		},
+		{
 			name: "bad sampler",
 			env: map[string]string{
 				"OTEL_TRACES_SAMPLER": "sometimes",

@@ -182,9 +182,11 @@ func policyLoads(p Policy) previewLoads {
 		analyzerRule := r.Secrets || r.LiveSecrets || r.Misconfigurations
 		riskRule := r.EndOfLife || r.Unmaintained
 
-		loads.issues = loads.issues || analyzerRule || conditional
-		loads.risks = loads.risks || riskRule || conditional
 		findingRule := !analyzerRule && !riskRule
+		modelRule := findingRule && r.MinSeverity != ""
+
+		loads.issues = loads.issues || analyzerRule || modelRule || conditional
+		loads.risks = loads.risks || riskRule || conditional
 
 		loads.findings = loads.findings || findingRule
 		loads.reachability = loads.reachability || (findingRule && (r.IgnoreUnreachable || conditional))
@@ -230,6 +232,11 @@ func (a *Admin) Preview(ctx context.Context, p Policy, repositories []string, li
 
 	loads := policyLoads(p)
 
+	ignores, err := a.IgnoreRules(ctx, true)
+	if err != nil {
+		return nil, false, err
+	}
+
 	for seen < maxPreviewFiles {
 		rows, err := a.DB.ListScannedContents(ctx, database.ListScannedContentsParams{
 			Repositories: append([]string{}, repositories...),
@@ -248,13 +255,13 @@ func (a *Admin) Preview(ctx context.Context, p Policy, repositories []string, li
 				continue
 			}
 
-			found, err := a.previewFile(ctx, watches, pols, loads, r)
+			found, err := a.previewFile(ctx, watches, pols, ignores, loads, r)
 			if err != nil {
 				return nil, false, err
 			}
 
 			hits = append(hits, found...)
-			if len(hits) >= limit {
+			if len(hits) > limit {
 				return hits[:limit], true, nil
 			}
 		}
@@ -271,10 +278,21 @@ func (a *Admin) previewFile(
 	ctx context.Context,
 	watches []Watch,
 	pols map[string]Policy,
+	ignores []IgnoreRule,
 	loads previewLoads,
 	r database.ListScannedContentsRow,
 ) ([]PreviewHit, error) {
 	itemPath := strings.TrimPrefix(path.Join(r.Path, r.Name), "/")
+	artifactPath := r.RepoKey + "/" + itemPath
+	now := time.Now()
+
+	ignored := func(s Subject, m Match) bool {
+		s.Watch, s.Policy, s.ArtifactPath = m.Watch, m.Policy, artifactPath
+
+		return slices.ContainsFunc(ignores, func(rule IgnoreRule) bool {
+			return rule.Ignores(s, now)
+		})
+	}
 
 	hit := func(m Match, issue string) PreviewHit {
 		return PreviewHit{
@@ -308,8 +326,20 @@ func (a *Admin) previewFile(
 		is := FindingIssue(f, r.RepoKey, itemPath)
 		is.Reachability, _ = reachability.State(r.Sha256, f.VulnID, f.Cves, f.Purl)
 
+		subject := Subject{
+			VulnerabilityIDs: []string{
+				f.VulnID,
+			},
+			CVEs: f.Cves,
+			Packages: []string{
+				f.Purl,
+			},
+		}
+
 		for _, m := range Evaluate(watches, pols, is) {
-			out = append(out, hit(m, f.VulnID+" in "+f.Purl))
+			if !ignored(subject, m) {
+				out = append(out, hit(m, f.VulnID+" in "+f.Purl))
+			}
 		}
 	}
 
@@ -328,7 +358,13 @@ func (a *Admin) previewFile(
 			Repository: r.RepoKey,
 			Path:       itemPath,
 		}) {
-			out = append(out, hit(m, i.Analyzer+" "+i.Rule+" in "+i.File))
+			if !ignored(Subject{
+				VulnerabilityIDs: []string{
+					i.Rule,
+				},
+			}, m) {
+				out = append(out, hit(m, i.Analyzer+" "+i.Rule+" in "+i.File))
+			}
 		}
 	}
 
@@ -339,7 +375,16 @@ func (a *Admin) previewFile(
 
 	for _, risk := range risks {
 		for _, m := range Evaluate(watches, pols, RiskIssue(risk, r.RepoKey, itemPath)) {
-			out = append(out, hit(m, risk.Kind+" "+risk.Purl))
+			if !ignored(Subject{
+				VulnerabilityIDs: []string{
+					risk.Kind,
+				},
+				Packages: []string{
+					risk.Purl,
+				},
+			}, m) {
+				out = append(out, hit(m, risk.Kind+" "+risk.Purl))
+			}
 		}
 	}
 
@@ -353,9 +398,9 @@ func (a *Admin) previewFile(
 	}
 
 	subject := Subject{
-		ArtifactPath: r.RepoKey + "/" + itemPath,
+		ArtifactPath: artifactPath,
 	}
-	for _, v := range LicenseViolations(watches, pols, nil, subject, comps, time.Now()) {
+	for _, v := range LicenseViolations(watches, pols, ignores, subject, comps, now) {
 		out = append(out, PreviewHit{
 			Repository:    r.RepoKey,
 			Path:          itemPath,

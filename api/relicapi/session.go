@@ -105,6 +105,12 @@ func (s *sessionServer) Logout(
 		}
 	}
 
+	if token, ok := auth.BearerToken(r.Header.Get("Authorization")); ok {
+		if err := s.d.Tokens.Revoke(ctx, token); err != nil {
+			return nil, err
+		}
+	}
+
 	resp := connect.NewResponse(&relicv1.LogoutResponse{})
 	resp.Header().Add("Set-Cookie", sessionCookie(r, "", -1).String())
 

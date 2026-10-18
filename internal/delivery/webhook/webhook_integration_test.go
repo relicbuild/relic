@@ -313,3 +313,67 @@ func TestDeliveries(t *testing.T) {
 		t.Errorf("a delivery whose webhook could not be read = %+v, want pending for the next dispatch", list)
 	}
 }
+
+func TestDisablingAWebhookStopsItsPendingDeliveries(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	svc, db := newService(t)
+
+	rc := &receiver{
+		status: http.StatusServiceUnavailable,
+	}
+	srv := httptest.NewServer(rc)
+	t.Cleanup(srv.Close)
+
+	hook := webhook.Webhook{
+		Name: "paused",
+		URL:  srv.URL,
+		Events: []string{
+			events.ArtifactDeployed,
+		},
+		Enabled: true,
+	}
+	if _, err := svc.Put(ctx, hook); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := svc.Ping(ctx, "paused", "admin"); err != nil {
+		t.Fatal(err)
+	}
+
+	if n, err := svc.Dispatch(ctx); err != nil || n != 1 {
+		t.Fatalf("first attempt = %d, %v", n, err)
+	}
+
+	hook.Enabled = false
+	if _, err := svc.Put(ctx, hook); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := svc.Deliveries(ctx, "paused", 1)
+	if err != nil || len(list) != 1 || list[0].Status != "pending" {
+		t.Fatalf("deliveries before the retry = %+v, %v", list, err)
+	}
+
+	if err := db.FinishWebhookDelivery(ctx, database.FinishWebhookDeliveryParams{
+		ID:          uuid.MustParse(list[0].ID),
+		Status:      "pending",
+		Attempts:    1,
+		NextAttempt: time.Now().Add(-time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := svc.Dispatch(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := rc.received(); len(got) != 1 {
+		t.Errorf("the receiver got %d requests, want only the one sent while the webhook was enabled", len(got))
+	}
+
+	if list, _ := svc.Deliveries(ctx, "paused", 1); len(list) != 1 || list[0].Status != "failed" {
+		t.Errorf("the delivery of a disabled webhook = %+v, want failed", list)
+	}
+}

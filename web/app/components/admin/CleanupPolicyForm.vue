@@ -17,11 +17,14 @@ const days = z.number().int().min(0, 'Zero or more')
 const schema = z.object({
   name: z.string().trim().min(1, 'Name the policy'),
   enabled: z.boolean(),
-  repositories: z.array(z.string()).min(1, 'Choose at least one repository'),
+  repositories: z.array(z.string()),
   pathPattern: z.string(),
   olderThanDays: days,
   notDownloadedDays: days,
   keepLatest: days
+}).refine(p => !p.enabled || p.repositories.length > 0, {
+  path: ['repositories'],
+  message: 'Choose at least one repository, or disable the policy'
 }).refine(p => p.olderThanDays > 0 || p.notDownloadedDays > 0 || p.keepLatest > 0, {
   path: ['olderThanDays'],
   message: 'Set at least one of older than, not downloaded for or keep latest'
@@ -82,7 +85,7 @@ async function openPreview() {
         <UFormField name="name" label="Name" required>
           <UInput v-model="state.name" :disabled="!!policy" class="w-full" />
         </UFormField>
-        <UFormField name="repositories" label="Repositories" required>
+        <UFormField name="repositories" label="Repositories" :required="state.enabled">
           <USelectMenu
             v-model="state.repositories"
             :items="repositories.map(r => r.name)"

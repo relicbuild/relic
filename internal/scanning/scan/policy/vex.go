@@ -44,18 +44,44 @@ type VEXVulnerability struct {
 	Aliases []string `json:"aliases,omitempty"`
 }
 
-// VEXProduct is a product, or a component of one, by package URL.
+// VEXProduct is a product, or a component of one, by package URL: its @id,
+// or its identifiers when the @id is another IRI.
 type VEXProduct struct {
-	ID            string       `json:"@id"`
-	Subcomponents []VEXProduct `json:"subcomponents,omitempty"`
+	ID            string          `json:"@id"`
+	Identifiers   *VEXIdentifiers `json:"identifiers,omitempty"`
+	Subcomponents []VEXProduct    `json:"subcomponents,omitempty"`
+}
+
+// VEXIdentifiers name a product other than by its @id.
+type VEXIdentifiers struct {
+	PURL string `json:"purl,omitempty"`
+}
+
+func (p VEXProduct) packageURL() (string, bool) {
+	candidates := []string{
+		p.ID,
+	}
+	if p.Identifiers != nil {
+		candidates = append(candidates, p.Identifiers.PURL)
+	}
+
+	for _, c := range candidates {
+		if ValidPackage(c) {
+			return c, true
+		}
+	}
+
+	return "", false
 }
 
 // ErrInvalidVEX is a document Relic cannot read as OpenVEX.
 var ErrInvalidVEX = errors.New("not an OpenVEX document")
 
-// ExportVEX writes the ignore rules that name vulnerabilities in packages as
-// OpenVEX not_affected statements, one per vulnerability, or one per rule
-// with its other IDs as aliases when the rule names both CVEs and others.
+// ExportVEX writes the ignore rules that name vulnerabilities in packages,
+// and nothing VEX cannot state (licenses, watches, policies, paths, builds or
+// an expiry), as OpenVEX not_affected statements, one per vulnerability, or
+// one per rule with its other IDs as aliases when the rule names both CVEs
+// and others.
 func ExportVEX(rules []IgnoreRule, id, author string, now time.Time) (VEXDocument, int) {
 	doc := VEXDocument{
 		Context:    OpenVEXContext,
@@ -81,7 +107,7 @@ func ExportVEX(rules []IgnoreRule, id, author string, now time.Time) (VEXDocumen
 			}
 		}
 
-		if (r.Expires != nil && !r.Expires.After(now)) || len(vulns) == 0 || len(products) == 0 {
+		if !r.statable() || len(vulns) == 0 || len(products) == 0 {
 			skipped++
 
 			continue
@@ -119,6 +145,11 @@ func ExportVEX(rules []IgnoreRule, id, author string, now time.Time) (VEXDocumen
 	}
 
 	return doc, skipped
+}
+
+func (r IgnoreRule) statable() bool {
+	return r.Expires == nil &&
+		len(r.Licenses)+len(r.Watches)+len(r.Policies)+len(r.ArtifactPaths)+len(r.Builds) == 0
 }
 
 var cveID = regexp.MustCompile(`(?i)^CVE-\d{4}-\d+$`)
@@ -229,22 +260,7 @@ func ImportVEX(doc VEXDocument) ([]IgnoreRule, int) {
 	)
 
 	for _, s := range doc.Statements {
-		var packages []string
-
-		for _, p := range s.Products {
-			targets := p.Subcomponents
-			if len(targets) == 0 {
-				targets = []VEXProduct{
-					p,
-				}
-			}
-
-			for _, t := range targets {
-				if _, err := packageurl.FromString(t.ID); err == nil && !slices.Contains(packages, t.ID) {
-					packages = append(packages, t.ID)
-				}
-			}
-		}
+		packages := statementPackages(s)
 
 		if (s.Status != "not_affected" && s.Status != "fixed") || s.Vulnerability.Name == "" || len(packages) == 0 {
 			skipped++

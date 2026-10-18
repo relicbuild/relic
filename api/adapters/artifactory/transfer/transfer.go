@@ -12,14 +12,17 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 
+	"connectrpc.com/connect"
+
 	"relic/api/adapters/artifactory/permissions"
 	"relic/api/adapters/artifactory/repoconfig"
+	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/relicapi"
+	"relic/internal/artifacts/repository"
 	"relic/internal/platform/terminal"
 )
 
@@ -120,26 +123,16 @@ func Import(ctx context.Context, src, dst Server, opts Options) (Report, error) 
 		return im.report, fmt.Errorf("list the source's repositories: %w", err)
 	}
 
+	if missing := missingRepositories(repos, opts.Repositories); len(missing) > 0 {
+		return im.report, fmt.Errorf("the source has no repository %s", strings.Join(missing, ", "))
+	}
+
 	repos = slices.DeleteFunc(repos, func(r repoSummary) bool {
 		return len(opts.Repositories) > 0 && !slices.Contains(opts.Repositories, r.Key)
 	})
-	// Virtual repositories name their members: those first.
-	order := map[string]int{
-		"LOCAL":     0,
-		"FEDERATED": 0,
-		"REMOTE":    1,
-		"VIRTUAL":   2,
-	}
-
-	sort.SliceStable(repos, func(i, j int) bool {
-		return order[strings.ToUpper(repos[i].Type)] < order[strings.ToUpper(repos[j].Type)]
-	})
 
 	im.copyGroups(ctx)
-
-	for _, r := range repos {
-		im.copyRepository(ctx, r.Key)
-	}
+	im.copyRepositories(ctx, repos)
 
 	im.copyPermissions(ctx)
 
@@ -156,6 +149,20 @@ type repoSummary struct {
 	Key         string `json:"key"`
 	Type        string `json:"type"`
 	PackageType string `json:"packageType"`
+}
+
+func missingRepositories(repos []repoSummary, names []string) []string {
+	var missing []string
+
+	for _, name := range names {
+		if !slices.ContainsFunc(repos, func(r repoSummary) bool {
+			return r.Key == name
+		}) && !slices.Contains(missing, name) {
+			missing = append(missing, name)
+		}
+	}
+
+	return missing
 }
 
 func calculated(packageType, name string) bool {
@@ -248,19 +255,116 @@ func (im *importer) copyGroups(ctx context.Context) {
 	}
 }
 
-func (im *importer) copyRepository(ctx context.Context, key string) {
+func (im *importer) copyRepositories(ctx context.Context, repos []repoSummary) {
+	copied := map[string]bool{}
+
+	var virtuals []repository.Repository
+
+	for _, summary := range repos {
+		r, ok := im.readRepository(ctx, summary.Key)
+		if !ok {
+			continue
+		}
+
+		if r.Class == repository.ClassVirtual {
+			virtuals = append(virtuals, r)
+
+			continue
+		}
+
+		copied[r.Name] = im.writeRepository(ctx, r)
+	}
+
+	for _, r := range membersFirst(virtuals) {
+		copied[r.Name] = im.writeRepository(ctx, im.withCopiedMembers(ctx, r, copied))
+	}
+}
+
+func membersFirst(virtuals []repository.Repository) []repository.Repository {
+	byName := make(map[string]repository.Repository, len(virtuals))
+	for _, r := range virtuals {
+		byName[r.Name] = r
+	}
+
+	visited := map[string]bool{}
+	ordered := make([]repository.Repository, 0, len(virtuals))
+
+	var visit func(name string)
+
+	visit = func(name string) {
+		r, ok := byName[name]
+		if !ok || visited[name] {
+			return
+		}
+
+		visited[name] = true
+
+		for _, member := range r.Members() {
+			visit(member)
+		}
+
+		ordered = append(ordered, r)
+	}
+
+	for _, r := range virtuals {
+		visit(r.Name)
+	}
+
+	return ordered
+}
+
+func (im *importer) withCopiedMembers(
+	ctx context.Context,
+	r repository.Repository,
+	copied map[string]bool,
+) repository.Repository {
+	if r.Config.Virtual == nil {
+		return r
+	}
+
+	virtual := *r.Config.Virtual
+	virtual.Members = slices.DeleteFunc(slices.Clone(virtual.Members), func(member string) bool {
+		if copied[member] || im.destinationHas(ctx, member) {
+			return false
+		}
+
+		im.note("repository %s: member %s was not imported and is left out", r.Name, member)
+
+		return true
+	})
+
+	if virtual.DeployTo != "" && !slices.Contains(virtual.Members, virtual.DeployTo) {
+		virtual.DeployTo = ""
+	}
+
+	r.Config.Virtual = &virtual
+
+	return r
+}
+
+func (im *importer) destinationHas(ctx context.Context, key string) bool {
+	_, err := im.relic.repositories.GetRepository(ctx, connect.NewRequest(&relicv1.GetRepositoryRequest{
+		Name: key,
+	}))
+
+	exists, err := found(err)
+
+	return exists && err == nil
+}
+
+func (im *importer) readRepository(ctx context.Context, key string) (repository.Repository, bool) {
 	doc, status, err := im.do(ctx, im.src, http.MethodGet, "api/repositories/"+url.PathEscape(key), nil, nil)
 	if err != nil || status != http.StatusOK {
 		im.fail("repository %s: read: %v %d %s", key, err, status, snippet(doc))
 
-		return
+		return repository.Repository{}, false
 	}
 
 	doc, federated, err := localFromFederated(doc)
 	if err != nil {
 		im.fail("repository %s: %v", key, err)
 
-		return
+		return repository.Repository{}, false
 	}
 
 	if federated {
@@ -275,17 +379,25 @@ func (im *importer) copyRepository(ctx context.Context, key string) {
 	if err != nil {
 		im.fail("repository %s: %v", key, err)
 
-		return
+		return repository.Repository{}, false
 	}
 
+	return r, true
+}
+
+func (im *importer) writeRepository(ctx context.Context, r repository.Repository) bool {
 	msg := relicapi.RepositoryMessage(r)
 	if rm := r.Config.Remote; rm != nil && rm.Password != "" && msg.GetRemote() != nil {
 		msg.GetRemote().Password = rm.Password
 	}
 
 	if err := im.putRepository(ctx, msg); err != nil {
-		im.fail("repository %s: write: %v", key, err)
+		im.fail("repository %s: write: %v", r.Name, err)
+
+		return false
 	}
+
+	return true
 }
 
 func localFromFederated(doc []byte) ([]byte, bool, error) {

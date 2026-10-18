@@ -33,15 +33,15 @@ helm pull relic/demo --version 0.3.0
 test -f demo-0.3.0.tgz
 
 step "jf helm push over OCI with build info"
-echo "$SCENARIO_PASSWORD" | helm registry login "$SCENARIO_REGISTRY" -u "$SCENARIO_USER" --password-stdin --insecure
+echo "$SCENARIO_PASSWORD" | helm registry login "$SCENARIO_REGISTRY" -u "$SCENARIO_USER" --password-stdin "${REGISTRY_INSECURE[@]}"
 sed -i 's/^version: .*/version: 0.4.0/' demo/Chart.yaml
 jf helm package demo
-jf helm push demo-0.4.0.tgz "oci://$SCENARIO_REGISTRY/$OCI" --plain-http --build-name "$BUILD-helm" --build-number 1
+jf helm push demo-0.4.0.tgz "oci://$SCENARIO_REGISTRY/$OCI" "${REGISTRY_PLAIN_HTTP[@]}" --build-name "$BUILD-helm" --build-number 1
 jf rt bp "$BUILD-helm" 1
 jf rt s "$OCI/demo/0.4.0/manifest.json" | expect_count 1
 jf rt s --build "$BUILD-helm/1" "$OCI/" | expect_count 3
 mkdir pulled
-helm pull "oci://$SCENARIO_REGISTRY/$OCI/demo" --version 0.4.0 --plain-http -d pulled
+helm pull "oci://$SCENARIO_REGISTRY/$OCI/demo" --version 0.4.0 "${REGISTRY_PLAIN_HTTP[@]}" -d pulled
 test -f pulled/demo-0.4.0.tgz
 
 for r in "${ALL[@]}"; do delete_repo "$r"; done

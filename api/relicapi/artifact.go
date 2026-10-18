@@ -3,9 +3,9 @@ package relicapi
 import (
 	"context"
 	"errors"
-	"regexp"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -30,12 +30,41 @@ func can(ctx context.Context, d Dependencies, repoKey, path string, action auth.
 	return check(path, action)
 }
 
+// readableRepository returns the repository named repoKey, or
+// ErrRepositoryNotFound, as for a missing one, when the caller may read
+// nothing in it.
+func readableRepository(ctx context.Context, d Dependencies, repoKey string) (repository.Repository, error) {
+	r, err := d.Repositories.GetRepository(ctx, repoKey)
+	if err != nil {
+		return repository.Repository{}, err
+	}
+
+	p := auth.FromContext(ctx)
+	if p.Admin || p.Viewer {
+		return r, nil
+	}
+
+	perms, err := d.Security.Permissions(ctx)
+	if err != nil {
+		return repository.Repository{}, err
+	}
+
+	if !perms.CanReadRepository(p.Subject(), auth.Repository{
+		Name:  r.Name,
+		Class: string(r.Class),
+	}) {
+		return repository.Repository{}, repository.ErrRepositoryNotFound
+	}
+
+	return r, nil
+}
+
 func repositoryAccess(
 	ctx context.Context,
 	d Dependencies,
 	repoKey string,
 ) (func(path string, action auth.Action) error, error) {
-	r, err := d.Repositories.GetRepository(ctx, repoKey)
+	r, err := readableRepository(ctx, d, repoKey)
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +250,7 @@ func (s *artifactServer) SearchItems(
 	req *connect.Request[relicv1.SearchItemsRequest],
 ) (*connect.Response[relicv1.SearchItemsResponse], error) {
 	name := strings.TrimSpace(req.Msg.GetName())
-	if len(name) < 2 {
+	if utf8.RuneCountInString(name) < 2 {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("search needs at least two characters"))
 	}
 
@@ -230,33 +259,24 @@ func (s *artifactServer) SearchItems(
 		limit = defaultSearchLimit
 	}
 
-	keys := []string{
-		req.Msg.GetRepository(),
-	}
-	if keys[0] == "" {
-		all, err := s.d.Repositories.ListRepositories(ctx, "", "")
-		if err != nil {
-			return nil, err
-		}
-
-		keys = keys[:0]
-
-		for _, r := range all {
-			if r.Class != repository.ClassVirtual {
-				keys = append(keys, r.Name)
-			}
-		}
+	keys, err := s.searchedRepositories(ctx, req.Msg.GetRepository())
+	if err != nil {
+		return nil, err
 	}
 
 	out := &relicv1.SearchItemsResponse{}
 
 	for _, key := range keys {
-		hits, err := s.d.Repositories.SearchNames(ctx, key, name, limit)
+		check, err := repositoryAccess(ctx, s.d, key)
+		if errors.Is(err, repository.ErrRepositoryNotFound) && req.Msg.GetRepository() == "" {
+			continue
+		}
+
 		if err != nil {
 			return nil, err
 		}
 
-		check, err := repositoryAccess(ctx, s.d, key)
+		hits, err := s.d.Repositories.SearchNames(ctx, key, name, limit)
 		if err != nil {
 			return nil, err
 		}
@@ -277,6 +297,44 @@ func (s *artifactServer) SearchItems(
 	}
 
 	return connect.NewResponse(out), nil
+}
+
+func (s *artifactServer) searchedRepositories(ctx context.Context, key string) ([]string, error) {
+	if key == "" {
+		all, err := s.d.Repositories.ListRepositories(ctx, "", "")
+		if err != nil {
+			return nil, err
+		}
+
+		keys := make([]string, 0, len(all))
+
+		for _, r := range all {
+			if r.Class != repository.ClassVirtual {
+				keys = append(keys, r.Name)
+			}
+		}
+
+		return keys, nil
+	}
+
+	r, err := s.d.Repositories.GetRepository(ctx, key)
+	if errors.Is(err, repository.ErrRepositoryNotFound) {
+		return []string{
+			key,
+		}, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	if r.Class == repository.ClassVirtual {
+		return storingMembers(ctx, s.d, r)
+	}
+
+	return []string{
+		key,
+	}, nil
 }
 
 func (s *artifactServer) GetProperties(
@@ -352,8 +410,6 @@ func (s *artifactServer) DeleteProperties(
 	return connect.NewResponse(&relicv1.DeletePropertiesResponse{}), nil
 }
 
-var propertyKey = regexp.MustCompile(`^[^\s=;,|]{1,255}$`)
-
 const (
 	maxPropertyValues = 100
 	maxPropertyValue  = 4096
@@ -361,11 +417,8 @@ const (
 
 func validProperty(k string, values []string) error {
 	switch {
-	case !propertyKey.MatchString(k):
-		return connect.NewError(
-			connect.CodeInvalidArgument,
-			errors.New("a property key is 1 to 255 characters without spaces, '=', ';', ',' or '|'"),
-		)
+	case !repository.ValidPropertyKey(k):
+		return connect.NewError(connect.CodeInvalidArgument, errors.New(repository.PropertyKeyRule))
 	case len(values) == 0 || len(values) > maxPropertyValues:
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("give 1 to 100 values"))
 	}
@@ -414,6 +467,55 @@ func (s *artifactServer) annotatable(ctx context.Context, key, p string, recursi
 	return it, nil
 }
 
+func canWriteDestination(ctx context.Context, d Dependencies, repoKey, path string) error {
+	err := can(ctx, d, repoKey, path, auth.ActionWrite)
+
+	switch {
+	case errors.Is(err, repository.ErrRepositoryNotFound):
+	case errors.Is(err, repository.ErrNotFound):
+		readable, err := canReadSomewhere(ctx, d, repoKey)
+		if err != nil {
+			return err
+		}
+
+		if readable {
+			return connect.NewError(
+				connect.CodePermissionDenied,
+				errors.New("no write permission on "+repoKey+"/"+path),
+			)
+		}
+	default:
+		return err
+	}
+
+	return connect.NewError(
+		connect.CodeNotFound,
+		errors.New("destination "+repoKey+"/"+path+" not found"),
+	)
+}
+
+func canReadSomewhere(ctx context.Context, d Dependencies, repoKey string) (bool, error) {
+	p := auth.FromContext(ctx)
+	if p.Admin || p.Viewer {
+		return true, nil
+	}
+
+	r, err := d.Repositories.GetRepository(ctx, repoKey)
+	if err != nil {
+		return false, err
+	}
+
+	perms, err := d.Security.Permissions(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	return perms.CanReadRepository(p.Subject(), auth.Repository{
+		Name:  r.Name,
+		Class: string(r.Class),
+	}), nil
+}
+
 func (s *artifactServer) copyOrMove(ctx context.Context, key, p, toKey, toPath string, move, dryRun bool) error {
 	p, toPath = cleanPath(p), cleanPath(toPath)
 
@@ -426,7 +528,7 @@ func (s *artifactServer) copyOrMove(ctx context.Context, key, p, toKey, toPath s
 		return err
 	}
 
-	if err := can(ctx, s.d, toKey, toPath, auth.ActionWrite); err != nil {
+	if err := canWriteDestination(ctx, s.d, toKey, toPath); err != nil {
 		return err
 	}
 
@@ -442,12 +544,43 @@ func (s *artifactServer) copyOrMove(ctx context.Context, key, p, toKey, toPath s
 		Move:                  move,
 		DryRun:                dryRun,
 		User:                  auth.FromContext(ctx).Name(),
+		CheckUploadLimit:      true,
 	}
 	if s.d.DownloadBlocker != nil {
 		in.RefuseFile = s.d.DownloadBlocker.RefuseCopy
 	}
 
+	if in.Permits, err = repositoryPermits(ctx, s.d, key, toKey); err != nil {
+		return err
+	}
+
 	return s.d.Repositories.Copy(ctx, in)
+}
+
+func repositoryPermits(
+	ctx context.Context,
+	d Dependencies,
+	repoKeys ...string,
+) (func(repoKey, path string, action auth.Action) bool, error) {
+	if auth.FromContext(ctx).Admin {
+		return nil, nil
+	}
+
+	checks := make(map[string]func(string, auth.Action) error, len(repoKeys))
+	for _, key := range repoKeys {
+		check, err := repositoryAccess(ctx, d, key)
+		if err != nil {
+			return nil, err
+		}
+
+		checks[key] = check
+	}
+
+	return func(repoKey, path string, action auth.Action) bool {
+		check, ok := checks[repoKey]
+
+		return ok && check(path, action) == nil
+	}, nil
 }
 
 func (s *artifactServer) CopyItem(

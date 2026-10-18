@@ -429,7 +429,10 @@ func policyOf(m *relicv1.Policy) policy.Policy {
 		if r.CvssFrom != nil || r.CvssTo != nil {
 			rule.CVSS = &policy.CVSSRange{
 				From: r.GetCvssFrom(),
-				To:   r.GetCvssTo(),
+				To:   policy.MaxCVSS,
+			}
+			if r.CvssTo != nil {
+				rule.CVSS.To = r.GetCvssTo()
 			}
 		}
 

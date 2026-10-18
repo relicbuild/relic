@@ -71,6 +71,7 @@ import (
 	"relic/internal/delivery/webhook"
 	"relic/internal/platform/database"
 	"relic/internal/platform/events"
+	"relic/internal/platform/httperror"
 	"relic/internal/platform/httpserver"
 	"relic/internal/platform/objectstore"
 	"relic/internal/platform/sealing"
@@ -127,6 +128,10 @@ func Run(ctx context.Context, args []string, getenv func(string) string, stderr 
 		}
 	}
 
+	if err := CheckSettings(getenv, args[0]); err != nil {
+		return err
+	}
+
 	version, revision := relicVersion()
 
 	tel, err := telemetry.Setup(
@@ -173,6 +178,24 @@ func Run(ctx context.Context, args []string, getenv func(string) string, stderr 
 	default:
 		return migrate(ctx, getenv)
 	}
+}
+
+// CheckSettings returns every error in the settings command ("server",
+// "worker" or "migrate") reads from getenv, or nil.
+func CheckSettings(getenv func(string) string, command string) error {
+	var errs []error
+
+	if _, err := telemetry.LoadConfig(getenv, command); err != nil {
+		errs = append(errs, fmt.Errorf("telemetry: %w", err))
+	}
+
+	if command != "migrate" {
+		if _, err := config.Load(getenv); err != nil {
+			errs = append(errs, fmt.Errorf("config: %w", err))
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 func migrate(ctx context.Context, getenv func(string) string) error {
@@ -570,12 +593,12 @@ func startWorker(
 	repos.SetSecrets(box)
 	repos.SetTrash(cfg.Trash.Enabled)
 
-	pushClient := &http.Client{
-		Transport: telemetry.ClientTransport(&http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-		}),
-	}
-	pusher := replication.NewPusher(db, repos, adapter.ReplicationTargets(pushClient), log)
+	pusher := replication.NewPusher(
+		db,
+		repos,
+		adapter.ReplicationTargets(replicationClient(cfg.AllowPrivateUpstreams)),
+		log,
+	)
 	pusher.SetSecrets(box)
 
 	scanners := scanning(db, blobs, cfg.Scan, log)
@@ -663,7 +686,7 @@ func enqueueStorageCheck(queue Queue) func(context.Context) (int64, error) {
 
 const webhookTimeout = 10 * time.Second
 
-func webhookClient(allowPrivate bool) *http.Client {
+func outboundTransport(allowPrivate bool) *http.Transport {
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 	}
@@ -672,9 +695,19 @@ func webhookClient(allowPrivate bool) *http.Client {
 		transport.Proxy = nil
 	}
 
+	return transport
+}
+
+func replicationClient(allowPrivate bool) *http.Client {
+	return &http.Client{
+		Transport: telemetry.ClientTransport(outboundTransport(allowPrivate)),
+	}
+}
+
+func webhookClient(allowPrivate bool) *http.Client {
 	return &http.Client{
 		Timeout:   webhookTimeout,
-		Transport: telemetry.ClientTransport(transport),
+		Transport: telemetry.ClientTransport(outboundTransport(allowPrivate)),
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -844,6 +877,7 @@ func newRouter(
 	projects.SetRepositoryProjects(repos.Projects)
 	projects.SetChanged(sec.Invalidate)
 	sec.SetProjectPermissions(projects.Permissions)
+	sec.RegisterPrincipalRemovalHook(projects.RemoveMemberships)
 	repos.SetProjectQuota(projects.Quota)
 
 	authn := auth.NewAuthenticator(db, sec, tokens, log)
@@ -858,6 +892,7 @@ func newRouter(
 
 	builds := buildinfo.NewService(db, repos, buildjson.Format{}, log)
 	builds.SetLayout(layout.BuildInfo)
+	repos.ReserveStorage(builds.StorageOwner)
 	h := adapter.New(repos, builds, sec, tokens, db, log)
 	h.SetReplicationQueue(enqueueReplication(queue))
 	h.SetSecrets(opts.Secrets)
@@ -870,7 +905,7 @@ func newRouter(
 	keySvc := signingkey.New(db, opts.Secrets)
 	blocker := blocking.New(db)
 	blocker.SetAudit(auditLog)
-	blocker.SetQuarantine(repos.QuarantinedRepositories)
+	blocker.SetQuarantine(repos)
 
 	agentRegistry := agentregistry.New(db, repos)
 	blocker.SetRegistryApprovals(agentRegistry)
@@ -928,6 +963,10 @@ func newRouter(
 
 	bundles := release.New(db, repos, builds, keySvc, log)
 	bundles.SetLayout(layout.ReleaseBundles)
+	bundles.SetProjects(projects)
+	repos.ReserveStorage(bundles.StorageOwner)
+	bundles.SetDownloadBlocker(blocker.RefuseCopy)
+	builds.SetDownloadBlocker(blocker.RefuseCopy)
 	lifecycleapi.New(bundles, sec, log).Register(rt)
 	evidenceSvc := evidence.New(db, repos, log)
 	bundles.SetEvidence(evidenceSvc)
@@ -941,6 +980,7 @@ func newRouter(
 	ah.SetLDAP(ldapSvc)
 	ah.SetSecurity(sec)
 	ah.SetWorkloads(workloads)
+	ah.SetProjects(projects)
 	authn.SetExternal(ldapSvc)
 	ah.Register(rt)
 
@@ -1254,6 +1294,10 @@ func BootstrapAdmin(ctx context.Context, db *database.DB, username, password str
 		return errors.New("no users exist: set RELIC_ADMIN_PASSWORD to create the first administrator")
 	}
 
+	if !security.ValidUsername(username) {
+		return fmt.Errorf("RELIC_ADMIN_USERNAME: %w", security.InvalidUsername(username))
+	}
+
 	hash, err := auth.HashPassword(password)
 	if err != nil {
 		return err
@@ -1284,16 +1328,16 @@ var apiPrefixes = append([]string{
 
 func apiNotFound(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, p := range apiPrefixes {
+			if strings.HasPrefix(r.URL.Path, p) || r.URL.Path == strings.TrimSuffix(p, "/") {
+				httperror.Write(w, r, http.StatusNotFound, "no such endpoint")
+				return
+			}
+		}
+
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			http.NotFound(w, r)
 			return
-		}
-
-		for _, p := range apiPrefixes {
-			if strings.HasPrefix(r.URL.Path, p) || r.URL.Path == strings.TrimSuffix(p, "/") {
-				http.NotFound(w, r)
-				return
-			}
 		}
 
 		next.ServeHTTP(w, r)

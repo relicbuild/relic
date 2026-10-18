@@ -1,6 +1,8 @@
 package packages
 
 import (
+	"crypto/sha1" //nolint:gosec // folder ids are 40-hex like git's; not a security use
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +23,7 @@ const (
 	hfMaxCommit          = 512 << 20
 	hfLFSUploadTTL       = time.Hour
 	hfLFSBatchMaxObjects = 1000
+	hfDefaultRevision    = "main"
 )
 
 func (h *Handler) hfAPI(w http.ResponseWriter, r *http.Request, m Mount) {
@@ -33,7 +36,14 @@ func (h *Handler) hfAPI(w http.ResponseWriter, r *http.Request, m Mount) {
 		return
 	}
 
-	parts := strings.Split(rest, "/")
+	_, escapedRest, _ := strings.Cut(strings.TrimPrefix(r.URL.EscapedPath(), m.Prefix), "/")
+
+	parts, ok := hfSegments(escapedRest)
+	if !ok {
+		hfError(w, http.StatusNotFound, "EntryNotFound", "not found")
+		return
+	}
+
 	switch {
 	case rest == "api/validate-yaml" && r.Method == http.MethodPost:
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -42,10 +52,16 @@ func (h *Handler) hfAPI(w http.ResponseWriter, r *http.Request, m Mount) {
 		})
 	case rest == "api/repos/create" && r.Method == http.MethodPost:
 		h.hfCreateRepo(w, r, m, rp)
-	case len(parts) >= 4 && parts[0] == "api":
+	case len(parts) >= 3 && parts[0] == "api":
 		kind, ok := hf.ParseKind(parts[1])
 
 		id, op, arg, found := hfSplit(parts[2:], "revision", "tree", "preupload", "commit")
+		if bare := strings.Join(parts[2:], "/"); !found && len(parts) <= 4 && hf.ValidID(bare) {
+			id, op, arg, found = bare, "revision", []string{
+				hfDefaultRevision,
+			}, true
+		}
+
 		if !ok || !found {
 			hfError(w, http.StatusNotFound, "EntryNotFound", "not found")
 			return
@@ -63,31 +79,46 @@ func (h *Handler) hfAPI(w http.ResponseWriter, r *http.Request, m Mount) {
 		}
 
 		id, _, arg, found := hfSplit(p, "resolve")
-		if !found || (r.Method != http.MethodGet && r.Method != http.MethodHead) {
+		if !found || len(arg) == 0 || (r.Method != http.MethodGet && r.Method != http.MethodHead) {
 			hfError(w, http.StatusNotFound, "EntryNotFound", "not found")
 			return
 		}
 
-		rev, file, _ := strings.Cut(arg, "/")
-		h.hfResolve(w, r, rp, kind, id, rev, file)
+		h.hfResolve(w, r, rp, kind, id, arg[0], strings.Join(arg[1:], "/"))
 	}
 }
 
-func hfSplit(p []string, ops ...string) (id, op, rest string, ok bool) {
+// hfSegments splits an escaped path into its unescaped segments, so a
+// revision or path huggingface_hub sends with an escaped "/" stays one segment.
+func hfSegments(escaped string) ([]string, bool) {
+	segments := strings.Split(escaped, "/")
+	for i, segment := range segments {
+		unescaped, err := url.PathUnescape(segment)
+		if err != nil {
+			return nil, false
+		}
+
+		segments[i] = unescaped
+	}
+
+	return segments, true
+}
+
+func hfSplit(p []string, ops ...string) (id, op string, rest []string, ok bool) {
 	for n := 1; n <= 2 && n < len(p); n++ {
 		for _, o := range ops {
 			if p[n] == o {
 				id = strings.Join(p[:n], "/")
 				if !hf.ValidID(id) {
-					return "", "", "", false
+					return "", "", nil, false
 				}
 
-				return id, o, strings.Join(p[n+1:], "/"), true
+				return id, o, p[n+1:], true
 			}
 		}
 	}
 
-	return "", "", "", false
+	return "", "", nil, false
 }
 
 func hfError(w http.ResponseWriter, status int, code, msg string) {
@@ -126,10 +157,11 @@ func (h *Handler) hfRepoAPI(
 	m Mount,
 	rp repository.Repository,
 	kind hf.Kind,
-	id, op, rev string,
+	id, op string,
+	arg []string,
 ) {
 	switch {
-	case (op == "revision" || op == "tree") && r.Method == http.MethodGet:
+	case (op == "revision" || op == "tree" && len(arg) > 0) && r.Method == http.MethodGet:
 		if !h.RequireRepo(w, r, RepoCheck{
 			rp.Name,
 			string(kind) + "/" + id,
@@ -138,14 +170,101 @@ func (h *Handler) hfRepoAPI(
 			return
 		}
 
-		h.hfRevision(w, r, rp, kind, id, rev, op == "tree")
+		if op == "revision" {
+			h.hfRevision(w, r, rp, kind, id, strings.Join(arg, "/"), nil)
+			return
+		}
+
+		recursive, _ := strconv.ParseBool(r.URL.Query().Get("recursive"))
+		h.hfRevision(w, r, rp, kind, id, arg[0], &hfTreeQuery{
+			dir:       strings.Join(arg[1:], "/"),
+			recursive: recursive,
+		})
 	case op == "preupload" && r.Method == http.MethodPost:
 		h.hfPreupload(w, r, rp)
 	case op == "commit" && r.Method == http.MethodPost:
-		h.hfCommit(w, r, m, rp, kind, id, rev)
+		h.hfCommit(w, r, m, rp, kind, id, strings.Join(arg, "/"))
 	default:
 		hfError(w, http.StatusNotFound, "EntryNotFound", "not found")
 	}
+}
+
+// hfTreeQuery is the folder a tree request lists, and whether below it.
+type hfTreeQuery struct {
+	dir       string
+	recursive bool
+}
+
+// hfTreeEntries is the listing of q.dir from every entry of a commit's
+// tree, with the folders the files are in as directory entries; found is
+// false when q.dir is not in the commit.
+func hfTreeEntries(all []map[string]any, q hfTreeQuery) (entries []map[string]any, found bool) {
+	prefix := ""
+	if q.dir != "" {
+		prefix = q.dir + "/"
+	}
+
+	listed := map[string]bool{}
+	entries = []map[string]any{}
+	found = q.dir == ""
+
+	listDirectory := func(p string) {
+		if listed[p] {
+			return
+		}
+
+		listed[p] = true
+		entries = append(entries, map[string]any{
+			"type": "directory",
+			"path": p,
+			"oid":  hfTreeOid(p),
+			"size": 0,
+		})
+	}
+
+	for _, e := range all {
+		p, _ := e["path"].(string)
+
+		rel, ok := strings.CutPrefix(p, prefix)
+		if p == q.dir {
+			found = found || e["type"] == "directory"
+			continue
+		}
+
+		if !ok {
+			continue
+		}
+
+		found = true
+
+		segments := strings.Split(rel, "/")
+		if !q.recursive && len(segments) > 1 {
+			listDirectory(prefix + segments[0])
+			continue
+		}
+
+		for i := 1; q.recursive && i < len(segments); i++ {
+			listDirectory(prefix + strings.Join(segments[:i], "/"))
+		}
+
+		if e["type"] == "directory" {
+			if listed[p] {
+				continue
+			}
+
+			listed[p] = true
+		}
+
+		entries = append(entries, e)
+	}
+
+	return entries, found
+}
+
+func hfTreeOid(p string) string {
+	sum := sha1.Sum([]byte(p)) //nolint:gosec // a folder's id, not a security use
+
+	return hex.EncodeToString(sum[:])
 }
 
 func (h *Handler) hfMembers(r *http.Request, rp repository.Repository) []repository.Repository {
@@ -172,61 +291,72 @@ func (h *Handler) hfRevision(
 	rp repository.Repository,
 	kind hf.Kind,
 	id, rev string,
-	tree bool,
+	tree *hfTreeQuery,
 ) {
 	lastErr := error(hf.ErrRepoNotFound)
 
 	for _, m := range h.hfMembers(r, rp) {
+		var all []map[string]any
+
 		if m.Class == "remote" {
-			var body any
-
 			info, err := h.hf.RemoteInfo(r.Context(), m, kind, id, rev)
-			if err == nil {
-				body = info
-			}
-
-			if err == nil && tree {
-				sha, _ := info["sha"].(string)
-				body, err = h.hf.RemoteTree(r.Context(), m, kind, id, sha)
-			}
-
 			if err != nil {
 				lastErr = err
 				continue
 			}
 
-			writeJSON(w, http.StatusOK, body)
+			if tree == nil {
+				writeJSON(w, http.StatusOK, info)
+				return
+			}
 
+			sha, _ := info["sha"].(string)
+
+			upstream, err := h.hf.RemoteTree(r.Context(), m, kind, id, sha)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+
+			for _, e := range upstream {
+				if fields, ok := e.(map[string]any); ok {
+					all = append(all, fields)
+				}
+			}
+		} else {
+			c, err := h.hf.Revision(r.Context(), m.Name, kind, id, rev)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+
+			files, err := h.hf.Files(r.Context(), m.Name, c)
+			if h.hfFail(w, r, err) {
+				return
+			}
+
+			if tree == nil {
+				writeJSON(w, http.StatusOK, hf.Info(c, files))
+				return
+			}
+
+			for _, f := range files {
+				all = append(
+					all,
+					map[string]any{
+						"type": "file",
+						"path": f.Path,
+						"size": f.Item.Size,
+						"oid":  f.Item.Checksums.SHA1,
+					},
+				)
+			}
+		}
+
+		entries, found := hfTreeEntries(all, *tree)
+		if !found {
+			h.hfFail(w, r, hf.ErrEntryNotFound)
 			return
-		}
-
-		c, err := h.hf.Revision(r.Context(), m.Name, kind, id, rev)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		files, err := h.hf.Files(r.Context(), m.Name, c)
-		if h.hfFail(w, r, err) {
-			return
-		}
-
-		if !tree {
-			writeJSON(w, http.StatusOK, hf.Info(c, files))
-			return
-		}
-
-		entries := make([]map[string]any, 0, len(files))
-		for _, f := range files {
-			entries = append(
-				entries,
-				map[string]any{
-					"type": "file",
-					"path": f.Path,
-					"size": f.Item.Size,
-					"oid":  f.Item.Checksums.SHA1,
-				},
-			)
 		}
 
 		writeJSON(w, http.StatusOK, entries)

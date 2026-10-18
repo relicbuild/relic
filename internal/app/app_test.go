@@ -66,6 +66,46 @@ func TestRunRejectsUnknownCommands(t *testing.T) {
 	}
 }
 
+func TestRunListsEveryConfigurationError(t *testing.T) {
+	t.Parallel()
+
+	for _, command := range []string{
+		"server",
+		"worker",
+	} {
+		t.Run(command, func(t *testing.T) {
+			t.Parallel()
+
+			env := map[string]string{
+				"RELIC_LOG_LEVEL":              "verbose",
+				"RELIC_MAX_UPLOAD_SIZE":        "10GB",
+				"RELIC_DATABASE_URL":           "sqlite:///var/lib/relic/relic.db",
+				"RELIC_TRASH_RETENTION":        "bogus",
+				"RELIC_METRICS_LISTEN_ADDRESS": "off",
+			}
+
+			err := Run(t.Context(), []string{
+				command,
+			}, func(k string) string {
+				return env[k]
+			}, io.Discard)
+			if err == nil {
+				t.Fatal("Run went ahead with wrong settings")
+			}
+
+			for _, want := range []string{
+				"RELIC_LOG_LEVEL",
+				"RELIC_MAX_UPLOAD_SIZE",
+				"RELIC_TRASH_RETENTION",
+			} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error = %v, want it to name %s", err, want)
+				}
+			}
+		})
+	}
+}
+
 func TestRoutes(t *testing.T) {
 	t.Parallel()
 
@@ -305,13 +345,18 @@ func TestRelicVersionIsTheStampedRelease(t *testing.T) {
 	}
 }
 
-func TestWebhookClient(t *testing.T) {
+func TestOutboundClientsRefusePrivateAddresses(t *testing.T) {
 	t.Parallel()
 
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	t.Cleanup(target.Close)
+
+	clients := map[string]func(allowPrivate bool) *http.Client{
+		"webhook":     webhookClient,
+		"replication": replicationClient,
+	}
 
 	tests := []struct {
 		name         string
@@ -327,27 +372,29 @@ func TestWebhookClient(t *testing.T) {
 			allowPrivate: true,
 		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+	for client, newClient := range clients {
+		for _, tt := range tests {
+			t.Run(client+": "+tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, target.URL, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
+				req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, target.URL, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
 
-			resp, err := webhookClient(tt.allowPrivate).Do(req)
-			if err == nil {
-				_ = resp.Body.Close()
-			}
+				resp, err := newClient(tt.allowPrivate).Do(req)
+				if err == nil {
+					_ = resp.Body.Close()
+				}
 
-			if refused := errors.Is(err, repository.ErrEgressDenied); refused != tt.wantRefused {
-				t.Errorf("POST %s = %v, want refused %v", target.URL, err, tt.wantRefused)
-			}
+				if refused := errors.Is(err, repository.ErrEgressDenied); refused != tt.wantRefused {
+					t.Errorf("POST %s = %v, want refused %v", target.URL, err, tt.wantRefused)
+				}
 
-			if !tt.wantRefused && (err != nil || resp.StatusCode != http.StatusNoContent) {
-				t.Errorf("POST %s = %v, %v; want the target's 204", target.URL, resp, err)
-			}
-		})
+				if !tt.wantRefused && (err != nil || resp.StatusCode != http.StatusNoContent) {
+					t.Errorf("POST %s = %v, %v; want the target's 204", target.URL, resp, err)
+				}
+			})
+		}
 	}
 }

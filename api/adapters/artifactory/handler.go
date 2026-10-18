@@ -113,8 +113,7 @@ func (h *Handler) Register(rt *httpserver.Router) {
 
 	rt.HandleFunc("GET /artifactory/api/repositories", auth.Authenticated, h.listRepositories)
 	rt.HandleFunc("GET /artifactory/api/repositories/{$}", auth.Authenticated, h.listRepositories)
-	// Admin only: remote repository configs carry upstream credentials.
-	rt.HandleFunc("GET /artifactory/api/repositories/{key}", auth.Admin, h.getRepository)
+	rt.HandleFunc("GET /artifactory/api/repositories/{key}", auth.Authenticated, h.getRepository)
 	rt.HandleFunc("PUT /artifactory/api/repositories/{key}", auth.Admin, h.createRepository)
 	rt.HandleFunc("POST /artifactory/api/repositories/{key}", auth.Admin, h.updateRepository)
 	rt.HandleFunc("DELETE /artifactory/api/repositories/{key}", auth.Admin, h.deleteRepository)
@@ -151,6 +150,7 @@ func (h *Handler) Register(rt *httpserver.Router) {
 	rt.HandleFunc("POST /artifactory/api/build/promote/{name}/{number}", auth.Authenticated, h.promoteBuild)
 	rt.HandleFunc("POST /artifactory/api/build/retention/{name...}", auth.Authenticated, h.discardBuilds)
 	rt.HandleFunc("POST /artifactory/api/build/delete", auth.Authenticated, h.deleteBuilds)
+	rt.HandleFunc("DELETE /artifactory/api/build/{name...}", auth.Authenticated, h.deleteBuildsByQuery)
 	rt.HandleFunc("GET /artifactory/api/builds/buildArtifacts/{rest...}", auth.Authenticated, h.buildArtifacts)
 
 	rt.HandleFunc("GET /artifactory/api/npm/auth", auth.Authenticated, h.npmAuth)
@@ -190,10 +190,12 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, err error) 
 		status, msg = http.StatusForbidden, err.Error()
 	case errors.Is(err, repository.ErrRepositoryNotFound), errors.Is(err, repository.ErrNotFound):
 		status, msg = http.StatusNotFound, err.Error()
-	case errors.Is(err, repository.ErrRepositoryExists), errors.Is(err, repository.ErrConflict),
+	case errors.Is(err, repository.ErrRepositoryExists), errors.Is(err, repository.ErrRepositoryKeyCaseConflict),
+		errors.Is(err, repository.ErrConflict),
 		errors.Is(err, repository.ErrHeld), errors.Is(err, repository.ErrImmutable):
 		status, msg = http.StatusConflict, err.Error()
 	case errors.Is(err, repository.ErrInvalidPath),
+		errors.Is(err, repository.ErrInvalidProperty),
 		errors.Is(err, repository.ErrInvalidRepository),
 		errors.Is(err, repository.ErrNotLocal),
 		errors.Is(err, repository.ErrNotAFile),
@@ -256,7 +258,11 @@ func RegisterPaths() {
 		httperror.Register(p, wire.WriteError)
 		telemetry.RegisterFamily(p, families[p])
 	}
+
+	httperror.Register(registryPrefix, packages.RegistryStatusError)
 }
+
+const registryPrefix = "/v2/"
 
 // ConfigureAuth teaches the authenticator what the adapter's clients send.
 func ConfigureAuth(a *auth.Authenticator) {
@@ -310,7 +316,7 @@ var notProvided = map[string]string{
 func registerNotProvided(rt *httpserver.Router) {
 	for prefix, product := range notProvided {
 		rt.HandleFunc(prefix, auth.Authenticated, func(w http.ResponseWriter, _ *http.Request) {
-			wire.WriteError(w, http.StatusNotImplemented, "Relic does not provide "+product)
+			wire.WriteError(w, http.StatusNotFound, "Relic does not provide "+product)
 		})
 	}
 }
@@ -324,6 +330,12 @@ func uiRedirect(w http.ResponseWriter, r *http.Request) {
 	// TrimLeft keeps "/ui//host" and "/ui/\host" from becoming a
 	// protocol-relative redirect to another host.
 	target := "/" + strings.TrimLeft(strings.TrimPrefix(r.URL.Path, "/ui/"), "/\\")
+
+	run, isBuildRun := buildRunPage(r.URL.EscapedPath())
+	if isBuildRun {
+		target = run
+	}
+
 	q := url.Values{}
 
 	for k, v := range r.URL.Query() {
@@ -331,6 +343,7 @@ func uiRedirect(w http.ResponseWriter, r *http.Request) {
 		case ok:
 			q[renamed] = v
 		case strings.HasPrefix(k, "jfClient"):
+		case isBuildRun && (k == "buildRepo" || k == "projectKey"):
 		default:
 			q[k] = v
 		}
@@ -341,6 +354,22 @@ func uiRedirect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, target, http.StatusMovedPermanently) //nolint:gosec // G710: a path on this host, see above
+}
+
+// buildRunPage maps the build run link jf prints, /ui/builds/<name>/<number>/<started>/published,
+// to the run's page, keeping the name and number escaped.
+func buildRunPage(escapedPath string) (string, bool) {
+	rest, ok := strings.CutPrefix(escapedPath, "/ui/builds/")
+	if !ok {
+		return "", false
+	}
+
+	segments := strings.Split(rest, "/")
+	if len(segments) < 2 || segments[0] == "" || segments[1] == "" {
+		return "", false
+	}
+
+	return "/builds/" + segments[0] + "/" + segments[1], true
 }
 
 const curationAuditPrefix = "/artifactory/api/curation/audit/"

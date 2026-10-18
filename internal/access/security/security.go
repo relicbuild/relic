@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -35,6 +36,7 @@ type Service struct {
 	adminOnly []string
 	// projectPermissions adds the projects' roles to the stored permissions.
 	projectPermissions func(context.Context) ([]auth.Permission, error)
+	removalHooks       []PrincipalRemovalHook
 
 	mu       sync.Mutex
 	perms    auth.Permissions
@@ -88,16 +90,43 @@ func (s *Service) ReplaceUser(ctx context.Context, u User) (created bool, err er
 	})
 }
 
+var username = regexp.MustCompile(`^[\w.@-]{1,64}$`)
+
+// ValidUsername reports whether name can be a Relic username: 1 to 64 letters, digits or . @ _ -.
+func ValidUsername(name string) bool { return username.MatchString(name) }
+
+// InvalidUsername is the ErrInvalid that refuses name as a new username.
+func InvalidUsername(name string) error {
+	return fmt.Errorf("%w: username %q must be 1 to 64 letters, digits or the characters . @ _ -", ErrInvalid, name)
+}
+
+const usernamesLock = "security:usernames"
+
+// WithNewUsername runs create, which adds the user name, under the usernames lock, and refuses it with ErrExists
+// when another user's name differs from name only by case.
+func WithNewUsername(ctx context.Context, db *database.DB, name string, create func() error) error {
+	return db.WithLock(ctx, usernamesLock, func() error {
+		users, err := db.ListUsers(ctx)
+		if err != nil {
+			return fmt.Errorf("list users: %w", err)
+		}
+
+		for _, u := range users {
+			if u.Username != name && strings.EqualFold(u.Username, name) {
+				return fmt.Errorf("%w: user %q differs from %q only by case", ErrExists, u.Username, name)
+			}
+		}
+
+		return create()
+	})
+}
+
 type userWrite struct {
 	createOnly   bool
 	withDisabled bool
 }
 
 func (s *Service) putUser(ctx context.Context, u User, w userWrite) (created bool, err error) {
-	if u.Name == "" {
-		return false, fmt.Errorf("%w: name is required", ErrInvalid)
-	}
-
 	existing, err := s.db.GetUserByUsername(ctx, u.Name)
 
 	exists := err == nil
@@ -107,6 +136,10 @@ func (s *Service) putUser(ctx context.Context, u User, w userWrite) (created boo
 
 	if exists && w.createOnly {
 		return false, fmt.Errorf("%w: user %q", ErrExists, u.Name)
+	}
+
+	if !exists && !ValidUsername(u.Name) {
+		return false, InvalidUsername(u.Name)
 	}
 
 	hash := existing.PasswordHash
@@ -125,46 +158,64 @@ func (s *Service) putUser(ctx context.Context, u User, w userWrite) (created boo
 		return false, err
 	}
 
-	err = s.db.WithTx(ctx, func(q database.Querier) error {
-		created, err = q.UpsertUser(ctx, database.UpsertUserParams{
-			ID:           uuid.NewV7(),
-			Username:     u.Name,
-			Email:        u.Email,
-			PasswordHash: hash,
-			Admin:        u.Admin,
-			Viewer:       u.Viewer,
-			Extensions:   extensions,
+	disabled := existing.Disabled
+	if w.withDisabled {
+		disabled = u.Disabled
+	}
+
+	removesAdministrator := exists && existing.Admin && !existing.Disabled && (!u.Admin || disabled)
+
+	save := func() error {
+		return s.withAdministratorKept(ctx, removesAdministrator, func() error {
+			return s.db.WithTx(ctx, func(q database.Querier) error {
+				created, err = q.UpsertUser(ctx, database.UpsertUserParams{
+					ID:           uuid.NewV7(),
+					Username:     u.Name,
+					Email:        u.Email,
+					PasswordHash: hash,
+					Admin:        u.Admin,
+					Viewer:       u.Viewer,
+					Extensions:   extensions,
+				})
+				if err != nil {
+					return fmt.Errorf("save user: %w", err)
+				}
+
+				if w.createOnly && !created {
+					return fmt.Errorf("%w: user %q", ErrExists, u.Name)
+				}
+
+				if w.withDisabled {
+					if err := q.SetUserDisabled(ctx, database.SetUserDisabledParams{
+						Username: u.Name,
+						Disabled: u.Disabled,
+					}); err != nil {
+						return fmt.Errorf("save user: %w", err)
+					}
+				}
+
+				groups := u.Groups
+				if groups == nil && created {
+					if groups, err = q.DefaultGroups(ctx); err != nil {
+						return err
+					}
+				}
+
+				if groups == nil {
+					return nil
+				}
+
+				return setUserGroups(ctx, q, u.Name, groups)
+			})
 		})
-		if err != nil {
-			return fmt.Errorf("save user: %w", err)
-		}
+	}
 
-		if w.createOnly && !created {
-			return fmt.Errorf("%w: user %q", ErrExists, u.Name)
-		}
+	if exists {
+		err = save()
+	} else {
+		err = WithNewUsername(ctx, s.db, u.Name, save)
+	}
 
-		if w.withDisabled {
-			if err := q.SetUserDisabled(ctx, database.SetUserDisabledParams{
-				Username: u.Name,
-				Disabled: u.Disabled,
-			}); err != nil {
-				return fmt.Errorf("save user: %w", err)
-			}
-		}
-
-		groups := u.Groups
-		if groups == nil && created {
-			if groups, err = q.DefaultGroups(ctx); err != nil {
-				return err
-			}
-		}
-
-		if groups == nil {
-			return nil
-		}
-
-		return setUserGroups(ctx, q, u.Name, groups)
-	})
 	s.invalidate()
 
 	return created, err
@@ -273,7 +324,7 @@ func (s *Service) ListUserRealms(ctx context.Context) ([]UserRealm, error) {
 
 const administratorsLock = "security:administrators"
 
-// DeleteUser removes a user.
+// DeleteUser removes a user, their grants and what the removal hooks drop.
 func (s *Service) DeleteUser(ctx context.Context, name string) error {
 	u, err := s.db.GetUserByUsername(ctx, name)
 	if errors.Is(database.NotFound(err), database.ErrNotFound) {
@@ -290,30 +341,15 @@ func (s *Service) DeleteUser(ctx context.Context, name string) error {
 				return fmt.Errorf("revoke the access tokens of %q: %w", name, err)
 			}
 
-			_, err := q.DeleteUser(ctx, name)
-
-			return err
-		})
-	}
-
-	if u.Admin {
-		err = s.db.WithLock(ctx, administratorsLock, func() error {
-			n, err := s.db.CountAdmins(ctx)
-			if err != nil {
+			if _, err := q.DeleteUser(ctx, name); err != nil {
 				return err
 			}
 
-			if n <= 1 {
-				return fmt.Errorf("%w: cannot delete the last administrator", ErrInvalid)
-			}
-
-			return remove()
+			return s.removePrincipal(ctx, q, name, false)
 		})
-	} else {
-		err = remove()
 	}
 
-	if err != nil {
+	if err := s.withAdministratorKept(ctx, u.Admin && !u.Disabled, remove); err != nil {
 		return err
 	}
 
@@ -322,17 +358,51 @@ func (s *Service) DeleteUser(ctx context.Context, name string) error {
 	return nil
 }
 
+// withAdministratorKept runs change, under the administrators lock when it takes away an enabled administrator,
+// and refuses it when that administrator is the last one.
+func (s *Service) withAdministratorKept(ctx context.Context, removesAdministrator bool, change func() error) error {
+	if !removesAdministrator {
+		return change()
+	}
+
+	return s.db.WithLock(ctx, administratorsLock, func() error {
+		users, err := s.db.ListUsers(ctx)
+		if err != nil {
+			return fmt.Errorf("list users: %w", err)
+		}
+
+		enabled := 0
+
+		for _, u := range users {
+			if u.Admin && !u.Disabled {
+				enabled++
+			}
+		}
+
+		if enabled <= 1 {
+			return fmt.Errorf("%w: the last enabled administrator cannot be deleted, disabled or demoted", ErrInvalid)
+		}
+
+		return change()
+	})
+}
+
 // SetDisabled turns a user's sign-ins off or back on.
 func (s *Service) SetDisabled(ctx context.Context, name string, disabled bool) error {
-	if _, err := s.db.GetUserByUsername(ctx, name); errors.Is(database.NotFound(err), database.ErrNotFound) {
+	u, err := s.db.GetUserByUsername(ctx, name)
+	if errors.Is(database.NotFound(err), database.ErrNotFound) {
 		return fmt.Errorf("%w: user %q", ErrNotFound, name)
-	} else if err != nil {
+	}
+
+	if err != nil {
 		return err
 	}
 
-	return s.db.SetUserDisabled(ctx, database.SetUserDisabledParams{
-		Username: name,
-		Disabled: disabled,
+	return s.withAdministratorKept(ctx, u.Admin && !u.Disabled && disabled, func() error {
+		return s.db.SetUserDisabled(ctx, database.SetUserDisabledParams{
+			Username: name,
+			Disabled: disabled,
+		})
 	})
 }
 
@@ -497,15 +567,22 @@ func (s *Service) ListGroups(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
-// DeleteGroup removes a group.
+// DeleteGroup removes a group, its grants and what the removal hooks drop.
 func (s *Service) DeleteGroup(ctx context.Context, name string) error {
-	n, err := s.db.DeleteGroup(ctx, name)
+	err := s.db.WithTx(ctx, func(q database.Querier) error {
+		n, err := q.DeleteGroup(ctx, name)
+		if err != nil {
+			return err
+		}
+
+		if n == 0 {
+			return fmt.Errorf("%w: group %q", ErrNotFound, name)
+		}
+
+		return s.removePrincipal(ctx, q, name, true)
+	})
 	if err != nil {
 		return err
-	}
-
-	if n == 0 {
-		return fmt.Errorf("%w: group %q", ErrNotFound, name)
 	}
 
 	s.invalidate()
@@ -560,6 +637,39 @@ func (s *Service) Permissions(ctx context.Context) (auth.Permissions, error) {
 // roles, to the stored ones.
 func (s *Service) SetProjectPermissions(fn func(context.Context) ([]auth.Permission, error)) {
 	s.projectPermissions = fn
+}
+
+// PrincipalRemovalHook drops what refers to a user, or a group, by name, in
+// the transaction that deletes it.
+type PrincipalRemovalHook func(ctx context.Context, q database.Querier, name string, group bool) error
+
+// RegisterPrincipalRemovalHook runs hook whenever a user or a group is
+// deleted.
+func (s *Service) RegisterPrincipalRemovalHook(hook PrincipalRemovalHook) {
+	s.removalHooks = append(s.removalHooks, hook)
+}
+
+func (s *Service) removePrincipal(ctx context.Context, q database.Querier, name string, group bool) error {
+	principal := Grant{
+		User: name,
+	}
+	if group {
+		principal = Grant{
+			Group: name,
+		}
+	}
+
+	if err := removeGrants(ctx, q, principal); err != nil {
+		return err
+	}
+
+	for _, hook := range s.removalHooks {
+		if err := hook(ctx, q, name, group); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Invalidate makes the next Permissions call reload them.

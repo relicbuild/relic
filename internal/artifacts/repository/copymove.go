@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"relic/internal/access/auth"
 	"relic/internal/platform/database"
 )
 
@@ -27,11 +28,27 @@ type CopyInput struct {
 	// RefuseFile, when set, refuses the copy when it returns an error for a
 	// file under Source.
 	RefuseFile func(ctx context.Context, file Item) error
+	// Permits, when set, refuses the copy unless it allows every action the
+	// copy takes on a file: reading it (and deleting it, for a move) at the
+	// source, writing it at the destination and deleting the file it
+	// replaces there.
+	Permits func(repoKey, path string, action auth.Action) bool
+	// CheckUploadLimit refuses the copy of a file larger than the
+	// destination accepts as an upload.
+	CheckUploadLimit bool
+	// RefuseOverwrite, when set, refuses the copy when it returns an error for
+	// a file at the destination that the copy would replace with other content.
+	RefuseOverwrite func(ctx context.Context, existing Item) error
 
-	// replace deletes what is at the destination first, and then runs in
-	// the same transaction after the copy.
-	replace bool
-	then    func(q database.Querier) error
+	// merge puts the copy into what is at the destination, replacing only
+	// an item of the other kind; before and then run in the same
+	// transaction before and after the copy.
+	merge  bool
+	before func(q database.Querier) error
+	then   func(q database.Querier) error
+	// keepFiles refuses the copy when a file it would write is already at
+	// the destination.
+	keepFiles bool
 }
 
 // Copy copies or moves an item.
@@ -49,6 +66,7 @@ type copyPlan struct {
 	destination  Repository
 	path         string
 	projectQuota int64
+	uploadLimit  int64
 	files        []string
 }
 
@@ -170,11 +188,19 @@ func (s *Service) planCopy(ctx context.Context, in CopyInput) (copyPlan, error) 
 		return copyPlan{}, err
 	}
 
+	var uploadLimit int64
+	if in.CheckUploadLimit {
+		if uploadLimit, err = s.UploadLimit(ctx, destination.Name); err != nil {
+			return copyPlan{}, err
+		}
+	}
+
 	return copyPlan{
 		in:           in,
 		destination:  destination,
 		path:         dest.Path,
 		projectQuota: projectQuota,
+		uploadLimit:  uploadLimit,
 	}, nil
 }
 
@@ -203,13 +229,8 @@ func copyInTx(ctx context.Context, q database.Querier, plan *copyPlan, now time.
 		}
 	}
 
-	if in.replace {
-		parent, name := SplitPath(plan.path)
-		if _, err := deleteItem(ctx, q, Item{
-			Repository: destination.Name,
-			Parent:     parent,
-			Name:       name,
-		}); err != nil {
+	if in.before != nil {
+		if err := in.before(q); err != nil {
 			return err
 		}
 	}
@@ -218,6 +239,39 @@ func copyInTx(ctx context.Context, q database.Querier, plan *copyPlan, now time.
 		target := plan.path
 		if it.Path() != src.Path() {
 			target += "/" + strings.TrimPrefix(it.Path(), src.Path()+"/")
+		}
+
+		if plan.uploadLimit > 0 && !it.IsFolder() && it.Size > plan.uploadLimit {
+			return fmt.Errorf(
+				"%w: %s/%s has %d bytes, the limit is %d",
+				ErrTooLarge,
+				it.Repository,
+				it.Path(),
+				it.Size,
+				plan.uploadLimit,
+			)
+		}
+
+		if in.merge {
+			if err := deleteOtherKind(ctx, q, destination.Name, target, it.IsFolder()); err != nil {
+				return err
+			}
+		}
+
+		if in.keepFiles && !it.IsFolder() {
+			if err := checkVacant(ctx, q, destination.Name, target); err != nil {
+				return err
+			}
+		}
+
+		if in.Permits != nil && !it.IsFolder() {
+			if err := permitFileCopy(ctx, q, in, it, destination.Name, target); err != nil {
+				return err
+			}
+		}
+
+		if err := refuseOverwrite(ctx, q, in, it, destination.Name, target); err != nil {
+			return err
 		}
 
 		if err := copyItem(
@@ -229,6 +283,7 @@ func copyInTx(ctx context.Context, q database.Querier, plan *copyPlan, now time.
 			in.User,
 			now,
 			destination.Config.Immutable,
+			in.Move,
 		); err != nil {
 			return err
 		}
@@ -270,16 +325,145 @@ func copyInTx(ctx context.Context, q database.Querier, plan *copyPlan, now time.
 
 var errDryRun = errors.New("dry run")
 
+func deleteOtherKind(ctx context.Context, q database.Querier, repoKey, target string, folder bool) error {
+	parent, name := SplitPath(target)
+
+	existing, err := q.GetItem(ctx, database.GetItemParams{
+		RepoKey: repoKey,
+		Path:    parent,
+		Name:    name,
+	})
+	if database.IsNoRows(err) {
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("get %s/%s: %w", repoKey, target, err)
+	}
+
+	if (existing.Type == TypeFolder) == folder {
+		return nil
+	}
+
+	_, err = deleteItem(ctx, q, Item{
+		Repository: repoKey,
+		Parent:     parent,
+		Name:       name,
+	})
+
+	return err
+}
+
+func permitFileCopy(ctx context.Context, q database.Querier, in CopyInput, file Item, repoKey, target string) error {
+	if !in.Permits(file.Repository, file.Path(), auth.ActionRead) {
+		return fmt.Errorf(
+			"%w: no read permission on everything under %s/%s",
+			ErrForbidden,
+			in.Source.Repository,
+			in.Source.Path(),
+		)
+	}
+
+	if in.Move && !in.Permits(file.Repository, file.Path(), auth.ActionDelete) {
+		return fmt.Errorf("%w: no delete permission on %s/%s", ErrForbidden, file.Repository, file.Path())
+	}
+
+	if !in.Permits(repoKey, target, auth.ActionWrite) {
+		return fmt.Errorf("%w: no write permission on %s/%s", ErrForbidden, repoKey, target)
+	}
+
+	parent, name := SplitPath(target)
+
+	existing, err := q.GetItem(ctx, database.GetItemParams{
+		RepoKey: repoKey,
+		Path:    parent,
+		Name:    name,
+	})
+	if database.IsNoRows(err) {
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("get %s/%s: %w", repoKey, target, err)
+	}
+
+	if existing.Type == TypeFile && !in.Permits(repoKey, target, auth.ActionDelete) {
+		return fmt.Errorf("%w: no delete permission on %s/%s", ErrForbidden, repoKey, target)
+	}
+
+	return nil
+}
+
+func refuseOverwrite(ctx context.Context, q database.Querier, in CopyInput, it Item, repoKey, target string) error {
+	if in.RefuseOverwrite == nil || it.IsFolder() {
+		return nil
+	}
+
+	parent, name := SplitPath(target)
+
+	existing, err := q.GetItem(ctx, database.GetItemParams{
+		RepoKey: repoKey,
+		Path:    parent,
+		Name:    name,
+	})
+	if database.IsNoRows(err) {
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("get %s/%s: %w", repoKey, target, err)
+	}
+
+	current := domainItem(existing)
+	if current.IsFolder() || current.Checksums.SHA256 == it.Checksums.SHA256 {
+		return nil
+	}
+
+	return in.RefuseOverwrite(ctx, current)
+}
+
+func checkVacant(ctx context.Context, q database.Querier, repoKey, path string) error {
+	parent, name := SplitPath(path)
+
+	_, err := q.GetItem(ctx, database.GetItemParams{
+		RepoKey: repoKey,
+		Path:    parent,
+		Name:    name,
+	})
+	if database.IsNoRows(err) {
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("get %s/%s: %w", repoKey, path, err)
+	}
+
+	return fmt.Errorf("%w: %s/%s already exists", ErrConflict, repoKey, path)
+}
+
 func copyItem(
 	ctx context.Context,
 	q database.Querier,
 	it Item,
 	repoKey, target, user string,
 	now time.Time,
-	immutable bool,
+	immutable, move bool,
 ) error {
 	parent, name := SplitPath(target)
+	keepCreated := move
+
 	if it.IsFolder() {
+		_, err := q.GetItem(ctx, database.GetItemParams{
+			RepoKey: repoKey,
+			Path:    parent,
+			Name:    name,
+		})
+		if err != nil && !database.IsNoRows(err) {
+			return fmt.Errorf("get %s/%s: %w", repoKey, target, err)
+		}
+
+		keepCreated = move && err != nil
+
 		if err := ensureFolders(ctx, q, repoKey, target, user, now); err != nil {
 			return err
 		}
@@ -311,6 +495,16 @@ func copyItem(
 	})
 	if err != nil {
 		return fmt.Errorf("get %s/%s: %w", it.Repository, it.Path(), err)
+	}
+
+	if keepCreated {
+		if err := q.SetItemCreated(ctx, database.SetItemCreatedParams{
+			ID:        id.ID,
+			Created:   srcRow.Created,
+			CreatedBy: srcRow.CreatedBy,
+		}); err != nil {
+			return fmt.Errorf("keep the creation of %s/%s: %w", repoKey, target, err)
+		}
 	}
 
 	rows, err := q.GetItemProperties(ctx, srcRow.ID)

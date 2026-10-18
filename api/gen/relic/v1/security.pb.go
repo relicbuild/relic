@@ -1874,7 +1874,8 @@ type CreateTokenRequest struct {
 	// scope is the user's own rights when unset. Only administrators may ask
 	// for an admin scope or groups they are not in.
 	Scope *TokenScope `protobuf:"bytes,3,opt,name=scope,proto3" json:"scope,omitempty"`
-	// project is the project the token is for.
+	// project is a label recorded on the token: a project the caller can see.
+	// It does not limit what the token can do; the scope does.
 	Project       string `protobuf:"bytes,4,opt,name=project,proto3" json:"project,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2111,8 +2112,8 @@ func (x *AccessToken) GetRefreshable() bool {
 
 type ListTokensRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// username limits an administrator's list to one user; others always see
-	// their own tokens.
+	// username limits an administrator's or a viewer's list to one user; others
+	// always see their own tokens.
 	Username string `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
 	// include_revoked lists revoked tokens too.
 	IncludeRevoked bool `protobuf:"varint,2,opt,name=include_revoked,json=includeRevoked,proto3" json:"include_revoked,omitempty"`

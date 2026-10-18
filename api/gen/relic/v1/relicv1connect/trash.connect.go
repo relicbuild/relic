@@ -49,7 +49,8 @@ const (
 type TrashServiceClient interface {
 	// ListTrash lists a page of the trash can's entries, newest first.
 	ListTrash(context.Context, *connect.Request[v1.ListTrashRequest]) (*connect.Response[v1.ListTrashResponse], error)
-	// RestoreTrash puts an item back, where it was or at another place.
+	// RestoreTrash puts an item back, where it was or at another place. It
+	// fails with FAILED_PRECONDITION when a file it would restore is there.
 	RestoreTrash(context.Context, *connect.Request[v1.RestoreTrashRequest]) (*connect.Response[v1.RestoreTrashResponse], error)
 	// DeleteTrashEntry deletes one item from the trash can for good.
 	DeleteTrashEntry(context.Context, *connect.Request[v1.DeleteTrashEntryRequest]) (*connect.Response[v1.DeleteTrashEntryResponse], error)
@@ -127,7 +128,8 @@ func (c *trashServiceClient) EmptyTrash(ctx context.Context, req *connect.Reques
 type TrashServiceHandler interface {
 	// ListTrash lists a page of the trash can's entries, newest first.
 	ListTrash(context.Context, *connect.Request[v1.ListTrashRequest]) (*connect.Response[v1.ListTrashResponse], error)
-	// RestoreTrash puts an item back, where it was or at another place.
+	// RestoreTrash puts an item back, where it was or at another place. It
+	// fails with FAILED_PRECONDITION when a file it would restore is there.
 	RestoreTrash(context.Context, *connect.Request[v1.RestoreTrashRequest]) (*connect.Response[v1.RestoreTrashResponse], error)
 	// DeleteTrashEntry deletes one item from the trash can for good.
 	DeleteTrashEntry(context.Context, *connect.Request[v1.DeleteTrashEntryRequest]) (*connect.Response[v1.DeleteTrashEntryResponse], error)

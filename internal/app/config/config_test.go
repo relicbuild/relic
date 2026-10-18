@@ -407,6 +407,40 @@ func TestLoad(t *testing.T) {
 			wantErr: "RELIC_TLS_KEY_FILE",
 		},
 		{
+			name: "TLS: a URL among the names",
+			env: with(map[string]string{
+				"RELIC_TLS_HOSTNAMES": "relic.example.com, https://relic.example.com",
+			}),
+			wantErr: "RELIC_TLS_HOSTNAMES",
+		},
+		{
+			name: "TLS: a name with a space",
+			env: with(map[string]string{
+				"RELIC_TLS_HOSTNAMES": "bad name",
+			}),
+			wantErr: "RELIC_TLS_HOSTNAMES",
+		},
+		{
+			name: "TLS: a name with a label that starts with a hyphen",
+			env: with(map[string]string{
+				"RELIC_TLS_HOSTNAMES": "-relic.example.com",
+			}),
+			wantErr: "RELIC_TLS_HOSTNAMES",
+		},
+		{
+			name: "TLS: wildcard names and IPv6 addresses",
+			env: with(map[string]string{
+				"RELIC_TLS_HOSTNAMES": "*.relic.example.com,fd00::5,relic-1.internal",
+			}),
+			check: func(t *testing.T, c Config) {
+				t.Helper()
+
+				if len(c.TLS.Hostnames) != 3 {
+					t.Errorf("hostnames = %v", c.TLS.Hostnames)
+				}
+			},
+		},
+		{
 			name: "TLS: a relative directory",
 			env: with(map[string]string{
 				"RELIC_TLS_DIRECTORY": "tls",
@@ -631,6 +665,58 @@ func TestLoad(t *testing.T) {
 				"RELIC_OBJECT_STORAGE_CHECKSUM": "never",
 			}),
 			wantErr: "RELIC_OBJECT_STORAGE_CHECKSUM",
+		},
+		{
+			name: "switches in any spelling of true and false",
+			env: with(map[string]string{
+				"RELIC_TRASH_ENABLED":                    "FALSE",
+				"RELIC_UPSTREAM_ALLOW_PRIVATE_ADDRESSES": "1",
+				"RELIC_WEBHOOK_ALLOW_PRIVATE_ADDRESSES":  "True",
+				"RELIC_SECRET_VALIDATION_ENABLED":        "true ",
+			}),
+			check: func(t *testing.T, c Config) {
+				t.Helper()
+
+				if c.Trash.Enabled || !c.AllowPrivateUpstreams || !c.AllowPrivateWebhooks || !c.Scan.SecretValidation {
+					t.Errorf("trash %v, upstreams %v, webhooks %v, secret validation %v",
+						c.Trash.Enabled, c.AllowPrivateUpstreams, c.AllowPrivateWebhooks, c.Scan.SecretValidation)
+				}
+			},
+		},
+		{
+			name: "a switch that is neither true nor false",
+			env: with(map[string]string{
+				"RELIC_TRASH_ENABLED": "no",
+			}),
+			wantErr: "RELIC_TRASH_ENABLED",
+		},
+		{
+			name: "a private address switch that is neither true nor false",
+			env: with(map[string]string{
+				"RELIC_UPSTREAM_ALLOW_PRIVATE_ADDRESSES": "yes",
+			}),
+			wantErr: "RELIC_UPSTREAM_ALLOW_PRIVATE_ADDRESSES",
+		},
+		{
+			name: "a feed that is not a URL",
+			env: with(map[string]string{
+				"RELIC_CVE_KEV_URL": "not-a-url",
+			}),
+			wantErr: "RELIC_CVE_KEV_URL",
+		},
+		{
+			name: "a feed turned off in capitals",
+			env: with(map[string]string{
+				"RELIC_CVE_EPSS_URL": "OFF",
+			}),
+			wantErr: "RELIC_CVE_EPSS_URL",
+		},
+		{
+			name: "a vulnerability database listing that is not a URL",
+			env: with(map[string]string{
+				"RELIC_SCAN_VULNERABILITY_DATABASE_URL": "/srv/grype/latest.json",
+			}),
+			wantErr: "RELIC_SCAN_VULNERABILITY_DATABASE_URL",
 		},
 	}
 	for _, tt := range tests {

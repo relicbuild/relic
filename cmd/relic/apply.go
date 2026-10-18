@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"slices"
@@ -66,7 +67,7 @@ func applyCmd(g *globals) *cobra.Command {
 				case err != nil:
 					return printCompleted(out, applied, fmt.Errorf("get %s: %w", d, err))
 				case !force &&
-					proto.Equal(restrict(live, d.owned, d.kind.ignored), restrict(d.msg, d.owned, d.kind.ignored)):
+					proto.Equal(restrict(live, d.owned, d.kind), restrict(d.msg, d.owned, d.kind)):
 					result = "unchanged"
 				default:
 					if err := d.kind.update(ctx, c, merged(live, d)); err != nil {
@@ -122,10 +123,10 @@ func diffCmd(g *globals) *cobra.Command {
 
 				var from proto.Message
 				if err == nil {
-					from = restrict(live, d.owned, d.kind.ignored)
+					from = restrict(live, d.owned, d.kind)
 				}
 
-				text, err := unifiedDiff(d, from, restrict(d.msg, d.owned, d.kind.ignored))
+				text, err := unifiedDiff(d, from, restrict(d.msg, d.owned, d.kind))
 				if err != nil {
 					return err
 				}
@@ -286,7 +287,7 @@ func getCmd(g *globals) *cobra.Command {
 				return fmt.Errorf("list %s: %w", k.aliases[1], err)
 			}
 
-			return printResources(cmd.OutOrStdout(), k, items, output)
+			return printResources(cmd.OutOrStdout(), k, items, output, len(args) == 1)
 		},
 	}
 	cmd.Flags().StringVarP(&output, "output", "o", "text", "output format: text, name, yaml or json")
@@ -294,7 +295,11 @@ func getCmd(g *globals) *cobra.Command {
 	return cmd
 }
 
-func printResources(w io.Writer, k *kind, items []proto.Message, output string) error {
+func printResources(w io.Writer, k *kind, items []proto.Message, output string, list bool) error {
+	if output == "json" {
+		return printResourcesJSON(w, items, list)
+	}
+
 	if output == "text" {
 		table := terminal.Table{
 			Headers: []string{
@@ -315,15 +320,6 @@ func printResources(w io.Writer, k *kind, items []proto.Message, output string) 
 		switch output {
 		case "name":
 			_, _ = fmt.Fprintln(w, nameOf(m, k.nameField))
-		case "json":
-			b, err := protojson.MarshalOptions{
-				Multiline: true,
-			}.Marshal(m)
-			if err != nil {
-				return err
-			}
-
-			_, _ = fmt.Fprintln(w, string(b))
 		case "yaml":
 			b, err := toYAML(k, m)
 			if err != nil {
@@ -341,4 +337,36 @@ func printResources(w io.Writer, k *kind, items []proto.Message, output string) 
 	}
 
 	return nil
+}
+
+func printResourcesJSON(w io.Writer, items []proto.Message, list bool) error {
+	docs := make([]json.RawMessage, 0, len(items))
+
+	for _, m := range items {
+		b, err := protojson.Marshal(m)
+		if err != nil {
+			return err
+		}
+
+		docs = append(docs, b)
+	}
+
+	var (
+		out []byte
+		err error
+	)
+
+	if list {
+		out, err = json.MarshalIndent(docs, "", "  ")
+	} else if len(docs) == 1 {
+		out, err = json.MarshalIndent(docs[0], "", "  ")
+	}
+
+	if err != nil {
+		return err
+	}
+
+	_, err = fmt.Fprintln(w, string(out))
+
+	return err
 }

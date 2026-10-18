@@ -130,10 +130,13 @@ message GetDashboardSummaryRequest {}
 message GetDashboardSummaryResponse {
   // repositories counts readable repositories by class (local, remote, virtual).
   map<string, int32> repositories = 1;
+  // builds counts the readable builds outside projects.
   int64 builds = 2;
-  // scans counts scanned contents by status.
+  // scans counts scanned contents by status; only administrators and viewers,
+  // who may list every finding, get it.
   map<string, int32> scans = 3;
-  // findings counts findings by severity.
+  // findings counts findings by severity; only administrators and viewers get
+  // it.
   map<string, int32> findings = 4;
   google.protobuf.Timestamp vulnerability_database_built = 5;
 }

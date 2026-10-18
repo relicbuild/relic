@@ -85,7 +85,7 @@ func TestEvaluateGate(t *testing.T) {
 			t.Parallel()
 
 			allowed, err := evaluateGate(tt.condition, vars)
-			if tt.invalid != errors.Is(err, ErrInvalid) || (err != nil) != (tt.invalid || tt.wantEvalErr) {
+			if tt.invalid != errors.Is(err, ErrInvalidGate) || (err != nil) != (tt.invalid || tt.wantEvalErr) {
 				t.Fatalf("err = %v, want invalid %v, an evaluation error %v", err, tt.invalid, tt.wantEvalErr)
 			}
 

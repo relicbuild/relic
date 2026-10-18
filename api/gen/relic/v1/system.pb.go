@@ -546,10 +546,13 @@ type GetDashboardSummaryResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// repositories counts readable repositories by class (local, remote, virtual).
 	Repositories map[string]int32 `protobuf:"bytes,1,rep,name=repositories,proto3" json:"repositories,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
-	Builds       int64            `protobuf:"varint,2,opt,name=builds,proto3" json:"builds,omitempty"`
-	// scans counts scanned contents by status.
+	// builds counts the readable builds outside projects.
+	Builds int64 `protobuf:"varint,2,opt,name=builds,proto3" json:"builds,omitempty"`
+	// scans counts scanned contents by status; only administrators and viewers,
+	// who may list every finding, get it.
 	Scans map[string]int32 `protobuf:"bytes,3,rep,name=scans,proto3" json:"scans,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
-	// findings counts findings by severity.
+	// findings counts findings by severity; only administrators and viewers get
+	// it.
 	Findings                   map[string]int32       `protobuf:"bytes,4,rep,name=findings,proto3" json:"findings,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
 	VulnerabilityDatabaseBuilt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=vulnerability_database_built,json=vulnerabilityDatabaseBuilt,proto3" json:"vulnerability_database_built,omitempty"`
 	unknownFields              protoimpl.UnknownFields

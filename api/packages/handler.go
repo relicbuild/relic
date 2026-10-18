@@ -166,10 +166,12 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, err error) 
 		status, msg = http.StatusForbidden, err.Error()
 	case errors.Is(err, repository.ErrRepositoryNotFound), errors.Is(err, repository.ErrNotFound):
 		status, msg = http.StatusNotFound, err.Error()
-	case errors.Is(err, repository.ErrRepositoryExists), errors.Is(err, repository.ErrConflict),
+	case errors.Is(err, repository.ErrRepositoryExists), errors.Is(err, repository.ErrRepositoryKeyCaseConflict),
+		errors.Is(err, repository.ErrConflict),
 		errors.Is(err, repository.ErrHeld), errors.Is(err, repository.ErrImmutable):
 		status, msg = http.StatusConflict, err.Error()
 	case errors.Is(err, repository.ErrInvalidPath),
+		errors.Is(err, repository.ErrInvalidProperty),
 		errors.Is(err, repository.ErrInvalidRepository),
 		errors.Is(err, repository.ErrNotLocal),
 		errors.Is(err, repository.ErrNotAFile),

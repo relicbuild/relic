@@ -2,6 +2,7 @@
 definePageMeta({ layout: 'dashboard' })
 
 const { system } = useRelic()
+const { views } = useSession()
 const { data: stats, status, error, refresh } = await useAsyncData('stats', async () => {
   const o = await system.getDashboardSummary({})
   return { repositories: o.repositories, builds: toNumber(o.builds), scans: o.scans, findings: o.findings, vulnerabilityDatabaseBuilt: o.vulnerabilityDatabaseBuilt ? toIsoDate(o.vulnerabilityDatabaseBuilt) : undefined }
@@ -25,7 +26,7 @@ const shown = severities.filter(s => s !== 'unknown')
 
     <template #body>
       <LoadError :error="error" what="the summary" @retry="refresh()" />
-      <UPageGrid v-if="stats" class="lg:grid-cols-4">
+      <UPageGrid v-if="stats" :class="views ? 'lg:grid-cols-4' : 'lg:grid-cols-2'">
         <UPageCard
           icon="i-lucide-boxes"
           title="Repositories"
@@ -47,6 +48,7 @@ const shown = severities.filter(s => s !== 'unknown')
         </UPageCard>
 
         <UPageCard
+          v-if="views"
           icon="i-lucide-scan-search"
           title="Scanned artifacts"
           :description="backlog ? `${backlog} waiting to be scanned` : 'Scan backlog is empty'"
@@ -56,6 +58,7 @@ const shown = severities.filter(s => s !== 'unknown')
         </UPageCard>
 
         <UPageCard
+          v-if="views"
           icon="i-lucide-shield-alert"
           title="Vulnerability findings"
           :description="stats.vulnerabilityDatabaseBuilt ? `Database built ${formatDate(stats.vulnerabilityDatabaseBuilt)}` : 'No vulnerability database yet'"
@@ -73,8 +76,8 @@ const shown = severities.filter(s => s !== 'unknown')
         </UPageCard>
       </UPageGrid>
 
-      <div v-else-if="status === 'pending'" class="grid gap-4 lg:grid-cols-4">
-        <USkeleton v-for="i in 4" :key="i" class="h-32" />
+      <div v-else-if="status === 'pending'" class="grid gap-4" :class="views ? 'lg:grid-cols-4' : 'lg:grid-cols-2'">
+        <USkeleton v-for="i in (views ? 4 : 2)" :key="i" class="h-32" />
       </div>
     </template>
   </UDashboardPanel>

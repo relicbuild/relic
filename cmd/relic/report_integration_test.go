@@ -70,9 +70,29 @@ func TestReport(t *testing.T) {
 
 	put(t, config, dir, "charts/demo-0.1.0.tgz", "chart")
 
+	put(t, config, dir, "charts/README.md", "readme")
+
 	out, err := relic(t, config, "", "security", "report", "charts/demo-0.1.0.tgz")
-	if err != nil || !strings.HasPrefix(out, "charts/demo-0.1.0.tgz: none\n") {
-		t.Errorf("unscanned report = %q %v", out, err)
+	if err != nil || !strings.HasPrefix(out, "charts/demo-0.1.0.tgz: queued (not picked up by the scanner yet)\n") {
+		t.Errorf("report before the scanner picked the file up = %q %v", out, err)
+	}
+
+	if _, err := relic(
+		t,
+		config,
+		"",
+		"security",
+		"report",
+		"charts/demo-0.1.0.tgz",
+		"--fail-on",
+		"critical",
+	); err == nil || !strings.Contains(err.Error(), "not scanned yet") {
+		t.Errorf("--fail-on before the scan: %v", err)
+	}
+
+	out, err = relic(t, config, "", "security", "report", "charts/README.md", "--fail-on", "critical")
+	if err != nil || !strings.HasPrefix(out, "charts/README.md: none\n") {
+		t.Errorf("report of a file no scanner reads = %q %v", out, err)
 	}
 
 	it, err := relic(t, config, "", "api", "repositories/charts/items/demo-0.1.0.tgz")

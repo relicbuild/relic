@@ -17,8 +17,9 @@ import (
 
 // Errors.
 var (
-	ErrNotFound = errors.New("project not found")
-	ErrInvalid  = errors.New("invalid project")
+	ErrNotFound       = errors.New("project not found")
+	ErrMemberNotFound = errors.New("project member not found")
+	ErrInvalid        = errors.New("invalid project")
 )
 
 // Role is what a member may do.
@@ -56,6 +57,15 @@ var roleActions = map[Role][]auth.Action{
 
 var keyPattern = regexp.MustCompile(`^[a-z][a-z0-9]{1,31}$`)
 
+// ValidKey reports whether key has the form of a project key.
+func ValidKey(key string) bool { return keyPattern.MatchString(key) }
+
+// DefaultKey stands for no project where a project key is expected.
+const DefaultKey = "default"
+
+// IsDefault reports whether key stands for no project: empty or DefaultKey.
+func IsDefault(key string) bool { return key == "" || key == DefaultKey }
+
 // Member is a user, or a group, in a role.
 type Member struct {
 	Name  string `json:"name"`
@@ -81,7 +91,7 @@ func (pr Project) Role(p auth.Principal) Role {
 	var best Role
 
 	for _, m := range pr.Members {
-		if (!m.Group && m.Name == p.Username) || (m.Group && slices.Contains(p.Groups, m.Name)) {
+		if (!m.Group && !p.Scoped && m.Name == p.Username) || (m.Group && slices.Contains(p.Groups, m.Name)) {
 			if best == "" || rank(m.Role) > rank(best) {
 				best = m.Role
 			}
@@ -196,42 +206,96 @@ func (s *Service) Put(ctx context.Context, p Project) (Project, error) {
 
 // SetMembers replaces a project's members.
 func (s *Service) SetMembers(ctx context.Context, key string, members []Member) (Project, error) {
-	return s.changeMembers(ctx, key, func([]Member) []Member {
-		return members
+	return s.changeMembers(ctx, key, func([]Member) ([]Member, error) {
+		return members, nil
 	})
 }
 
 // AddMember adds m to a project, or changes the role of the member it
 // names, and leaves the other members as they are.
 func (s *Service) AddMember(ctx context.Context, key string, m Member) (Project, error) {
-	return s.changeMembers(ctx, key, func(members []Member) []Member {
+	return s.changeMembers(ctx, key, func(members []Member) ([]Member, error) {
 		i := slices.IndexFunc(members, func(existing Member) bool {
 			return existing.Name == m.Name && existing.Group == m.Group
 		})
 		if i < 0 {
-			return append(members, m)
+			return append(members, m), nil
 		}
 
 		members[i] = m
 
-		return members
+		return members, nil
 	})
 }
 
 // RemoveMember removes the user, or the group, name from a project, and
-// leaves the other members as they are.
+// leaves the other members as they are; it fails with ErrMemberNotFound when
+// name is not such a member.
 func (s *Service) RemoveMember(ctx context.Context, key, name string, group bool) (Project, error) {
-	return s.changeMembers(ctx, key, func(members []Member) []Member {
-		return slices.DeleteFunc(members, func(existing Member) bool {
+	return s.changeMembers(ctx, key, func(members []Member) ([]Member, error) {
+		kept := slices.DeleteFunc(members, func(existing Member) bool {
 			return existing.Name == name && existing.Group == group
 		})
+		if len(kept) == len(members) {
+			return nil, fmt.Errorf("%w: %s has no %s member %s", ErrMemberNotFound, key, memberKind(group), name)
+		}
+
+		return kept, nil
 	})
+}
+
+// RemoveMemberships removes the user, or the group, name from the members of
+// every project, with q.
+func (s *Service) RemoveMemberships(ctx context.Context, q database.Querier, name string, group bool) error {
+	rows, err := q.ListProjects(ctx)
+	if err != nil {
+		return fmt.Errorf("list projects: %w", err)
+	}
+
+	for _, r := range rows {
+		p, err := domainProject(r)
+		if err != nil {
+			return err
+		}
+
+		kept := slices.DeleteFunc(slices.Clone(p.Members), func(m Member) bool {
+			return m.Name == name && m.Group == group
+		})
+		if len(kept) == len(p.Members) {
+			continue
+		}
+
+		p.Members = kept
+
+		doc, err := json.Marshal(p)
+		if err != nil {
+			return err
+		}
+
+		if err := q.UpsertProject(ctx, database.UpsertProjectParams{
+			Key:    p.Key,
+			Config: doc,
+			Now:    s.now(),
+		}); err != nil {
+			return fmt.Errorf("put project %s: %w", p.Key, err)
+		}
+	}
+
+	return nil
+}
+
+func memberKind(group bool) string {
+	if group {
+		return "group"
+	}
+
+	return "user"
 }
 
 func (s *Service) changeMembers(
 	ctx context.Context,
 	key string,
-	change func([]Member) []Member,
+	change func([]Member) ([]Member, error),
 ) (Project, error) {
 	if err := s.db.WithLock(ctx, projectLock(key), func() error {
 		p, err := s.Get(ctx, key)
@@ -239,7 +303,10 @@ func (s *Service) changeMembers(
 			return err
 		}
 
-		p.Members = change(p.Members)
+		if p.Members, err = change(p.Members); err != nil {
+			return err
+		}
+
 		if err := validate(&p); err != nil {
 			return err
 		}
@@ -274,7 +341,7 @@ func (s *Service) store(ctx context.Context, p Project) error {
 }
 
 func validate(p *Project) error {
-	if !keyPattern.MatchString(p.Key) {
+	if !ValidKey(p.Key) {
 		return fmt.Errorf(
 			"%w: key %q: 2 to 32 lower-case letters and digits, starting with a letter",
 			ErrInvalid,

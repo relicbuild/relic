@@ -14,6 +14,7 @@ import (
 	"time"
 	"uuid"
 
+	"relic/internal/access/project"
 	"relic/internal/artifacts/itemquery"
 	"relic/internal/artifacts/repository"
 	"relic/internal/artifacts/signingkey"
@@ -31,6 +32,9 @@ var (
 	ErrExists   = errors.New("release version already exists")
 	ErrInvalid  = errors.New("invalid release request")
 	ErrNotDraft = errors.New("release version is not a draft")
+	// ErrGateNotFound and ErrInvalidGate are the promotion gates' own.
+	ErrGateNotFound = errors.New("promotion gate not found")
+	ErrInvalidGate  = errors.New("invalid promotion gate")
 	// ErrForbidden is content the caller may not read, or a promotion
 	// target they may not write.
 	ErrForbidden = errors.New("not permitted")
@@ -51,7 +55,7 @@ var namePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$`)
 
 // DefaultProject is the project of releases outside any project; "" means
 // the same.
-const DefaultProject = "default"
+const DefaultProject = project.DefaultKey
 
 // Layout names where release versions are stored: the storing repository
 // per project and the manifest file in each version folder.
@@ -73,11 +77,36 @@ var DefaultLayout = Layout{
 
 // Repository is the storing repository for a project.
 func (l Layout) Repository(project string) string {
-	if project == "" || project == DefaultProject {
+	if isDefaultProject(project) {
 		return l.DefaultRepository
 	}
 
 	return project + l.ProjectSuffix
+}
+
+func isDefaultProject(key string) bool { return project.IsDefault(key) }
+
+func ownerProject(key string) string {
+	if isDefaultProject(key) {
+		return ""
+	}
+
+	return key
+}
+
+// StorageOwner reports whether name is a storing repository, and the project
+// ("" outside projects) whose releases it stores.
+func (l Layout) StorageOwner(name string) (repository.Format, string, bool) {
+	if name == l.DefaultRepository {
+		return repository.FormatRelease, "", true
+	}
+
+	key, ok := strings.CutSuffix(name, l.ProjectSuffix)
+	if !ok || isDefaultProject(key) || !project.ValidKey(key) {
+		return "", "", false
+	}
+
+	return repository.FormatRelease, key, true
 }
 
 // SetLayout sets where release versions are stored.
@@ -85,6 +114,12 @@ func (s *Service) SetLayout(l Layout) { s.layout = l }
 
 // Layout is where release versions are stored.
 func (s *Service) Layout() Layout { return s.layout }
+
+// StorageOwner reports whether name is a storing repository, and the project
+// whose releases it stores.
+func (s *Service) StorageOwner(name string) (repository.Format, string, bool) {
+	return s.layout.StorageOwner(name)
+}
 
 // Artifact is one file in a release version. Its JSON form is stored with
 // the version and written into export archives and manifests.
@@ -133,10 +168,23 @@ type Service struct {
 	// decisions records refused promotions; nil records none.
 	decisions *policy.Decisions
 	events    events.Publisher
+	// projects checks that a release's project exists; nil checks nothing.
+	projects *project.Service
+	// refuseFile refuses a file whose download is blocked; nil refuses none.
+	refuseFile func(ctx context.Context, file repository.Item) error
 }
+
+// SetProjects makes releases refuse projects that do not exist.
+func (s *Service) SetProjects(p *project.Service) { s.projects = p }
 
 // SetEvents publishes promotions to p.
 func (s *Service) SetEvents(p events.Publisher) { s.events = p }
+
+// SetDownloadBlocker keeps files out of releases, promotions and exports
+// when refuse returns an error for them, as it does for a blocked download.
+func (s *Service) SetDownloadBlocker(refuse func(ctx context.Context, file repository.Item) error) {
+	s.refuseFile = refuse
+}
 
 // New returns a Service.
 func New(
@@ -214,8 +262,12 @@ type Ref struct {
 // Access limits what a caller may read into a bundle and write when
 // promoting one.
 type Access struct {
-	CanRead  func(repository, path string) bool
-	CanWrite func(repository, path string) bool
+	CanRead   func(repository, path string) bool
+	CanWrite  func(repository, path string) bool
+	CanDelete func(repository, path string) bool
+	// CanReadBuild says whether the caller may read the build name stored
+	// in the build-info repository.
+	CanReadBuild func(repository, name string) bool
 }
 
 func (a Access) canRead(repository, path string) bool {
@@ -224,6 +276,14 @@ func (a Access) canRead(repository, path string) bool {
 
 func (a Access) canWrite(repository, path string) bool {
 	return a.CanWrite == nil || a.CanWrite(repository, path)
+}
+
+func (a Access) canDelete(repository, path string) bool {
+	return a.CanDelete == nil || a.CanDelete(repository, path)
+}
+
+func (a Access) canReadBuild(repository, name string) bool {
+	return a.CanReadBuild == nil || a.CanReadBuild(repository, name)
 }
 
 // Create resolves the request's sources and stores the new bundle version.
@@ -245,7 +305,7 @@ func (s *Service) Create(
 		return Release{}, fmt.Errorf("%w: invalid name or version", ErrInvalid)
 	}
 
-	entries, err := s.resolve(ctx, project, req.Sources)
+	entries, err := s.resolve(ctx, project, req.Sources, access)
 	if err != nil {
 		return Release{}, err
 	}
@@ -324,7 +384,7 @@ func (s *Service) Update(
 			return ErrNotDraft
 		}
 
-		entries, err := s.resolve(ctx, project, req.Sources)
+		entries, err := s.resolve(ctx, project, req.Sources, access)
 		if err != nil {
 			return err
 		}
@@ -412,6 +472,7 @@ func (s *Service) materialize(ctx context.Context, b *Release, entries []entry, 
 				DestinationRepository: b.Repository,
 				DestinationPath:       b.artifactPath(e.art),
 				User:                  user,
+				RefuseFile:            s.refuseFile,
 			},
 		)
 		if err != nil {
@@ -507,16 +568,39 @@ func (s *Service) discard(ctx context.Context, b Release) {
 	}
 }
 
-func (s *Service) ensureRepo(ctx context.Context, key, project string) error {
-	if _, err := s.repos.GetRepository(ctx, key); err == nil {
+func (s *Service) ensureRepo(ctx context.Context, key, projectKey string) error {
+	if s.projects != nil && projectKey != "" && projectKey != DefaultProject {
+		_, err := s.projects.Get(ctx, projectKey)
+		if errors.Is(err, project.ErrNotFound) {
+			return fmt.Errorf("%w: project %s does not exist", ErrInvalid, projectKey)
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+
+	format, owner, _ := s.layout.StorageOwner(key)
+
+	existing, err := s.repos.GetRepository(ctx, key)
+	if err == nil {
+		if existing.Format != format ||
+			ownerProject(existing.Project) != owner {
+			return fmt.Errorf("%w: %s is not the release repository of project %q", ErrInvalid, key, projectKey)
+		}
+
 		return nil
+	}
+
+	if !errors.Is(err, repository.ErrRepositoryNotFound) {
+		return fmt.Errorf("get repository %s: %w", key, err)
 	}
 
 	r := repository.Repository{
 		Name:    key,
 		Class:   repository.ClassLocal,
-		Format:  repository.FormatRelease,
-		Project: project,
+		Format:  format,
+		Project: owner,
 	}
 	if err := s.repos.CreateRepository(ctx, r); err != nil && !errors.Is(err, repository.ErrRepositoryExists) {
 		return err
@@ -618,7 +702,8 @@ func (s *Service) Delete(ctx context.Context, project, name, version string) (er
 		b.Folder(),
 		exportFolder(b),
 	} {
-		if err := s.repos.Delete(ctx, b.Repository, p); err != nil && !errors.Is(err, repository.ErrNotFound) {
+		err := s.repos.Delete(ctx, b.Repository, p)
+		if err != nil && !errors.Is(err, repository.ErrNotFound) && !errors.Is(err, repository.ErrRepositoryNotFound) {
 			return fmt.Errorf("delete %s: %w", p, err)
 		}
 	}

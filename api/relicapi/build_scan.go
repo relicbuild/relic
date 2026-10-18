@@ -40,24 +40,41 @@ func buildRun(ctx context.Context, d Dependencies, project, name, number string)
 func buildScanRequest(ctx context.Context, d Dependencies, doc buildinfo.Document) (scan.GraphRequest, error) {
 	var req scan.GraphRequest
 
+	addContent := func(sha256, sha1 string) error {
+		sha256 = strings.ToLower(sha256)
+		if sha256 == "" && sha1 != "" {
+			var err error
+			if sha256, err = d.Repositories.SHA256OfSHA1(ctx, sha1); err != nil {
+				return err
+			}
+		}
+
+		if sha256 != "" && !slices.Contains(req.Artifacts, sha256) {
+			req.Artifacts = append(req.Artifacts, sha256)
+		}
+
+		return nil
+	}
+
 	for _, m := range doc.Modules {
 		for _, dep := range m.Dependencies {
-			if p, ok := scan.DependencyPURL(m.Type, dep.ID); ok && !slices.Contains(req.PURLs, p) {
+			p, ok := scan.DependencyPURL(m.Type, dep.ID)
+			if !ok {
+				if err := addContent(dep.SHA256, dep.SHA1); err != nil {
+					return scan.GraphRequest{}, err
+				}
+
+				continue
+			}
+
+			if !slices.Contains(req.PURLs, p) {
 				req.PURLs = append(req.PURLs, p)
 			}
 		}
 
 		for _, a := range m.Artifacts {
-			sha256 := strings.ToLower(a.SHA256)
-			if sha256 == "" && a.SHA1 != "" {
-				var err error
-				if sha256, err = d.Repositories.SHA256OfSHA1(ctx, a.SHA1); err != nil {
-					return scan.GraphRequest{}, err
-				}
-			}
-
-			if sha256 != "" && !slices.Contains(req.Artifacts, sha256) {
-				req.Artifacts = append(req.Artifacts, sha256)
+			if err := addContent(a.SHA256, a.SHA1); err != nil {
+				return scan.GraphRequest{}, err
 			}
 		}
 	}

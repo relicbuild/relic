@@ -138,3 +138,31 @@ func TestWriteAgentFilesChangesNothingWhenTheMCPFileIsUnusable(t *testing.T) {
 		t.Errorf("AGENTS.md after a refused .mcp.json: %v, want it not written", err)
 	}
 }
+
+func TestAgentInstructionsGiveTheClientsPackageURL(t *testing.T) {
+	t.Parallel()
+
+	for client, want := range map[string]string{
+		"npm":       "pkg:npm/",
+		"maven":     "pkg:maven/",
+		"go":        "pkg:golang/",
+		"pip":       "pkg:pypi/",
+		"nuget":     "pkg:nuget/",
+		"terraform": "<package-url>",
+	} {
+		got := agentInstructions("https://relic.example.com", client, "repo")
+		if !strings.Contains(got, want) {
+			t.Errorf("%s instructions = %q, want %s", client, got, want)
+		}
+
+		if client != "npm" && strings.Contains(got, "pkg:npm/") {
+			t.Errorf("%s instructions give an npm package URL: %q", client, got)
+		}
+	}
+
+	for name, client := range setupClients {
+		if client.packageURL != "" && !strings.HasPrefix(client.packageURL, "pkg:") {
+			t.Errorf("%s package URL example = %q", name, client.packageURL)
+		}
+	}
+}

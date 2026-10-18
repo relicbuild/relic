@@ -30,8 +30,9 @@ func holdAddCmd(g *globals) *cobra.Command {
 		Short: "Place a legal hold on an item, or a folder with everything under it",
 		Long: "A held item cannot be deleted, moved, overwritten or cleaned up until the hold is released. " +
 			"Administrators only.",
-		Example: "  relic hold add libs-local/org/app/1.4.0 --reason \"audit 2026-14\"",
-		Args:    cobra.ExactArgs(1),
+		Example:           "  relic hold add libs-local/org/app/1.4.0 --reason \"audit 2026-14\"",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeTargetArg(g, 0),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			repo, path, err := splitItemPath(args[0])
 			if err != nil {
@@ -64,10 +65,11 @@ func holdAddCmd(g *globals) *cobra.Command {
 
 func holdRemoveCmd(g *globals) *cobra.Command {
 	return &cobra.Command{
-		Use:     "remove <repository>/<path>",
-		Short:   "Release the legal hold placed on an item",
-		Example: "  relic hold remove libs-local/org/app/1.4.0",
-		Args:    cobra.ExactArgs(1),
+		Use:               "remove <repository>/<path>",
+		Short:             "Release the legal hold placed on an item",
+		Example:           "  relic hold remove libs-local/org/app/1.4.0",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeTargetArg(g, 0),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			repo, path, err := splitItemPath(args[0])
 			if err != nil {

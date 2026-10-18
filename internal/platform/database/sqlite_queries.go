@@ -181,7 +181,7 @@ const sqliteCountFindings = `-- name: CountFindings :one
 SELECT count(*) FROM scan_findings f
 WHERE EXISTS (SELECT 1 FROM items i WHERE i.sha256 = f.sha256 AND i.type = 'file' AND (@repository = '' OR i.repo_key = @repository))
   AND (@severity = '' OR f.severity = @severity)
-  AND (@query = '' OR lower(f.vuln_id) LIKE lower('%' || @query || '%') OR lower(f.package_name) LIKE lower('%' || @query || '%')
+  AND (@query = '' OR instr(lower(f.vuln_id), lower(@query)) > 0 OR instr(lower(f.package_name), lower(@query)) > 0
        OR @query IN (SELECT value FROM json_each(f.cves)))
   AND (@purl_type = '' OR (
        SELECT CASE WHEN instr(b, ':') > 0 THEN substr(b, 1, instr(b, ':') - 1) ELSE b END
@@ -466,14 +466,19 @@ ORDER BY path, name;`
 const sqliteFindItemsBySHA1 = `-- name: FindItemsBySHA1 :many
 SELECT i.*,
        EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id AND p.key = 'build.name' AND p.value = @build_name) AS has_build_name,
-       EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id AND p.key = 'build.number' AND p.value = @build_number) AS has_build_number
+       EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id AND p.key = 'build.number' AND p.value = @build_number) AS has_build_number,
+       EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id
+               AND ((p.key = 'build.name' AND p.value <> @build_name)
+                 OR (p.key = 'build.number' AND p.value <> @build_number))) AS has_other_build
 FROM items i
 WHERE i.type = 'file' AND i.sha1 IN (SELECT value FROM json_each(@sha1s))
   AND (@source_repo = '' OR i.repo_key = @source_repo)
 ORDER BY i.repo_key, i.path, i.name;`
 
 const sqliteFindingCounts = `-- name: FindingCounts :many
-SELECT severity, count(*) AS count FROM scan_findings GROUP BY severity;`
+SELECT f.severity, count(*) AS count FROM scan_findings f
+WHERE EXISTS (SELECT 1 FROM items i WHERE i.sha256 = f.sha256 AND i.type = 'file')
+GROUP BY f.severity;`
 
 const sqliteFinishGraphScan = `-- name: FinishGraphScan :exec
 UPDATE scan_graphs SET status = @status, result = CAST(@result AS TEXT), error = @error, updated = @now WHERE id = @id;`
@@ -515,7 +520,7 @@ SELECT * FROM blobs WHERE sha1 = @sha1 ORDER BY created LIMIT 1;`
 const sqliteGetBuildRun = `-- name: GetBuildRun :one
 SELECT * FROM builds
 WHERE project = @project AND name = @name AND number = @number
-ORDER BY started DESC LIMIT 1;`
+ORDER BY started DESC, id DESC LIMIT 1;`
 
 const sqliteGetCVE = `-- name: GetCVE :one
 SELECT * FROM cves WHERE id = @id;`
@@ -859,6 +864,10 @@ WHERE project = @project GROUP BY name ORDER BY name;`
 const sqliteListBuildPromotions = `-- name: ListBuildPromotions :many
 SELECT * FROM build_promotions WHERE build_id = @build_id ORDER BY created;`
 
+const sqliteListBuildRunIDsStartedAt = `-- name: ListBuildRunIDsStartedAt :many
+SELECT id FROM builds
+WHERE project = @project AND name = @name AND number = @number AND started_ms = @started_ms;`
+
 const sqliteListBuildRuns = `-- name: ListBuildRuns :many
 SELECT id, number, started FROM builds
 WHERE project = @project AND name = @name ORDER BY started DESC;`
@@ -944,7 +953,7 @@ JOIN items i ON i.id = (SELECT id FROM items
                         WHERE sha256 = f.sha256 AND type = 'file' AND (@repository = '' OR repo_key = @repository)
                         ORDER BY repo_key, path, name LIMIT 1)
 WHERE (@severity = '' OR f.severity = @severity)
-  AND (@query = '' OR lower(f.vuln_id) LIKE lower('%' || @query || '%') OR lower(f.package_name) LIKE lower('%' || @query || '%')
+  AND (@query = '' OR instr(lower(f.vuln_id), lower(@query)) > 0 OR instr(lower(f.package_name), lower(@query)) > 0
        OR @query IN (SELECT value FROM json_each(f.cves)))
   AND (@purl_type = '' OR (
        SELECT CASE WHEN instr(b, ':') > 0 THEN substr(b, 1, instr(b, ':') - 1) ELSE b END
@@ -1294,6 +1303,10 @@ WHERE sha256 IN (SELECT b.sha256 FROM blobs b
                  LIMIT @max)
 RETURNING sha256;`
 
+const sqliteMoveBuildPromotions = `-- name: MoveBuildPromotions :exec
+UPDATE build_promotions SET build_id = @to_build_id
+WHERE build_id IN (SELECT value FROM json_each(@from_build_ids));`
+
 const sqliteNpmVersionExists = `-- name: NpmVersionExists :one
 SELECT EXISTS (SELECT 1 FROM npm_versions WHERE repo_key = @repo_key AND name = @name AND version = @version);`
 
@@ -1472,29 +1485,32 @@ const sqliteScanCounts = `-- name: ScanCounts :many
 SELECT status, count(*) AS count FROM scan_artifacts GROUP BY status;`
 
 const sqliteSearchItemsByName = `-- name: SearchItemsByName :many
--- Items of one repository whose name contains a term (case-insensitive;
--- the caller escapes LIKE wildcards). ESCAPE '\' is
--- PostgreSQL's default, which SQLite lacks.
+-- Items of one repository whose name contains a term (case-insensitive
+-- beyond ASCII, as ILIKE is; the caller escapes LIKE wildcards). ESCAPE '\'
+-- is PostgreSQL's default, which SQLite lacks.
 SELECT * FROM items
-WHERE repo_key = @repo_key AND lower(name) LIKE lower(@pattern) ESCAPE '\' AND name <> '.'
+WHERE repo_key = @repo_key AND unicode_lower(name) LIKE unicode_lower(@pattern) ESCAPE '\' AND name <> '.'
 ORDER BY path, name
 LIMIT @max_rows;`
 
 const sqliteSearchNpmPackages = `-- name: SearchNpmPackages :many
-SELECT name, version, manifest FROM (
-    SELECT v.name, v.version, v.manifest,
+SELECT name, version, manifest, created, publisher FROM (
+    SELECT v.name, v.version, v.manifest, v.created, i.created_by AS publisher,
            row_number() OVER (PARTITION BY v.name ORDER BY v.created DESC) AS rn
-    FROM npm_versions v
-    WHERE v.repo_key IN (SELECT value FROM json_each(@repo_keys)) AND lower(v.name) LIKE lower(@pattern) ESCAPE '\'
+    FROM npm_versions v JOIN items i ON i.id = v.item_id
+    WHERE v.repo_key IN (SELECT value FROM json_each(@repo_keys))
+      AND NOT EXISTS (SELECT 1 FROM json_each(@patterns) p WHERE lower(v.name) NOT LIKE lower(p.value) ESCAPE '\')
 )
 WHERE rn = 1
 ORDER BY name
 LIMIT @max;`
 
 const sqliteSearchNpmVersions = `-- name: SearchNpmVersions :many
-SELECT v.name, v.version, v.manifest, v.repo_key, i.path AS item_path, i.name AS item_name
+SELECT v.name, v.version, v.manifest, v.created, i.created_by AS publisher, v.repo_key,
+       i.path AS item_path, i.name AS item_name
 FROM npm_versions v JOIN items i ON i.id = v.item_id
-WHERE v.repo_key IN (SELECT value FROM json_each(@repo_keys)) AND lower(v.name) LIKE lower(@pattern) ESCAPE '\'
+WHERE v.repo_key IN (SELECT value FROM json_each(@repo_keys))
+  AND NOT EXISTS (SELECT 1 FROM json_each(@patterns) p WHERE lower(v.name) NOT LIKE lower(p.value) ESCAPE '\')
 ORDER BY v.name, v.created DESC
 LIMIT @max;`
 
@@ -1522,6 +1538,9 @@ UPDATE cves SET
     kev_ransomware = coalesce((SELECT e.ransomware FROM entries e WHERE e.id = cves.id), false),
     kev_action = coalesce((SELECT e.action FROM entries e WHERE e.id = cves.id), '')
 WHERE kev_added IS NOT NULL OR id IN (SELECT id FROM entries);`
+
+const sqliteSetItemCreated = `-- name: SetItemCreated :exec
+UPDATE items SET created = @created, created_by = @created_by WHERE id = @id;`
 
 const sqliteSetMaliciousChecked = `-- name: SetMaliciousChecked :exec
 UPDATE scan_artifacts SET malicious_checked = @checked WHERE sha256 = @sha256;`
@@ -2956,7 +2975,7 @@ func (q *sqliteQueries) FindFilesNamed(ctx context.Context, arg FindFilesNamedPa
 }
 
 func (q *sqliteQueries) FindItemsBySHA1(ctx context.Context, arg FindItemsBySHA1Params) ([]FindItemsBySHA1Row, error) {
-	rows, err := q.query(ctx, "FindItemsBySHA1", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated", "hasbuildname", "hasbuildnumber"}, sqliteFindItemsBySHA1, sql.Named("build_name", arg.BuildName), sql.Named("build_number", arg.BuildNumber), sql.Named("sha1s", sqliteJSON(arg.Sha1s)), sql.Named("source_repo", arg.SourceRepo))
+	rows, err := q.query(ctx, "FindItemsBySHA1", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated", "hasbuildname", "hasbuildnumber", "hasotherbuild"}, sqliteFindItemsBySHA1, sql.Named("build_name", arg.BuildName), sql.Named("build_number", arg.BuildNumber), sql.Named("sha1s", sqliteJSON(arg.Sha1s)), sql.Named("source_repo", arg.SourceRepo))
 	if err != nil {
 		return nil, err
 	}
@@ -2967,7 +2986,7 @@ func (q *sqliteQueries) FindItemsBySHA1(ctx context.Context, arg FindItemsBySHA1
 
 	for rows.Next() {
 		var i FindItemsBySHA1Row
-		if err := rows.Scan(sqliteUUIDScanner{&i.Item.ID}, &i.Item.RepoKey, &i.Item.Path, &i.Item.Name, &i.Item.Type, &i.Item.Size, &i.Item.Sha1, &i.Item.Sha256, &i.Item.Md5, sqliteTimeScanner{&i.Item.Created}, &i.Item.CreatedBy, sqliteTimeScanner{&i.Item.Modified}, &i.Item.ModifiedBy, sqliteTimeScanner{&i.Item.Updated}, &i.HasBuildName, &i.HasBuildNumber); err != nil {
+		if err := rows.Scan(sqliteUUIDScanner{&i.Item.ID}, &i.Item.RepoKey, &i.Item.Path, &i.Item.Name, &i.Item.Type, &i.Item.Size, &i.Item.Sha1, &i.Item.Sha256, &i.Item.Md5, sqliteTimeScanner{&i.Item.Created}, &i.Item.CreatedBy, sqliteTimeScanner{&i.Item.Modified}, &i.Item.ModifiedBy, sqliteTimeScanner{&i.Item.Updated}, &i.HasBuildName, &i.HasBuildNumber, &i.HasOtherBuild); err != nil {
 			return nil, err
 		}
 
@@ -4685,6 +4704,36 @@ func (q *sqliteQueries) ListBuildPromotions(ctx context.Context, arg uuid.UUID) 
 	for rows.Next() {
 		var i BuildPromotion
 		if err := rows.Scan(sqliteUUIDScanner{&i.ID}, sqliteUUIDScanner{&i.BuildID}, &i.Status, &i.Comment, &i.Repository, &i.UserName, sqliteTimeScanner{&i.Created}); err != nil {
+			return nil, err
+		}
+
+		items = append(items, i)
+	}
+
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
+
+func (q *sqliteQueries) ListBuildRunIDsStartedAt(ctx context.Context, arg ListBuildRunIDsStartedAtParams) ([]uuid.UUID, error) {
+	rows, err := q.query(ctx, "ListBuildRunIDsStartedAt", nil, sqliteListBuildRunIDsStartedAt, sql.Named("project", arg.Project), sql.Named("name", arg.Name), sql.Named("number", arg.Number), sql.Named("started_ms", arg.StartedMs))
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	items := []uuid.UUID{}
+
+	for rows.Next() {
+		var i uuid.UUID
+		if err := rows.Scan(sqliteUUIDScanner{&i}); err != nil {
 			return nil, err
 		}
 
@@ -6777,6 +6826,12 @@ func (q *sqliteQueries) MarkCollectableBlobs(ctx context.Context, arg MarkCollec
 	return items, nil
 }
 
+func (q *sqliteQueries) MoveBuildPromotions(ctx context.Context, arg MoveBuildPromotionsParams) error {
+	_, err := q.db.ExecContext(ctx, sqliteMoveBuildPromotions, sql.Named("to_build_id", arg.ToBuildID.String()), sql.Named("from_build_ids", sqliteJSON(arg.FromBuildIds)))
+
+	return err
+}
+
 func (q *sqliteQueries) NpmVersionExists(ctx context.Context, arg NpmVersionExistsParams) (bool, error) {
 	var i bool
 
@@ -7095,7 +7150,7 @@ func (q *sqliteQueries) SearchItemsByName(ctx context.Context, arg SearchItemsBy
 }
 
 func (q *sqliteQueries) SearchNpmPackages(ctx context.Context, arg SearchNpmPackagesParams) ([]SearchNpmPackagesRow, error) {
-	rows, err := q.query(ctx, "SearchNpmPackages", []string{"name", "version", "manifest"}, sqliteSearchNpmPackages, sql.Named("repo_keys", sqliteJSON(arg.RepoKeys)), sql.Named("pattern", arg.Pattern), sql.Named("max", arg.Max))
+	rows, err := q.query(ctx, "SearchNpmPackages", []string{"name", "version", "manifest", "created", "publisher"}, sqliteSearchNpmPackages, sql.Named("repo_keys", sqliteJSON(arg.RepoKeys)), sql.Named("patterns", sqliteJSON(arg.Patterns)), sql.Named("max", arg.Max))
 	if err != nil {
 		return nil, err
 	}
@@ -7106,7 +7161,7 @@ func (q *sqliteQueries) SearchNpmPackages(ctx context.Context, arg SearchNpmPack
 
 	for rows.Next() {
 		var i SearchNpmPackagesRow
-		if err := rows.Scan(&i.Name, &i.Version, &i.Manifest); err != nil {
+		if err := rows.Scan(&i.Name, &i.Version, &i.Manifest, sqliteTimeScanner{&i.Created}, &i.Publisher); err != nil {
 			return nil, err
 		}
 
@@ -7125,7 +7180,7 @@ func (q *sqliteQueries) SearchNpmPackages(ctx context.Context, arg SearchNpmPack
 }
 
 func (q *sqliteQueries) SearchNpmVersions(ctx context.Context, arg SearchNpmVersionsParams) ([]SearchNpmVersionsRow, error) {
-	rows, err := q.query(ctx, "SearchNpmVersions", []string{"name", "version", "manifest", "repokey", "itempath", "itemname"}, sqliteSearchNpmVersions, sql.Named("repo_keys", sqliteJSON(arg.RepoKeys)), sql.Named("pattern", arg.Pattern), sql.Named("max", arg.Max))
+	rows, err := q.query(ctx, "SearchNpmVersions", []string{"name", "version", "manifest", "created", "publisher", "repokey", "itempath", "itemname"}, sqliteSearchNpmVersions, sql.Named("repo_keys", sqliteJSON(arg.RepoKeys)), sql.Named("patterns", sqliteJSON(arg.Patterns)), sql.Named("max", arg.Max))
 	if err != nil {
 		return nil, err
 	}
@@ -7136,7 +7191,7 @@ func (q *sqliteQueries) SearchNpmVersions(ctx context.Context, arg SearchNpmVers
 
 	for rows.Next() {
 		var i SearchNpmVersionsRow
-		if err := rows.Scan(&i.Name, &i.Version, &i.Manifest, &i.RepoKey, &i.ItemPath, &i.ItemName); err != nil {
+		if err := rows.Scan(&i.Name, &i.Version, &i.Manifest, sqliteTimeScanner{&i.Created}, &i.Publisher, &i.RepoKey, &i.ItemPath, &i.ItemName); err != nil {
 			return nil, err
 		}
 
@@ -7162,6 +7217,12 @@ func (q *sqliteQueries) SetCVEEPSS(ctx context.Context, arg SetCVEEPSSParams) er
 
 func (q *sqliteQueries) SetCVEKEV(ctx context.Context, arg SetCVEKEVParams) error {
 	_, err := q.db.ExecContext(ctx, sqliteSetCVEKEV, sql.Named("ids", sqliteJSON(arg.Ids)), sql.Named("added", sqliteTimes(arg.Added)), sql.Named("due", sqliteTimes(arg.Due)), sql.Named("ransomware", sqliteJSON(arg.Ransomware)), sql.Named("actions", sqliteJSON(arg.Actions)))
+
+	return err
+}
+
+func (q *sqliteQueries) SetItemCreated(ctx context.Context, arg SetItemCreatedParams) error {
+	_, err := q.db.ExecContext(ctx, sqliteSetItemCreated, sql.Named("created", sqliteTime(arg.Created)), sql.Named("created_by", arg.CreatedBy), sql.Named("id", arg.ID.String()))
 
 	return err
 }

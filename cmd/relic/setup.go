@@ -12,6 +12,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -22,18 +24,22 @@ import (
 )
 
 type setupEnv struct {
-	repo       string
-	format     relicv1.Format
-	url        string
-	registry   string
-	files      string
-	host       string
-	user       string
-	token      string
-	home, root string
-	publicKey  string
-	keyPair    string
-	flags      map[string]string
+	repo     string
+	format   relicv1.Format
+	url      string
+	registry string
+	files    string
+	host     string
+	user     string
+	token    string
+	// contextToken reports whether token is the saved context's own, which only the CLI holds.
+	contextToken bool
+	home, root   string
+	goos         string
+	getenv       func(string) string
+	publicKey    string
+	keyPair      string
+	flags        map[string]string
 }
 
 type setupStep struct {
@@ -47,15 +53,19 @@ type setupStep struct {
 	stdin        string
 	env          []string
 	argumentFile []string
+	// undo removes what an earlier setup made, so it may find nothing to remove.
+	undo bool
 }
 
 type setupClient struct {
 	formats []relicv1.Format
-	short   string
-	flags   map[string]string
-	steps   func(e setupEnv) ([]setupStep, error)
-	notes   func(e setupEnv) string
-	system  bool
+	// packageURL is an example of the package URLs the client's packages have.
+	packageURL string
+	short      string
+	flags      map[string]string
+	steps      func(e setupEnv) ([]setupStep, error)
+	notes      func(e setupEnv) string
+	system     bool
 }
 
 func withUserinfo(u, user, token string) (string, error) {
@@ -86,6 +96,7 @@ func npmSteps(e setupEnv) ([]setupStep, error) {
 
 var setupClients = map[string]setupClient{
 	"npm": {
+		packageURL: "pkg:npm/lodash@4.17.21",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_NPM,
 		},
@@ -93,6 +104,7 @@ var setupClients = map[string]setupClient{
 		steps: npmSteps,
 	},
 	"pnpm": {
+		packageURL: "pkg:npm/lodash@4.17.21",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_NPM,
 		},
@@ -100,6 +112,7 @@ var setupClients = map[string]setupClient{
 		steps: npmSteps,
 	},
 	"yarn": {
+		packageURL: "pkg:npm/lodash@4.17.21",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_NPM,
 		},
@@ -116,6 +129,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"maven": {
+		packageURL: "pkg:maven/org.apache.commons/commons-lang3@3.14.0",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_MAVEN,
 			relicv1.Format_FORMAT_GRADLE,
@@ -140,6 +154,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"gradle": {
+		packageURL: "pkg:maven/org.apache.commons/commons-lang3@3.14.0",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_GRADLE,
 			relicv1.Format_FORMAT_MAVEN,
@@ -165,6 +180,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"go": {
+		packageURL: "pkg:golang/github.com/google/uuid@v1.6.0",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_GOMOD,
 		},
@@ -207,13 +223,15 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"pip": {
+		packageURL: "pkg:pypi/requests@2.32.3",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_PYPI,
 		},
-		short: "~/.config/pip/pip.conf: the index URL, and ~/.netrc credentials",
+		short: "pip.conf (pip.ini on Windows), where pip reads it: the index URL, and ~/.netrc credentials",
 		steps: pipSteps,
 	},
 	"pipenv": {
+		packageURL: "pkg:pypi/requests@2.32.3",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_PYPI,
 		},
@@ -228,6 +246,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"poetry": {
+		packageURL: "pkg:pypi/requests@2.32.3",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_PYPI,
 		},
@@ -258,6 +277,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"twine": {
+		packageURL: "pkg:pypi/requests@2.32.3",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_PYPI,
 		},
@@ -280,6 +300,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"docker": {
+		packageURL: "pkg:docker/library/nginx@1.27.0",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_DOCKER,
 			relicv1.Format_FORMAT_OCI,
@@ -291,6 +312,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"podman": {
+		packageURL: "pkg:docker/library/nginx@1.27.0",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_DOCKER,
 			relicv1.Format_FORMAT_OCI,
@@ -302,12 +324,23 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"nuget": {
+		packageURL: "pkg:nuget/Newtonsoft.Json@13.0.3",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_NUGET,
 		},
 		short: "dotnet nuget add source, with credentials",
 		steps: func(e setupEnv) ([]setupStep, error) {
 			return []setupStep{
+				{
+					command: []string{
+						"dotnet",
+						"nuget",
+						"remove",
+						"source",
+						e.repo,
+					},
+					undo: true,
+				},
 				{
 					command: []string{
 						"dotnet",
@@ -330,6 +363,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"conan": {
+		packageURL: "pkg:conan/zlib@1.3.1",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_CONAN,
 		},
@@ -362,6 +396,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"ruby": {
+		packageURL: "pkg:gem/rails@7.1.3",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_RUBYGEMS,
 		},
@@ -391,23 +426,24 @@ var setupClients = map[string]setupClient{
 			}, nil
 		},
 		notes: func(e setupEnv) string {
-			source, err := withUserinfo(e.url, e.user, "<token>")
+			u, err := url.Parse(e.url)
 			if err != nil {
-				source = e.url
+				return "For gem: gem sources --add " + e.url
 			}
 
-			return "For gem: gem sources --add " + source
+			return "For gem: gem sources --add " + u.Scheme + "://" + url.User(e.user).String() + ":<token>@" +
+				u.Host + u.EscapedPath()
 		},
 	},
 	"terraform": {
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_TERRAFORM,
 		},
-		short: "~/.terraformrc: credentials for modules, and the repository as the providers' network mirror",
+		short: "~/.terraformrc (terraform.rc on Windows): credentials for modules, and the repository as the providers' network mirror",
 		steps: func(e setupEnv) ([]setupStep, error) {
 			return []setupStep{
 				{
-					file:  ".terraformrc",
+					file:  terraformConfigFile(e),
 					block: true,
 					mode:  0o600,
 					content: "credentials \"" + e.host + "\" {\n  token = \"" + e.token + "\"\n}\n" +
@@ -463,6 +499,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"cargo": {
+		packageURL: "pkg:cargo/serde@1.0.203",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_CARGO,
 		},
@@ -489,6 +526,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"apk": {
+		packageURL: "pkg:apk/alpine/curl@8.9.1-r0",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_ALPINE,
 		},
@@ -528,6 +566,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"apt": {
+		packageURL: "pkg:deb/debian/curl@7.88.1-10",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_DEBIAN,
 		},
@@ -573,6 +612,7 @@ var setupClients = map[string]setupClient{
 		},
 	},
 	"dnf": {
+		packageURL: "pkg:rpm/fedora/curl@8.6.0-1",
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_RPM,
 		},
@@ -626,11 +666,11 @@ var setupClients = map[string]setupClient{
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_HUGGINGFACE,
 		},
-		short: "the token huggingface_hub reads; HF_ENDPOINT to export",
+		short: "the token, where huggingface_hub reads it (HF_TOKEN_PATH, HF_HOME, ~/.cache/huggingface); HF_ENDPOINT to export",
 		steps: func(e setupEnv) ([]setupStep, error) {
 			return []setupStep{
 				{
-					file:    ".cache/huggingface/token",
+					file:    huggingFaceTokenFile(e),
 					mode:    0o600,
 					content: e.token,
 				},
@@ -642,10 +682,72 @@ var setupClients = map[string]setupClient{
 	},
 }
 
+// homeEnvironment is e.getenv when e.home is the user's own home, and
+// otherwise a getenv that finds no variable: they describe that home only.
+func homeEnvironment(e setupEnv) func(string) string {
+	if e.getenv == nil || e.home != userHome() {
+		return func(string) string {
+			return ""
+		}
+	}
+
+	return e.getenv
+}
+
+// pipConfigFile is the user configuration file pip reads on e.goos:
+// %APPDATA%\pip\pip.ini on Windows, $XDG_CONFIG_HOME/pip/pip.conf elsewhere
+// but macOS.
+func pipConfigFile(e setupEnv) string {
+	getenv := homeEnvironment(e)
+
+	switch e.goos {
+	case "windows":
+		if appData := getenv("APPDATA"); filepath.IsAbs(appData) {
+			return filepath.Join(appData, "pip", "pip.ini")
+		}
+
+		return "AppData/Roaming/pip/pip.ini"
+	case "darwin":
+		if st, err := os.Stat(
+			filepath.Join(e.home, "Library", "Application Support", "pip"),
+		); err == nil &&
+			st.IsDir() {
+			return "Library/Application Support/pip/pip.conf"
+		}
+	default:
+		if configHome := getenv("XDG_CONFIG_HOME"); filepath.IsAbs(configHome) {
+			return filepath.Join(configHome, "pip", "pip.conf")
+		}
+	}
+
+	return ".config/pip/pip.conf"
+}
+
+// terraformConfigFile is the CLI configuration file terraform reads on e.goos:
+// TF_CLI_CONFIG_FILE, %APPDATA%\terraform.rc on Windows, ~/.terraformrc
+// elsewhere.
+func terraformConfigFile(e setupEnv) string {
+	getenv := homeEnvironment(e)
+
+	if file := getenv("TF_CLI_CONFIG_FILE"); filepath.IsAbs(file) {
+		return file
+	}
+
+	if e.goos == "windows" {
+		if appData := getenv("APPDATA"); filepath.IsAbs(appData) {
+			return filepath.Join(appData, "terraform.rc")
+		}
+
+		return "AppData/Roaming/terraform.rc"
+	}
+
+	return ".terraformrc"
+}
+
 func pipSteps(e setupEnv) ([]setupStep, error) {
 	return []setupStep{
 		{
-			file:    ".config/pip/pip.conf",
+			file:    pipConfigFile(e),
 			mode:    0o644,
 			content: "[global]\nindex-url = " + e.url + "\n",
 		},
@@ -754,6 +856,7 @@ func packageSetupCmd(g *globals) *cobra.Command {
 	var (
 		write, force, showToken, agent bool
 		home, root, project            string
+		expiresDays                    int32
 		values                         = map[string]*string{}
 	)
 
@@ -773,9 +876,12 @@ func packageSetupCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "setup <client> <repository>",
 		Short: "Configure a package manager client for a repository",
-		Long: "Prints the configuration a client needs to use a repository with your token (shown as <token> " +
+		Long: "Prints the configuration a client needs to use a repository with a token (shown as <token> " +
 			"unless --show-token), or with --write writes it: user files under --home, system files under " +
-			"--root, and runs the client's own login commands. Files are written 0600 when they hold the " +
+			"--root, and runs the client's own login commands. Signed in with a context, the client gets a " +
+			"token of its own (described as relic package setup <client> <repository>), so signing in again " +
+			"or signing out leaves it working; --token or RELIC_TOKEN is given to the client as it is. " +
+			"Files are written 0600 when they hold the " +
 			"token; in files other tools share (.npmrc, .netrc, …) relic writes a marked block and keeps the rest. " +
 			"Clients:\n\n" + list.String(),
 		Example: "  relic package setup npm npm-virtual --write\n" +
@@ -808,7 +914,7 @@ func packageSetupCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			e.home, e.root = home, root
+			e.home, e.root, e.goos, e.getenv = home, root, runtime.GOOS, g.getenv
 			e.flags = map[string]string{}
 
 			for k, v := range values {
@@ -816,8 +922,15 @@ func packageSetupCmd(g *globals) *cobra.Command {
 			}
 
 			write = write || agent
-			if !write && !showToken {
+
+			switch {
+			case !write && !showToken:
 				e.token = "<token>"
+			case e.contextToken:
+				e.token, err = clientToken(cmd, c, args[0], args[1], expiresDays)
+				if err != nil {
+					return err
+				}
 			}
 
 			steps, err := client.steps(e)
@@ -858,8 +971,11 @@ func packageSetupCmd(g *globals) *cobra.Command {
 	cmd.Flags().StringVar(&project, "project", ".", "the project directory --agent writes AGENTS.md and .mcp.json into")
 	cmd.Flags().BoolVar(&force, "force", false, "replace files relic does not write a block into")
 	cmd.Flags().BoolVar(&showToken, "show-token", false, "print the token instead of <token>")
-	cmd.Flags().StringVar(&home, "home", userHome(), "the home directory user files go under")
+	cmd.Flags().
+		StringVar(&home, "home", userHome(), "the home directory user files go under, and the client commands run with")
 	cmd.Flags().StringVar(&root, "root", "/", "the root directory system files go under")
+	cmd.Flags().Int32Var(&expiresDays, "expires-days", 90, "lifetime in days of the token issued for the client; "+
+		"0 never expires for administrators and is 365 for other users")
 
 	for _, n := range names {
 		for flag, help := range setupClients[n].flags {
@@ -930,14 +1046,15 @@ func setupEnvFor(cmd *cobra.Command, g *globals, c *client, client setupClient, 
 	}
 
 	e := setupEnv{
-		repo:     repo,
-		format:   format,
-		url:      ep.Msg.GetPackageManager(),
-		registry: ep.Msg.GetContainerRegistry(),
-		files:    ep.Msg.GetFiles(),
-		host:     u.Host,
-		user:     me.Msg.GetPrincipal().GetUsername(),
-		token:    target.token,
+		repo:         repo,
+		format:       format,
+		url:          ep.Msg.GetPackageManager(),
+		registry:     ep.Msg.GetContainerRegistry(),
+		files:        ep.Msg.GetFiles(),
+		host:         u.Host,
+		user:         me.Msg.GetPrincipal().GetUsername(),
+		token:        target.token,
+		contextToken: target.contextToken,
 	}
 	if e.url == "" {
 		e.url = e.files
@@ -958,6 +1075,20 @@ func setupEnvFor(cmd *cobra.Command, g *globals, c *client, client setupClient, 
 	}
 
 	return e, nil
+}
+
+// clientToken issues the token a client gets in place of the context's own, which signing in again and
+// signing out revoke.
+func clientToken(cmd *cobra.Command, c *client, clientName, repo string, expiresDays int32) (string, error) {
+	resp, err := c.security.CreateToken(cmd.Context(), connect.NewRequest(&relicv1.CreateTokenRequest{
+		Description: "relic package setup " + clientName + " " + repo,
+		ExpiresDays: expiresDays,
+	}))
+	if err != nil {
+		return "", fmt.Errorf("setup: issue a token for %s: %w", clientName, err)
+	}
+
+	return resp.Msg.GetAccessToken(), nil
 }
 
 var signedFormats = []relicv1.Format{
@@ -1003,7 +1134,29 @@ func writeArgumentFile(arguments []string) (string, error) {
 	return f.Name(), nil
 }
 
+// huggingFaceTokenFile is the file huggingface_hub reads its token from:
+// HF_TOKEN_PATH, $HF_HOME/token, $XDG_CACHE_HOME/huggingface/token or
+// ~/.cache/huggingface/token.
+func huggingFaceTokenFile(e setupEnv) string {
+	getenv := homeEnvironment(e)
+
+	switch {
+	case filepath.IsAbs(getenv("HF_TOKEN_PATH")):
+		return getenv("HF_TOKEN_PATH")
+	case filepath.IsAbs(getenv("HF_HOME")):
+		return filepath.Join(getenv("HF_HOME"), "token")
+	case filepath.IsAbs(getenv("XDG_CACHE_HOME")):
+		return filepath.Join(getenv("XDG_CACHE_HOME"), "huggingface", "token")
+	}
+
+	return ".cache/huggingface/token"
+}
+
 func stepPath(e setupEnv, client setupClient, file string) string {
+	if filepath.IsAbs(file) {
+		return file
+	}
+
 	if client.system {
 		return filepath.Join(e.root, file)
 	}
@@ -1011,11 +1164,39 @@ func stepPath(e setupEnv, client setupClient, file string) string {
 	return filepath.Join(e.home, file)
 }
 
+var (
+	plainShellWord  = regexp.MustCompile(`^[A-Za-z0-9@%+=:,./_-]+$`)
+	shellAssignment = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
+)
+
+// shellWord is word as a POSIX shell reads it back unchanged: quoted unless
+// it is plain, with only the value of a NAME=value assignment quoted.
+func shellWord(word string) string {
+	if plainShellWord.MatchString(word) {
+		return word
+	}
+
+	if name := shellAssignment.FindString(word); name != "" {
+		return name + shellWord(strings.TrimPrefix(word, name))
+	}
+
+	return "'" + strings.ReplaceAll(word, "'", `'\''`) + "'"
+}
+
 func printSetupStep(w io.Writer, e setupEnv, client setupClient, s setupStep) {
 	if s.command != nil {
-		cmdline := strings.Join(append(append(slices.Clone(s.env), s.command...), s.argumentFile...), " ")
+		words := make([]string, 0, len(s.env)+len(s.command)+len(s.argumentFile))
+		for _, word := range append(append(slices.Clone(s.env), s.command...), s.argumentFile...) {
+			words = append(words, shellWord(word))
+		}
+
+		cmdline := strings.Join(words, " ")
 		if s.stdin != "" {
-			cmdline = "echo " + strings.TrimSuffix(s.stdin, "\n") + " | " + cmdline
+			cmdline = "echo " + shellWord(strings.TrimSuffix(s.stdin, "\n")) + " | " + cmdline
+		}
+
+		if s.undo {
+			cmdline += "   # when an earlier setup added it"
 		}
 
 		_, _ = fmt.Fprintf(w, "$ %s\n", cmdline)
@@ -1059,6 +1240,46 @@ func withBlock(old, repo, content string) (string, error) {
 	return old + block, nil
 }
 
+var homeVariables = []string{
+	"HOME",
+	"USERPROFILE",
+	"APPDATA",
+	"LOCALAPPDATA",
+	"XDG_CONFIG_HOME",
+	"XDG_CACHE_HOME",
+	"XDG_DATA_HOME",
+	"XDG_STATE_HOME",
+}
+
+// setupCommandEnvironment is the environment client commands run in: this
+// process's, or, for another home than the user's, one in which every
+// per-user location the clients read is under home.
+func setupCommandEnvironment(home string) []string {
+	if home == "" || home == userHome() {
+		return os.Environ()
+	}
+
+	env := slices.DeleteFunc(os.Environ(), func(variable string) bool {
+		name, _, _ := strings.Cut(variable, "=")
+
+		return slices.ContainsFunc(homeVariables, func(homeVariable string) bool {
+			return strings.EqualFold(name, homeVariable)
+		})
+	})
+
+	env = append(env, "HOME="+home)
+	if runtime.GOOS == "windows" {
+		env = append(
+			env,
+			"USERPROFILE="+home,
+			"APPDATA="+filepath.Join(home, "AppData", "Roaming"),
+			"LOCALAPPDATA="+filepath.Join(home, "AppData", "Local"),
+		)
+	}
+
+	return env
+}
+
 func applySetupStep(cmd *cobra.Command, e setupEnv, client setupClient, s setupStep, force bool) error {
 	out := cmd.OutOrStdout()
 
@@ -1081,10 +1302,19 @@ func applySetupStep(cmd *cobra.Command, e setupEnv, client setupClient, s setupS
 		//nolint:gosec // G204: the client's own command, arguments not parsed by a shell
 		c := exec.CommandContext(cmd.Context(), s.command[0], args...)
 		c.Stdin = strings.NewReader(s.stdin)
-		c.Env = append(os.Environ(), s.env...)
+		c.Env = append(setupCommandEnvironment(e.home), s.env...)
 		c.Stdout, c.Stderr = cmd.ErrOrStderr(), cmd.ErrOrStderr()
 
-		if err := c.Run(); err != nil {
+		if s.undo {
+			c.Stdout, c.Stderr = io.Discard, io.Discard
+		}
+
+		err := c.Run()
+
+		switch {
+		case s.undo:
+			return nil
+		case err != nil:
 			return fmt.Errorf("setup: %s: %w", s.command[0], err)
 		}
 

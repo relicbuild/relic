@@ -38,6 +38,42 @@ func (h *Handler) CanRepo(r *http.Request, repoKey, itemPath string, a auth.Acti
 	}, itemPath, a), nil
 }
 
+// RepositoryPermits is CanRepo for paths in the given repositories,
+// answered without further lookups; it is nil for an administrator.
+func (h *Handler) RepositoryPermits(
+	r *http.Request,
+	repoKeys ...string,
+) (func(repoKey, path string, a auth.Action) bool, error) {
+	p := auth.FromContext(r.Context())
+	if p.Admin {
+		return nil, nil
+	}
+
+	perms, err := h.security.Permissions(r.Context())
+	if err != nil {
+		return nil, err
+	}
+
+	targets := make(map[string]auth.Repository, len(repoKeys))
+	for _, key := range repoKeys {
+		rp, err := h.repos.GetRepository(r.Context(), key)
+		if err != nil {
+			return nil, err
+		}
+
+		targets[key] = auth.Repository{
+			Name:  rp.Name,
+			Class: string(rp.Class),
+		}
+	}
+
+	return func(repoKey, path string, a auth.Action) bool {
+		target, ok := targets[repoKey]
+
+		return ok && perms.CanInRepository(p.Subject(), target, path, a)
+	}, nil
+}
+
 // CanRepoAnywhere is CanRepo for some path in the repository.
 func (h *Handler) CanRepoAnywhere(r *http.Request, repoKey string, a auth.Action) (bool, error) {
 	p := auth.FromContext(r.Context())
@@ -183,27 +219,50 @@ func Forbidden(w http.ResponseWriter, r *http.Request, action, target string) {
 	httperror.Write(w, r, http.StatusForbidden, "Forbidden: missing '"+action+"' permission on "+target)
 }
 
-// CanReadContent reports whether the caller may read some stored file with
-// the given content.
+// CanReadContent reports whether the caller may read and download some
+// stored file with the given content, or repository.ErrForbidden when every
+// readable copy is download-blocked.
 func (h *Handler) CanReadContent(r *http.Request, sums repository.Checksums) (bool, error) {
-	if auth.FromContext(r.Context()).Admin {
-		return true, nil
-	}
+	ctx := r.Context()
 
-	items, err := h.repos.FilesWithContent(r.Context(), sums)
+	items, err := h.repos.FilesWithContent(ctx, sums)
 	if err != nil {
 		return false, err
 	}
 
+	var blocked []repository.Item
+
 	for _, it := range items {
-		ok, err := h.CanRepo(r, it.Repository, it.Path(), auth.ActionRead)
+		ok := auth.FromContext(ctx).Admin
+		if !ok {
+			ok, err = h.CanRepo(r, it.Repository, it.Path(), auth.ActionRead)
+			if err != nil {
+				return false, err
+			}
+		}
+
+		if !ok {
+			continue
+		}
+
+		if h.blocker == nil {
+			return true, nil
+		}
+
+		d, err := h.blocker.Explain(ctx, it.Repository, it.Path(), it.Checksums.SHA256)
 		if err != nil {
 			return false, err
 		}
 
-		if ok {
+		if !d.Blocked {
 			return true, nil
 		}
+
+		blocked = append(blocked, it)
+	}
+
+	if len(blocked) > 0 {
+		return false, h.RefuseCopy(ctx, blocked[0])
 	}
 
 	return false, nil

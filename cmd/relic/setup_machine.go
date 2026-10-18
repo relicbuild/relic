@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"os"
 	"os/exec"
 	"os/user"
@@ -41,6 +42,7 @@ type machineSetup struct {
 	query      func(ctx context.Context, name string, args ...string) (string, error)
 	proc       string
 	hasUser    func(name string) bool
+	lookPath   func(name string) (string, error)
 	in         *bufio.Reader
 	out        io.Writer
 }
@@ -80,6 +82,10 @@ func (m *machineSetup) runSetup(ctx context.Context) error {
 		return errors.New("setup: --system creates a user and writes /etc: run it with sudo")
 	}
 
+	if _, _, err := net.SplitHostPort(m.listen); m.listenSet && err != nil {
+		return fmt.Errorf("setup: --listen %q must be host:port or :port", m.listen)
+	}
+
 	if strings.Contains(m.executable, "go-build") {
 		return errors.New(
 			"setup: this relic runs from a temporary go run build; install it (go install ./cmd/relic) and run that",
@@ -89,6 +95,10 @@ func (m *machineSetup) runSetup(ctx context.Context) error {
 	actions, err := m.plan(ctx)
 	if err != nil {
 		return err
+	}
+
+	if err := m.findCommands(actions); err != nil {
+		return fmt.Errorf("setup: %w", err)
 	}
 
 	m.printPlan("relic server setup will:", actions)
@@ -111,6 +121,24 @@ func (m *machineSetup) runSetup(ctx context.Context) error {
 	}
 
 	m.printNext()
+
+	return nil
+}
+
+func (m *machineSetup) findCommands(actions []machineAction) error {
+	for _, a := range actions {
+		if a.command == nil {
+			continue
+		}
+
+		if _, err := m.lookPath(a.command[0]); err != nil {
+			return fmt.Errorf(
+				"%s is not on PATH: relic server setup runs the server as a systemd service; "+
+					"without systemd (macOS, Windows), run relic server start by hand",
+				a.command[0],
+			)
+		}
+	}
 
 	return nil
 }
@@ -587,15 +615,21 @@ func (m *machineSetup) settings(what, path, data, tlsDirectory string, mode fs.F
 }
 
 func withSetting(content, key, value string, replace bool) string {
+	found := false
+
 	lines := strings.SplitAfter(content, "\n")
 	for i, l := range lines {
-		if strings.HasPrefix(l, key+"=") {
+		if strings.HasPrefix(strings.TrimLeft(l, " \t"), key+"=") {
+			found = true
+
 			if replace {
 				lines[i] = key + "=" + value + "\n"
 			}
-
-			return strings.Join(lines, "")
 		}
+	}
+
+	if found {
+		return strings.Join(lines, "")
 	}
 
 	if content != "" && !strings.HasSuffix(content, "\n") {
@@ -767,10 +801,17 @@ func (m *machineSetup) printNext() {
 		logs = "journalctl -u relic -f"
 	}
 
-	_, _ = fmt.Fprintf(m.out, "Done. The server listens on %s (%s, %s).\n", m.listenSetting(), status, logs)
+	listen := m.listenSetting()
+
+	address, ok := loopbackURL(listen)
+	if !ok {
+		address = "https://" + listen
+	}
+
+	_, _ = fmt.Fprintf(m.out, "Done. The server listens on %s (%s, %s).\n", listen, status, logs)
 	_, _ = fmt.Fprintf(m.out,
-		"Sign in with relic auth login https://%s --user admin; the first password is RELIC_ADMIN_PASSWORD in %s.\n",
-		m.listenSetting(),
+		"Sign in with relic auth login %s --user admin; the first password is RELIC_ADMIN_PASSWORD in %s.\n",
+		address,
 		m.tilde(settings),
 	)
 }
@@ -783,10 +824,8 @@ func (m *machineSetup) listenSetting() string {
 
 	b, err := os.ReadFile(path) //nolint:gosec // the settings file relic server setup wrote
 	if err == nil {
-		for l := range strings.Lines(string(b)) {
-			if v, ok := strings.CutPrefix(strings.TrimSpace(l), "RELIC_HTTP_LISTEN_ADDRESS="); ok {
-				return v
-			}
+		if v := keyValues(string(b), "=")["RELIC_HTTP_LISTEN_ADDRESS"]; v != "" {
+			return v
 		}
 	}
 
@@ -871,7 +910,8 @@ func newMachineSetup(cmd *cobra.Command, g *globals, home, root string) (*machin
 
 			return err == nil
 		},
-		in:  bufio.NewReader(cmd.InOrStdin()),
-		out: out,
+		lookPath: exec.LookPath,
+		in:       bufio.NewReader(cmd.InOrStdin()),
+		out:      out,
 	}, nil
 }

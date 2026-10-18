@@ -27,6 +27,11 @@ const (
 // agentInstructions is the AGENTS.md section that routes a coding agent's
 // dependencies through repo.
 func agentInstructions(url, client, repo string) string {
+	packageURL := "its package URL"
+	if example := setupClients[client].packageURL; example != "" {
+		packageURL += " (for example " + example + ")"
+	}
+
 	return fmt.Sprintf(`## Dependencies
 
 Resolve every dependency through Relic at %[1]s, repository %[3]s: the %[2]s
@@ -34,13 +39,13 @@ configuration on this machine points there. Do not add another registry or
 download packages from anywhere else.
 
 Before adding or upgrading a dependency, ask Relic's MCP tool
-package_allowed with its package URL (for example pkg:npm/lodash@4.17.21)
+package_allowed with %[4]s
 and repository %[3]s, or run:
 
     relic package check <package-url> --repository %[3]s
 
 Never use a version it refuses; choose one it allows.
-`, url, client, repo)
+`, url, client, repo, packageURL)
 }
 
 func withAgentBlock(old, content string) (string, error) {

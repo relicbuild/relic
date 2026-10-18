@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"slices"
 	"strings"
@@ -126,12 +127,14 @@ func Backup(ctx context.Context, db *DB, path string) error {
 		return ErrBackupNotSupported
 	}
 
-	if _, err := os.Stat(path); err == nil {
+	if err := createOwnerOnly(path); errors.Is(err, fs.ErrExist) {
 		return fmt.Errorf("backup %s: the file exists", path)
+	} else if err != nil {
+		return fmt.Errorf("backup %s: %w", path, err)
 	}
 
 	if _, err := e.db.ExecContext(ctx, "VACUUM INTO ?", path); err != nil {
-		return fmt.Errorf("backup %s: %w", path, err)
+		return errors.Join(fmt.Errorf("backup %s: %w", path, err), os.Remove(path))
 	}
 
 	return nil
@@ -451,9 +454,9 @@ func (db *DB) copyTx(
 ) (err error) {
 	switch e := db.engine.(type) {
 	case *postgresEngine:
-		tx, err := e.pool.Begin(ctx)
-		if err != nil {
-			return fmt.Errorf("begin: %w", err)
+		tx, beginErr := e.pool.Begin(ctx)
+		if beginErr != nil {
+			return fmt.Errorf("begin: %w", beginErr)
 		}
 
 		defer func() {
@@ -464,7 +467,7 @@ func (db *DB) copyTx(
 			}
 		}()
 
-		if err := fn(func(table string, _ []column, batch string) error {
+		err = fn(func(table string, _ []column, batch string) error {
 			t := pgx.Identifier{
 				table,
 			}.Sanitize()
@@ -475,15 +478,16 @@ func (db *DB) copyTx(
 			)
 
 			return err
-		}); err != nil {
+		})
+		if err != nil {
 			return err
 		}
 
 		return tx.Commit(ctx)
 	case *sqliteEngine:
-		tx, err := e.db.BeginTx(ctx, nil)
-		if err != nil {
-			return fmt.Errorf("begin: %w", err)
+		tx, beginErr := e.db.BeginTx(ctx, nil)
+		if beginErr != nil {
+			return fmt.Errorf("begin: %w", beginErr)
 		}
 
 		defer func() {
@@ -492,11 +496,12 @@ func (db *DB) copyTx(
 			}
 		}()
 
-		if err := fn(func(table string, cols []column, batch string) error {
+		err = fn(func(table string, cols []column, batch string) error {
 			_, err := tx.ExecContext(ctx, sqliteInsertRows(table, cols), batch)
 
 			return err
-		}); err != nil {
+		})
+		if err != nil {
 			return err
 		}
 

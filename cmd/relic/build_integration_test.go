@@ -170,6 +170,12 @@ func TestBuildCommands(t *testing.T) {
 		}
 	}
 
+	if out, err := relic(t, config, "", "artifact", "props", "get", "b-dev/org/app/1.0/app.jar"); err != nil ||
+		!hasTableRow(out, "build.name", "app") || !hasTableRow(out, "build.number", "7") ||
+		!strings.Contains(out, "build.timestamp") {
+		t.Errorf("properties of the file uploaded for app/7 = %q %v", out, err)
+	}
+
 	run, err := (&globals{
 		getenv: func(string) string {
 			return ""
@@ -342,7 +348,8 @@ spec: {active: true, scopes: [{kind: build, names: [app]}], policies: [b-sec]}
 	}
 
 	if out, err := relic(t, config, "", "build", "promote", "app", "7", "b-rel", "--dry-run"); err != nil ||
-		!strings.Contains(out, "promoted") {
+		!strings.Contains(out, "would move b-dev/org/app/1.0/app.jar to b-rel/org/app/1.0/app.jar") ||
+		!strings.Contains(out, "app/7: dry run, nothing changed") || strings.Contains(out, "promoted") {
 		t.Errorf("promote --dry-run = %q %v", out, err)
 	}
 
@@ -408,6 +415,14 @@ spec: {active: true, scopes: [{kind: build, names: [app]}], policies: [b-sec]}
 
 	if _, err := relic(t, config, "", "build", "discard", "app"); err == nil {
 		t.Error("discard without a limit succeeded")
+	}
+
+	if out, err := relic(t, config, "", "build", "discard", "app", "--max-days", "-5"); err == nil {
+		t.Errorf("discard with a negative --max-days = %q, want an error", out)
+	}
+
+	if out, err := relic(t, config, "", "build", "discard", "missing", "--max-runs", "1"); err == nil {
+		t.Errorf("discard of a build without runs = %q, want an error", out)
 	}
 
 	if _, err := relic(t, config, "", "build", "discard", "app", "--max-runs", "1"); err != nil {

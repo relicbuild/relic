@@ -42,11 +42,12 @@ tasks:
     dir: web
     sources:
       - app/**/*
-      - content/**/*
-      - public/**/*
+      - layers/**/*
+      - patches/**/*
       - nuxt.config.ts
       - package.json
       - pnpm-lock.yaml
+      - pnpm-workspace.yaml
     generates:
       - ../internal/app/ui/dist/index.html
     cmds:

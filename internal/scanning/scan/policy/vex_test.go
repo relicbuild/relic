@@ -13,6 +13,7 @@ func TestVEXRoundTrip(t *testing.T) {
 
 	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
 	past := now.Add(-time.Hour)
+	tomorrow := now.Add(24 * time.Hour)
 	rules := []IgnoreRule{
 		{
 			ID:    "r1",
@@ -52,10 +53,70 @@ func TestVEXRoundTrip(t *testing.T) {
 				"libs/app.jar",
 			},
 		},
+		{
+			ID: "until tomorrow",
+			CVEs: []string{
+				"CVE-3",
+			},
+			Packages: []string{
+				"pkg:npm/b@1",
+			},
+			Expires: &tomorrow,
+		},
+		{
+			ID: "one watch",
+			CVEs: []string{
+				"CVE-4",
+			},
+			Packages: []string{
+				"pkg:npm/c@1",
+			},
+			Watches: []string{
+				"prod",
+			},
+		},
+		{
+			ID: "one policy",
+			CVEs: []string{
+				"CVE-5",
+			},
+			Packages: []string{
+				"pkg:npm/d@1",
+			},
+			Policies: []string{
+				"critical",
+			},
+		},
+		{
+			ID: "one path",
+			CVEs: []string{
+				"CVE-6",
+			},
+			Packages: []string{
+				"pkg:npm/e@1",
+			},
+			ArtifactPaths: []string{
+				"libs/only-here/",
+			},
+		},
+		{
+			ID: "one build",
+			CVEs: []string{
+				"CVE-7",
+			},
+			Packages: []string{
+				"pkg:npm/f@1",
+			},
+			Builds: []Build{
+				{
+					Name: "app",
+				},
+			},
+		},
 	}
 
 	doc, skipped := ExportVEX(rules, "https://relic.example/vex/1", "relic.example", now)
-	if skipped != 3 || len(doc.Statements) != 1 || doc.Context != OpenVEXContext {
+	if skipped != 8 || len(doc.Statements) != 1 || doc.Context != OpenVEXContext {
 		t.Fatalf("export: %d statements, %d skipped: %+v", len(doc.Statements), skipped, doc)
 	}
 
@@ -137,7 +198,9 @@ func TestImportVEX(t *testing.T) {
     {"vulnerability": {"name": "CVE-2023-1"}, "products": [{"@id": "pkg:oci/app@sha256%3Aabc", "subcomponents": [{"@id": "pkg:golang/golang.org/x/net@v0.10.0"}]}],
      "status": "not_affected", "justification": "vulnerable_code_not_in_execute_path"},
     {"vulnerability": {"name": "CVE-2023-2"}, "products": [{"@id": "pkg:npm/a@1"}], "status": "affected"},
-    {"vulnerability": {"name": "CVE-2023-3"}, "products": [{"@id": "https://example.com/not-a-purl"}], "status": "not_affected"}
+    {"vulnerability": {"name": "CVE-2023-3"}, "products": [{"@id": "https://example.com/not-a-purl"}], "status": "not_affected"},
+    {"vulnerability": {"name": "CVE-2020-7598"}, "products": [{"@id": "https://example.com/product", "identifiers": {"purl": "pkg:npm/minimist@0.0.8"}}],
+     "status": "not_affected", "justification": "vulnerable_code_not_in_execute_path"}
   ]
 }`))
 	if err != nil {
@@ -145,7 +208,7 @@ func TestImportVEX(t *testing.T) {
 	}
 
 	rules, skipped := ImportVEX(doc)
-	if len(rules) != 1 || skipped != 2 {
+	if len(rules) != 2 || skipped != 2 {
 		t.Fatalf("rules %+v, skipped %d", rules, skipped)
 	}
 
@@ -153,6 +216,12 @@ func TestImportVEX(t *testing.T) {
 		"pkg:golang/golang.org/x/net@v0.10.0",
 	}) || !strings.Contains(rules[0].Notes, "vulnerable_code_not_in_execute_path") {
 		t.Errorf("rule = %+v", rules[0])
+	}
+
+	if !slices.Equal(rules[1].Packages, []string{
+		"pkg:npm/minimist@0.0.8",
+	}) {
+		t.Errorf("rule of a product named by identifiers.purl = %+v", rules[1])
 	}
 
 	if _, err := ParseVEX([]byte(`{"@context": "https://cyclonedx.org"}`)); err == nil {

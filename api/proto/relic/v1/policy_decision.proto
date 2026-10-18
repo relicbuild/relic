@@ -69,7 +69,7 @@ message PreviewPolicyRequest {
   Policy policy = 1;
   // repositories limits the preview; empty covers every repository.
   repeated string repositories = 2;
-  // limit defaults to 1000.
+  // limit is the most hits to list; it defaults to 1000.
   int32 limit = 3;
 }
 
@@ -87,7 +87,7 @@ message PolicyPreviewHit {
 
 message PreviewPolicyResponse {
   repeated PolicyPreviewHit hits = 1;
-  // truncated is set when the limit, or the number of files a preview
-  // reads, was reached.
+  // truncated is set when there are more hits than the limit lets the
+  // response list, or when the preview stopped at the most files it reads.
   bool truncated = 2;
 }

@@ -14,11 +14,12 @@ const { data: repos, error: reposError, refresh: refreshRepos } = await useAsync
 const selected = ref<string>()
 const repo = computed(() => repos.value?.find(r => r.name === selected.value))
 
-const tokenSchema = z.object({
+const expiry = computed(() => tokenExpiry(!!me.value?.admin))
+const tokenSchema = computed(() => z.object({
   description: z.string().min(1, 'Say what the token is for'),
-  expiresDays: z.number().int().min(0).max(3650)
-})
-type TokenSchema = z.output<typeof tokenSchema>
+  expiresDays: z.number().int().min(expiry.value.minDays).max(expiry.value.maxDays, `At most ${expiry.value.maxDays} days`)
+}))
+type TokenSchema = z.output<typeof tokenSchema.value>
 const tokenState = reactive<Partial<TokenSchema>>({ description: '', expiresDays: 90 })
 const token = ref('')
 const creating = ref(false)
@@ -92,8 +93,8 @@ async function revoke(t: AccessToken) {
             <UFormField name="description" label="Description" class="min-w-64 flex-1">
               <UInput v-model="tokenState.description" placeholder="Laptop, CI pipeline..." class="w-full" />
             </UFormField>
-            <UFormField name="expiresDays" label="Expires after (days, 0 = never)">
-              <UInputNumber v-model="tokenState.expiresDays" :min="0" :max="3650" />
+            <UFormField name="expiresDays" :label="expiry.label">
+              <UInputNumber v-model="tokenState.expiresDays" :min="expiry.minDays" :max="expiry.maxDays" />
             </UFormField>
             <UButton type="submit" label="Generate token" :loading="creating" />
           </UForm>

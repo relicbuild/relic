@@ -449,7 +449,8 @@ export const SessionService: GenService<{
     output: typeof LoginResponseSchema;
   },
   /**
-   * Logout ends the browser session.
+   * Logout ends the browser session, and revokes the bearer token the request
+   * carries.
    *
    * @generated from rpc relic.v1.SessionService.Logout
    */

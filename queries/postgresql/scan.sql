@@ -73,7 +73,9 @@ SELECT * FROM scan_findings WHERE sha256 = ANY(@sha256s::text[]) ORDER BY vuln_i
 SELECT status, count(*) AS count FROM scan_artifacts GROUP BY status;
 
 -- name: FindingCounts :many
-SELECT severity, count(*) AS count FROM scan_findings GROUP BY severity;
+SELECT f.severity, count(*) AS count FROM scan_findings f
+WHERE EXISTS (SELECT 1 FROM items i WHERE i.sha256 = f.sha256 AND i.type = 'file')
+GROUP BY f.severity;
 
 -- name: LatestDBBuilt :one
 SELECT max(db_built)::timestamptz FROM scan_artifacts;
@@ -86,7 +88,7 @@ JOIN LATERAL (SELECT repo_key, path, name FROM items
               WHERE sha256 = f.sha256 AND type = 'file' AND (@repository::text = '' OR repo_key = @repository)
               ORDER BY repo_key, path, name LIMIT 1) i ON true
 WHERE (@severity::text = '' OR f.severity = @severity)
-  AND (@query::text = '' OR f.vuln_id ILIKE '%' || @query || '%' OR f.package_name ILIKE '%' || @query || '%'
+  AND (@query::text = '' OR strpos(lower(f.vuln_id), lower(@query)) > 0 OR strpos(lower(f.package_name), lower(@query)) > 0
        OR @query = ANY(f.cves))
   AND (@purl_type::text = '' OR split_part(split_part(f.purl, '/', 1), ':', 2) = @purl_type)
   AND (NOT @fixable_only::bool OR cardinality(f.fixed_versions) > 0)
@@ -100,7 +102,7 @@ LIMIT @max_rows OFFSET @skip;
 SELECT count(*) FROM scan_findings f
 WHERE EXISTS (SELECT 1 FROM items i WHERE i.sha256 = f.sha256 AND i.type = 'file' AND (@repository::text = '' OR i.repo_key = @repository))
   AND (@severity::text = '' OR f.severity = @severity)
-  AND (@query::text = '' OR f.vuln_id ILIKE '%' || @query || '%' OR f.package_name ILIKE '%' || @query || '%'
+  AND (@query::text = '' OR strpos(lower(f.vuln_id), lower(@query)) > 0 OR strpos(lower(f.package_name), lower(@query)) > 0
        OR @query = ANY(f.cves))
   AND (@purl_type::text = '' OR split_part(split_part(f.purl, '/', 1), ':', 2) = @purl_type)
   AND (NOT @fixable_only::bool OR cardinality(f.fixed_versions) > 0)

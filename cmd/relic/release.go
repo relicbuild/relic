@@ -1,6 +1,10 @@
 package main
 
 import (
+	"archive/zip"
+	"cmp"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -83,9 +87,9 @@ func (r *releaseSources) read(cmd *cobra.Command) ([]*relicv1.ReleaseSource, err
 		s := &relicv1.ReleaseSource{}
 
 		for _, b := range r.builds {
-			name, number, ok := strings.Cut(b, "/")
-			if !ok || name == "" || number == "" {
-				return nil, fmt.Errorf("--build %q is not <name>/<number>", b)
+			name, number, err := parseBuildRef(b)
+			if err != nil {
+				return nil, err
 			}
 
 			s.Builds = append(s.Builds, &relicv1.ReleaseBuildRef{
@@ -388,7 +392,12 @@ func releaseListCmd(g *globals) *cobra.Command {
 			}
 
 			if len(args) == 0 {
-				r, err := c.releases.ListReleases(cmd.Context(), connect.NewRequest(&relicv1.ListReleasesRequest{}))
+				req := &relicv1.ListReleasesRequest{}
+				if cmd.Flags().Changed("project") {
+					req.Project = &ref.project
+				}
+
+				r, err := c.releases.ListReleases(cmd.Context(), connect.NewRequest(req))
 				if err != nil {
 					return fmt.Errorf("release list: %w", err)
 				}
@@ -397,17 +406,19 @@ func releaseListCmd(g *globals) *cobra.Command {
 					table := terminal.Table{
 						Headers: []string{
 							"NAME",
+							"PROJECT",
 							"LATEST",
 							"VERSIONS",
 						},
 						RightAligned: []int{
-							2,
+							3,
 						},
 					}
 
 					for _, rel := range r.Msg.GetReleases() {
 						table.Rows = append(table.Rows, []string{
 							rel.GetName(),
+							cmp.Or(rel.GetProject(), "default"),
 							rel.GetVersion(),
 							strconv.FormatInt(int64(rel.GetVersions()), 10),
 						})
@@ -536,9 +547,11 @@ func releasePromoteCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "promote <name> <version> <environment>",
 		Short: "Promote a release version into an environment's repositories",
-		Long: "Copies (or with --move moves, out of the previous environment) the version's artifacts into " +
-			"the repositories whose environments setting names the environment.",
-		Example: "  relic release promote app 1.4.0 PROD\n  relic release promote app 1.4.0 QA --include qa-generic --move",
+		Long: "Copies each of the version's artifacts into one of the local repositories whose environments " +
+			"setting names the environment: the only one, or else the first by name of the artifact's " +
+			"source format, or else the first generic one. A promotion always copies; --move is accepted " +
+			"and performed as a copy.",
+		Example: "  relic release promote app 1.4.0 PROD\n  relic release promote app 1.4.0 QA --include qa-generic",
 		Args:    cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := g.dial()
@@ -563,9 +576,17 @@ func releasePromoteCmd(g *globals) *cobra.Command {
 			}
 
 			return printMessage(cmd.OutOrStdout(), output, r.Msg, func(w io.Writer) error {
-				_, err := fmt.Fprintf(w, "%s/%s promoted to %s\n", args[0], args[1], args[2])
+				if _, err := fmt.Fprintf(w, "%s/%s promoted to %s\n", args[0], args[1], args[2]); err != nil {
+					return err
+				}
 
-				return err
+				for _, m := range r.Msg.GetPromotion().GetMessages() {
+					if _, err := fmt.Fprintf(w, "  %s\n", m); err != nil {
+						return err
+					}
+				}
+
+				return nil
 			})
 		},
 	}
@@ -685,7 +706,19 @@ func releaseExportCmd(g *globals) *cobra.Command {
 				return fmt.Errorf("release export: %w", err)
 			}
 
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s/%s exported to %s\n", args[0], args[1], file)
+			fingerprint, err := archiveKeySHA256(file)
+			if err != nil {
+				return fmt.Errorf("release export: %w", err)
+			}
+
+			_, _ = fmt.Fprintf(
+				cmd.OutOrStdout(),
+				"%s/%s exported to %s\nsigning key sha256 %s\n",
+				args[0],
+				args[1],
+				file,
+				fingerprint,
+			)
 
 			return nil
 		},
@@ -742,6 +775,11 @@ func releaseImportCmd(g *globals) *cobra.Command {
 		Example: "  relic release import app-1.4.0.zip",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			fingerprint, err := archiveKeySHA256(args[0])
+			if err != nil {
+				return fmt.Errorf("release import: %w", err)
+			}
+
 			f, err := os.Open(args[0])
 			if err != nil {
 				return err
@@ -797,14 +835,67 @@ func releaseImportCmd(g *globals) *cobra.Command {
 
 			_, _ = fmt.Fprintf(
 				cmd.OutOrStdout(),
-				"%s/%s imported\n",
+				"%s/%s imported\nsigning key sha256 %s\n",
 				got.GetRelease().GetName(),
 				got.GetRelease().GetVersion(),
+				fingerprint,
 			)
 
 			return nil
 		},
 	}
+}
+
+const (
+	releaseArchiveKey    = "signing-key.pem"
+	maxReleaseArchiveKey = 1 << 20
+)
+
+// archiveKeySHA256 is the hex SHA-256 of the signing key's PEM text that a
+// release archive carries, the key the importing server verifies it with.
+func archiveKeySHA256(name string) (string, error) {
+	zr, err := zip.OpenReader(name)
+	if err != nil {
+		return "", fmt.Errorf("not a release archive: %w", err)
+	}
+
+	defer func() {
+		_ = zr.Close()
+	}()
+
+	var key *zip.File
+
+	for _, f := range zr.File {
+		if f.Name != releaseArchiveKey {
+			continue
+		}
+
+		if key != nil {
+			return "", fmt.Errorf("the archive has two %s entries", releaseArchiveKey)
+		}
+
+		key = f
+	}
+
+	if key == nil {
+		return "", fmt.Errorf("the archive has no %s", releaseArchiveKey)
+	}
+
+	rc, err := key.Open()
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", releaseArchiveKey, err)
+	}
+
+	defer func() {
+		_ = rc.Close()
+	}()
+
+	sum := sha256.New()
+	if _, err := io.Copy(sum, io.LimitReader(rc, maxReleaseArchiveKey)); err != nil {
+		return "", fmt.Errorf("%s: %w", releaseArchiveKey, err)
+	}
+
+	return hex.EncodeToString(sum.Sum(nil)), nil
 }
 
 func releaseDeleteCmd(g *globals) *cobra.Command {

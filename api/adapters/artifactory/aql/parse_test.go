@@ -165,6 +165,57 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
+			name: "transitive changes nothing: virtual repositories always cover their members",
+			src:  `items.find({"repo":"libs"}).include("name").transitive()`,
+			want: &Query{
+				Domain: "items",
+				Criteria: Compare{
+					Field: "repo",
+					Op:    OpEq,
+					Value: "libs",
+				},
+				Include: []string{
+					"name",
+				},
+			},
+		},
+		{
+			name: "not equal to a wildcard is a negated match",
+			src:  `items.find({"@release":{"$ne":{"$match":"1.*"}}})`,
+			want: &Query{
+				Domain: "items",
+				Criteria: Compare{
+					Field: "@release",
+					Op:    OpNmatch,
+					Value: "1.*",
+				},
+			},
+		},
+		{
+			name: "equal to a wildcard is a match",
+			src:  `items.find({"name":{"$eq":{"$match":"*.jar"}}})`,
+			want: &Query{
+				Domain: "items",
+				Criteria: Compare{
+					Field: "name",
+					Op:    OpMatch,
+					Value: "*.jar",
+				},
+			},
+		},
+		{
+			name: "not equal to a negated match is a match",
+			src:  `items.find({"name":{"$ne":{"$nmatch":"*.jar"}}})`,
+			want: &Query{
+				Domain: "items",
+				Criteria: Compare{
+					Field: "name",
+					Op:    OpMatch,
+					Value: "*.jar",
+				},
+			},
+		},
+		{
 			name: "space between a dot and find is rejected",
 			src:  " items . find ( { \"type\" : \"any\" } ) . distinct ( true ) ",
 		},
@@ -206,11 +257,16 @@ func TestParseErrors(t *testing.T) {
 		`items.find({"$nope":[]})`,
 		`items.find({"name":{"$like":"x"}})`,
 		`items.find({"name":["a"]})`,
+		`items.find({"name":{"$gt":{"$match":"a*"}}})`,
+		`items.find({"name":{"$ne":{"$gt":"a"}}})`,
+		`items.find({"name":{"$ne":{"$match":"a*","$nmatch":"b*"}}})`,
+		`items.find({"name":{"$ne":{"$match":1}}})`,
 		`items.find({"$and":"x"})`,
 		`items.find().limit(-1)`,
 		`items.find().limit(1.5)`,
 		`items.find().sort({"$up":["a"]})`,
 		`items.find().frobnicate()`,
+		`items.find().transitive(true)`,
 		`items.find({"name":"unterminated})`,
 		`items.find({"name":"\q"})`,
 		`items.find() trailing`,

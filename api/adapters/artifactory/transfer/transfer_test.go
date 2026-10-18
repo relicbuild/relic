@@ -235,6 +235,37 @@ func TestImportReportsAListingThatChanged(t *testing.T) {
 	}
 }
 
+func TestImportRefusesRepositoriesTheSourceLacks(t *testing.T) {
+	t.Parallel()
+
+	src := fakeSource(t, 3)
+	relic := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(relic.Close)
+
+	_, err := Import(
+		t.Context(),
+		Server{
+			URL:    src.URL,
+			Client: src.Client(),
+		},
+		Server{
+			URL:    relic.URL,
+			Client: relic.Client(),
+		},
+		Options{
+			DryRun: true,
+			Repositories: []string{
+				"big",
+				"bgi",
+				"missing",
+			},
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "bgi, missing") {
+		t.Errorf("import of repositories the source lacks = %v, want an error naming bgi and missing", err)
+	}
+}
+
 func TestImportCopiesAFederatedRepositoryAsALocalOne(t *testing.T) {
 	t.Parallel()
 

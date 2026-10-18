@@ -224,7 +224,7 @@ func Handler(d Dependencies) http.Handler {
 		d,
 	}, opts))
 
-	api, err := vanguard.NewTranscoder(services)
+	api, err := vanguard.NewTranscoder(services, vanguard.WithCodec(strictRESTJSON))
 	if err != nil {
 		panic(fmt.Sprintf("relic api: %v", err))
 	}
@@ -241,13 +241,22 @@ func Handler(d Dependencies) http.Handler {
 	mux.HandleFunc("GET "+SSOPath+"{provider}/callback", d.ssoCallback)
 	mux.HandleFunc("POST "+SSOPath+"{provider}/acs", d.ssoAssertion)
 	mux.HandleFunc("GET "+SSOPath+"{provider}/metadata", d.ssoMetadata)
-	mux.Handle(Prefix, connectPaths(api))
+	mux.Handle(Prefix, restDecodeErrors(connectPaths(api)))
 
 	return withRequest(mux)
 }
 
+// connectPaths routes Connect requests under Prefix, and hands REST requests
+// their path as sent: the transcoder unescapes path variables itself, so a
+// name holding an escaped '/' stays one segment.
 func connectPaths(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if escaped := r.URL.EscapedPath(); escaped != r.URL.Path {
+			r2 := r.Clone(r.Context())
+			r2.URL.Path, r2.URL.RawPath = escaped, ""
+			r = r2
+		}
+
 		if strings.HasPrefix(r.URL.Path, Prefix+"relic.v1.") {
 			r2 := r.Clone(r.Context())
 			r2.URL.Path = strings.TrimPrefix(r.URL.Path, strings.TrimSuffix(Prefix, "/"))

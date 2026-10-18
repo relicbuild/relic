@@ -87,6 +87,37 @@ func ParseFilename(file string) (name, version string, ok bool) {
 	return "", "", false
 }
 
+// filenameMatches reports whether a distribution's file name starts with
+// the project name and version it is uploaded as, as the index requires.
+func filenameMatches(file, name, version string) bool {
+	if base, ok := strings.CutSuffix(file, ".whl"); ok {
+		parts := strings.Split(base, "-")
+		return len(parts) >= 5 && Normalize(parts[0]) == Normalize(name) && sameVersion(parts[1], version)
+	}
+
+	base := withoutArchiveExtension(file)
+	for i, c := range base {
+		if c != '-' || Normalize(base[:i]) != Normalize(name) {
+			continue
+		}
+
+		rest := base[i+1:]
+		if sameVersion(rest, version) || strings.HasSuffix(file, ".egg") && strings.HasPrefix(rest, version+"-py") {
+			return true
+		}
+	}
+
+	return false
+}
+
+// sameVersion compares versions as file names spell them: wheels escape
+// a dash as an underscore.
+func sameVersion(a, b string) bool {
+	escaped := strings.NewReplacer("_", "-")
+
+	return strings.EqualFold(escaped.Replace(a), escaped.Replace(b))
+}
+
 // Service implements the index on top of repo.Service.
 type Service struct {
 	repos *repository.Service
@@ -161,6 +192,16 @@ func (s *Service) Store(ctx context.Context, u Upload) (repository.Item, error) 
 		}
 
 		u.Name, u.Version = cmp.Or(u.Name, name), cmp.Or(u.Version, version)
+	}
+
+	if !filenameMatches(u.File, u.Name, u.Version) {
+		return repository.Item{}, fmt.Errorf(
+			"%w: file name %q is not one of %s %s",
+			ErrInvalid,
+			u.File,
+			u.Name,
+			u.Version,
+		)
 	}
 
 	if !ValidName(u.Name) || !versionRe.MatchString(u.Version) {
@@ -330,7 +371,18 @@ func (s *Service) Package(ctx context.Context, r repository.Repository, p string
 	var upstreamErr error
 
 	for _, m := range s.repos.Flatten(ctx, r, projectOf(path.Base(p))) {
-		item, err := s.repos.Resolve(ctx, m.Name, p)
+		var (
+			item repository.Item
+			err  error
+		)
+
+		if files := filesURL(m); m.Class == repository.ClassRemote &&
+			files != strings.TrimSuffix(m.Upstream().URL, "/") {
+			item, err = s.repos.ResolveURL(ctx, m, files+"/"+escapePath(p), p)
+		} else {
+			item, err = s.repos.Resolve(ctx, m.Name, p)
+		}
+
 		switch {
 		case err == nil && !item.IsFolder():
 			return item, nil
@@ -378,7 +430,7 @@ func (s *Service) remoteLinks(ctx context.Context, r repository.Repository, norm
 		return nil, fmt.Errorf("%w: index URL of %s: %w", repository.ErrInvalidRepository, r.Name, err)
 	}
 
-	files, _ := url.Parse(s.repos.UpstreamOf(r).URL)
+	files, _ := url.Parse(filesURL(r))
 
 	links := parseSimple(string(body), base, files)
 
@@ -443,6 +495,17 @@ func registryURL(r repository.Repository, repos *repository.Service) string {
 	}
 
 	return "https://pypi.org"
+}
+
+// filesURL is where remote r fetches distribution files from: its URL, or
+// PyPI's file host when the URL names the PyPI registry, which serves no files.
+func filesURL(r repository.Repository) string {
+	upstream := strings.TrimSuffix(r.Upstream().URL, "/")
+	if u, err := url.Parse(upstream); err == nil && u.Host == "pypi.org" {
+		return "https://files.pythonhosted.org"
+	}
+
+	return upstream
 }
 
 func parseSimple(page string, base, files *url.URL) []Link {

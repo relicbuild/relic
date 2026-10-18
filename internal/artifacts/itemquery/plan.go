@@ -112,6 +112,18 @@ const (
 		"ORDER BY p.key, p.value) FROM item_properties p WHERE p.item_id = i.id)"
 )
 
+// A time matched as text reads as 2006-01-02T15:04:05.000Z, in UTC, on both
+// engines; SQLite stores times as fixed-width UTC text.
+const (
+	timeTextStart = "/*time-text(*/"
+	timeTextEnd   = "/*)time-text*/"
+
+	postgresqlTimeTextStart = "to_char("
+	postgresqlTimeTextEnd   = ` AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`
+	sqliteTimeTextStart     = "(SELECT substr(t, 1, 10) || 'T' || substr(t, 12, 12) || 'Z' FROM (SELECT "
+	sqliteTimeTextEnd       = " AS t))"
+)
+
 type planner struct {
 	args []any
 }
@@ -150,9 +162,9 @@ func Compile(q Query) (*Plan, error) {
 				return nil, fmt.Errorf("%w: cannot sort by %q", ErrInvalid, f)
 			}
 
-			dir := " ASC"
+			dir := " ASC NULLS LAST"
 			if q.Sort.Desc {
-				dir = " DESC"
+				dir = " DESC NULLS FIRST"
 			}
 
 			order = append(order, c.expr+dir)
@@ -397,12 +409,17 @@ func (p *planner) condition(col string, kind fieldKind, op Op, v Value) (string,
 			return "", fmt.Errorf("%w: %s takes a string", ErrInvalid, op)
 		}
 
-		pattern := p.param(WildcardToLike(s))
-		if op == OpNotMatch {
-			return "(" + col + " IS NULL OR CAST(" + col + " AS TEXT) NOT LIKE " + pattern + ` ESCAPE '\')`, nil
+		text := "CAST(" + col + " AS TEXT)"
+		if kind == kindTime {
+			text = timeTextStart + col + timeTextEnd
 		}
 
-		return "CAST(" + col + " AS TEXT) LIKE " + pattern + ` ESCAPE '\'`, nil
+		pattern := p.param(WildcardToLike(s))
+		if op == OpNotMatch {
+			return "(" + col + " IS NULL OR " + text + " NOT LIKE " + pattern + ` ESCAPE '\')`, nil
+		}
+
+		return text + " LIKE " + pattern + ` ESCAPE '\'`, nil
 	}
 
 	sqlOp, ok := sqlOps[op]
@@ -510,12 +527,20 @@ type Querier interface {
 
 // Run runs plan and calls fn for each row, stopping at the first error.
 func Run(ctx context.Context, db Querier, plan *Plan, fn func(Row) error) error {
-	properties := postgresqlProperties
+	engineSQL := strings.NewReplacer(
+		propertiesColumn, postgresqlProperties,
+		timeTextStart, postgresqlTimeTextStart,
+		timeTextEnd, postgresqlTimeTextEnd,
+	)
 	if db.SQLite() {
-		properties = sqliteProperties
+		engineSQL = strings.NewReplacer(
+			propertiesColumn, sqliteProperties,
+			timeTextStart, sqliteTimeTextStart,
+			timeTextEnd, sqliteTimeTextEnd,
+		)
 	}
 
-	rows, err := db.Query(ctx, strings.Replace(plan.sql, propertiesColumn, properties, 1), plan.args...)
+	rows, err := db.Query(ctx, engineSQL.Replace(plan.sql), plan.args...)
 	if err != nil {
 		return fmt.Errorf("item query: %w", err)
 	}

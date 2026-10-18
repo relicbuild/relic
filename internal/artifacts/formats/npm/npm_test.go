@@ -176,3 +176,57 @@ func TestParseKeywords(t *testing.T) {
 		})
 	}
 }
+
+func TestParsePerson(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		raw  string
+		want Person
+		ok   bool
+	}{
+		{
+			name: "object",
+			raw:  `{"name":"alice","email":"alice@example.com"}`,
+			want: Person{
+				Name:  "alice",
+				Email: "alice@example.com",
+			},
+			ok: true,
+		},
+		{
+			name: "text with an email and a url",
+			raw:  `"Alice Doe <alice@example.com> (https://example.com)"`,
+			want: Person{
+				Name:  "Alice Doe",
+				Email: "alice@example.com",
+			},
+			ok: true,
+		},
+		{
+			name: "text with a name only",
+			raw:  `"alice"`,
+			want: Person{
+				Name: "alice",
+			},
+			ok: true,
+		},
+		{
+			name: "object without a name",
+			raw:  `{"email":"alice@example.com"}`,
+		},
+		{
+			name: "missing",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got, ok := parsePerson(json.RawMessage(tt.raw)); got != tt.want || ok != tt.ok {
+				t.Errorf("parsePerson(%s) = %+v, %v; want %+v, %v", tt.raw, got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}

@@ -545,7 +545,7 @@ func (s *Service) deliver(ctx context.Context, w *Webhook, r database.WebhookDel
 		finish.Status = "delivered"
 		delivered := s.now()
 		finish.Delivered = &delivered
-	case w == nil || attempts >= maxAttempts:
+	case w == nil || !w.Enabled || attempts >= maxAttempts:
 		result = "failed"
 		finish.Status = "failed"
 		finish.Error = truncate(sendErr.Error())
@@ -575,6 +575,10 @@ func truncate(s string) string {
 func (s *Service) send(ctx context.Context, w *Webhook, r database.WebhookDelivery) (int, error) {
 	if w == nil {
 		return 0, errors.New("the webhook no longer exists")
+	}
+
+	if !w.Enabled {
+		return 0, errors.New("the webhook is disabled")
 	}
 
 	body := r.Payload

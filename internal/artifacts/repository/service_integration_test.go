@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -407,6 +408,264 @@ func TestRepositoryLifecycle(t *testing.T) {
 	}
 }
 
+func TestUpdateRepositoryKeepsTheClassAndFormat(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		update  Repository
+		wantErr bool
+	}{
+		{
+			name: "same class and format",
+			update: Repository{
+				Name:   "generic-local",
+				Class:  ClassLocal,
+				Format: FormatGeneric,
+			},
+		},
+		{
+			name: "another format",
+			update: Repository{
+				Name:   "generic-local",
+				Class:  ClassLocal,
+				Format: FormatNpm,
+			},
+			wantErr: true,
+		},
+		{
+			name: "another class",
+			update: Repository{
+				Name:   "generic-local",
+				Class:  ClassRemote,
+				Format: FormatGeneric,
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			s, _, _ := newTestService(t)
+
+			err := s.UpdateRepository(t.Context(), tt.update)
+			if tt.wantErr != errors.Is(err, ErrInvalidRepository) {
+				t.Fatalf("UpdateRepository = %v, want an invalid repository error: %v", err, tt.wantErr)
+			}
+
+			got, err := s.GetRepository(t.Context(), "generic-local")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if got.Format != FormatGeneric || got.Class != ClassLocal {
+				t.Errorf("stored class %s, format %s; want local, generic", got.Class, got.Format)
+			}
+		})
+	}
+}
+
+func TestVirtualRepositoryMembersMustExist(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		format  Format
+		virtual VirtualConfig
+		wantErr bool
+	}{
+		{
+			name: "local and remote members, deploying to the local one",
+			virtual: VirtualConfig{
+				Members: []string{
+					"generic-local",
+					"generic-remote",
+				},
+				DeployTo: "generic-local",
+			},
+		},
+		{
+			name: "a member that does not exist",
+			virtual: VirtualConfig{
+				Members: []string{
+					"generic-local",
+					"nosuch",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "deploying to a repository that is not a member",
+			virtual: VirtualConfig{
+				Members: []string{
+					"generic-remote",
+				},
+				DeployTo: "generic-local",
+			},
+			wantErr: true,
+		},
+		{
+			name: "deploying to a remote member",
+			virtual: VirtualConfig{
+				Members: []string{
+					"generic-local",
+					"generic-remote",
+				},
+				DeployTo: "generic-remote",
+			},
+			wantErr: true,
+		},
+		{
+			name: "itself as a member",
+			virtual: VirtualConfig{
+				Members: []string{
+					"generic-local",
+					"generic",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name:   "a member of another format",
+			format: FormatPyPI,
+			virtual: VirtualConfig{
+				Members: []string{
+					"pypi-local",
+					"npm-local",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name:   "a gradle member of a maven repository",
+			format: FormatMaven,
+			virtual: VirtualConfig{
+				Members: []string{
+					"maven-local",
+					"gradle-local",
+				},
+				DeployTo: "gradle-local",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			s, _, _ := newTestService(t)
+
+			if err := s.CreateRepository(ctx, Repository{
+				Name:   "generic-remote",
+				Class:  ClassRemote,
+				Format: FormatGeneric,
+				Config: Config{
+					Remote: &RemoteConfig{
+						URL: "https://example.invalid/files",
+					},
+				},
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			for _, format := range []Format{
+				FormatPyPI,
+				FormatNpm,
+				FormatMaven,
+				FormatGradle,
+			} {
+				if err := s.CreateRepository(ctx, Repository{
+					Name:   string(format) + "-local",
+					Class:  ClassLocal,
+					Format: format,
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			format := tt.format
+			if format == "" {
+				format = FormatGeneric
+			}
+
+			virtual := Repository{
+				Name:   "generic",
+				Class:  ClassVirtual,
+				Format: format,
+				Config: Config{
+					Virtual: &tt.virtual,
+				},
+			}
+
+			err := s.CreateRepository(ctx, virtual)
+			if tt.wantErr != errors.Is(err, ErrInvalidRepository) {
+				t.Fatalf("CreateRepository = %v, want an invalid repository error: %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr {
+				return
+			}
+
+			if err := s.UpdateRepository(ctx, virtual); err != nil {
+				t.Fatalf("UpdateRepository = %v", err)
+			}
+		})
+	}
+}
+
+func TestDeletingAMemberRemovesItFromVirtualRepositories(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	s, _, _ := newTestService(t)
+
+	if err := s.CreateRepository(ctx, Repository{
+		Name:   "generic-other",
+		Class:  ClassLocal,
+		Format: FormatGeneric,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.CreateRepository(ctx, Repository{
+		Name:   "generic",
+		Class:  ClassVirtual,
+		Format: FormatGeneric,
+		Config: Config{
+			Description: "kept",
+			Virtual: &VirtualConfig{
+				Members: []string{
+					"generic-local",
+					"generic-other",
+				},
+				DeployTo: "generic-local",
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.DeleteRepository(ctx, "generic-local"); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.GetRepository(ctx, "generic")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !slices.Equal(got.Members(), []string{
+		"generic-other",
+	}) || got.Config.Virtual.DeployTo != "" || got.Config.Description != "kept" {
+		t.Errorf("virtual repository = %+v, %+v", got.Config, got.Config.Virtual)
+	}
+
+	if err := s.UpdateRepository(ctx, got); err != nil {
+		t.Errorf("updating the virtual repository: %v", err)
+	}
+}
+
 func TestConcurrentDeploysToOnePath(t *testing.T) {
 	t.Parallel()
 	s, _, db := newTestService(t)
@@ -488,6 +747,76 @@ func TestRepositoryValidate(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "local with remote settings",
+			r: Repository{
+				Name:  "libs",
+				Class: ClassLocal,
+				Config: Config{
+					Remote: &RemoteConfig{
+						URL: "https://example.invalid",
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "local with virtual settings",
+			r: Repository{
+				Name:  "libs",
+				Class: ClassLocal,
+				Config: Config{
+					Virtual: &VirtualConfig{},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "remote with virtual settings",
+			r: Repository{
+				Name:  "libs",
+				Class: ClassRemote,
+				Config: Config{
+					Virtual: &VirtualConfig{},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "virtual with remote settings",
+			r: Repository{
+				Name:  "libs",
+				Class: ClassVirtual,
+				Config: Config{
+					Remote: &RemoteConfig{
+						URL: "https://example.invalid",
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "negative upload limit",
+			r: Repository{
+				Name:  "libs",
+				Class: ClassLocal,
+				Config: Config{
+					MaxUploadSize: -5,
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "negative storage limit",
+			r: Repository{
+				Name:  "libs",
+				Class: ClassLocal,
+				Config: Config{
+					MaxStorage: -1,
+				},
+			},
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -507,15 +836,9 @@ func TestRepositoryValidate(t *testing.T) {
 	v := Repository{
 		Name:  "v",
 		Class: ClassVirtual,
-		Config: Config{
-			Remote: &RemoteConfig{
-				URL: "x",
-			},
-		},
 	}
-	if err := v.Validate(); err != nil || v.Config.Remote != nil || v.Config.Virtual == nil ||
-		v.Config.Virtual.Members == nil {
-		t.Errorf("virtual = %+v %v, want only a virtual block", v.Config, err)
+	if err := v.Validate(); err != nil || v.Config.Virtual == nil || v.Config.Virtual.Members == nil {
+		t.Errorf("virtual = %+v %v, want an empty virtual block", v.Config, err)
 	}
 }
 
@@ -828,6 +1151,68 @@ func TestTrashKeepsTheItemsPropertiesAndReplacesAnOlderEntry(t *testing.T) {
 	props, err := s.Properties(ctx, entries[0].Item)
 	if err != nil || first(props["qa"]) != "passed" {
 		t.Errorf("trashed item's properties = %v, %v; want qa=passed kept", props, err)
+	}
+}
+
+func TestRestoreFromTrashRefusesToReplaceAFileDeployedSince(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		deleted string
+		files   []string
+		reused  string
+	}{
+		{
+			name:    "a file",
+			deleted: "r/f.txt",
+			files: []string{
+				"r/f.txt",
+			},
+			reused: "r/f.txt",
+		},
+		{
+			name:    "a folder with a file deployed again",
+			deleted: "d",
+			files: []string{
+				"d/a.txt",
+				"d/b.txt",
+			},
+			reused: "d/b.txt",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			s, _, _ := newTestService(t)
+
+			for _, f := range tt.files {
+				deploy(t, s, f, "deleted "+f)
+			}
+
+			if err := s.DeleteToTrash(ctx, "generic-local", tt.deleted, "alice"); err != nil {
+				t.Fatal(err)
+			}
+
+			newer := deploy(t, s, tt.reused, "deployed after the delete")
+
+			err := s.RestoreFromTrash(ctx, "generic-local/"+tt.deleted, "", "", "alice")
+			if !errors.Is(err, ErrConflict) {
+				t.Errorf("RestoreFromTrash = %v, want ErrConflict", err)
+			}
+
+			kept, err := s.Stat(ctx, "generic-local", tt.reused)
+			if err != nil || kept.Checksums.SHA256 != newer.Checksums.SHA256 {
+				t.Errorf("%s after the refused restore = %+v, %v; want the newer file", tt.reused, kept, err)
+			}
+
+			if _, err := s.Stat(ctx, s.TrashRepository(), "generic-local/"+tt.deleted); err != nil {
+				t.Errorf("trash entry after the refused restore: %v", err)
+			}
+		})
 	}
 }
 

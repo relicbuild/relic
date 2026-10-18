@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"path"
-	"slices"
 	"strings"
 	"time"
 
@@ -37,9 +36,12 @@ var (
 	ErrInvalid        = errors.New("invalid quarantine decision")
 )
 
-// QuarantinedRepositories names the remote repositories that quarantine what
+// QuarantinedRepositories tells which remote repositories quarantine what
 // they cache.
-type QuarantinedRepositories func(ctx context.Context) ([]string, error)
+type QuarantinedRepositories interface {
+	QuarantinedRepositories(ctx context.Context) ([]string, error)
+	Quarantines(ctx context.Context, repoKey string) (bool, error)
+}
 
 // SetQuarantine makes the blocker hold files the repositories qr names cache,
 // until they are scanned and not malicious, or an administrator releases
@@ -59,40 +61,11 @@ type Held struct {
 }
 
 func (b *Blocker) quarantines(ctx context.Context, repoKey string) (bool, error) {
-	keys, err := b.quarantinedKeys(ctx)
-	if err != nil {
-		return false, err
-	}
-
-	return slices.Contains(keys, repoKey), nil
-}
-
-// quarantinedKeys are the quarantined repositories, re-read at most every
-// cacheTTL.
-func (b *Blocker) quarantinedKeys(ctx context.Context) ([]string, error) {
 	if b.quarantined == nil {
-		return nil, nil
+		return false, nil
 	}
 
-	b.mu.Lock()
-	if b.now().Sub(b.quarantineLoaded) < cacheTTL {
-		keys := b.quarantineKeys
-		b.mu.Unlock()
-
-		return keys, nil
-	}
-	b.mu.Unlock()
-
-	keys, err := b.quarantined(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	b.mu.Lock()
-	b.quarantineKeys, b.quarantineLoaded = keys, b.now()
-	b.mu.Unlock()
-
-	return keys, nil
+	return b.quarantined.Quarantines(ctx, repoKey)
 }
 
 // holdState is why the quarantine of repoKey holds a file, or "".
@@ -198,7 +171,7 @@ func (b *Blocker) Quarantined(ctx context.Context, limit int) ([]Held, error) {
 		return nil, nil
 	}
 
-	keys, err := b.quarantinedKeys(ctx)
+	keys, err := b.quarantined.QuarantinedRepositories(ctx)
 	if err != nil || len(keys) == 0 {
 		return nil, err
 	}

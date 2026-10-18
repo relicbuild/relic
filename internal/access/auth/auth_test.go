@@ -823,3 +823,164 @@ func TestAllowExpiredBearer(t *testing.T) {
 		})
 	}
 }
+
+func TestLimitIssueBoundsTheLifetime(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	tests := []struct {
+		name      string
+		p         Principal
+		requested time.Duration
+		want      time.Duration
+	}{
+		{
+			name: "a user asking for a token that never expires",
+			p: Principal{
+				Username: "bob",
+			},
+			want: MaxUserTokenLifetime,
+		},
+		{
+			name: "a user asking for more than the maximum",
+			p: Principal{
+				Username: "bob",
+			},
+			requested: 2 * MaxUserTokenLifetime,
+			want:      MaxUserTokenLifetime,
+		},
+		{
+			name: "a user within the maximum",
+			p: Principal{
+				Username: "bob",
+			},
+			requested: time.Hour,
+			want:      time.Hour,
+		},
+		{
+			name: "an administrator",
+			p: Principal{
+				Username: "root",
+				Admin:    true,
+			},
+		},
+		{
+			name: "a workload identity's token",
+			p: Principal{
+				Username:             "ci-bot",
+				WorkloadIdentity:     "github",
+				WorkloadTokenExpires: now.Add(time.Hour),
+			},
+			want: time.Hour,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := tt.p.LimitIssue(IssueParams{
+				Username:  tt.p.Username,
+				Scope:     UserScope,
+				ExpiresIn: tt.requested,
+			}, now)
+			if got.ExpiresIn != tt.want {
+				t.Errorf("ExpiresIn = %v, want %v", got.ExpiresIn, tt.want)
+			}
+		})
+	}
+}
+
+func TestGroupScopedTokensDropTheUsersOwnGrants(t *testing.T) {
+	t.Parallel()
+
+	perms := Permissions{
+		All: []Permission{
+			{
+				Name: "alice-direct",
+				Repository: &Section{
+					Selector: Selector{
+						Repositories: []string{
+							"ops-local",
+						},
+					},
+					Users: map[string][]Action{
+						"alice": {
+							ActionRead,
+							ActionWrite,
+						},
+					},
+				},
+			},
+		},
+	}
+	alice := Principal{
+		Username: "alice",
+		Groups: []string{
+			"devs",
+		},
+	}
+	repo := Repository{
+		Name:  "ops-local",
+		Class: "local",
+	}
+
+	if !perms.CanInRepository(alice.Subject(), repo, "f.txt", ActionWrite) {
+		t.Fatal("alice cannot use her own grant")
+	}
+
+	for _, scope := range []TokenScope{
+		{
+			Kind: ScopeGroups,
+			Groups: []string{
+				"devs",
+			},
+		},
+		{
+			Kind: ScopeGroups,
+		},
+	} {
+		scoped := scope.Apply(alice)
+		if scoped.Username != "alice" {
+			t.Errorf("a token scoped to %v signs in as %q", scope.Groups, scoped.Username)
+		}
+
+		if perms.CanInRepository(scoped.Subject(), repo, "f.txt", ActionWrite) {
+			t.Errorf("a token scoped to %v keeps alice's own grant", scope.Groups)
+		}
+	}
+}
+
+func TestBearerSchemeIgnoresCase(t *testing.T) {
+	t.Parallel()
+	a := newTestAuthenticator(t)
+	a.AllowExpiredBearer("/refresh")
+	h := a.Middleware(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		}),
+	)
+
+	for _, scheme := range []string{
+		"Bearer",
+		"bearer",
+		"BEARER",
+	} {
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+		r.Header.Set("Authorization", scheme+" good-bob")
+
+		if p, err := a.Authenticate(r); err != nil || p.Username != "bob" {
+			t.Errorf("%s token = %+v, %v", scheme, p, err)
+		}
+
+		r = httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/refresh", nil)
+		r.Header.Set("Authorization", scheme+" expired.token.value")
+
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, r)
+
+		if rec.Code != http.StatusNoContent {
+			t.Errorf("%s expired token on the refresh route = %d", scheme, rec.Code)
+		}
+	}
+}

@@ -79,7 +79,9 @@ SELECT * FROM scan_findings WHERE sha256 IN (SELECT value FROM json_each(@sha256
 SELECT status, count(*) AS count FROM scan_artifacts GROUP BY status;
 
 -- name: FindingCounts :many
-SELECT severity, count(*) AS count FROM scan_findings GROUP BY severity;
+SELECT f.severity, count(*) AS count FROM scan_findings f
+WHERE EXISTS (SELECT 1 FROM items i WHERE i.sha256 = f.sha256 AND i.type = 'file')
+GROUP BY f.severity;
 
 -- name: LatestDBBuilt :one
 SELECT max(db_built) FROM scan_artifacts;
@@ -92,7 +94,7 @@ JOIN items i ON i.id = (SELECT id FROM items
                         WHERE sha256 = f.sha256 AND type = 'file' AND (@repository = '' OR repo_key = @repository)
                         ORDER BY repo_key, path, name LIMIT 1)
 WHERE (@severity = '' OR f.severity = @severity)
-  AND (@query = '' OR lower(f.vuln_id) LIKE lower('%' || @query || '%') OR lower(f.package_name) LIKE lower('%' || @query || '%')
+  AND (@query = '' OR instr(lower(f.vuln_id), lower(@query)) > 0 OR instr(lower(f.package_name), lower(@query)) > 0
        OR @query IN (SELECT value FROM json_each(f.cves)))
   AND (@purl_type = '' OR (
        SELECT CASE WHEN instr(b, ':') > 0 THEN substr(b, 1, instr(b, ':') - 1) ELSE b END
@@ -112,7 +114,7 @@ LIMIT @max_rows OFFSET @skip;
 SELECT count(*) FROM scan_findings f
 WHERE EXISTS (SELECT 1 FROM items i WHERE i.sha256 = f.sha256 AND i.type = 'file' AND (@repository = '' OR i.repo_key = @repository))
   AND (@severity = '' OR f.severity = @severity)
-  AND (@query = '' OR lower(f.vuln_id) LIKE lower('%' || @query || '%') OR lower(f.package_name) LIKE lower('%' || @query || '%')
+  AND (@query = '' OR instr(lower(f.vuln_id), lower(@query)) > 0 OR instr(lower(f.package_name), lower(@query)) > 0
        OR @query IN (SELECT value FROM json_each(f.cves)))
   AND (@purl_type = '' OR (
        SELECT CASE WHEN instr(b, ':') > 0 THEN substr(b, 1, instr(b, ':') - 1) ELSE b END

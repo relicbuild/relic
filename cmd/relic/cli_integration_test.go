@@ -75,7 +75,9 @@ func testHandler(t *testing.T) http.Handler {
 		t.Fatal(err)
 	}
 
-	return app.NewHandler(db, objectstoretest.NewMemory(), tokens, nil, app.Options{}, log)
+	return app.NewHandler(db, objectstoretest.NewMemory(), tokens, nil, app.Options{
+		AllowPrivateUpstreams: true,
+	}, log)
 }
 
 func relic(t *testing.T, config, stdin string, args ...string) (string, error) {

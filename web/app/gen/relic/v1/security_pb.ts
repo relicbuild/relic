@@ -707,7 +707,8 @@ export type CreateTokenRequest = Message<"relic.v1.CreateTokenRequest"> & {
   scope?: TokenScope | undefined;
 
   /**
-   * project is the project the token is for.
+   * project is a label recorded on the token: a project the caller can see.
+   * It does not limit what the token can do; the scope does.
    *
    * @generated from field: string project = 4;
    */
@@ -816,8 +817,8 @@ export const AccessTokenSchema: GenMessage<AccessToken> = /*@__PURE__*/
  */
 export type ListTokensRequest = Message<"relic.v1.ListTokensRequest"> & {
   /**
-   * username limits an administrator's list to one user; others always see
-   * their own tokens.
+   * username limits an administrator's or a viewer's list to one user; others
+   * always see their own tokens.
    *
    * @generated from field: string username = 1;
    */
@@ -1215,7 +1216,7 @@ export const SecurityService: GenService<{
   },
   /**
    * ListTokens returns access tokens without their secrets: the caller's
-   * own, or for an administrator everyone's (or one user's).
+   * own, or for an administrator or a viewer everyone's (or one user's).
    *
    * @generated from rpc relic.v1.SecurityService.ListTokens
    */

@@ -1,10 +1,12 @@
 package scan
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 	"uuid"
@@ -69,11 +71,13 @@ func sbomComponents(raw []byte) ([]Component, error) {
 }
 
 type cdxLicense struct {
-	License *struct {
-		ID   string `json:"id,omitempty"`
-		Name string `json:"name,omitempty"`
-	} `json:"license,omitempty"`
-	Expression string `json:"expression,omitempty"`
+	License    *cdxLicenseChoice `json:"license,omitempty"`
+	Expression string            `json:"expression,omitempty"`
+}
+
+type cdxLicenseChoice struct {
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
 }
 
 type cdxComponent struct {
@@ -84,6 +88,49 @@ type cdxComponent struct {
 	PURL       string         `json:"purl,omitempty"`
 	Licenses   []cdxLicense   `json:"licenses,omitempty"`
 	Components []cdxComponent `json:"components,omitempty"`
+}
+
+var scanDirectory = regexp.MustCompile(`[^\s"]*[/\\]relic-scan-[0-9]+(?:[/\\](?:in|src|oci))?(?:[/\\]|$)`)
+
+// withoutWorkerPaths is a Syft document Relic Scan made without the
+// worker's directories: paths into the scan's directory become relative to
+// it, and the scanner's configuration is left out. Other documents are
+// returned as they are.
+func withoutWorkerPaths(raw []byte) ([]byte, error) {
+	if !scanDirectory.Match(raw) {
+		return raw, nil
+	}
+
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+
+	var doc map[string]any
+	if err := dec.Decode(&doc); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrSBOM, err)
+	}
+
+	if descriptor, ok := doc["descriptor"].(map[string]any); ok {
+		delete(descriptor, "configuration")
+	}
+
+	return json.Marshal(relativeToScanDirectory(doc))
+}
+
+func relativeToScanDirectory(v any) any {
+	switch v := v.(type) {
+	case string:
+		return scanDirectory.ReplaceAllString(v, "")
+	case map[string]any:
+		for k, e := range v {
+			v[k] = relativeToScanDirectory(e)
+		}
+	case []any:
+		for i, e := range v {
+			v[i] = relativeToScanDirectory(e)
+		}
+	}
+
+	return v
 }
 
 func cycloneDXComponents(raw []byte) ([]Component, error) {
@@ -178,7 +225,8 @@ func spdxComponents(raw []byte) ([]Component, error) {
 
 // ExportSBOM writes a stored (gzipped) SBOM in format, for subject (what the
 // SBOM describes, such as repository/path). A document already in format is
-// returned as stored; Syft JSON is only available for SBOMs Relic made.
+// returned as stored, without the worker's paths for Syft JSON; Syft JSON is
+// only available for SBOMs Relic made.
 func ExportSBOM(stored []byte, format SBOMFormat, subject string, now time.Time) ([]byte, error) {
 	raw, err := gunzip(stored)
 	if err != nil {
@@ -188,6 +236,10 @@ func ExportSBOM(stored []byte, format SBOMFormat, subject string, now time.Time)
 	have, err := DetectSBOM(raw)
 	if err != nil {
 		return nil, err
+	}
+
+	if have == format && format == SyftJSON {
+		return withoutWorkerPaths(raw)
 	}
 
 	if have == format {
@@ -207,30 +259,6 @@ func ExportSBOM(stored []byte, format SBOMFormat, subject string, now time.Time)
 	default:
 		return nil, fmt.Errorf("%w: this SBOM was imported as %s; export it as cyclonedx or spdx", ErrSBOM, have)
 	}
-}
-
-func licenseChoices(c Component) []cdxLicense {
-	out := make([]cdxLicense, 0, len(c.Licenses))
-	for _, l := range c.Licenses {
-		if ids := LicenseIDs(l); len(ids) == 1 && ids[0] == l {
-			out = append(out, cdxLicense{
-				License: &struct {
-					ID   string `json:"id,omitempty"`
-					Name string `json:"name,omitempty"`
-				}{
-					ID: l,
-				},
-			})
-
-			continue
-		}
-
-		out = append(out, cdxLicense{
-			Expression: l,
-		})
-	}
-
-	return out
 }
 
 // cycloneDXDocument writes components as a CycloneDX 1.6 JSON document.
@@ -284,7 +312,7 @@ func cycloneDXDocument(comps []Component, subject string, now time.Time) ([]byte
 			Name:     c.Name,
 			Version:  c.Version,
 			PURL:     c.PURL,
-			Licenses: licenseChoices(c),
+			Licenses: parseComponentLicenses(c.Licenses).cycloneDXLicenses(),
 		})
 	}
 
@@ -327,8 +355,9 @@ func spdxDocument(comps []Component, subject string, now time.Time) ([]byte, err
 			Created  string   `json:"created"`
 			Creators []string `json:"creators"`
 		} `json:"creationInfo"`
-		Packages      []pkg          `json:"packages"`
-		Relationships []relationship `json:"relationships"`
+		Packages          []pkg                  `json:"packages"`
+		Relationships     []relationship         `json:"relationships"`
+		LicenseReferences []spdxLicenseReference `json:"hasExtractedLicensingInfos,omitempty"`
 	}{
 		SPDXVersion:       "SPDX-2.3",
 		DataLicense:       "CC0-1.0",
@@ -336,19 +365,19 @@ func spdxDocument(comps []Component, subject string, now time.Time) ([]byte, err
 		Name:              subject,
 		DocumentNamespace: "https://relic.build/spdx/" + uuid.New().String(),
 		Packages:          make([]pkg, 0, len(comps)),
+		Relationships:     make([]relationship, 0, len(comps)),
 	}
 	doc.CreationInfo.Created = now.UTC().Format(time.RFC3339)
 	doc.CreationInfo.Creators = []string{
 		"Tool: relic",
 	}
 
+	defined := map[string]bool{}
+
 	for i, c := range comps {
 		id := fmt.Sprintf("SPDXRef-Package-%d", i+1)
-		license := "NOASSERTION"
-
-		if len(c.Licenses) > 0 {
-			license = strings.Join(c.Licenses, " AND ")
-		}
+		licenses := parseComponentLicenses(c.Licenses)
+		doc.LicenseReferences = append(doc.LicenseReferences, licenses.spdxLicenseReferences(defined)...)
 
 		p := pkg{
 			SPDXID:           id,
@@ -356,7 +385,7 @@ func spdxDocument(comps []Component, subject string, now time.Time) ([]byte, err
 			VersionInfo:      c.Version,
 			DownloadLocation: "NOASSERTION",
 			LicenseConcluded: "NOASSERTION",
-			LicenseDeclared:  license,
+			LicenseDeclared:  licenses.spdxExpression(),
 		}
 		if c.Type == "operating-system" {
 			p.PrimaryPurpose = "OPERATING-SYSTEM"

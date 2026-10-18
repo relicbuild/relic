@@ -97,7 +97,7 @@ service SecurityService {
     };
   }
   // ListTokens returns access tokens without their secrets: the caller's
-  // own, or for an administrator everyone's (or one user's).
+  // own, or for an administrator or a viewer everyone's (or one user's).
   rpc ListTokens(ListTokensRequest) returns (ListTokensResponse) {
     option (relic.v1.access) = ACCESS_AUTHENTICATED;
     option (google.api.http) = {
@@ -340,7 +340,8 @@ message CreateTokenRequest {
   // scope is the user's own rights when unset. Only administrators may ask
   // for an admin scope or groups they are not in.
   TokenScope scope = 3;
-  // project is the project the token is for.
+  // project is a label recorded on the token: a project the caller can see.
+  // It does not limit what the token can do; the scope does.
   string project = 4;
 }
 
@@ -366,8 +367,8 @@ message AccessToken {
 }
 
 message ListTokensRequest {
-  // username limits an administrator's list to one user; others always see
-  // their own tokens.
+  // username limits an administrator's or a viewer's list to one user; others
+  // always see their own tokens.
   string username = 1;
   // include_revoked lists revoked tokens too.
   bool include_revoked = 2;

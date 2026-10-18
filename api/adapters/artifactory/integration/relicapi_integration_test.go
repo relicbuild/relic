@@ -625,6 +625,59 @@ func TestRelicAPIArtifacts(t *testing.T) {
 		t.Errorf("overwrite without delete = %d, want 403", code)
 	}
 
+	if code, body := put(dev, "libs/app/2.0/app.bin?build.name=team/app&build.number=7", "other"); code != 201 {
+		t.Fatalf("upload = %d %s", code, body)
+	}
+
+	if code, _ := put(dev, "libs/app/2.0/bad.bin?bad%3Dkey=x", "x"); code != 400 {
+		t.Errorf("upload with an invalid property key = %d, want 400", code)
+	}
+
+	uploaded, err := relicv1connect.NewArtifactServiceClient(&http.Client{
+		Transport: dev,
+	}, srv.URL+"/api").GetProperties(ctx, connect.NewRequest(&relicv1.GetPropertiesRequest{
+		Repository: "libs",
+		Path:       "app/2.0/app.bin",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := uploaded.Msg.GetProperties(); strings.Join(got["build.name"].GetValues(), ",") != "team/app" ||
+		strings.Join(got["build.number"].GetValues(), ",") != "7" {
+		t.Errorf("properties set by the upload = %v", got)
+	}
+
+	_, err = relicv1connect.NewArtifactServiceClient(&http.Client{
+		Transport: dev,
+	}, srv.URL+"/api").CopyItem(ctx, connect.NewRequest(&relicv1.CopyItemRequest{
+		Repository:   "libs",
+		Path:         "app/2.0/app.bin",
+		ToRepository: "libs",
+		ToPath:       "app/1.0/app.txt",
+	}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Errorf("copy over a file without delete = %v, want permission denied", err)
+	}
+
+	copyReq, _ := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		srv.URL+"/artifactory/api/copy/libs/app/2.0/app.bin?to=/libs/app/1.0/app.txt",
+		nil,
+	)
+	if resp, err := (&http.Client{
+		Transport: dev,
+	}).Do(copyReq); err != nil {
+		t.Fatal(err)
+	} else {
+		_ = resp.Body.Close()
+
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("adapter copy over a file without delete = %d, want 403", resp.StatusCode)
+		}
+	}
+
 	if code, _ := put(dev, "libs/secret/x.txt", "x"); code != 404 {
 		t.Errorf("upload outside the include pattern = %d, want 404", code)
 	}
@@ -1071,6 +1124,43 @@ func TestRelicAPISecurity(t *testing.T) {
 		); code(err) != connect.CodePermissionDenied {
 			t.Errorf("%s scope: %v", name, err)
 		}
+	}
+
+	if _, err := relicv1connect.NewProjectServiceClient(relicHTTP("admin", "password"), srv.URL+"/api").PutProject(
+		ctx,
+		connect.NewRequest(&relicv1.PutProjectRequest{
+			Project: &relicv1.Project{
+				Key:  "tokens",
+				Name: "Tokens",
+			},
+		}),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, key := range map[string]string{
+		"an unknown project":                    "nosuchproject",
+		"a project the user is not a member of": "tokens",
+	} {
+		if _, err := ann.CreateToken(
+			ctx,
+			connect.NewRequest(&relicv1.CreateTokenRequest{
+				ExpiresDays: 1,
+				Project:     key,
+			}),
+		); code(err) != connect.CodeNotFound {
+			t.Errorf("token labelled with %s = %v, want NotFound", name, err)
+		}
+	}
+
+	if _, err := sec.CreateToken(
+		ctx,
+		connect.NewRequest(&relicv1.CreateTokenRequest{
+			ExpiresDays: 1,
+			Project:     "tokens",
+		}),
+	); err != nil {
+		t.Errorf("token labelled with a project an administrator sees = %v", err)
 	}
 
 	forever, err := ann.CreateToken(ctx, connect.NewRequest(&relicv1.CreateTokenRequest{
@@ -1557,7 +1647,7 @@ func TestRelicAPIScan(t *testing.T) {
 			Path:       "app.jar",
 		}),
 	)
-	if err != nil || s.Msg.GetScan().GetStatus() != relicv1.ScanStatus_SCAN_STATUS_NONE {
+	if err != nil || s.Msg.GetScan().GetStatus() != relicv1.ScanStatus_SCAN_STATUS_QUEUED {
 		t.Errorf("unscanned = %v %v", s, err)
 	}
 
@@ -1829,7 +1919,7 @@ func TestRelicAPIUIParity(t *testing.T) {
 	)
 	if err != nil || !det.Msg.GetCanDelete() || !det.Msg.GetCanAnnotate() ||
 		det.Msg.GetProperties()["qa"].GetValues()[0] != "passed" ||
-		det.Msg.GetScan().GetStatus() != relicv1.ScanStatus_SCAN_STATUS_NONE ||
+		det.Msg.GetScan().GetStatus() != relicv1.ScanStatus_SCAN_STATUS_QUEUED ||
 		det.Msg.GetFormat() != relicv1.Format_FORMAT_GENERIC {
 		t.Fatalf("details = %v %v", det, err)
 	}

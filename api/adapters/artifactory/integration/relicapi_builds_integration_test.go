@@ -305,6 +305,16 @@ func TestRelicAPIPackageScan(t *testing.T) {
 			body:   `{"rclass":"remote","packageType":"npm","url":"https://registry.npmjs.org"}`,
 		},
 		{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/npm-private",
+			body:   `{"rclass":"local","packageType":"npm"}`,
+		},
+		{
+			method: "POST",
+			path:   "/artifactory/api/v2/security/permissions/dev-npm-remote",
+			body:   `{"name":"dev-npm-remote","repo":{"repositories":["npm-remote"],"actions":{"users":{"dev":["read"]}}}}`,
+		},
+		{
 			method: "POST",
 			path:   "/xray/api/v2/policies",
 			body:   `{"name":"block","type":"security","rules":[{"name":"high","priority":1,"criteria":{"min_severity":"High"},"actions":{"block_download":{"active":true}}}]}`,
@@ -320,16 +330,42 @@ func TestRelicAPIPackageScan(t *testing.T) {
 		}
 	}
 
-	for name, purls := range map[string][]string{
-		"none": nil,
+	lodash := []string{
+		"pkg:npm/lodash@4.17.15",
+	}
+	for name, req := range map[string]*relicv1.ScanPackagesRequest{
+		"none": {},
 		"invalid": {
-			"lodash@4",
+			Purls: []string{
+				"lodash@4",
+			},
+		},
+		"unknown watch": {
+			Purls: lodash,
+			Watches: []string{
+				"remote-wach",
+			},
+		},
+		"unknown repository": {
+			Purls:      lodash,
+			Repository: "npm-remot",
 		},
 	} {
-		if _, err := dev.ScanPackages(ctx, connect.NewRequest(&relicv1.ScanPackagesRequest{
-			Purls: purls,
-		})); code(err) != connect.CodeInvalidArgument {
+		if _, err := dev.ScanPackages(ctx, connect.NewRequest(req)); code(err) != connect.CodeInvalidArgument {
 			t.Errorf("%s: %v", name, err)
+		}
+	}
+
+	for _, repo := range []string{
+		"npm-missing",
+		"npm-private",
+	} {
+		_, err := dev.ScanPackages(ctx, connect.NewRequest(&relicv1.ScanPackagesRequest{
+			Purls:      lodash,
+			Repository: repo,
+		}))
+		if want := `invalid_argument: repository "` + repo + `" does not exist`; err == nil || err.Error() != want {
+			t.Errorf("scan scoped to %s = %v, want %s", repo, err, want)
 		}
 	}
 

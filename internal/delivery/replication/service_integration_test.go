@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -42,8 +43,9 @@ func TestReplicationService(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := s.Get(ctx, "libs"); !errors.Is(err, replication.ErrNotConfigured) {
-		t.Fatalf("get before save = %v", err)
+	if _, err := s.Get(ctx, "libs"); !errors.Is(err, replication.ErrNotConfigured) ||
+		strings.Contains(err.Error(), "push") {
+		t.Fatalf("get before save = %v, want a not configured error naming no kind of replication", err)
 	}
 
 	cfg := replication.Config{

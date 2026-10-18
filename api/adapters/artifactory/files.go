@@ -1,6 +1,8 @@
 package artifactory
 
 import (
+	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -53,6 +55,12 @@ func (h *Handler) files(w http.ResponseWriter, r *http.Request) {
 	t, err := parseTarget(r.URL.EscapedPath())
 	if err != nil {
 		h.writeError(w, r, err)
+		return
+	}
+
+	// "api" is a reserved repository key: the path is a REST endpoint no route serves.
+	if t.Repo == "api" {
+		wire.WriteError(w, http.StatusNotFound, "no such endpoint")
 		return
 	}
 
@@ -143,11 +151,7 @@ func (h *Handler) deploy(w http.ResponseWriter, r *http.Request, t packages.Targ
 		Size:       r.ContentLength,
 		Props:      t.Props,
 		User:       user,
-		Expected: repository.Checksums{
-			SHA1:   r.Header.Get("X-Checksum-Sha1"),
-			MD5:    r.Header.Get("X-Checksum-Md5"),
-			SHA256: firstNonEmpty(r.Header.Get("X-Checksum-Sha256"), r.Header.Get("X-Checksum")),
-		},
+		Expected:   parseChecksumHeaders(r.Header),
 	}
 
 	var (
@@ -231,18 +235,61 @@ func (h *Handler) deploy(w http.ResponseWriter, r *http.Request, t packages.Targ
 	_ = json.NewEncoder(w).Encode(info)
 }
 
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
+// X-Checksum holds any of the three; its length says which.
+func parseChecksumHeaders(h http.Header) repository.Checksums {
+	sums := repository.Checksums{
+		SHA1:   h.Get("X-Checksum-Sha1"),
+		MD5:    h.Get("X-Checksum-Md5"),
+		SHA256: h.Get("X-Checksum-Sha256"),
 	}
 
-	return ""
+	generic := h.Get("X-Checksum")
+	switch len(generic) {
+	case 0:
+	case 32:
+		sums.MD5 = cmp.Or(sums.MD5, generic)
+	case 40:
+		sums.SHA1 = cmp.Or(sums.SHA1, generic)
+	default:
+		sums.SHA256 = cmp.Or(sums.SHA256, generic)
+	}
+
+	return sums
 }
 
 func (h *Handler) remove(w http.ResponseWriter, r *http.Request, t packages.Target) {
-	if err := h.repos.DeleteToTrash(r.Context(), t.Repo, t.Path, auth.FromContext(r.Context()).Name()); err != nil {
+	permits, err := h.packages.RepositoryPermits(r, t.Repo)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+
+	var refuseFile func(context.Context, repository.Item) error
+	if permits != nil {
+		refuseFile = func(_ context.Context, file repository.Item) error {
+			switch {
+			case !permits(file.Repository, file.Path(), auth.ActionRead):
+				return fmt.Errorf(
+					"%w: missing 'delete' permission on everything under %s/%s",
+					repository.ErrForbidden,
+					t.Repo,
+					t.Path,
+				)
+			case !permits(file.Repository, file.Path(), auth.ActionDelete):
+				return fmt.Errorf(
+					"%w: missing 'delete' permission on %s/%s",
+					repository.ErrForbidden,
+					file.Repository,
+					file.Path(),
+				)
+			}
+
+			return nil
+		}
+	}
+
+	user := auth.FromContext(r.Context()).Name()
+	if err := h.repos.DeleteToTrashChecked(r.Context(), t.Repo, t.Path, user, refuseFile); err != nil {
 		h.writeError(w, r, err)
 		return
 	}
@@ -315,6 +362,12 @@ func (h *Handler) copyOrMove(w http.ResponseWriter, r *http.Request, move bool) 
 
 	dry := queryValue(q, "dry") == "1" || queryValue(q, "dry") == "true"
 
+	permits, err := h.packages.RepositoryPermits(r, srcRepo, destRepo)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+
 	err = h.repos.Copy(r.Context(), repository.CopyInput{
 		Source:                src,
 		DestinationRepository: destRepo,
@@ -323,6 +376,8 @@ func (h *Handler) copyOrMove(w http.ResponseWriter, r *http.Request, move bool) 
 		DryRun:                dry,
 		User:                  auth.FromContext(r.Context()).Name(),
 		RefuseFile:            h.packages.RefuseCopy,
+		Permits:               permits,
+		CheckUploadLimit:      true,
 	})
 	if err != nil {
 		h.writeError(w, r, err)

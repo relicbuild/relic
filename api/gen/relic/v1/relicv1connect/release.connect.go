@@ -91,8 +91,8 @@ type ReleaseServiceClient interface {
 	DeleteRelease(context.Context, *connect.Request[v1.DeleteReleaseRequest]) (*connect.Response[v1.DeleteReleaseResponse], error)
 	// SetReleaseTag sets (or, with an empty tag, clears) a version's tag.
 	SetReleaseTag(context.Context, *connect.Request[v1.SetReleaseTagRequest]) (*connect.Response[v1.SetReleaseTagResponse], error)
-	// PromoteRelease copies (or moves) a completed version's artifacts into
-	// an environment's repositories. Every target must be writable by the
+	// PromoteRelease copies a completed version's artifacts into an
+	// environment's repositories. Every target must be writable by the
 	// caller.
 	PromoteRelease(context.Context, *connect.Request[v1.PromoteReleaseRequest]) (*connect.Response[v1.PromoteReleaseResponse], error)
 	// ListReleasePromotions returns a version's promotions, newest first.
@@ -288,8 +288,8 @@ type ReleaseServiceHandler interface {
 	DeleteRelease(context.Context, *connect.Request[v1.DeleteReleaseRequest]) (*connect.Response[v1.DeleteReleaseResponse], error)
 	// SetReleaseTag sets (or, with an empty tag, clears) a version's tag.
 	SetReleaseTag(context.Context, *connect.Request[v1.SetReleaseTagRequest]) (*connect.Response[v1.SetReleaseTagResponse], error)
-	// PromoteRelease copies (or moves) a completed version's artifacts into
-	// an environment's repositories. Every target must be writable by the
+	// PromoteRelease copies a completed version's artifacts into an
+	// environment's repositories. Every target must be writable by the
 	// caller.
 	PromoteRelease(context.Context, *connect.Request[v1.PromoteReleaseRequest]) (*connect.Response[v1.PromoteReleaseResponse], error)
 	// ListReleasePromotions returns a version's promotions, newest first.

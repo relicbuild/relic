@@ -74,6 +74,84 @@ spec:
 			},
 		},
 		{
+			name: "an open CVSS bound reads as the server stores it",
+			in: `apiVersion: relic.build/v1
+kind: Policy
+metadata: {name: cvss}
+spec:
+  kind: security
+  rules:
+    - {name: high, cvssFrom: 7}
+    - {name: low, cvss_to: 4}
+`,
+			check: func(t *testing.T, docs []document) {
+				t.Helper()
+
+				rules := docs[0].msg.(*relicv1.Policy).GetRules()
+				if rules[0].CvssTo == nil || rules[0].GetCvssTo() != 10 ||
+					rules[1].CvssFrom == nil || rules[1].GetCvssFrom() != 0 {
+					t.Errorf("rules = %v", rules)
+				}
+			},
+		},
+		{
+			name: "date-like strings stay as written",
+			in: "apiVersion: relic.build/v1\nkind: Group\nmetadata: {name: g}\n" +
+				"spec: {description: 2024-01-01, members: [2024-01-01T10:00:00Z]}\n",
+			check: func(t *testing.T, docs []document) {
+				t.Helper()
+
+				g := docs[0].msg.(*relicv1.Group)
+				if g.GetDescription() != "2024-01-01" || g.GetMembers()[0] != "2024-01-01T10:00:00Z" {
+					t.Errorf("group = %v", g)
+				}
+			},
+		},
+		{
+			name: "merge keys, overridden by the keys set beside them",
+			in: `apiVersion: relic.build/v1
+kind: Repository
+metadata: {name: libs}
+spec:
+  description: libraries
+  <<: {class: local, format: maven, description: shared}
+---
+apiVersion: relic.build/v1
+kind: Permission
+metadata: {name: devs}
+spec:
+  rules:
+    - &libs {resource: repository, selector: {repositories: [libs]}, grants: [{group: devs, actions: [read]}]}
+    - <<: [*libs, {include: ["**"]}]
+      resource: build
+`,
+			check: func(t *testing.T, docs []document) {
+				t.Helper()
+
+				r := docs[0].msg.(*relicv1.Repository)
+				if r.GetDescription() != "libraries" || r.GetFormat() != relicv1.Format_FORMAT_MAVEN ||
+					r.GetClass() != relicv1.RepositoryClass_REPOSITORY_CLASS_LOCAL {
+					t.Errorf("repository = %v", r)
+				}
+
+				rules := docs[1].msg.(*relicv1.Permission).GetRules()
+				if len(rules) != 2 || rules[1].GetResource() != relicv1.ResourceKind_RESOURCE_KIND_BUILD ||
+					rules[1].GetGrants()[0].GetGroup() != "devs" || len(rules[1].GetInclude()) != 1 {
+					t.Errorf("rules = %v", rules)
+				}
+			},
+		},
+		{
+			name:    "a key set twice",
+			in:      "apiVersion: relic.build/v1\nkind: Group\nmetadata: {name: g}\nspec: {description: a, description: b}\n",
+			wantErr: "already defined",
+		},
+		{
+			name:    "an anchor that contains itself",
+			in:      "apiVersion: relic.build/v1\nkind: Group\nmetadata: {name: g}\nspec: &spec {members: [*spec]}\n",
+			wantErr: "contains itself",
+		},
+		{
 			name:    "wrong apiVersion",
 			in:      "apiVersion: v1\nkind: Group\nmetadata: {name: g}\n",
 			wantErr: "apiVersion",
@@ -97,6 +175,32 @@ spec:
 			name:    "spec name differs",
 			in:      "apiVersion: relic.build/v1\nkind: Group\nmetadata: {name: g}\nspec: {name: h}\n",
 			wantErr: "differs",
+		},
+		{
+			name:    "misspelled spec key",
+			in:      "apiVersion: relic.build/v1\nkind: Group\nmetadata: {name: g}\nsepc: {description: x}\n",
+			wantErr: "sepc",
+		},
+		{
+			name:    "unknown metadata field",
+			in:      "apiVersion: relic.build/v1\nkind: Group\nmetadata: {name: g, labels: {a: b}}\n",
+			wantErr: "labels",
+		},
+		{
+			name:    "metadata alone",
+			in:      "metadata: {name: g}\n",
+			wantErr: "apiVersion",
+		},
+		{
+			name: "empty documents are skipped",
+			in:   "---\n# nothing\n---\napiVersion: relic.build/v1\nkind: Group\nmetadata: {name: g}\n---\n",
+			check: func(t *testing.T, docs []document) {
+				t.Helper()
+
+				if len(docs) != 1 {
+					t.Errorf("docs = %d, want 1", len(docs))
+				}
+			},
 		},
 		{
 			name:    "unknown spec field",
@@ -152,12 +256,12 @@ spec:
 		},
 		Notes: "kept",
 	}
-	if !proto.Equal(restrict(live, d.owned, d.kind.ignored), restrict(d.msg, d.owned, d.kind.ignored)) {
+	if !proto.Equal(restrict(live, d.owned, d.kind), restrict(d.msg, d.owned, d.kind)) {
 		t.Error("an unchanged resource compares different (the password is write-only)")
 	}
 
 	d.msg.(*relicv1.Repository).Description = "changed"
-	if proto.Equal(restrict(live, d.owned, d.kind.ignored), restrict(d.msg, d.owned, d.kind.ignored)) {
+	if proto.Equal(restrict(live, d.owned, d.kind), restrict(d.msg, d.owned, d.kind)) {
 		t.Error("a changed description compares equal")
 	}
 
@@ -169,6 +273,135 @@ spec:
 
 	if live.GetDescription() != "maven central" {
 		t.Error("merged changed the live message")
+	}
+}
+
+func TestDiffShowsTheOneofMemberApplyReplaces(t *testing.T) {
+	t.Parallel()
+
+	docs, err := decodeDocuments(strings.NewReader(
+		"apiVersion: relic.build/v1\nkind: IdentityProvider\nmetadata: {name: corp}\n" +
+			"spec: {oidc: {issuer: \"https://accounts.example.invalid\", clientId: abc}}\n",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	d := docs[0]
+	live := &relicv1.IdentityProvider{
+		Name: "corp",
+		Protocol: &relicv1.IdentityProvider_Saml{
+			Saml: &relicv1.SamlSettings{
+				MetadataUrl: "https://idp.example.invalid/metadata",
+				Certificate: "PEM",
+			},
+		},
+	}
+
+	got, err := unifiedDiff(d, restrict(live, d.owned, d.kind), restrict(d.msg, d.owned, d.kind))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(got, "-  saml:") || !strings.Contains(got, "+  oidc:") {
+		t.Errorf("diff does not show saml replaced by oidc:\n%s", got)
+	}
+
+	if m := merged(live, d).(*relicv1.IdentityProvider); m.GetSaml() != nil || m.GetOidc().GetClientId() != "abc" {
+		t.Errorf("merged = %v", m)
+	}
+}
+
+func TestRestrictLeavesOutOutputOnlyFields(t *testing.T) {
+	t.Parallel()
+
+	docs, err := decodeDocuments(strings.NewReader(
+		"apiVersion: relic.build/v1\nkind: User\nmetadata: {name: alice}\nspec: {email: a@example.com, realm: ldap}\n",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	d := docs[0]
+	live := &relicv1.User{
+		Name:  "alice",
+		Email: "a@example.com",
+		Realm: relicv1.Realm_REALM_INTERNAL,
+	}
+
+	if !proto.Equal(restrict(live, d.owned, d.kind), restrict(d.msg, d.owned, d.kind)) {
+		t.Error("a user whose file names another realm compares different")
+	}
+}
+
+func TestRestrictComparesSetsWithoutOrderOrRepeats(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		live proto.Message
+	}{
+		{
+			name: "group members",
+			in:   "apiVersion: relic.build/v1\nkind: Group\nmetadata: {name: devs}\nspec: {members: [temp, alice]}\n",
+			live: &relicv1.Group{
+				Name: "devs",
+				Members: []string{
+					"alice",
+					"temp",
+				},
+			},
+		},
+		{
+			name: "user groups",
+			in:   "apiVersion: relic.build/v1\nkind: User\nmetadata: {name: temp}\nspec: {groups: [developers, Ops]}\n",
+			live: &relicv1.User{
+				Name: "temp",
+				Groups: []string{
+					"Ops",
+					"developers",
+				},
+			},
+		},
+		{
+			name: "webhook events",
+			in: "apiVersion: relic.build/v1\nkind: Webhook\nmetadata: {name: hook}\n" +
+				"spec: {events: [scan.finished, artifact.deployed, artifact.deployed]}\n",
+			live: &relicv1.Webhook{
+				Name: "hook",
+				Events: []string{
+					"scan.finished",
+					"artifact.deployed",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			docs, err := decodeDocuments(strings.NewReader(tt.in))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			d := docs[0]
+			if live, want := restrict(
+				tt.live,
+				d.owned,
+				d.kind,
+			), restrict(
+				d.msg,
+				d.owned,
+				d.kind,
+			); !proto.Equal(
+				live,
+				want,
+			) {
+				t.Errorf("server %v and file %v compare different", live, want)
+			}
+		})
 	}
 }
 
@@ -190,7 +423,7 @@ func TestUnifiedDiff(t *testing.T) {
 		Description: "old",
 	}
 
-	got, err := unifiedDiff(d, restrict(live, d.owned, nil), restrict(d.msg, d.owned, nil))
+	got, err := unifiedDiff(d, restrict(live, d.owned, d.kind), restrict(d.msg, d.owned, d.kind))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,6 +463,32 @@ func TestWithoutCredentials(t *testing.T) {
 		{
 			name:   "token as the user",
 			remote: "https://secret@git.example/app.git",
+			want:   "https://git.example/app.git",
+		},
+		{
+			name:   "password with a raw '#'",
+			remote: "https://ci:se#cret@git.example/app.git",
+			want:   "https://git.example/app.git",
+		},
+		//nolint:gosec // G101: a made-up remote
+		{
+			name:   "password with an invalid escape",
+			remote: "https://ci:se%cret@git.example/app.git",
+			want:   "https://git.example/app.git",
+		},
+		{
+			name:   "password with a raw '/'",
+			remote: "https://ci:se/cret@git.example/app.git",
+			want:   "https://git.example/app.git",
+		},
+		{
+			name:   "numeric password part before a raw '#'",
+			remote: "https://u:123#secret@git.example/app.git",
+			want:   "https://git.example/app.git",
+		},
+		{
+			name:   "numeric password part before a raw '/'",
+			remote: "https://u:8080/secret@git.example/app.git",
 			want:   "https://git.example/app.git",
 		},
 		{
@@ -464,13 +723,29 @@ func TestConfigAndTarget(t *testing.T) {
 			wantCertificateAuthority: "PEM-B",
 		},
 		{
-			name:    "a context's certificate authority stays with its server",
+			name:    "a context's token and certificate authority stay with its server",
 			context: "b",
 			env: map[string]string{
 				"RELIC_URL": "https://e.example",
 			},
+			wantURL: "https://e.example",
+		},
+		{
+			name:                     "--url naming the context's own server",
+			context:                  "b",
+			url:                      "https://b.example/",
+			wantURL:                  "https://b.example",
+			wantToken:                "tb",
+			wantCertificateAuthority: "PEM-B",
+		},
+		{
+			name: "a token with another server",
+			env: map[string]string{
+				"RELIC_URL":   "https://e.example",
+				"RELIC_TOKEN": "te",
+			},
 			wantURL:   "https://e.example",
-			wantToken: "tb",
+			wantToken: "te",
 		},
 		{
 			name: "environment over context",
@@ -855,8 +1130,9 @@ func TestTargetUsesTheLocalServiceWithoutAContext(t *testing.T) {
 			userSettings: "RELIC_ADMIN_PASSWORD=first\n",
 			contexts:     contexts,
 			want: serverTarget{
-				url:   "https://a.example",
-				token: "ta",
+				url:          "https://a.example",
+				token:        "ta",
+				contextToken: true,
 			},
 		},
 		{

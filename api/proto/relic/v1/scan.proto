@@ -207,9 +207,10 @@ enum Severity {
 // ScanStatus is where a file's scan stands.
 enum ScanStatus {
   SCAN_STATUS_UNSPECIFIED = 0;
-  // SCAN_STATUS_NONE: the file was never queued (not a scannable type, or
-  // deployed before scanning was on).
+  // SCAN_STATUS_NONE: the file is not a type Relic Scan reads.
   SCAN_STATUS_NONE = 1;
+  // SCAN_STATUS_QUEUED: the file waits for the scanner, which may not have
+  // picked it up yet.
   SCAN_STATUS_QUEUED = 2;
   SCAN_STATUS_DONE = 3;
   // SCAN_STATUS_PARTIAL: some content could not be cataloged.
@@ -519,7 +520,8 @@ message GetCveResponse {
 message PolicyRule {
   string name = 1;
   int32 priority = 2;
-  // Security rules: min_severity or a CVSS range.
+  // Security rules: min_severity or a CVSS range from 0 to 10; an unset
+  // cvss_from is 0 and an unset cvss_to is 10.
   Severity min_severity = 3;
   optional double cvss_from = 4;
   optional double cvss_to = 5;
@@ -760,8 +762,8 @@ message ExportVexRequest {
 message ExportVexResponse {
   // document is the VEX document (JSON) in the format asked for.
   string document = 1;
-  // skipped counts the rules VEX cannot express (no vulnerability or no
-  // package), and expired ones.
+  // skipped counts the rules VEX cannot express: no vulnerability or no
+  // package, a license, watch, policy, path or build filter, or an expiry.
   int32 skipped = 2;
 }
 

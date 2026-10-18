@@ -47,3 +47,22 @@ func CanonicalRows(ctx context.Context, t *testing.T, db, kinds *DB) map[string]
 
 	return out
 }
+
+// FailCopy runs a copy into db whose work fails with cause.
+func FailCopy(ctx context.Context, db *DB, cause error) error {
+	return db.copyTx(ctx, func(func(string, []column, string) error) error {
+		return cause
+	})
+}
+
+// ConnectionsInUse counts the connections db has handed out and not taken back.
+func ConnectionsInUse(db *DB) int {
+	switch e := db.engine.(type) {
+	case *postgresEngine:
+		return int(e.pool.Stat().AcquiredConns())
+	case *sqliteEngine:
+		return e.db.Stats().InUse
+	default:
+		return -1
+	}
+}

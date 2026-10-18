@@ -107,6 +107,69 @@ func TestTrustProxies(t *testing.T) {
 	}
 }
 
+func TestTrustProxiesTakesTheHostFromATrustedProxy(t *testing.T) {
+	t.Parallel()
+
+	trusted, err := ParsePrefixes("10.0.0.0/8")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name          string
+		peer          string
+		forwardedHost string
+		wantHost      string
+	}{
+		{
+			name:          "trusted proxy",
+			peer:          "10.1.2.3:1234",
+			forwardedHost: "relic.example.com",
+			wantHost:      "relic.example.com",
+		},
+		{
+			name:          "chain of proxies keeps the first host",
+			peer:          "10.1.2.3:1234",
+			forwardedHost: "relic.example.com, edge.internal",
+			wantHost:      "relic.example.com",
+		},
+		{
+			name:     "trusted proxy without the header",
+			peer:     "10.1.2.3:1234",
+			wantHost: "127.0.0.1:8090",
+		},
+		{
+			name:          "untrusted peer",
+			peer:          "203.0.113.9:1234",
+			forwardedHost: "evil.example",
+			wantHost:      "127.0.0.1:8090",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var host string
+
+			h := TrustProxies(trusted, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				host = r.Host
+			}))
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://127.0.0.1:8090/", nil)
+
+			req.RemoteAddr = tt.peer
+			if tt.forwardedHost != "" {
+				req.Header.Set("X-Forwarded-Host", tt.forwardedHost)
+			}
+
+			h.ServeHTTP(httptest.NewRecorder(), req)
+
+			if host != tt.wantHost {
+				t.Errorf("host = %q, want %q", host, tt.wantHost)
+			}
+		})
+	}
+}
+
 func TestParsePrefixes(t *testing.T) {
 	t.Parallel()
 

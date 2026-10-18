@@ -242,4 +242,12 @@ func TestCheckPackage(t *testing.T) {
 	if _, err := check("pkg:npm/pad", "npm-checked"); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("a package URL without a version: %v", err)
 	}
+
+	if _, err := check("pkg:pypi/six@99.99.99", "npm-checked"); code(err) != connect.CodeInvalidArgument {
+		t.Errorf("a PyPI package checked against an npm repository: %v", err)
+	}
+
+	if _, err := check("pkg:npm/pad@1.0.0", "pad-builds"); err != nil {
+		t.Errorf("an npm package checked against a generic repository: %v", err)
+	}
 }

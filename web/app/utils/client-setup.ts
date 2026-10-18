@@ -5,6 +5,20 @@ export interface ClientSetupSnippet {
   code: string
 }
 
+export interface TokenExpiry {
+  minDays: number
+  maxDays: number
+  label: string
+}
+
+// tokenExpiry is the lifetime a user may give a token they mint: the server
+// keeps the token of a user who is not an administrator 365 days at most.
+export function tokenExpiry(admin: boolean): TokenExpiry {
+  return admin
+    ? { minDays: 0, maxDays: 3650, label: 'Expires after (days, 0 = never)' }
+    : { minDays: 1, maxDays: 365, label: 'Expires after (days, at most 365)' }
+}
+
 function withCredentials(url: string, user: string, token: string): string {
   return url.replace('://', `://${userinfo(user)}:${userinfo(token)}@`)
 }

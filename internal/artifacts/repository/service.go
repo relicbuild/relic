@@ -42,6 +42,7 @@ type Service struct {
 	trashLayout   TrashLayout
 	hooks         map[Format]DeployHook
 	deleteHooks   map[Format]DeployHook
+	removalHooks  []RemovalHook
 	metadata      []func(name string) bool
 	box           *sealing.Box
 	fetches       Coalescer[Item]
@@ -49,6 +50,7 @@ type Service struct {
 	versionGate   VersionGate
 	events        events.Publisher
 	projectQuota  func(context.Context, string) (int64, error)
+	storageOwners []StorageOwner
 
 	upstreamChecksMu sync.Mutex
 	upstreamChecks   map[Format]UpstreamCheck
@@ -154,6 +156,19 @@ func (s *Service) AllowPrivateUpstreams(allow bool) { s.allowPrivate = allow }
 // SetMaxUploadSize limits every upload to n bytes (RELIC_MAX_UPLOAD_SIZE);
 // 0 leaves only the repositories' own limits.
 func (s *Service) SetMaxUploadSize(n int64) { s.maxUploadSize = n }
+
+func (s *Service) checkUploadLimit(ctx context.Context, repoKey string, size int64) error {
+	limit, err := s.UploadLimit(ctx, repoKey)
+	if err != nil {
+		return err
+	}
+
+	if limit > 0 && size > limit {
+		return fmt.Errorf("%w: %d bytes, the limit is %d", ErrTooLarge, size, limit)
+	}
+
+	return nil
+}
 
 // UploadLimit is the largest upload repoKey accepts, 0 for no limit: the
 // smaller of the server's and the repository's limits.
@@ -383,6 +398,12 @@ func (s *Service) DeployByChecksum(ctx context.Context, in DeployInput) (item It
 		MD5:    b.Md5,
 	}); err != nil {
 		return Item{}, ErrChecksumUnknown
+	}
+
+	if !in.cache {
+		if err := s.checkUploadLimit(ctx, in.Repository, b.Size); err != nil {
+			return Item{}, err
+		}
 	}
 
 	return s.commitFile(ctx, in, b, "")
@@ -885,6 +906,10 @@ func ensureFolders(ctx context.Context, q database.Querier, repoKey, path, user 
 }
 
 func replaceProperties(ctx context.Context, q database.Querier, id uuid.UUID, props Properties) error {
+	if err := props.validate(); err != nil {
+		return err
+	}
+
 	if err := q.DeleteItemProperties(ctx, id); err != nil {
 		return fmt.Errorf("clear properties: %w", err)
 	}
@@ -1234,6 +1259,10 @@ func (s *Service) SetProperties(ctx context.Context, item Item, props Properties
 
 // setProperties replaces the values of props' keys, keeping other keys.
 func setProperties(ctx context.Context, q database.Querier, id uuid.UUID, props Properties) error {
+	if err := props.validate(); err != nil {
+		return err
+	}
+
 	if err := q.DeleteItemPropertyKeys(
 		ctx,
 		database.DeleteItemPropertyKeysParams{

@@ -123,7 +123,7 @@ func (d *Directory) User(ctx context.Context, id string) (DirectoryUser, error) 
 // CreateUser creates a single sign-on user. A user of any realm with the
 // same name is a conflict.
 func (d *Directory) CreateUser(ctx context.Context, u DirectoryUser) (DirectoryUser, error) {
-	if !userName.MatchString(u.UserName) {
+	if !security.ValidUsername(u.UserName) {
 		return DirectoryUser{}, fmt.Errorf("%w: userName %q is not a valid Relic username", ErrInvalidValue, u.UserName)
 	}
 
@@ -133,7 +133,7 @@ func (d *Directory) CreateUser(ctx context.Context, u DirectoryUser) (DirectoryU
 		return DirectoryUser{}, err
 	}
 
-	if err := createUser(
+	err := createUser(
 		ctx,
 		d.db,
 		identity{
@@ -142,7 +142,12 @@ func (d *Directory) CreateUser(ctx context.Context, u DirectoryUser) (DirectoryU
 		},
 		"",
 		!u.Active,
-	); err != nil {
+	)
+	if errors.Is(err, security.ErrExists) {
+		return DirectoryUser{}, fmt.Errorf("%w: %w", ErrConflict, err)
+	}
+
+	if err != nil {
 		return DirectoryUser{}, err
 	}
 
@@ -176,10 +181,7 @@ func (d *Directory) UpdateUser(ctx context.Context, u DirectoryUser) (DirectoryU
 	}
 
 	if u.Active == current.Disabled {
-		if err := d.db.SetUserDisabled(ctx, database.SetUserDisabledParams{
-			Username: current.Username,
-			Disabled: !u.Active,
-		}); err != nil {
+		if err := d.setDisabled(ctx, current.Username, !u.Active); err != nil {
 			return DirectoryUser{}, err
 		}
 	}
@@ -204,10 +206,7 @@ func (d *Directory) PatchUser(ctx context.Context, before, after DirectoryUser) 
 	}
 
 	if after.Active != before.Active {
-		if err := d.db.SetUserDisabled(ctx, database.SetUserDisabledParams{
-			Username: before.UserName,
-			Disabled: !after.Active,
-		}); err != nil {
+		if err := d.setDisabled(ctx, before.UserName, !after.Active); err != nil {
 			return DirectoryUser{}, err
 		}
 	}
@@ -222,7 +221,19 @@ func (d *Directory) DeleteUser(ctx context.Context, id string) error {
 		return err
 	}
 
-	return d.security.DeleteUser(ctx, u.Username)
+	return invalidValue(d.security.DeleteUser(ctx, u.Username))
+}
+
+func (d *Directory) setDisabled(ctx context.Context, username string, disabled bool) error {
+	return invalidValue(d.security.SetDisabled(ctx, username, disabled))
+}
+
+func invalidValue(err error) error {
+	if errors.Is(err, security.ErrInvalid) {
+		return fmt.Errorf("%w: %w", ErrInvalidValue, err)
+	}
+
+	return err
 }
 
 // Groups returns a page of groups, the one named name when it is set, and

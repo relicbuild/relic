@@ -45,7 +45,7 @@ func registryHeaders(hdr http.Header, repo string) {
 }
 
 // RegistryMount is the container registry's mount.
-func (h *Handler) RegistryMount() packages.Mount { return h.mount("/v2/") }
+func (h *Handler) RegistryMount() packages.Mount { return h.mount(registryPrefix) }
 
 func (h *Handler) npmAuth(w http.ResponseWriter, r *http.Request) {
 	p := auth.FromContext(r.Context())
@@ -53,8 +53,8 @@ func (h *Handler) npmAuth(w http.ResponseWriter, r *http.Request) {
 	secret := ""
 	if _, password, ok := r.BasicAuth(); ok {
 		secret = password
-	} else if token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
-		secret = strings.TrimSpace(token)
+	} else if token, ok := auth.BearerToken(r.Header.Get("Authorization")); ok {
+		secret = token
 	}
 
 	cred := base64.StdEncoding.EncodeToString([]byte(p.Username + ":" + secret))
@@ -133,7 +133,13 @@ func (h *Handler) dockerPromote(w http.ResponseWriter, r *http.Request, source s
 		return
 	}
 
-	err := h.docker.Promote(r.Context(), docker.PromoteInput{
+	permits, err := h.packages.RepositoryPermits(r, source, req.TargetRepo)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+
+	err = h.docker.Promote(r.Context(), docker.PromoteInput{
 		SourceRepository: source,
 		TargetRepository: req.TargetRepo,
 		Image:            req.DockerRepository,
@@ -142,6 +148,7 @@ func (h *Handler) dockerPromote(w http.ResponseWriter, r *http.Request, source s
 		TargetTag:        req.TargetTag,
 		Copy:             req.Copy,
 		User:             auth.FromContext(r.Context()).Name(),
+		Permits:          permits,
 	})
 	switch {
 	case errors.Is(err, docker.ErrManifestUnknown):

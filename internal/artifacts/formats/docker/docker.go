@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"relic/internal/access/auth"
 	"relic/internal/artifacts/repository"
 	"relic/internal/platform/objectstore"
 )
@@ -92,8 +93,11 @@ var (
 // repository key).
 func ValidImage(name string) bool { return len(name) <= 255 && imageName.MatchString(name) }
 
-// ValidTag reports whether tag is a valid tag.
-func ValidTag(tag string) bool { return tagName.MatchString(tag) }
+// ValidTag reports whether tag is a valid tag whose folder is not one the
+// layout reserves for uploads or manifests pushed by digest.
+func ValidTag(tag string) bool {
+	return tagName.MatchString(tag) && tag != uploadsDir && !strings.HasPrefix(tag, "sha256__")
+}
 
 // ParseDigest returns the hex of a "sha256:<hex>" digest.
 func ParseDigest(d string) (string, bool) {
@@ -448,22 +452,16 @@ func (s *Service) GetManifest(ctx context.Context, repoKey, image, ref string) (
 	var item repository.Item
 
 	if h, ok := ParseDigest(ref); ok {
-		items, err := s.repos.FindBySHA256(ctx, repoKey, image, h)
+		items, err := s.manifestsWithDigest(ctx, repoKey, image, h)
 		if err != nil {
 			return Manifest{}, err
 		}
 
-		i := slices.IndexFunc(
-			items,
-			func(it repository.Item) bool {
-				return it.Name == ManifestFile || it.Name == ListFile
-			},
-		)
-		if i < 0 {
+		if len(items) == 0 {
 			return Manifest{}, ErrManifestUnknown
 		}
 
-		item = items[i]
+		item = items[0]
 	} else {
 		var err error
 		for _, name := range []string{
@@ -526,33 +524,116 @@ func (s *Service) DeleteManifest(ctx context.Context, repoKey, image, ref string
 			return err
 		}
 
-		return s.repos.Delete(ctx, repoKey, image+"/"+ref)
+		return s.deleteTagFolder(ctx, repoKey, image+"/"+ref)
 	}
 
 	h, _ := ParseDigest(ref)
 
-	items, err := s.repos.FindBySHA256(ctx, repoKey, image, h)
+	items, err := s.manifestsWithDigest(ctx, repoKey, image, h)
 	if err != nil {
 		return err
 	}
 
-	found := false
-
-	for _, it := range items {
-		if it.Name == ManifestFile || it.Name == ListFile {
-			found = true
-
-			if err := s.repos.Delete(ctx, repoKey, it.Parent); err != nil && !errors.Is(err, repository.ErrNotFound) {
-				return err
-			}
-		}
-	}
-
-	if !found {
+	if len(items) == 0 {
 		return ErrManifestUnknown
 	}
 
+	for _, it := range items {
+		err := s.deleteTagFolder(ctx, repoKey, it.Parent)
+		if err != nil && !errors.Is(err, repository.ErrNotFound) {
+			return err
+		}
+	}
+
 	return nil
+}
+
+// manifestsWithDigest returns image's manifests with the hex digest h,
+// leaving out those of the images nested under image.
+func (s *Service) manifestsWithDigest(ctx context.Context, repoKey, image, h string) ([]repository.Item, error) {
+	items, err := s.repos.FindBySHA256(ctx, repoKey, image, h)
+	if err != nil {
+		return nil, err
+	}
+
+	return slices.DeleteFunc(items, func(it repository.Item) bool {
+		return path.Dir(it.Parent) != image || it.Name != ManifestFile && it.Name != ListFile
+	}), nil
+}
+
+// deleteTagFolder deletes the manifest and blobs of a tag folder, which is
+// also the folder of the image named after the tag.
+func (s *Service) deleteTagFolder(ctx context.Context, repoKey, folder string) error {
+	dir, err := s.repos.Stat(ctx, repoKey, folder)
+	if err != nil {
+		return err
+	}
+
+	children, err := s.repos.Children(ctx, dir)
+	if err != nil {
+		return err
+	}
+
+	if !slices.ContainsFunc(children, repository.Item.IsFolder) {
+		return s.repos.Delete(ctx, repoKey, folder)
+	}
+
+	for _, c := range children {
+		if c.IsFolder() {
+			continue
+		}
+
+		if err := s.repos.Delete(ctx, repoKey, c.Path()); err != nil && !errors.Is(err, repository.ErrNotFound) {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// tagFolderCopies copies or moves a tag folder without the images nested
+// in it.
+func (s *Service) tagFolderCopies(
+	ctx context.Context,
+	src repository.Item,
+	destinationRepository, destinationPath string,
+	move bool,
+	user string,
+) ([]repository.CopyInput, error) {
+	children, err := s.repos.Children(ctx, src)
+	if err != nil {
+		return nil, err
+	}
+
+	if !slices.ContainsFunc(children, repository.Item.IsFolder) {
+		return []repository.CopyInput{
+			{
+				Source:                src,
+				DestinationRepository: destinationRepository,
+				DestinationPath:       destinationPath,
+				Move:                  move,
+				User:                  user,
+			},
+		}, nil
+	}
+
+	var copies []repository.CopyInput
+
+	for _, c := range children {
+		if c.IsFolder() {
+			continue
+		}
+
+		copies = append(copies, repository.CopyInput{
+			Source:                c,
+			DestinationRepository: destinationRepository,
+			DestinationPath:       destinationPath + "/" + c.Name,
+			Move:                  move,
+			User:                  user,
+		})
+	}
+
+	return copies, nil
 }
 
 // Blob finds a stored blob by hex digest, preferring copies under image.
@@ -586,7 +667,7 @@ func (s *Service) Tags(ctx context.Context, repoKey, image string) ([]string, er
 
 	for _, it := range items {
 		dir, tag := path.Split(it.Parent)
-		if strings.TrimSuffix(dir, "/") == image && ValidTag(tag) && !strings.HasPrefix(tag, "sha256__") {
+		if strings.TrimSuffix(dir, "/") == image && ValidTag(tag) {
 			tags = append(tags, tag)
 		}
 	}
@@ -687,6 +768,39 @@ func uploadKey(id string, i int) string {
 	return fmt.Sprintf("%sdocker-uploads/%s/%d", objectstore.TemporaryKeyPrefix, id, i)
 }
 
+func uploadStartKey(id string) string {
+	return fmt.Sprintf("%sdocker-uploads/%s/started", objectstore.TemporaryKeyPrefix, id)
+}
+
+// StartUpload opens upload session id.
+func (s *Service) StartUpload(ctx context.Context, id string) error {
+	if err := s.blobs.Put(ctx, uploadStartKey(id), strings.NewReader(""), 0); err != nil {
+		return fmt.Errorf("start upload: %w", err)
+	}
+
+	return nil
+}
+
+// FindUpload returns ErrUploadUnknown unless upload session id was started
+// and is neither finished nor cancelled.
+func (s *Service) FindUpload(ctx context.Context, id string) error {
+	for _, key := range []string{
+		uploadKey(id, 0),
+		uploadStartKey(id),
+	} {
+		_, err := s.blobs.Head(ctx, key)
+		if err == nil {
+			return nil
+		}
+
+		if !errors.Is(err, objectstore.ErrNotFound) {
+			return fmt.Errorf("find upload: %w", err)
+		}
+	}
+
+	return ErrUploadUnknown
+}
+
 // AppendChunk stages chunk i of upload session id, of size bytes (-1 when
 // unknown), and returns its size.
 func (s *Service) AppendChunk(ctx context.Context, id string, i int, r io.Reader, size int64) (int64, error) {
@@ -724,10 +838,17 @@ func (s *Service) UploadState(ctx context.Context, id string, chunks int, offset
 // MaxUploadChunks bounds an upload session's chunks.
 const MaxUploadChunks = 10000
 
-// CancelUpload discards the staged chunks of an upload session.
+// CancelUpload closes an upload session and discards its staged chunks.
 func (s *Service) CancelUpload(ctx context.Context, id string, chunks int) {
+	keys := make([]string, 0, chunks+1)
+
+	keys = append(keys, uploadStartKey(id))
 	for i := range chunks {
-		if err := s.blobs.Delete(ctx, uploadKey(id, i)); err != nil && !errors.Is(err, objectstore.ErrNotFound) {
+		keys = append(keys, uploadKey(id, i))
+	}
+
+	for _, key := range keys {
+		if err := s.blobs.Delete(ctx, key); err != nil && !errors.Is(err, objectstore.ErrNotFound) {
 			s.log.WarnContext(ctx, "delete upload chunk", "upload", id, "error", err)
 		}
 	}
@@ -849,6 +970,9 @@ type PromoteInput struct {
 	Tag, TargetTag                     string
 	Copy                               bool
 	User                               string
+	// Permits, when set, is the caller's permission check for every file
+	// the promotion reads, moves and replaces; see repository.CopyInput.
+	Permits func(repoKey, path string, action auth.Action) bool
 }
 
 // Promote copies or moves a tag (or, with no tag, every tag) of an image to
@@ -881,10 +1005,11 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) error {
 		}
 
 		targetTag := cmp.Or(in.TargetTag, tag)
-		folders := [][2]string{
+		folders := []promotedFolder{
 			{
-				in.Image + "/" + tag,
-				in.TargetImage + "/" + targetTag,
+				source: in.Image + "/" + tag,
+				target: in.TargetImage + "/" + targetTag,
+				move:   !in.Copy,
 			},
 		}
 
@@ -894,18 +1019,30 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) error {
 				return err
 			}
 
+			kept := map[string]bool{}
+			if !in.Copy {
+				if kept, err = s.childFoldersOfOtherTags(ctx, in.SourceRepository, in.Image, tag); err != nil {
+					return err
+				}
+			}
+
 			for _, c := range children {
-				folders = append(folders, [2]string{
-					in.Image + "/" + c,
-					in.TargetImage + "/" + c,
+				folders = append(folders, promotedFolder{
+					source: in.Image + "/" + c,
+					target: in.TargetImage + "/" + c,
+					move:   !in.Copy && !kept[c],
 				})
 			}
 		}
 
-		copies := make([]repository.CopyInput, 0, len(folders))
-		for _, f := range folders {
-			src, err := s.repos.Stat(ctx, in.SourceRepository, f[0])
-			if errors.Is(err, repository.ErrNotFound) && f[0] != folders[0][0] {
+		var (
+			copies       []repository.CopyInput
+			childTargets []string
+		)
+
+		for i, f := range folders {
+			src, err := s.repos.Stat(ctx, in.SourceRepository, f.source)
+			if errors.Is(err, repository.ErrNotFound) && i > 0 {
 				continue
 			}
 
@@ -913,16 +1050,20 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) error {
 				return err
 			}
 
-			copies = append(
-				copies,
-				repository.CopyInput{
-					Source:                src,
-					DestinationRepository: in.TargetRepository,
-					DestinationPath:       f[1],
-					Move:                  !in.Copy,
-					User:                  in.User,
-				},
-			)
+			if i > 0 {
+				childTargets = append(childTargets, f.target)
+			}
+
+			folderCopies, err := s.tagFolderCopies(ctx, src, in.TargetRepository, f.target, f.move, in.User)
+			if err != nil {
+				return err
+			}
+
+			copies = append(copies, folderCopies...)
+		}
+
+		for i := range copies {
+			copies[i].Permits = in.Permits
 		}
 
 		if err := s.repos.CopyAll(ctx, copies); err != nil {
@@ -946,8 +1087,8 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) error {
 			return err
 		}
 
-		for _, c := range copies[1:] {
-			child, err := s.repos.Stat(ctx, in.TargetRepository, c.DestinationPath+"/"+ManifestFile)
+		for _, target := range childTargets {
+			child, err := s.repos.Stat(ctx, in.TargetRepository, target+"/"+ManifestFile)
 			if errors.Is(err, repository.ErrNotFound) {
 				continue
 			}
@@ -967,6 +1108,45 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) error {
 	}
 
 	return nil
+}
+
+type promotedFolder struct {
+	source string
+	target string
+	move   bool
+}
+
+// childFoldersOfOtherTags returns the platform manifest folders that the
+// indexes of image's other tags and digests reference: a move of tag leaves
+// them in place.
+func (s *Service) childFoldersOfOtherTags(ctx context.Context, repoKey, image, tag string) (map[string]bool, error) {
+	indexes, err := s.repos.FilesNamed(ctx, repoKey, image, ListFile)
+	if err != nil {
+		return nil, err
+	}
+
+	folders := map[string]bool{}
+
+	for _, index := range indexes {
+		if path.Dir(index.Parent) != image || index.Parent == image+"/"+tag {
+			continue
+		}
+
+		children, err := s.childFolders(ctx, index)
+		if errors.Is(err, ErrManifestInvalid) {
+			continue
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		for _, c := range children {
+			folders[c] = true
+		}
+	}
+
+	return folders, nil
 }
 
 func (s *Service) childFolders(ctx context.Context, index repository.Item) ([]string, error) {

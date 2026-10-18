@@ -3,7 +3,11 @@
 package release
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
@@ -190,6 +194,56 @@ func TestPromotionsInOneMillisecondAreBothRecorded(t *testing.T) {
 	}
 }
 
+func TestGateErrorsNameTheGate(t *testing.T) {
+	t.Parallel()
+
+	f := newReleaseFixture(t)
+	ctx := t.Context()
+
+	_, getErr := f.releases.Gate(ctx, "nonexistent")
+	deleteErr := f.releases.DeleteGate(ctx, "nonexistent")
+	_, noEnvironment := f.releases.PutGate(ctx, Gate{
+		Name:      "gate",
+		Condition: "true",
+	})
+	_, badCondition := f.releases.PutGate(ctx, Gate{
+		Name:        "gate",
+		Environment: "PROD",
+		Condition:   "release.name",
+	})
+
+	for _, tt := range []struct {
+		name string
+		err  error
+		want error
+	}{
+		{
+			name: "get",
+			err:  getErr,
+			want: ErrGateNotFound,
+		},
+		{
+			name: "delete",
+			err:  deleteErr,
+			want: ErrGateNotFound,
+		},
+		{
+			name: "no environment",
+			err:  noEnvironment,
+			want: ErrInvalidGate,
+		},
+		{
+			name: "bad condition",
+			err:  badCondition,
+			want: ErrInvalidGate,
+		},
+	} {
+		if !errors.Is(tt.err, tt.want) || strings.Contains(tt.err.Error(), "release") {
+			t.Errorf("%s: err = %v, want %v without calling the gate a release", tt.name, tt.err, tt.want)
+		}
+	}
+}
+
 func TestGateReportsAnUnreadableManifest(t *testing.T) {
 	t.Parallel()
 
@@ -269,5 +323,229 @@ func TestFailedUpdateRemovesTheFilesItCopied(t *testing.T) {
 	})
 	if _, err := f.repos.Stat(t.Context(), b.Repository, copied); !errors.Is(err, repository.ErrNotFound) {
 		t.Errorf("Stat of %s after the failed update = %v; want ErrNotFound", copied, err)
+	}
+}
+
+func TestPromoteOverwritesOnlyWithDeletePermission(t *testing.T) {
+	t.Parallel()
+
+	writeOnly := Access{
+		CanWrite: func(string, string) bool {
+			return true
+		},
+		CanDelete: func(string, string) bool {
+			return false
+		},
+	}
+
+	tests := []struct {
+		name     string
+		existing string
+		access   Access
+		wantErr  error
+		want     string
+	}{
+		{
+			name:     "write only over other content",
+			existing: "deployed by hand",
+			access:   writeOnly,
+			wantErr:  ErrForbidden,
+			want:     "deployed by hand",
+		},
+		{
+			name:     "write only over the same content",
+			existing: "application",
+			access:   writeOnly,
+			want:     "application",
+		},
+		{
+			name:   "write only to a free path",
+			access: writeOnly,
+			want:   "application",
+		},
+		{
+			name:     "delete over other content",
+			existing: "deployed by hand",
+			access:   Access{},
+			want:     "application",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newReleaseFixture(t)
+			f.create(t, "1.0", false, artifactSource("libs/app.bin"))
+
+			if tt.existing != "" {
+				f.deploy(t, "prod", "app.bin", tt.existing)
+			}
+
+			_, err := f.releases.Promote(t.Context(), "", "app", "1.0", PromotionSpec{
+				Environment: "PROD",
+			}, "dev", tt.access)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Promote = %v; want %v", err, tt.wantErr)
+			}
+
+			got, err := f.repos.Stat(t.Context(), "prod", "app.bin")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			want := sha256.Sum256([]byte(tt.want))
+			if got.Checksums.SHA256 != hex.EncodeToString(want[:]) {
+				t.Errorf("prod/app.bin holds other content than %q", tt.want)
+			}
+		})
+	}
+}
+
+func TestAChangedReleaseFileIsNeitherPromotedNorExported(t *testing.T) {
+	t.Parallel()
+
+	f := newReleaseFixture(t)
+	b := f.create(t, "1.0", false, artifactSource("libs/app.bin"))
+	f.deploy(t, b.Repository, b.artifactPath(b.Artifacts[0]), "replaced")
+
+	_, err := f.releases.Promote(t.Context(), "", "app", "1.0", PromotionSpec{
+		Environment: "PROD",
+	}, "admin", Access{})
+	if !errors.Is(err, ErrInvalid) {
+		t.Errorf("Promote of a release whose file changed = %v; want ErrInvalid", err)
+	}
+
+	if _, err := f.repos.Stat(t.Context(), "prod", "app.bin"); !errors.Is(err, repository.ErrNotFound) {
+		t.Errorf("Stat of prod/app.bin after the refused promotion = %v; want ErrNotFound", err)
+	}
+
+	if _, err := f.releases.Export(t.Context(), "", "app", "1.0", "admin"); !errors.Is(err, ErrInvalid) {
+		t.Errorf("Export of a release whose file changed = %v; want ErrInvalid", err)
+	}
+
+	signed, err := f.releases.signed(t.Context(), b)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if signed {
+		t.Error("signed of a release whose file changed = true; want false")
+	}
+}
+
+func TestSignedNeedsTheManifestOfTheVersion(t *testing.T) {
+	t.Parallel()
+
+	f := newReleaseFixture(t)
+	b := f.create(t, "1.0", false, artifactSource("libs/app.bin"))
+	other := f.create(t, "2.0", false, artifactSource("libs/other.bin"))
+
+	manifest, err := f.repos.Stat(t.Context(), other.Repository, f.releases.ManifestPath(other))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.repos.Copy(t.Context(), repository.CopyInput{
+		Source:                manifest,
+		DestinationRepository: b.Repository,
+		DestinationPath:       f.releases.ManifestPath(b),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	signed, err := f.releases.signed(t.Context(), b)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if signed {
+		t.Error("signed with another version's manifest = true; want false")
+	}
+}
+
+func TestPromoteCopiesNothingWhenATargetIsRefused(t *testing.T) {
+	t.Parallel()
+
+	f := newReleaseFixture(t)
+	f.create(t, "1.0", false, artifactSource("libs/app.bin", "libs/other.bin"))
+	f.deploy(t, "prod", "other.bin", "original")
+
+	tests := []struct {
+		name   string
+		access Access
+	}{
+		{
+			name: "no write permission on a later target",
+			access: Access{
+				CanWrite: func(_, path string) bool {
+					return path != "other.bin"
+				},
+			},
+		},
+		{
+			name: "no delete permission to overwrite a later target",
+			access: Access{
+				CanDelete: func(string, string) bool {
+					return false
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := f.releases.Promote(t.Context(), "", "app", "1.0", PromotionSpec{
+				Environment: "PROD",
+			}, "dev", tt.access)
+			if !errors.Is(err, ErrForbidden) {
+				t.Fatalf("Promote = %v; want ErrForbidden", err)
+			}
+
+			if _, err := f.repos.Stat(t.Context(), "prod", "app.bin"); !errors.Is(err, repository.ErrNotFound) {
+				t.Errorf("Stat of prod/app.bin after the refused promotion = %v; want ErrNotFound", err)
+			}
+		})
+	}
+}
+
+func TestBlockedFilesStayOutOfReleases(t *testing.T) {
+	t.Parallel()
+
+	f := newReleaseFixture(t)
+	f.create(t, "1.0", false, artifactSource("libs/app.bin"))
+
+	blocked := map[string]bool{}
+
+	f.releases.SetDownloadBlocker(func(_ context.Context, file repository.Item) error {
+		if blocked[file.Name] {
+			return fmt.Errorf("%w: %s is blocked", repository.ErrForbidden, file.Name)
+		}
+
+		return nil
+	})
+
+	blocked["other.bin"] = true
+
+	if _, err := f.releases.Create(t.Context(), "", Spec{
+		Name:    "app",
+		Version: "2.0",
+		Sources: artifactSource("libs/other.bin"),
+	}, "admin", Access{}); !errors.Is(err, repository.ErrForbidden) {
+		t.Errorf("Create with a blocked file = %v; want ErrForbidden", err)
+	}
+
+	blocked["app.bin"] = true
+
+	if _, err := f.releases.Export(t.Context(), "", "app", "1.0", "admin"); !errors.Is(err, repository.ErrForbidden) {
+		t.Errorf("Export of a release holding a blocked file = %v; want ErrForbidden", err)
+	}
+
+	if _, err := f.releases.Promote(t.Context(), "", "app", "1.0", PromotionSpec{
+		Environment: "PROD",
+	}, "admin", Access{}); !errors.Is(err, repository.ErrForbidden) {
+		t.Errorf("Promote of a release holding a blocked file = %v; want ErrForbidden", err)
+	}
+
+	if _, err := f.repos.Stat(t.Context(), "prod", "app.bin"); !errors.Is(err, repository.ErrNotFound) {
+		t.Errorf("the blocked file was promoted: %v", err)
 	}
 }

@@ -19,7 +19,7 @@ const columns: TableColumn<BuildLinkView>[] = [
       </h3>
       <UTable :data="section.rows" :columns="columns">
         <template #name-cell="{ row }">
-          <ULink :to="`/builds/${encodeURIComponent(row.original.name)}/${encodeURIComponent(row.original.number)}`" class="font-medium">
+          <ULink :to="buildRunLink(row.original.name, row.original.number, row.original.project)" class="font-medium">
             {{ row.original.name }} #{{ row.original.number }}
           </ULink>
           <div v-if="row.original.scopes" class="text-xs text-muted">

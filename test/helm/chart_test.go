@@ -173,6 +173,8 @@ func render(t *testing.T, args ...string) ([]object, string) {
 		chart,
 		"--set",
 		"credentials.encryptionKey=" + testEncryptionKey,
+		"--set",
+		"credentials.adminPassword=" + testAdminPassword,
 	}, args...)...)
 
 	cmd.Stdout, cmd.Stderr = &out, &stderr
@@ -218,7 +220,10 @@ var (
 	depsErr  error
 )
 
-const testEncryptionKey = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+const (
+	testEncryptionKey = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+	testAdminPassword = "chart-test-admin-password"
+)
 
 func find(objs []object, kind, name string) *object {
 	for i := range objs {
@@ -391,7 +396,7 @@ var singleNode = []string{
 	"server.replicas=1",
 }
 
-var releaseImage = regexp.MustCompile(`^ghcr\.io/relicbuild/relic:v\d+\.\d+\.\d+$`)
+var releaseImage = regexp.MustCompile(`^ghcr\.io/relicbuild/relic:v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$`)
 
 func TestChartSingleNode(t *testing.T) {
 	t.Parallel()
@@ -467,6 +472,93 @@ func TestChartSingleNode(t *testing.T) {
 	}
 }
 
+func TestChartDisruptionBudgetLeavesADrainablePod(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{
+			"two replicas",
+			nil,
+			true,
+		},
+		{
+			"one replica",
+			[]string{
+				"--set",
+				"server.replicas=1",
+			},
+			false,
+		},
+		{
+			"autoscaling from one replica",
+			[]string{
+				"--set",
+				"server.replicas=2",
+				"--set",
+				"server.autoscaling.enabled=true",
+				"--set",
+				"server.autoscaling.minReplicas=1",
+			},
+			false,
+		},
+		{
+			"autoscaling from two replicas",
+			[]string{
+				"--set",
+				"server.replicas=1",
+				"--set",
+				"server.autoscaling.enabled=true",
+			},
+			true,
+		},
+		{
+			"half of one replica",
+			[]string{
+				"--set",
+				"server.replicas=1",
+				"--set",
+				"server.podDisruptionBudget.minAvailable=50%",
+			},
+			false,
+		},
+		{
+			"half of two replicas",
+			[]string{
+				"--set",
+				"server.podDisruptionBudget.minAvailable=50%",
+			},
+			true,
+		},
+		{
+			"all of three replicas",
+			[]string{
+				"--set",
+				"server.replicas=3",
+				"--set",
+				"server.podDisruptionBudget.minAvailable=100%",
+			},
+			false,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			objs, stderr := render(t, append(slices.Clone(external), tt.args...)...)
+			if stderr != "" {
+				t.Fatal(stderr)
+			}
+
+			if got := find(objs, "PodDisruptionBudget", "r-relic-server") != nil; got != tt.want {
+				t.Errorf("PodDisruptionBudget rendered = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestChartExternalStorage(t *testing.T) {
 	t.Parallel()
 
@@ -494,9 +586,9 @@ func TestChartExternalStorage(t *testing.T) {
 	}
 
 	sec := find(objs, "Secret", "r-relic-credentials")
-	if sec == nil || len(sec.StringData["adminPassword"]) != 24 ||
+	if sec == nil || sec.StringData["adminPassword"] != testAdminPassword ||
 		sec.StringData["encryptionKey"] != testEncryptionKey {
-		t.Errorf("generated admin password and the given encryption key: %+v", sec)
+		t.Errorf("the given admin password and encryption key: %+v", sec)
 	}
 
 	if sec != nil && sec.Metadata.Annotations["helm.sh/resource-policy"] != "keep" {
@@ -511,6 +603,13 @@ func TestChartExternalStorage(t *testing.T) {
 		"credentials.encryptionKey (or existingCredentialsSecret) is required",
 	) {
 		t.Errorf("rendering without an encryption key: %q, want it refused", stderr)
+	}
+
+	if _, stderr := render(t, append(external, "--set", "credentials.adminPassword=")...); !strings.Contains(
+		stderr,
+		"credentials.adminPassword (or existingCredentialsSecret) is required",
+	) {
+		t.Errorf("rendering without an admin password: %q, want it refused", stderr)
 	}
 
 	if find(objs, "PodDisruptionBudget", "r-relic-server") == nil {
@@ -560,7 +659,7 @@ func TestChartDependencies(t *testing.T) {
 
 	sec := find(objs, "Secret", "r-relic-credentials")
 	if sec == nil || sec.StringData["databaseURL"] != "" || sec.StringData["objectStorageAccessKey"] != "" ||
-		len(sec.StringData["adminPassword"]) != 24 {
+		sec.StringData["adminPassword"] != testAdminPassword {
 		t.Errorf("Relic's Secret = %+v", sec)
 	}
 
@@ -594,27 +693,48 @@ func TestChartDependencies(t *testing.T) {
 func TestChartWorkerVulnerabilityDatabaseWithoutPersistence(t *testing.T) {
 	t.Parallel()
 
-	objs, stderr := render(t, append([]string{
-		"--set",
-		"worker.vulnerabilityDatabase.persistence=false",
-	}, external...)...)
-	if stderr != "" {
-		t.Fatal(stderr)
+	for _, tt := range []struct {
+		name       string
+		args       []string
+		deployment string
+	}{
+		{
+			"separate worker",
+			external,
+			"r-relic-worker",
+		},
+		{
+			"single node",
+			singleNode,
+			"r-relic-server",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			objs, stderr := render(t, append([]string{
+				"--set",
+				"worker.vulnerabilityDatabase.persistence=false",
+			}, tt.args...)...)
+			if stderr != "" {
+				t.Fatal(stderr)
+			}
+
+			for _, v := range find(objs, "Deployment", tt.deployment).Spec.Template.Spec.Volumes {
+				if v.Name != "vulnerability-database" {
+					continue
+				}
+
+				if v.EmptyDir == nil || v.EmptyDir.SizeLimit != "5Gi" {
+					t.Errorf("vulnerability-database = %+v, want an emptyDir limited to the volume's 5Gi", v)
+				}
+
+				return
+			}
+
+			t.Errorf("%s has no vulnerability-database volume", tt.deployment)
+		})
 	}
-
-	for _, v := range find(objs, "Deployment", "r-relic-worker").Spec.Template.Spec.Volumes {
-		if v.Name != "vulnerability-database" {
-			continue
-		}
-
-		if v.EmptyDir == nil || v.EmptyDir.SizeLimit != "5Gi" {
-			t.Errorf("vulnerability-database = %+v, want an emptyDir limited to the volume's 5Gi", v)
-		}
-
-		return
-	}
-
-	t.Error("the worker has no vulnerability-database volume")
 }
 
 func TestChartLDAPCA(t *testing.T) {
@@ -676,6 +796,52 @@ func TestChartExistingSecret(t *testing.T) {
 
 	if n := count(objs, "Secret"); n != 0 {
 		t.Errorf("%d Secrets rendered with existingCredentialsSecret", n)
+	}
+}
+
+func TestChartCredentialsAreStableAcrossRenders(t *testing.T) {
+	t.Parallel()
+
+	type rendered struct {
+		adminPassword  string
+		serverChecksum string
+		workerChecksum string
+	}
+
+	renderOnce := func() rendered {
+		objs, stderr := render(t, external...)
+		if stderr != "" {
+			t.Fatal(stderr)
+		}
+
+		sec := find(objs, "Secret", "r-relic-credentials")
+		if sec == nil {
+			t.Fatal("no credentials Secret")
+		}
+
+		return rendered{
+			adminPassword:  sec.StringData["adminPassword"],
+			serverChecksum: find(objs, "Deployment", "r-relic-server").Spec.Template.Metadata.Annotations["checksum/secret"],
+			workerChecksum: find(objs, "Deployment", "r-relic-worker").Spec.Template.Metadata.Annotations["checksum/secret"],
+		}
+	}
+
+	first, second := renderOnce(), renderOnce()
+
+	if first.adminPassword != second.adminPassword {
+		t.Error("the admin password changes between renders, so every Argo CD sync rewrites it")
+	}
+
+	if first.serverChecksum != second.serverChecksum {
+		t.Error("checksum/secret changes between renders, so every sync rolls the pods")
+	}
+
+	if first.serverChecksum != first.workerChecksum {
+		t.Errorf(
+			"checksum/secret: server %s, worker %s, want the same Secret's",
+			first.serverChecksum,
+			first.workerChecksum,
+		)
 	}
 }
 

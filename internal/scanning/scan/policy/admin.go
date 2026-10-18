@@ -208,6 +208,37 @@ func (a *Admin) Watch(ctx context.Context, name string) (Watch, error) {
 	return w, nil
 }
 
+// checkWatchedRepositories refuses a watched repository that does not
+// exist or is virtual.
+func (a *Admin) checkWatchedRepositories(ctx context.Context, w Watch) error {
+	for _, s := range w.Scopes {
+		if s.Kind != ScopeRepository {
+			continue
+		}
+
+		for _, name := range s.Names {
+			r, err := a.DB.GetRepository(ctx, name)
+			if errors.Is(database.NotFound(err), database.ErrNotFound) {
+				return fmt.Errorf("%w: repository %s does not exist", ErrInvalid, name)
+			}
+
+			if err != nil {
+				return fmt.Errorf("load repository %s: %w", name, err)
+			}
+
+			if r.Class == "virtual" {
+				return fmt.Errorf(
+					"%w: %s is a virtual repository; watch the repositories it includes",
+					ErrInvalid,
+					name,
+				)
+			}
+		}
+	}
+
+	return nil
+}
+
 // SaveWatch creates (create set) or replaces an existing watch.
 func (a *Admin) SaveWatch(ctx context.Context, w Watch, create bool) error {
 	if err := w.Validate(); err != nil {
@@ -223,6 +254,10 @@ func (a *Admin) SaveWatch(ctx context.Context, w Watch, create bool) error {
 
 				return err
 			}
+		}
+
+		if err := a.checkWatchedRepositories(ctx, w); err != nil {
+			return err
 		}
 
 		doc, err := json.Marshal(w)
@@ -352,10 +387,8 @@ func insertIgnoreRule(ctx context.Context, q database.Querier, r IgnoreRule, use
 		return IgnoreRule{}, fmt.Errorf("%w: an ignore rule needs at least one filter", ErrInvalid)
 	}
 
-	for _, p := range r.Packages {
-		if !ValidPackage(p) {
-			return IgnoreRule{}, fmt.Errorf("%w: %q is not a package URL", ErrInvalid, p)
-		}
+	if p, found := firstInvalidPackage(r.Packages); found {
+		return IgnoreRule{}, fmt.Errorf("%w: %q is not a package URL", ErrInvalid, p)
 	}
 
 	id := uuid.NewV4()

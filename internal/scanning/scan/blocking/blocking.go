@@ -37,13 +37,11 @@ type Blocker struct {
 	quarantined QuarantinedRepositories
 	registry    RegistryApprovals
 
-	mu               sync.Mutex
-	quarantineKeys   []string
-	quarantineLoaded time.Time
-	loaded           time.Time
-	watches          []policy.Watch
-	policies         map[string]policy.Policy
-	ignores          []policy.IgnoreRule
+	mu       sync.Mutex
+	loaded   time.Time
+	watches  []policy.Watch
+	policies map[string]policy.Policy
+	ignores  []policy.IgnoreRule
 }
 
 // New returns a Blocker.
@@ -193,6 +191,13 @@ func (b *Blocker) RefuseCopy(ctx context.Context, file repository.Item) error {
 	return nil
 }
 
+var unscannedReasons = map[string]string{
+	"":                 "the artifact has not been scanned yet",
+	scan.StatusQueued:  "the artifact has not been scanned yet",
+	scan.StatusFailed:  "the artifact's scan failed",
+	scan.StatusSkipped: "Relic Scan skipped the artifact",
+}
+
 func (b *Blocker) decide(ctx context.Context, repoKey, itemPath, sha256Hex string) (Decision, error) {
 	fileName := path.Base(itemPath)
 
@@ -236,16 +241,17 @@ func (b *Blocker) decide(ctx context.Context, repoKey, itemPath, sha256Hex strin
 		return Decision{}, fmt.Errorf("load scan status: %w", err)
 	}
 
-	if notScanned {
-		if unscanned && scannable.MatchString(fileName) {
-			return Decision{
-				Blocked: true,
-				Reason:  "the artifact has not been scanned yet",
-				Watch:   covering[0].Name,
-				Rule:    "unscanned",
-			}, nil
-		}
+	scanned := !notScanned && (a.Status == scan.StatusDone || a.Status == scan.StatusPartial)
+	if !scanned && unscanned && scannable.MatchString(fileName) {
+		return Decision{
+			Blocked: true,
+			Reason:  unscannedReasons[a.Status],
+			Watch:   covering[0].Name,
+			Rule:    "unscanned",
+		}, nil
+	}
 
+	if notScanned {
 		return Decision{}, nil
 	}
 
@@ -465,7 +471,7 @@ func (b *Blocker) checkLicenses(
 // Invalidate forgets cached watches and policies.
 func (b *Blocker) Invalidate() {
 	b.mu.Lock()
-	b.loaded, b.quarantineLoaded = time.Time{}, time.Time{}
+	b.loaded = time.Time{}
 	b.mu.Unlock()
 }
 

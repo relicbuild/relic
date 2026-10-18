@@ -24,6 +24,9 @@ type kind struct {
 	update  func(context.Context, *client, proto.Message) error
 	delete  func(context.Context, *client, string) error
 	ignored []string
+	// sets are top-level lists of strings the server keeps sorted and
+	// without repeats, compared regardless of order and repeats.
+	sets    []string
 	prepare func(map[string]any)
 }
 
@@ -122,6 +125,10 @@ var kinds = []*kind{
 		},
 		ignored: []string{
 			"password",
+			"realm",
+		},
+		sets: []string{
+			"groups",
 		},
 	},
 	{
@@ -153,6 +160,9 @@ var kinds = []*kind{
 			}))
 
 			return err
+		},
+		sets: []string{
+			"members",
 		},
 	},
 	{
@@ -362,6 +372,9 @@ var kinds = []*kind{
 			"created",
 			"updated",
 		},
+		sets: []string{
+			"events",
+		},
 	},
 	{
 		name: "Project",
@@ -506,6 +519,7 @@ var kinds = []*kind{
 
 			return err
 		},
+		prepare: closeCVSSRanges,
 	},
 	{
 		name: "Watch",
@@ -844,6 +858,38 @@ func putPolicy(ctx context.Context, c *client, m proto.Message) error {
 	}))
 
 	return err
+}
+
+const maxCVSS = 10
+
+func closeCVSSRanges(spec map[string]any) {
+	rules, _ := spec["rules"].([]any)
+	for _, r := range rules {
+		rule, ok := r.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		from := hasAnyKey(rule, "cvssFrom", "cvss_from")
+		to := hasAnyKey(rule, "cvssTo", "cvss_to")
+
+		switch {
+		case from && !to:
+			rule["cvssTo"] = maxCVSS
+		case to && !from:
+			rule["cvssFrom"] = 0
+		}
+	}
+}
+
+func hasAnyKey(m map[string]any, keys ...string) bool {
+	for _, k := range keys {
+		if _, ok := m[k]; ok {
+			return true
+		}
+	}
+
+	return false
 }
 
 func listWatches(ctx context.Context, c *client) ([]proto.Message, error) {

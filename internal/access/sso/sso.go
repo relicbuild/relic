@@ -18,6 +18,7 @@ import (
 	"uuid"
 
 	"relic/internal/access/auth"
+	"relic/internal/access/security"
 	"relic/internal/platform/database"
 	"relic/internal/platform/sealing"
 )
@@ -100,10 +101,7 @@ func refused(reason string) error {
 	}
 }
 
-var (
-	providerName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
-	userName     = regexp.MustCompile(`^[\w.@-]{1,64}$`)
-)
+var providerName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
 const requestTTL = 10 * time.Minute
 
@@ -442,7 +440,7 @@ type identity struct {
 // provision makes the Relic account of id ready to sign in: it creates it
 // when p may, and replaces the memberships p manages.
 func (s *Service) provision(ctx context.Context, p Provider, id identity) (string, error) {
-	if !userName.MatchString(id.username) {
+	if !security.ValidUsername(id.username) {
 		return "", refused(
 			fmt.Sprintf("the identity provider's username %q is not a valid Relic username", id.username),
 		)
@@ -457,7 +455,12 @@ func (s *Service) provision(ctx context.Context, p Provider, id identity) (strin
 			return "", refused("there is no Relic account for " + id.username)
 		}
 
-		if err := createUser(ctx, s.db, id, p.Name, false); err != nil {
+		err := createUser(ctx, s.db, id, p.Name, false)
+		if errors.Is(err, security.ErrExists) {
+			return "", refused(err.Error())
+		}
+
+		if err != nil {
 			return "", err
 		}
 	case err != nil:
@@ -522,8 +525,15 @@ func (s *Service) claimAccount(ctx context.Context, provider, username string) e
 	return nil
 }
 
-// createUser creates a single sign-on user in the groups new users join.
+// createUser creates a single sign-on user in the groups new users join; security.ErrExists when another user's
+// name differs from it only by case.
 func createUser(ctx context.Context, db *database.DB, id identity, provider string, disabled bool) error {
+	return security.WithNewUsername(ctx, db, id.username, func() error {
+		return insertUser(ctx, db, id, provider, disabled)
+	})
+}
+
+func insertUser(ctx context.Context, db *database.DB, id identity, provider string, disabled bool) error {
 	return db.WithTx(ctx, func(q database.Querier) error {
 		created, err := q.CreateSsoUser(ctx, database.CreateSsoUserParams{
 			ID:               uuid.NewV7(),

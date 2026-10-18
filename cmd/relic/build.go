@@ -18,6 +18,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -380,13 +381,20 @@ func buildAddGitCmd(g *globals) *cobra.Command {
 
 func withoutCredentials(s string) string {
 	u, err := url.Parse(s)
-	if err != nil || u.User == nil {
+	if err == nil && u.User != nil {
+		u.User = nil
+
+		return u.String()
+	}
+
+	scheme, rest, ok := strings.Cut(s, "://")
+	at := strings.LastIndex(rest, "@")
+
+	if !ok || at < 0 {
 		return s
 	}
 
-	u.User = nil
-
-	return u.String()
+	return scheme + "://" + rest[at+1:]
 }
 
 func buildAddDependenciesCmd(g *globals) *cobra.Command {
@@ -483,10 +491,73 @@ func buildAddDependenciesCmd(g *globals) *cobra.Command {
 	return cmd
 }
 
+// buildRunFlag is a --build value, <name>/<number>, checked when the flag
+// is parsed.
+type buildRunFlag struct {
+	value string
+}
+
+func (f *buildRunFlag) String() string { return f.value }
+
+func (f *buildRunFlag) Type() string { return "name/number" }
+
+func (f *buildRunFlag) Set(s string) error {
+	if _, _, err := parseBuildRef(s); err != nil {
+		return fmt.Errorf("%q is not <name>/<number>", s)
+	}
+
+	f.value = s
+
+	return nil
+}
+
+// parseBuildRef reads <name>/<number>; the name may itself contain '/'.
+func parseBuildRef(ref string) (name, number string, err error) {
+	i := strings.LastIndex(ref, "/")
+	if i <= 0 || i == len(ref)-1 {
+		return "", "", fmt.Errorf("--build %q is not <name>/<number>", ref)
+	}
+
+	return ref[:i], ref[i+1:], nil
+}
+
+// buildProperties are the build.name, build.number and build.timestamp
+// properties of a file uploaded for a build run; the run's file is saved so
+// its start is fixed.
+func (g *globals) buildProperties(ref string) (url.Values, error) {
+	name, number, err := parseBuildRef(ref)
+	if err != nil {
+		return nil, err
+	}
+
+	var started time.Time
+
+	err = g.updateBuild(name, number, func(run *relicv1.PublishedBuildRun) error {
+		started = run.GetStarted().AsTime()
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return url.Values{
+		"build.name": {
+			name,
+		},
+		"build.number": {
+			number,
+		},
+		"build.timestamp": {
+			strconv.FormatInt(started.UnixMilli(), 10),
+		},
+	}, nil
+}
+
 func (g *globals) addArtifact(build, moduleID string, it *relicv1.Item) error {
-	name, number, ok := strings.Cut(build, "/")
-	if !ok || name == "" || number == "" {
-		return fmt.Errorf("--build %q is not <name>/<number>", build)
+	name, number, err := parseBuildRef(build)
+	if err != nil {
+		return err
 	}
 
 	return g.updateBuild(name, number, func(run *relicv1.PublishedBuildRun) error {
@@ -763,6 +834,10 @@ func buildDiscardCmd(g *globals) *cobra.Command {
 		Example: "  relic build discard app --max-runs 20 --keep 1.0.0\n  relic build discard app --max-days 90 --delete-artifacts",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if maxRuns < 0 || maxAge < 0 {
+				return errors.New("discard: --max-runs and --max-days cannot be negative")
+			}
+
 			if maxRuns == 0 && maxAge == 0 {
 				return errors.New("discard: give --max-runs, --max-days or both")
 			}
@@ -882,7 +957,10 @@ func buildPromoteCmd(g *globals) *cobra.Command {
 					}
 				}
 
-				if !failed {
+				switch {
+				case dryRun:
+					_, _ = fmt.Fprintf(w, "%s/%s: dry run, nothing changed\n", name, number)
+				case !failed:
 					_, _ = fmt.Fprintf(w, "%s/%s promoted\n", name, number)
 				}
 

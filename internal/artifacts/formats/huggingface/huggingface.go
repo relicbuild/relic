@@ -89,6 +89,10 @@ func NewService(repos *repository.Service, log *slog.Logger) *Service {
 // ValidID reports whether id is a Hub repo id ("name" or "org/name").
 func ValidID(id string) bool { return idPattern.MatchString(id) }
 
+// ValidRevision reports whether rev is a branch or tag name a commit may be
+// made to.
+func ValidRevision(rev string) bool { return revPattern.MatchString(rev) }
+
 // Commit is a stored commit of a revision.
 type Commit struct {
 	Kind   Kind
@@ -368,7 +372,7 @@ func (s *Service) createCommit(
 	ops []Operation,
 	user string,
 ) (Commit, error) {
-	if !ValidID(id) || !revPattern.MatchString(rev) {
+	if !ValidID(id) || !ValidRevision(rev) {
 		return Commit{}, fmt.Errorf("%w: invalid repo id or revision", ErrInvalid)
 	}
 
@@ -554,7 +558,7 @@ func (s *Service) RemoteInfo(
 }
 
 // RemoteTree fetches the recursive file listing of an upstream commit
-// (cached as metadata).
+// (cached as metadata), without Xet hashes.
 func (s *Service) RemoteTree(ctx context.Context, r repository.Repository, kind Kind, id, sha string) ([]any, error) {
 	if !shaPattern.MatchString(sha) {
 		return nil, ErrRevisionNotFound
@@ -588,6 +592,12 @@ func (s *Service) RemoteTree(ctx context.Context, r repository.Repository, kind 
 	var tree []any
 	if err := json.NewDecoder(rc).Decode(&tree); err != nil {
 		return nil, fmt.Errorf("%w: upstream tree: %w", repository.ErrUpstream, err)
+	}
+
+	for _, entry := range tree {
+		if fields, ok := entry.(map[string]any); ok {
+			delete(fields, "xetHash")
+		}
 	}
 
 	return tree, nil

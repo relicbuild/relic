@@ -152,7 +152,7 @@ export type PreviewPolicyRequest = Message<"relic.v1.PreviewPolicyRequest"> & {
   repositories: string[];
 
   /**
-   * limit defaults to 1000.
+   * limit is the most hits to list; it defaults to 1000.
    *
    * @generated from field: int32 limit = 3;
    */
@@ -227,8 +227,8 @@ export type PreviewPolicyResponse = Message<"relic.v1.PreviewPolicyResponse"> & 
   hits: PolicyPreviewHit[];
 
   /**
-   * truncated is set when the limit, or the number of files a preview
-   * reads, was reached.
+   * truncated is set when there are more hits than the limit lets the
+   * response list, or when the preview stopped at the most files it reads.
    *
    * @generated from field: bool truncated = 2;
    */

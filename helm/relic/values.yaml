@@ -12,7 +12,7 @@ credentials:
   objectStorageAccessKey: ""    # RELIC_OBJECT_STORAGE_ACCESS_KEY when seaweedfs.enabled is false
   objectStorageSecretKey: ""    # RELIC_OBJECT_STORAGE_SECRET_KEY when seaweedfs.enabled is false
   objectStorageAzureConnectionString: ""  # RELIC_OBJECT_STORAGE_AZURE_CONNECTION_STRING for objectStorage.type azure
-  # RELIC_ADMIN_PASSWORD, used once to create the admin user.
+  # RELIC_ADMIN_PASSWORD, required: used once to create the admin user.
   adminPassword: ""
   # RELIC_ENCRYPTION_KEY (openssl rand -base64 32), required: seals signing
   # keys, upstream and LDAP manager passwords in the database. Keep a copy

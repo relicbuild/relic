@@ -280,9 +280,13 @@ func TestVirtualResolution(t *testing.T) {
 		Username: "user",
 		Password: "pw",
 	}))
-	createRepo(t, s, virtualRepo("all-virtual", "first-local", "first-local", "up-remote", "missing-repo"))
-	createRepo(t, s, virtualRepo("loop-a", "", "loop-b"))
+	createRepo(t, s, virtualRepo("all-virtual", "first-local", "first-local", "up-remote"))
+	createRepo(t, s, virtualRepo("loop-a", ""))
 	createRepo(t, s, virtualRepo("loop-b", "", "loop-a"))
+
+	if err := s.UpdateRepository(t.Context(), virtualRepo("loop-a", "", "loop-b")); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := s.Deploy(
 		t.Context(),

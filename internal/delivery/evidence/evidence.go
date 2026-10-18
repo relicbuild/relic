@@ -445,8 +445,8 @@ func (s *Service) subjectEvidence(
 
 	out := make([]Evidence, 0, len(rows))
 	for _, r := range rows {
-		if r.Created.Before(subject.Created) ||
-			(currentContent && r.SubjectSha256 != "" && !strings.EqualFold(r.SubjectSha256, subject.Checksums.SHA256)) {
+		current := r.SubjectSha256 == "" || strings.EqualFold(r.SubjectSha256, subject.Checksums.SHA256)
+		if r.Created.Before(subject.Created) || (currentContent && !current) {
 			continue
 		}
 
@@ -462,7 +462,7 @@ func (s *Service) subjectEvidence(
 			Predicate:         r.Predicate,
 			ProviderID:        r.ProviderID,
 			KeyAlias:          r.KeyAlias,
-			Verified:          r.Verified,
+			Verified:          r.Verified && current,
 			ItemPath:          r.ItemPath,
 			ItemSHA256:        r.ItemSha256,
 			CreatedBy:         r.CreatedBy,

@@ -52,10 +52,24 @@ func LoadConfig(getenv func(string) string, component string) (Config, error) {
 
 	var errs []error
 
+	switchOn := func(key string) bool {
+		v := getenv(key)
+		if v == "" {
+			return false
+		}
+
+		on, err := strconv.ParseBool(v)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s %q must be true or false", key, v))
+		}
+
+		return on
+	}
+
 	cfg := Config{
 		MetricsAddr:     env("RELIC_METRICS_LISTEN_ADDRESS", ":8091"),
-		Pprof:           getenv("RELIC_PROFILING_ENABLED") == "true",
-		RepositoryLabel: getenv("RELIC_METRICS_REPOSITORY_LABEL") == "true",
+		Pprof:           switchOn("RELIC_PROFILING_ENABLED"),
+		RepositoryLabel: switchOn("RELIC_METRICS_REPOSITORY_LABEL"),
 		LogFormat:       env("RELIC_LOG_FORMAT", "json"),
 		ServiceName:     env("OTEL_SERVICE_NAME", "relic-"+component),
 		Sampler:         env("OTEL_TRACES_SAMPLER", "parentbased_always_on"),

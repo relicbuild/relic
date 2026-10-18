@@ -33,7 +33,10 @@ type cliContext struct {
 	CertificateAuthority string `yaml:"certificateAuthority,omitempty"`
 }
 
-const defaultListenAddress = ":8090"
+const (
+	defaultListenAddress        = ":8090"
+	defaultMetricsListenAddress = ":8091"
+)
 
 func (g *globals) configPath() (string, error) {
 	if g.config != "" {
@@ -173,8 +176,10 @@ func (c cliConfig) find(name string) (cliContext, bool) {
 }
 
 type serverTarget struct {
-	url                  string
-	token                string
+	url   string
+	token string
+	// contextToken reports whether token is the saved context's own, which only the CLI holds.
+	contextToken         bool
 	username             string
 	password             string
 	certificateAuthority string
@@ -191,7 +196,10 @@ func (t serverTarget) credentials() credentials {
 func (g *globals) target() (serverTarget, error) {
 	url, token := g.getenv("RELIC_URL"), g.getenv("RELIC_TOKEN")
 
-	var certificateAuthority string
+	var (
+		certificateAuthority string
+		contextToken         bool
+	)
 
 	if g.url == "" || g.token == "" {
 		c, _, err := g.loadConfig()
@@ -205,13 +213,14 @@ func (g *globals) target() (serverTarget, error) {
 		}
 
 		if ctx, ok := c.find(name); ok {
-			if url == "" && g.url == "" {
+			chosen := cmp.Or(g.url, url)
+			if chosen == "" || strings.TrimRight(chosen, "/") == strings.TrimRight(ctx.URL, "/") {
 				url = ctx.URL
 				certificateAuthority = ctx.CertificateAuthority
-			}
 
-			if token == "" {
-				token = ctx.Token
+				if token == "" {
+					token, contextToken = ctx.Token, true
+				}
 			}
 		} else if g.context != "" {
 			return serverTarget{}, fmt.Errorf("no context %q in the config file", g.context)
@@ -223,7 +232,7 @@ func (g *globals) target() (serverTarget, error) {
 	}
 
 	if g.token != "" {
-		token = g.token
+		token, contextToken = g.token, false
 	}
 
 	if url == "" {
@@ -239,6 +248,7 @@ func (g *globals) target() (serverTarget, error) {
 	return serverTarget{
 		url:                  strings.TrimRight(url, "/"),
 		token:                token,
+		contextToken:         contextToken && token != "",
 		certificateAuthority: certificateAuthority,
 	}, nil
 }
@@ -307,6 +317,17 @@ func (l localSettings) certificateAuthority(settings map[string]string) string {
 }
 
 func loopbackURL(listenAddress string) (string, bool) {
+	address, ok := loopbackAddress(listenAddress)
+	if !ok {
+		return "", false
+	}
+
+	return "https://" + address, true
+}
+
+// loopbackAddress is the host:port that reaches a listen address from this
+// machine: a listener on every address answers on 127.0.0.1.
+func loopbackAddress(listenAddress string) (string, bool) {
 	host, port, err := net.SplitHostPort(listenAddress)
 	if err != nil {
 		return "", false
@@ -316,7 +337,7 @@ func loopbackURL(listenAddress string) (string, bool) {
 		host = "127.0.0.1"
 	}
 
-	return "https://" + net.JoinHostPort(host, port), true
+	return net.JoinHostPort(host, port), true
 }
 
 func contextCmd(g *globals) *cobra.Command {
@@ -372,7 +393,10 @@ func contextCmd(g *globals) *cobra.Command {
 			name := cmp.Or(g.context, c.Current)
 
 			x, ok := c.find(name)
-			if !ok {
+			switch {
+			case !ok && g.context != "":
+				return fmt.Errorf("no context %q in the config file", g.context)
+			case !ok:
 				return errors.New("no current context: run relic auth login <url>")
 			}
 
@@ -414,30 +438,45 @@ func contextCmd(g *globals) *cobra.Command {
 func logoutCmd(g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "logout [<context>]",
-		Short: "Forget a context and its token (the current context by default)",
+		Short: "Revoke a context's token and forget the context (the current context by default)",
 		Args:  cobra.MaximumNArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			return g.updateConfig(func(c *cliConfig) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var forgotten cliContext
+
+			if err := g.updateConfig(func(c *cliConfig) error {
 				name := cmp.Or(g.context, c.Current)
 				if len(args) == 1 {
 					name = args[0]
 				}
 
-				n := len(c.Contexts)
+				saved, ok := c.find(name)
+				if !ok {
+					return fmt.Errorf("no context %q", name)
+				}
 
+				forgotten = saved
 				c.Contexts = slices.DeleteFunc(c.Contexts, func(x cliContext) bool {
 					return x.Name == name
 				})
-				if name == "" || len(c.Contexts) == n {
-					return fmt.Errorf("no context %q", name)
-				}
 
 				if c.Current == name {
 					c.Current = ""
 				}
 
 				return nil
-			})
+			}); err != nil {
+				return err
+			}
+
+			if err := revokeContextToken(cmd.Context(), forgotten); err != nil {
+				_, _ = fmt.Fprintf(
+					cmd.ErrOrStderr(),
+					"relic: %v; the context is forgotten, but its token stays valid until it expires\n",
+					err,
+				)
+			}
+
+			return nil
 		},
 	}
 }

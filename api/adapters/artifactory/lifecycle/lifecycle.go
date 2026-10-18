@@ -163,6 +163,12 @@ func (h *Handler) access(r *http.Request) (rb.Access, error) {
 		CanWrite: func(repository, path string) bool {
 			return perms.CanInRepository(p.Subject(), class(repository), path, auth.ActionWrite)
 		},
+		CanDelete: func(repository, path string) bool {
+			return perms.CanInRepository(p.Subject(), class(repository), path, auth.ActionDelete)
+		},
+		CanReadBuild: func(repository, name string) bool {
+			return perms.CanBuild(p.Subject(), repository, name, auth.ActionRead)
+		},
 	}, nil
 }
 
@@ -313,11 +319,11 @@ func page(r *http.Request, bundles []rb.Release, key func(rb.Release) string) ([
 		})
 	} else {
 		slices.SortStableFunc(bundles, func(a, b rb.Release) int {
-			return b.Created.Compare(a.Created)
+			return a.Created.Compare(b.Created)
 		})
 	}
 
-	if q.Get("order_asc") == "true" {
+	if q.Get("order_asc") != "true" {
 		slices.Reverse(bundles)
 	}
 
@@ -339,6 +345,13 @@ func (h *Handler) groups(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.fail(w, r, err)
 		return
+	}
+
+	if project(r) != "" {
+		stored := h.bundles.Layout().Repository(project(r))
+		all = slices.DeleteFunc(all, func(b rb.Release) bool {
+			return b.Repository != stored
+		})
 	}
 
 	if all, err = h.readable(r, all); err != nil {
@@ -644,7 +657,7 @@ func (h *Handler) deletePromotion(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) distribute(w http.ResponseWriter, _ *http.Request) {
 	wire.WriteError(
 		w,
-		http.StatusNotImplemented,
+		http.StatusNotFound,
 		"Relic does not distribute release bundles: there are no distribution targets",
 	)
 }
@@ -768,7 +781,7 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, rb.ErrNotFound), errors.Is(err, repository.ErrNotFound):
 		wire.WriteError(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, rb.ErrForbidden):
+	case errors.Is(err, rb.ErrForbidden), errors.Is(err, repository.ErrForbidden):
 		wire.WriteError(w, http.StatusForbidden, err.Error())
 	case errors.Is(err, rb.ErrExists), errors.Is(err, repository.ErrConflict), errors.Is(err, rb.ErrRefused):
 		wire.WriteError(w, http.StatusConflict, err.Error())

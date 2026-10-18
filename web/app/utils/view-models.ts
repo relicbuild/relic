@@ -395,6 +395,8 @@ export interface TrashEntryView {
 export interface BuildLinkView {
   name: string
   number: string
+  // The build's project key; empty outside projects.
+  project: string
   started: string
   module: string
   scopes?: string

@@ -20,6 +20,105 @@ import (
 	"relic/internal/scanning/scan"
 )
 
+func TestQuarantineAppliesAsSoonAsItIsTurnedOn(t *testing.T) {
+	t.Parallel()
+
+	srv := server(t)
+	ctx := t.Context()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "jar "+html.EscapeString(r.URL.Path))
+	}))
+	t.Cleanup(upstream.Close)
+
+	remote := &relicv1.Repository{
+		Name:   "late-remote",
+		Class:  relicv1.RepositoryClass_REPOSITORY_CLASS_REMOTE,
+		Format: relicv1.Format_FORMAT_MAVEN,
+		Remote: &relicv1.RemoteRepositorySettings{
+			Url: upstream.URL,
+		},
+	}
+
+	repos := relicv1connect.NewRepositoryServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	if _, err := repos.CreateRepository(ctx, connect.NewRequest(&relicv1.CreateRepositoryRequest{
+		Repository: remote,
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	get := func(p string) (int, string) {
+		resp, body := do(t, srv, call{
+			method: http.MethodGet,
+			path:   "/artifactory/late-remote/" + p,
+		})
+
+		return resp.StatusCode, body
+	}
+
+	if status, body := get("g/a/1.0/a-1.0.jar"); status != http.StatusOK {
+		t.Fatalf("a file of a repository without quarantine = %d %s", status, body)
+	}
+
+	remote.Remote.Quarantine = true
+	if _, err := repos.UpdateRepository(ctx, connect.NewRequest(&relicv1.UpdateRepositoryRequest{
+		Repository: remote,
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	if status, body := get(
+		"g/b/1.0/b-1.0.jar",
+	); status != http.StatusForbidden ||
+		!strings.Contains(body, "quarantined") {
+		t.Errorf("a fresh file right after quarantine was turned on = %d %s, want held", status, body)
+	}
+}
+
+func TestReleaseBundleRefusesQuarantinedFiles(t *testing.T) {
+	t.Parallel()
+
+	srv := server(t)
+	ctx := t.Context()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "jar "+html.EscapeString(r.URL.Path))
+	}))
+	t.Cleanup(upstream.Close)
+
+	repos := relicv1connect.NewRepositoryServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	if _, err := repos.CreateRepository(ctx, connect.NewRequest(&relicv1.CreateRepositoryRequest{
+		Repository: &relicv1.Repository{
+			Name:   "bundled-remote",
+			Class:  relicv1.RepositoryClass_REPOSITORY_CLASS_REMOTE,
+			Format: relicv1.Format_FORMAT_MAVEN,
+			Remote: &relicv1.RemoteRepositorySettings{
+				Url:        upstream.URL,
+				Quarantine: true,
+			},
+		},
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	if resp, body := do(t, srv, call{
+		method: http.MethodGet,
+		path:   "/artifactory/bundled-remote/g/a/1.0/a-1.0.jar",
+	}); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("a fresh file = %d %s, want held", resp.StatusCode, body)
+	}
+
+	resp, body := do(t, srv, call{
+		method: http.MethodPost,
+		path:   "/lifecycle/api/v2/release_bundle?async=false",
+		body: `{"release_bundle_name":"held","release_bundle_version":"1.0.0","source_type":"artifacts",
+			"source":{"artifacts":[{"path":"bundled-remote/g/a/1.0/a-1.0.jar"}]}}`,
+	})
+	if resp.StatusCode != http.StatusForbidden || !strings.Contains(body, "quarantined") {
+		t.Errorf("a release bundle holding a quarantined file = %d %s, want 403", resp.StatusCode, body)
+	}
+}
+
 func TestQuarantine(t *testing.T) {
 	t.Parallel()
 	srv, db := serverDB(t)
@@ -211,6 +310,29 @@ func TestQuarantine(t *testing.T) {
 		path:   "/artifactory/api/copy/held-remote/g/a?to=/copies-local/g/a",
 	}); resp.StatusCode != http.StatusOK {
 		t.Errorf("copying a released file = %d %s", resp.StatusCode, body)
+	}
+
+	for p, want := range map[string]int{
+		"g/a/1.0/a-1.0.jar": http.StatusCreated,
+		"g/b/1.0/b-1.0.jar": http.StatusForbidden,
+		"g/c/1.0/c-1.0.jar": http.StatusForbidden,
+	} {
+		if resp, body := do(t, srv, call{
+			method: http.MethodPut,
+			path:   "/artifactory/copies-local/by-checksum/" + p,
+			headers: map[string]string{
+				"X-Checksum-Deploy": "true",
+				"X-Checksum-Sha256": sha[p],
+			},
+		}); resp.StatusCode != want {
+			t.Errorf(
+				"a checksum deploy of the content of held-remote/%s = %d %s, want %d",
+				p,
+				resp.StatusCode,
+				body,
+				want,
+			)
+		}
 	}
 
 	for p, want := range map[string]int{

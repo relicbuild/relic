@@ -280,7 +280,8 @@ export const TrashService: GenService<{
     output: typeof ListTrashResponseSchema;
   },
   /**
-   * RestoreTrash puts an item back, where it was or at another place.
+   * RestoreTrash puts an item back, where it was or at another place. It
+   * fails with FAILED_PRECONDITION when a file it would restore is there.
    *
    * @generated from rpc relic.v1.TrashService.RestoreTrash
    */

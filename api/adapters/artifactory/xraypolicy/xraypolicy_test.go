@@ -75,6 +75,75 @@ func TestRoundTrip(t *testing.T) {
 	}
 }
 
+func TestIgnoreRuleRefusesFiltersItCannotEvaluate(t *testing.T) {
+	t.Parallel()
+
+	for name, tt := range map[string]struct {
+		filters string
+		refused bool
+	}{
+		"docker layers": {
+			filters: `{"watches":["w"],"docker-layers":["sha256:0000"]}`,
+			refused: true,
+		},
+		"release bundles": {
+			filters: `{"watches":["w"],"release-bundles":[{"name":"rb","version":"1"}]}`,
+			refused: true,
+		},
+		"operational risks": {
+			filters: `{"operational_risk":["any"]}`,
+			refused: true,
+		},
+		"exposures": {
+			filters: `{"exposures":{"scanners":["EXP-1"]}}`,
+			refused: true,
+		},
+		"an unknown filter": {
+			filters: `{"watches":["w"],"bogus":1}`,
+			refused: true,
+		},
+		"an artifact by name": {
+			filters: `{"artifacts":[{"name":"other.jar","version":"9.9","path":"libs/u/"}]}`,
+			refused: true,
+		},
+		"an artifact by path, as jfrog-client-go sends it": {
+			filters: `{"watches":["w"],"artifacts":[{"name":"","path":"libs/u/"}],"docker-layers":[],"exposures":null}`,
+		},
+	} {
+		var r IgnoreRule
+
+		err := json.Unmarshal([]byte(`{"notes":"n","ignore_filters":`+tt.filters+`}`), &r)
+		if err == nil {
+			_, err = IgnoreRuleFromXray(r)
+		}
+
+		if refused := errors.Is(err, policy.ErrInvalid); refused != tt.refused {
+			t.Errorf("%s: err = %v, want refused %v", name, err, tt.refused)
+		}
+	}
+}
+
+func TestIgnoreRuleWithTheZeroExpiryNeverExpires(t *testing.T) {
+	t.Parallel()
+
+	var r IgnoreRule
+	if err := json.Unmarshal(
+		[]byte(`{"notes":"sdk","expires_at":"0001-01-01T00:00:00Z","ignore_filters":{"cves":["CVE-1"]}}`),
+		&r,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	native, err := IgnoreRuleFromXray(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if native.Expires != nil {
+		t.Errorf("expires = %v, want none", native.Expires)
+	}
+}
+
 func TestNative(t *testing.T) {
 	t.Parallel()
 
@@ -149,5 +218,157 @@ func same(t *testing.T, name string, got any, want string) {
 
 	if !reflect.DeepEqual(g, w) {
 		t.Errorf("%s:\ngot  %s\nwant %s", name, b, want)
+	}
+}
+
+func TestKeepRelicCriteria(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		stored  policy.Rule
+		updated policy.Rule
+		want    policy.Rule
+	}{
+		"a malicious rule sent back unchanged stays malicious": {
+			stored: policy.Rule{
+				Name:      "r",
+				Malicious: true,
+			},
+			updated: policy.Rule{
+				Name: "r",
+			},
+			want: policy.Rule{
+				Name:      "r",
+				Malicious: true,
+			},
+		},
+		"a malicious rule given a minimum severity becomes a severity rule": {
+			stored: policy.Rule{
+				Name:      "r",
+				Malicious: true,
+			},
+			updated: policy.Rule{
+				Name:        "r",
+				MinSeverity: scan.SeverityHigh,
+			},
+			want: policy.Rule{
+				Name:        "r",
+				MinSeverity: scan.SeverityHigh,
+			},
+		},
+		"a secrets rule given a CVSS range becomes a CVSS rule": {
+			stored: policy.Rule{
+				Name:    "r",
+				Secrets: true,
+			},
+			updated: policy.Rule{
+				Name: "r",
+				CVSS: &policy.CVSSRange{
+					From: 7,
+					To:   10,
+				},
+			},
+			want: policy.Rule{
+				Name: "r",
+				CVSS: &policy.CVSSRange{
+					From: 7,
+					To:   10,
+				},
+			},
+		},
+		"a misconfiguration rule keeps its kind under a new minimum severity": {
+			stored: policy.Rule{
+				Name:              "r",
+				MinSeverity:       scan.SeverityHigh,
+				Misconfigurations: true,
+			},
+			updated: policy.Rule{
+				Name:        "r",
+				MinSeverity: scan.SeverityCritical,
+			},
+			want: policy.Rule{
+				Name:              "r",
+				MinSeverity:       scan.SeverityCritical,
+				Misconfigurations: true,
+			},
+		},
+		"a severity rule keeps its condition and reachability": {
+			stored: policy.Rule{
+				Name:              "r",
+				MinSeverity:       scan.SeverityHigh,
+				Condition:         `package_name == "x"`,
+				IgnoreUnreachable: true,
+			},
+			updated: policy.Rule{
+				Name:        "r",
+				MinSeverity: scan.SeverityCritical,
+			},
+			want: policy.Rule{
+				Name:              "r",
+				MinSeverity:       scan.SeverityCritical,
+				Condition:         `package_name == "x"`,
+				IgnoreUnreachable: true,
+			},
+		},
+		"a malicious rule given a CVSS range keeps its condition": {
+			stored: policy.Rule{
+				Name:      "r",
+				Malicious: true,
+				Condition: `package_name == "x"`,
+			},
+			updated: policy.Rule{
+				Name: "r",
+				CVSS: &policy.CVSSRange{
+					From: 9,
+					To:   10,
+				},
+			},
+			want: policy.Rule{
+				Name:      "r",
+				Condition: `package_name == "x"`,
+				CVSS: &policy.CVSSRange{
+					From: 9,
+					To:   10,
+				},
+			},
+		},
+		"a new rule takes nothing from another": {
+			stored: policy.Rule{
+				Name:      "old",
+				Malicious: true,
+				Condition: `package_name == "x"`,
+			},
+			updated: policy.Rule{
+				Name:        "new",
+				MinSeverity: scan.SeverityLow,
+			},
+			want: policy.Rule{
+				Name:        "new",
+				MinSeverity: scan.SeverityLow,
+			},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got := KeepRelicCriteria(
+				policy.Policy{
+					Rules: []policy.Rule{
+						tt.updated,
+					},
+				},
+				policy.Policy{
+					Rules: []policy.Rule{
+						tt.stored,
+					},
+				},
+			)
+
+			if !reflect.DeepEqual(got.Rules[0], tt.want) {
+				t.Errorf("rule = %+v, want %+v", got.Rules[0], tt.want)
+			}
+		})
 	}
 }

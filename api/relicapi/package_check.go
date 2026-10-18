@@ -3,6 +3,8 @@ package relicapi
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 
 	"connectrpc.com/connect"
 	packageurl "github.com/package-url/packageurl-go"
@@ -116,8 +118,80 @@ func (s *scanServer) packageRisks(ctx context.Context, purl packageurl.PackageUR
 	}, endoflife.Distro{})
 }
 
+// purlFormats are the repository formats that serve each package URL type.
+var purlFormats = map[string][]repository.Format{
+	packageurl.TypeNPM: {
+		repository.FormatNpm,
+	},
+	packageurl.TypePyPi: {
+		repository.FormatPyPI,
+	},
+	packageurl.TypeMaven: {
+		repository.FormatMaven,
+		repository.FormatGradle,
+		repository.FormatIvy,
+		repository.FormatSbt,
+	},
+	packageurl.TypeGolang: {
+		repository.FormatGoModules,
+	},
+	packageurl.TypeNuget: {
+		repository.FormatNuGet,
+	},
+	packageurl.TypeGem: {
+		repository.FormatRubyGems,
+	},
+	packageurl.TypeCargo: {
+		repository.FormatCargo,
+	},
+	packageurl.TypeConan: {
+		repository.FormatConan,
+	},
+	packageurl.TypeComposer: {
+		repository.FormatComposer,
+	},
+	packageurl.TypeCocoapods: {
+		repository.FormatCocoaPods,
+	},
+	packageurl.TypeConda: {
+		repository.FormatConda,
+	},
+	packageurl.TypeCran: {
+		repository.FormatCran,
+	},
+	packageurl.TypeSwift: {
+		repository.FormatSwift,
+	},
+	packageurl.TypePub: {
+		repository.FormatPub,
+	},
+	packageurl.TypeHuggingface: {
+		repository.FormatHuggingFace,
+		repository.FormatMachineLearning,
+	},
+	packageurl.TypeDebian: {
+		repository.FormatDebian,
+	},
+	packageurl.TypeRPM: {
+		repository.FormatRPM,
+	},
+	packageurl.TypeApk: {
+		repository.FormatAlpine,
+	},
+	packageurl.TypeDocker: {
+		repository.FormatDocker,
+		repository.FormatOCI,
+	},
+	packageurl.TypeOCI: {
+		repository.FormatDocker,
+		repository.FormatOCI,
+		repository.FormatHelmOCI,
+	},
+}
+
 // offered refuses a version the repository's npm or PyPI metadata leaves
-// out; other formats filter no versions.
+// out; other formats filter no versions. A package URL of a type the
+// repository's format cannot hold is an invalid argument.
 func (s *scanServer) offered(
 	ctx context.Context,
 	repo string,
@@ -138,6 +212,14 @@ func (s *scanServer) offered(
 		Class: string(r.Class),
 	}) {
 		return nil, connect.NewError(connect.CodeNotFound, repository.ErrRepositoryNotFound)
+	}
+
+	if formats, known := purlFormats[purl.Type]; known && r.Format != repository.FormatGeneric &&
+		!slices.Contains(formats, r.Format) {
+		return nil, connect.NewError(
+			connect.CodeInvalidArgument,
+			fmt.Errorf("%s is a %s repository: it serves no pkg:%s packages", repo, r.Format, purl.Type),
+		)
 	}
 
 	var ok bool

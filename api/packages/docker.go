@@ -553,7 +553,12 @@ func (h *Handler) dockerUpload(w http.ResponseWriter, r *http.Request, req docke
 		return
 	}
 
-	if r.Method == http.MethodGet || r.Method == http.MethodPatch {
+	if err := h.docker.FindUpload(r.Context(), id.String()); err != nil {
+		h.dockerFail(w, r, err)
+		return
+	}
+
+	if r.Method != http.MethodPut {
 		if chunks, offset, err = h.docker.UploadState(r.Context(), id.String(), chunks, offset); err != nil {
 			h.dockerFail(w, r, err)
 			return
@@ -697,6 +702,11 @@ func (h *Handler) dockerStartUpload(w http.ResponseWriter, r *http.Request, req 
 		return
 	}
 
+	if err := h.docker.StartUpload(r.Context(), id); err != nil {
+		h.dockerFail(w, r, err)
+		return
+	}
+
 	writeUploadStatus(w, req, id, 0, 0, http.StatusAccepted)
 }
 
@@ -733,16 +743,34 @@ func writeBlobCreated(w http.ResponseWriter, req dockerReq, digest string) {
 }
 
 func (h *Handler) dockerTags(w http.ResponseWriter, r *http.Request, req dockerReq, rp repository.Repository) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		RegistryError(w, http.StatusMethodNotAllowed, "UNSUPPORTED", "the operation is unsupported")
+		return
+	}
+
 	if !h.dockerAllowed(w, r, req.repo, req.image, auth.ActionRead) {
 		return
 	}
 
 	var tags []string
 
+	known := false
+
 	for _, member := range h.ReadRepos(r.Context(), rp) {
 		image := req.image
 		if member.Class == "remote" {
 			image = docker.UpstreamImage(h.repos.UpstreamOf(member).URL, image)
+		}
+
+		_, err := h.repos.Stat(r.Context(), member.Name, image)
+		switch {
+		case err == nil:
+			known = true
+		case errors.Is(err, repository.ErrNotFound):
+			continue
+		default:
+			h.dockerFail(w, r, err)
+			return
 		}
 
 		t, err := h.docker.Tags(r.Context(), member.Name, image)
@@ -752,6 +780,11 @@ func (h *Handler) dockerTags(w http.ResponseWriter, r *http.Request, req dockerR
 		}
 
 		tags = append(tags, t...)
+	}
+
+	if !known {
+		RegistryError(w, http.StatusNotFound, "NAME_UNKNOWN", "repository name not known to registry")
+		return
 	}
 
 	slices.Sort(tags)
@@ -889,6 +922,27 @@ func RegistryError(w http.ResponseWriter, status int, code, msg string) {
 			},
 		},
 	})
+}
+
+var registryErrorCodes = map[int]string{
+	http.StatusUnauthorized:          "UNAUTHORIZED",
+	http.StatusForbidden:             "DENIED",
+	http.StatusMethodNotAllowed:      "UNSUPPORTED",
+	http.StatusRequestEntityTooLarge: "SIZE_INVALID",
+	http.StatusTooManyRequests:       "TOOMANYREQUESTS",
+}
+
+// RegistryStatusError answers an error the HTTP layer raises before the
+// registry runs (bad credentials, rate limits) in the registry's error
+// format.
+func RegistryStatusError(w http.ResponseWriter, status int, message string) {
+	code, ok := registryErrorCodes[status]
+	if !ok {
+		code = "UNKNOWN"
+	}
+
+	w.Header().Set("Docker-Distribution-API-Version", "registry/2.0")
+	RegistryError(w, status, code, message)
 }
 
 func (h *Handler) allowImage(w http.ResponseWriter, r *http.Request, item repository.Item) bool {

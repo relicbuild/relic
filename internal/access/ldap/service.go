@@ -11,6 +11,7 @@ import (
 	"uuid"
 
 	"relic/internal/access/auth"
+	"relic/internal/access/security"
 	"relic/internal/platform/database"
 	"relic/internal/platform/sealing"
 )
@@ -328,14 +329,27 @@ func (s *Service) provision(ctx context.Context, st Server, username string, e E
 			return auth.ErrBadCredentials
 		}
 
-		if err := s.db.CreateLdapUser(
-			ctx,
-			database.CreateLdapUserParams{
-				ID:       uuid.New(),
-				Username: username,
-				Email:    e.Email,
-			},
-		); err != nil {
+		if !security.ValidUsername(username) {
+			s.log.DebugContext(ctx, "directory user refused: not a valid Relic username", "user", username)
+			return auth.ErrBadCredentials
+		}
+
+		err := security.WithNewUsername(ctx, s.db, username, func() error {
+			return s.db.CreateLdapUser(
+				ctx,
+				database.CreateLdapUserParams{
+					ID:       uuid.New(),
+					Username: username,
+					Email:    e.Email,
+				},
+			)
+		})
+		if errors.Is(err, security.ErrExists) {
+			s.log.DebugContext(ctx, "directory user refused", "user", username, "reason", err)
+			return auth.ErrBadCredentials
+		}
+
+		if err != nil {
 			return fmt.Errorf("create ldap user %s: %w", username, err)
 		}
 	case err != nil:

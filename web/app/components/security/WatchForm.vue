@@ -22,7 +22,7 @@ const { data: options, status, error, refresh } = useAsyncData('watch-form:optio
 const resourceItems = computed(() => [
   { label: 'All repositories', value: 'repository:' },
   { label: 'All builds', value: 'build:' },
-  ...(options.value?.repos ?? []).map(r => ({ label: `Repository ${r.name}`, value: `repository:${r.name}` })),
+  ...(options.value?.repos ?? []).filter(r => r.class !== 'virtual').map(r => ({ label: `Repository ${r.name}`, value: `repository:${r.name}` })),
   ...(options.value?.builds ?? []).map(b => ({ label: `Build ${b.name}`, value: `build:${b.name}` }))
 ])
 const policyItems = computed(() => (options.value?.policies ?? []).map(p => ({ label: `${p.name} (${enumName(PolicyKind, p.kind)})`, value: p.name })))

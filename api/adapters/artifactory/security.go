@@ -7,6 +7,7 @@ import (
 	"maps"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -71,9 +72,6 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) {
 		expires = time.Duration(secs) * time.Second
 	}
 
-	if !caller.Admin && (expires == 0 || expires > auth.MaxUserTokenLifetime) {
-		expires = auth.MaxUserTokenLifetime
-	}
 	// Unknown scope parts are ignored on this route.
 	scope, _ := access.ParseScope(r.PostForm.Get("scope"))
 	if !caller.MayGrant(scope) {
@@ -88,6 +86,11 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) {
 		Refreshable: r.PostForm.Get("refreshable") == "true",
 		Description: r.PostForm.Get("description"),
 	}, time.Now()))
+	if errors.Is(err, auth.ErrUnknownUser) {
+		wire.WriteError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
 	if err != nil {
 		h.writeError(w, r, err)
 		return
@@ -162,7 +165,7 @@ func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request) {
 	for i, u := range users {
 		out[i] = nameURI{
 			Name:  u.Name,
-			URI:   baseURL(r) + "/api/security/users/" + escapePath(u.Name),
+			URI:   baseURL(r) + "/api/security/users/" + url.PathEscape(u.Name),
 			Realm: u.Realm,
 		}
 	}
@@ -343,7 +346,7 @@ func (h *Handler) listGroups(w http.ResponseWriter, r *http.Request) {
 	for i, n := range names {
 		out[i] = nameURI{
 			Name: n,
-			URI:  baseURL(r) + "/api/security/groups/" + escapePath(n),
+			URI:  baseURL(r) + "/api/security/groups/" + url.PathEscape(n),
 		}
 	}
 
@@ -493,7 +496,7 @@ func (h *Handler) listPermissionTargets(w http.ResponseWriter, r *http.Request) 
 	for i, n := range names {
 		out[i] = nameURI{
 			Name: n,
-			URI:  baseURL(r) + "/api/v2/security/permissions/" + escapePath(n),
+			URI:  baseURL(r) + "/api/v2/security/permissions/" + url.PathEscape(n),
 		}
 	}
 

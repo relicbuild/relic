@@ -358,7 +358,8 @@ func TestHuggingFaceRepository(t *testing.T) {
 		case "/org/up/resolve/" + upSHA + "/config.json":
 			_, _ = w.Write([]byte(`{"up": true}`))
 		case "/api/models/org/up/tree/" + upSHA:
-			_, _ = w.Write([]byte(`[{"type":"file","path":"config.json","size":12,"oid":"abc"}]`))
+			_, _ = w.Write([]byte(`[{"type":"file","path":"config.json","size":12,"oid":"abc",` +
+				`"xetHash":"75402e74462600f62ca4a08b91c9218f36075860d5f6d7eb07f4c29ed7fa4ad6"}]`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -404,7 +405,8 @@ func TestHuggingFaceRepository(t *testing.T) {
 	if resp, tree := do(t, srv, call{
 		method: "GET",
 		path:   REP + "/api/models/org/up/tree/main?recursive=true",
-	}); resp.StatusCode != 200 || !strings.Contains(tree, `"path": "config.json"`) {
+	}); resp.StatusCode != 200 || !strings.Contains(tree, `"path": "config.json"`) ||
+		strings.Contains(tree, "xetHash") {
 		t.Errorf("remote tree = %d %s", resp.StatusCode, tree)
 	}
 
@@ -418,5 +420,48 @@ func TestHuggingFaceRepository(t *testing.T) {
 		},
 	); resp.StatusCode == 200 {
 		t.Errorf("commit to a remote succeeded")
+	}
+}
+
+func TestHuggingFaceRepoInfoWithoutRevision(t *testing.T) {
+	t.Parallel()
+
+	srv := server(t)
+	do(t, srv, call{
+		method: "PUT",
+		path:   "/artifactory/api/repositories/hf-info",
+		body:   `{"rclass":"local","packageType":"huggingfaceml"}`,
+	})
+
+	const EP = "/artifactory/api/huggingfaceml/hf-info"
+
+	for _, id := range []string{
+		"org/demo",
+		"solo",
+	} {
+		if resp, body := do(t, srv, call{
+			method: "POST",
+			path:   EP + "/api/datasets/" + id + "/commit/main",
+			body: `{"key":"header","value":{"summary":"upload"}}` + "\n" +
+				`{"key":"file","value":{"content":"e30=","path":"data.json","encoding":"base64"}}`,
+		}); resp.StatusCode != http.StatusOK {
+			t.Fatalf("commit %s = %d %s", id, resp.StatusCode, body)
+		}
+
+		resp, body := do(t, srv, call{
+			method: "GET",
+			path:   EP + "/api/datasets/" + id,
+		})
+		if resp.StatusCode != http.StatusOK || !strings.Contains(body, `"rfilename": "data.json"`) {
+			t.Errorf("info of %s = %d %s", id, resp.StatusCode, body)
+		}
+	}
+
+	resp, body := do(t, srv, call{
+		method: "GET",
+		path:   EP + "/api/models/org/missing",
+	})
+	if resp.StatusCode != http.StatusNotFound || resp.Header.Get("X-Error-Code") != "RepoNotFound" {
+		t.Errorf("info of a missing model = %d %s %s", resp.StatusCode, resp.Header.Get("X-Error-Code"), body)
 	}
 }

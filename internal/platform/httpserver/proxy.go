@@ -49,7 +49,8 @@ func ParsePrefixes(s string) ([]netip.Prefix, error) {
 	return out, nil
 }
 
-// TrustProxies believes X-Forwarded-* headers only from the given proxies.
+// TrustProxies believes X-Forwarded-* headers only from the given proxies, and
+// takes the client address and the host the client asked for from them.
 func TrustProxies(trusted []netip.Prefix, next http.Handler) http.Handler {
 	isTrusted := func(a netip.Addr) bool {
 		a = a.Unmap()
@@ -89,9 +90,17 @@ func TrustProxies(trusted []netip.Prefix, next http.Handler) http.Handler {
 			}
 		}
 
-		if client != peer {
+		host, _, _ := strings.Cut(r.Header.Get("X-Forwarded-Host"), ",")
+		host = strings.TrimSpace(host)
+
+		if client != peer || host != "" {
 			r2 := r.Clone(r.Context())
 			r2.RemoteAddr = net.JoinHostPort(client.String(), "0")
+
+			if host != "" {
+				r2.Host = host
+			}
+
 			r = r2
 		}
 

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"slices"
 	"time"
 
 	"connectrpc.com/connect"
@@ -75,6 +76,12 @@ func (s *releaseServer) access(ctx context.Context) (release.Access, error) {
 		},
 		CanWrite: func(r, path string) bool {
 			return perms.CanInRepository(p.Subject(), local(r), path, auth.ActionWrite)
+		},
+		CanDelete: func(r, path string) bool {
+			return perms.CanInRepository(p.Subject(), local(r), path, auth.ActionDelete)
+		},
+		CanReadBuild: func(r, name string) bool {
+			return perms.CanBuild(p.Subject(), r, name, auth.ActionRead)
 		},
 	}, nil
 }
@@ -233,11 +240,18 @@ func specOf(m *relicv1.ReleaseSpec) (release.Spec, error) {
 
 func (s *releaseServer) ListReleases(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListReleasesRequest],
+	req *connect.Request[relicv1.ListReleasesRequest],
 ) (*connect.Response[relicv1.ListReleasesResponse], error) {
 	all, err := s.d.Releases.Groups(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	if req.Msg.Project != nil {
+		stored := s.d.Releases.Layout().Repository(req.Msg.GetProject())
+		all = slices.DeleteFunc(all, func(r release.Release) bool {
+			return r.Repository != stored
+		})
 	}
 
 	if all, err = s.readable(ctx, all); err != nil {

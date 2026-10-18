@@ -12,6 +12,7 @@ import (
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/internal/access/auth"
+	"relic/internal/access/project"
 	"relic/internal/access/security"
 )
 
@@ -460,15 +461,16 @@ func (s *securityServer) CreateToken(
 		)
 	}
 
-	expires := time.Duration(days) * 24 * time.Hour
-	if !caller.Admin && (expires == 0 || expires > auth.MaxUserTokenLifetime) {
-		expires = auth.MaxUserTokenLifetime
+	if key := req.Msg.GetProject(); key != "" {
+		if err := s.requireVisibleProject(ctx, caller, key); err != nil {
+			return nil, err
+		}
 	}
 
 	tok, err := s.d.Tokens.Issue(ctx, caller.LimitIssue(auth.IssueParams{
 		Username:    caller.Name(),
 		Scope:       scope,
-		ExpiresIn:   expires,
+		ExpiresIn:   time.Duration(days) * 24 * time.Hour,
 		Description: req.Msg.GetDescription(),
 		Project:     req.Msg.GetProject(),
 	}, time.Now()))
@@ -484,6 +486,23 @@ func (s *securityServer) CreateToken(
 			Groups: tok.Scope.Groups,
 		},
 	}), nil
+}
+
+func (s *securityServer) requireVisibleProject(ctx context.Context, caller auth.Principal, key string) error {
+	if s.d.Projects == nil {
+		return unimplemented("projects")
+	}
+
+	p, err := s.d.Projects.Get(ctx, key)
+	if err != nil {
+		return err
+	}
+
+	if !seesAllProjects(caller) && p.Role(caller) == "" {
+		return connect.NewError(connect.CodeNotFound, fmt.Errorf("%w: %s", project.ErrNotFound, key))
+	}
+
+	return nil
 }
 
 // ListTokens lists the caller's own tokens, or for an administrator or a viewer

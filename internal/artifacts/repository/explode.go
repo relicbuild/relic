@@ -84,8 +84,23 @@ func (x *exploder) result(err error) (ExplodeResult, error) {
 	}, err
 }
 
+// archiveEntryPath is CleanPath for an archive entry name, which may hold
+// "." segments, as "tar -C dir ." writes them.
+func archiveEntryPath(name string) (string, error) {
+	segments := strings.Split(name, "/")
+
+	kept := segments[:0]
+	for _, s := range segments {
+		if s != "." {
+			kept = append(kept, s)
+		}
+	}
+
+	return CleanPath(strings.Join(kept, "/"))
+}
+
 func (x *exploder) deploy(ctx context.Context, name string, r io.Reader) error {
-	clean, err := CleanPath(name)
+	clean, err := archiveEntryPath(name)
 	if err != nil || clean == "" {
 		return fmt.Errorf("%w: archive entry %q", ErrInvalidPath, name)
 	}

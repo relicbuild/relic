@@ -645,6 +645,11 @@
             "type": "string",
             "title": "scopes",
             "description": "scopes says how a dependency was used; empty for artifacts."
+          },
+          "project": {
+            "type": "string",
+            "title": "project",
+            "description": "project is the key of the build's project; empty outside projects."
           }
         },
         "title": "BuildLink",
@@ -1216,7 +1221,7 @@
           "project": {
             "type": "string",
             "title": "project",
-            "description": "project is the project the token is for."
+            "description": "project is a label recorded on the token: a project the caller can see.\n It does not limit what the token can do; the scope does."
           }
         },
         "title": "CreateTokenRequest",
@@ -2244,7 +2249,7 @@
             "type": "integer",
             "title": "skipped",
             "format": "int32",
-            "description": "skipped counts the rules VEX cannot express (no vulnerability or no\n package), and expired ones."
+            "description": "skipped counts the rules VEX cannot express: no vulnerability or no\n package, a license, watch, policy, path or build filter, or an expiry."
           }
         },
         "title": "ExportVexResponse",
@@ -2807,7 +2812,8 @@
               "string"
             ],
             "title": "builds",
-            "format": "int64"
+            "format": "int64",
+            "description": "builds counts the readable builds outside projects."
           },
           "scans": {
             "type": "object",
@@ -2817,7 +2823,7 @@
               "title": "value",
               "format": "int32"
             },
-            "description": "scans counts scanned contents by status."
+            "description": "scans counts scanned contents by status; only administrators and viewers,\n who may list every finding, get it."
           },
           "findings": {
             "type": "object",
@@ -2827,7 +2833,7 @@
               "title": "value",
               "format": "int32"
             },
-            "description": "findings counts findings by severity."
+            "description": "findings counts findings by severity; only administrators and viewers get\n it."
           },
           "vulnerabilityDatabaseBuilt": {
             "title": "vulnerability_database_built",
@@ -5714,6 +5720,14 @@
       },
       "relic.v1.ListReleasesRequest": {
         "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "title": "project",
+            "description": "project limits the list to one project's releases (\"\" for releases\n outside projects); unset lists every project's.",
+            "nullable": true
+          }
+        },
         "title": "ListReleasesRequest",
         "additionalProperties": false
       },
@@ -5805,7 +5819,7 @@
           "username": {
             "type": "string",
             "title": "username",
-            "description": "username limits an administrator's list to one user; others always see\n their own tokens."
+            "description": "username limits an administrator's or a viewer's list to one user; others\n always see their own tokens."
           },
           "includeRevoked": {
             "type": "boolean",
@@ -6594,7 +6608,7 @@
           },
           "minSeverity": {
             "title": "min_severity",
-            "description": "Security rules: min_severity or a CVSS range.",
+            "description": "Security rules: min_severity or a CVSS range from 0 to 10; an unset\n cvss_from is 0 and an unset cvss_to is 10.",
             "$ref": "#/components/schemas/relic.v1.Severity"
           },
           "cvssFrom": {
@@ -6815,7 +6829,7 @@
             "type": "integer",
             "title": "limit",
             "format": "int32",
-            "description": "limit defaults to 1000."
+            "description": "limit is the most hits to list; it defaults to 1000."
           }
         },
         "title": "PreviewPolicyRequest",
@@ -6834,7 +6848,7 @@
           "truncated": {
             "type": "boolean",
             "title": "truncated",
-            "description": "truncated is set when the limit, or the number of files a preview\n reads, was reached."
+            "description": "truncated is set when there are more hits than the limit lets the\n response list, or when the preview stopped at the most files it reads."
           }
         },
         "title": "PreviewPolicyResponse",
@@ -7179,7 +7193,7 @@
           "move": {
             "type": "boolean",
             "title": "move",
-            "description": "move removes the files from the previous environment."
+            "description": "move asks for a move; the server performs it as a copy, so the files\n stay in the repositories of the previous environment."
           }
         },
         "title": "PromoteReleaseRequest",
@@ -8885,7 +8899,7 @@
           "repository": {
             "type": "string",
             "title": "repository",
-            "description": "repository limits the search to one repository when set."
+            "description": "repository limits the search to one repository when set; a virtual\n repository is searched through its members."
           },
           "limit": {
             "type": "integer",
@@ -9920,7 +9934,7 @@
           "Files"
         ],
         "summary": "Upload a file",
-        "description": "Stores the body as the file, creating missing folders. Replacing a file needs delete permission.",
+        "description": "Stores the body as the file, creating missing folders. Replacing a file needs delete permission. Each query parameter sets a property on the file (`?build.name=app\u0026build.number=42`); a repeated parameter gives the property several values.",
         "requestBody": {
           "required": true,
           "content": {
@@ -9935,6 +9949,9 @@
         "responses": {
           "201": {
             "description": "Stored; the body is the item as JSON (relic.v1.Item)."
+          },
+          "400": {
+            "description": "A property key or value is not valid."
           },
           "403": {
             "description": "You may not deploy here."
@@ -11693,11 +11710,11 @@
           {
             "name": "repository",
             "in": "query",
-            "description": "repository limits the search to one repository when set.",
+            "description": "repository limits the search to one repository when set; a virtual\n repository is searched through its members.",
             "schema": {
               "type": "string",
               "title": "repository",
-              "description": "repository limits the search to one repository when set."
+              "description": "repository limits the search to one repository when set; a virtual\n repository is searched through its members."
             }
           },
           {
@@ -12976,6 +12993,18 @@
         "summary": "ListReleases",
         "description": "ListReleases returns the releases the caller may read, with their\n latest version.",
         "operationId": "ReleaseService_ListReleases",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "description": "project limits the list to one project's releases (\"\" for releases\n outside projects); unset lists every project's.",
+            "schema": {
+              "type": "string",
+              "title": "project",
+              "description": "project limits the list to one project's releases (\"\" for releases\n outside projects); unset lists every project's."
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success",
@@ -13183,7 +13212,7 @@
           "ReleaseService"
         ],
         "summary": "PromoteRelease",
-        "description": "PromoteRelease copies (or moves) a completed version's artifacts into\n an environment's repositories. Every target must be writable by the\n caller.",
+        "description": "PromoteRelease copies a completed version's artifacts into an\n environment's repositories. Every target must be writable by the\n caller.",
         "operationId": "ReleaseService_PromoteRelease",
         "parameters": [
           {
@@ -13238,7 +13267,7 @@
                   "move": {
                     "type": "boolean",
                     "title": "move",
-                    "description": "move removes the files from the previous environment."
+                    "description": "move asks for a move; the server performs it as a copy, so the files\n stay in the repositories of the previous environment."
                   }
                 },
                 "title": "PromoteReleaseRequest",
@@ -15439,7 +15468,7 @@
           "SessionService"
         ],
         "summary": "Logout",
-        "description": "Logout ends the browser session.",
+        "description": "Logout ends the browser session, and revokes the bearer token the request\n carries.",
         "operationId": "SessionService_Logout",
         "responses": {
           "200": {
@@ -15612,17 +15641,17 @@
           "SecurityService"
         ],
         "summary": "ListTokens",
-        "description": "ListTokens returns access tokens without their secrets: the caller's\n own, or for an administrator everyone's (or one user's).",
+        "description": "ListTokens returns access tokens without their secrets: the caller's\n own, or for an administrator or a viewer everyone's (or one user's).",
         "operationId": "SecurityService_ListTokens",
         "parameters": [
           {
             "name": "username",
             "in": "query",
-            "description": "username limits an administrator's list to one user; others always see\n their own tokens.",
+            "description": "username limits an administrator's or a viewer's list to one user; others\n always see their own tokens.",
             "schema": {
               "type": "string",
               "title": "username",
-              "description": "username limits an administrator's list to one user; others always see\n their own tokens."
+              "description": "username limits an administrator's or a viewer's list to one user; others\n always see their own tokens."
             }
           },
           {
@@ -15859,7 +15888,7 @@
           "TrashService"
         ],
         "summary": "RestoreTrash",
-        "description": "RestoreTrash puts an item back, where it was or at another place.",
+        "description": "RestoreTrash puts an item back, where it was or at another place. It\n fails with FAILED_PRECONDITION when a file it would restore is there.",
         "operationId": "TrashService_RestoreTrash",
         "requestBody": {
           "content": {

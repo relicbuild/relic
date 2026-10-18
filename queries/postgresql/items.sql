@@ -18,6 +18,9 @@ SET size = @size, sha1 = @sha1, sha256 = @sha256, md5 = @md5,
     modified = @now, modified_by = @username, updated = @now
 WHERE id = @id;
 
+-- name: SetItemCreated :exec
+UPDATE items SET created = @created, created_by = @created_by WHERE id = @id;
+
 -- name: EnsureFolders :many
 WITH wanted AS (
     SELECT unnest(@ids::uuid[]) AS id, unnest(@paths::text[]) AS path, unnest(@names::text[]) AS name

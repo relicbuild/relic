@@ -34,13 +34,25 @@ const sqliteMaxConnections = 8
 
 const sqliteBusyTimeout = 10 * time.Second
 
-func openSQLite(ctx context.Context, path string) (*sqliteEngine, Querier, error) {
+func openSQLite(ctx context.Context, path string, mustExist bool) (*sqliteEngine, Querier, error) {
 	if !filepath.IsAbs(path) {
 		return nil, nil, fmt.Errorf("sqlite database path %q must be absolute (sqlite:///path/to/relic.db)", path)
 	}
 
+	if mustExist {
+		if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+			return nil, nil, fmt.Errorf("sqlite database %s does not exist: %w", path, fs.ErrNotExist)
+		} else if err != nil {
+			return nil, nil, fmt.Errorf("sqlite database: %w", err)
+		}
+	}
+
 	if err := localdisk.Check(filepath.Dir(path)); err != nil {
 		return nil, nil, err
+	}
+
+	if err := createOwnerOnly(path); err != nil && !errors.Is(err, fs.ErrExist) {
+		return nil, nil, fmt.Errorf("create database: %w", err)
 	}
 
 	dsn := sqliteDSN(path)
@@ -93,6 +105,17 @@ func openSQLite(ctx context.Context, path string) (*sqliteEngine, Querier, error
 	}
 
 	return e, newSQLiteQuerier(e.traced), nil
+}
+
+// createOwnerOnly creates an empty file only its owner may read, which SQLite
+// fills as a new database and whose mode it gives the -wal and -shm files.
+func createOwnerOnly(path string) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) //nolint:gosec // the operator's database path
+	if err != nil {
+		return err
+	}
+
+	return f.Close()
 }
 
 func fileSizes(paths ...string) (int64, error) {

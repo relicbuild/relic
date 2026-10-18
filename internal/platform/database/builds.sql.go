@@ -139,7 +139,10 @@ func (q *Queries) FindBuildNames(ctx context.Context, arg FindBuildNamesParams) 
 const findItemsBySHA1 = `-- name: FindItemsBySHA1 :many
 SELECT i.id, i.repo_key, i.path, i.name, i.type, i.size, i.sha1, i.sha256, i.md5, i.created, i.created_by, i.modified, i.modified_by, i.updated,
        EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id AND p.key = 'build.name' AND p.value = $1::text) AS has_build_name,
-       EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id AND p.key = 'build.number' AND p.value = $2::text) AS has_build_number
+       EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id AND p.key = 'build.number' AND p.value = $2::text) AS has_build_number,
+       EXISTS (SELECT 1 FROM item_properties p WHERE p.item_id = i.id
+               AND ((p.key = 'build.name' AND p.value <> $1::text)
+                 OR (p.key = 'build.number' AND p.value <> $2::text))) AS has_other_build
 FROM items i
 WHERE i.type = 'file' AND i.sha1 = ANY($3::text[])
   AND ($4::text = '' OR i.repo_key = $4::text)
@@ -157,6 +160,7 @@ type FindItemsBySHA1Row struct {
 	Item           Item
 	HasBuildName   bool
 	HasBuildNumber bool
+	HasOtherBuild  bool
 }
 
 func (q *Queries) FindItemsBySHA1(ctx context.Context, arg FindItemsBySHA1Params) ([]FindItemsBySHA1Row, error) {
@@ -190,6 +194,7 @@ func (q *Queries) FindItemsBySHA1(ctx context.Context, arg FindItemsBySHA1Params
 			&i.Item.Updated,
 			&i.HasBuildName,
 			&i.HasBuildNumber,
+			&i.HasOtherBuild,
 		); err != nil {
 			return nil, err
 		}
@@ -204,7 +209,7 @@ func (q *Queries) FindItemsBySHA1(ctx context.Context, arg FindItemsBySHA1Params
 const getBuildRun = `-- name: GetBuildRun :one
 SELECT id, project, name, number, started, started_ms, info, created, created_by FROM builds
 WHERE project = $1 AND name = $2 AND number = $3
-ORDER BY started DESC LIMIT 1
+ORDER BY started DESC, id DESC LIMIT 1
 `
 
 type GetBuildRunParams struct {
@@ -478,6 +483,43 @@ func (q *Queries) ListBuildPromotions(ctx context.Context, buildID uuid.UUID) ([
 	return items, nil
 }
 
+const listBuildRunIDsStartedAt = `-- name: ListBuildRunIDsStartedAt :many
+SELECT id FROM builds
+WHERE project = $1 AND name = $2 AND number = $3 AND started_ms = $4
+`
+
+type ListBuildRunIDsStartedAtParams struct {
+	Project   string
+	Name      string
+	Number    string
+	StartedMs int64
+}
+
+func (q *Queries) ListBuildRunIDsStartedAt(ctx context.Context, arg ListBuildRunIDsStartedAtParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listBuildRunIDsStartedAt,
+		arg.Project,
+		arg.Name,
+		arg.Number,
+		arg.StartedMs,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listBuildRuns = `-- name: ListBuildRuns :many
 SELECT id, number, started FROM builds
 WHERE project = $1 AND name = $2 ORDER BY started DESC
@@ -512,4 +554,18 @@ func (q *Queries) ListBuildRuns(ctx context.Context, arg ListBuildRunsParams) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const moveBuildPromotions = `-- name: MoveBuildPromotions :exec
+UPDATE build_promotions SET build_id = $1 WHERE build_id = ANY($2::uuid[])
+`
+
+type MoveBuildPromotionsParams struct {
+	ToBuildID    uuid.UUID
+	FromBuildIds []uuid.UUID
+}
+
+func (q *Queries) MoveBuildPromotions(ctx context.Context, arg MoveBuildPromotionsParams) error {
+	_, err := q.db.Exec(ctx, moveBuildPromotions, arg.ToBuildID, arg.FromBuildIds)
+	return err
 }

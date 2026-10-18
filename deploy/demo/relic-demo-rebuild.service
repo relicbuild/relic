@@ -1,9 +1,0 @@
-[Unit]
-Description=Rebuild the Relic demo from its seed
-After=network-online.target docker.service relic.service
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=/opt/relic-demo/rebuild.sh
-TimeoutStartSec=1h

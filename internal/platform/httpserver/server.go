@@ -15,9 +15,11 @@ const (
 	readHeaderTimeout = 10 * time.Second
 	maxHeaderBytes    = 64 << 10
 	idleTimeout       = 2 * time.Minute
-	shutdownTimeout   = 30 * time.Second
 	writeStallTimeout = 2 * time.Minute
 )
+
+// shutdownTimeout ends within the chart's 120-second termination grace period, which includes a 5-second preStop sleep.
+const shutdownTimeout = 110 * time.Second
 
 // NewServer returns an http.Server with Relic's baseline limits.
 // There is deliberately no global WriteTimeout: artifact streams can be long.

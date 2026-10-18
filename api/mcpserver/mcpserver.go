@@ -257,6 +257,8 @@ func Handler(api http.Handler, version string) http.Handler {
 	}, &mcp.StreamableHTTPOptions{
 		Stateless:    true,
 		JSONResponse: true,
+		// Every request needs credentials, which a DNS rebinding page cannot supply.
+		DisableLocalhostProtection: true,
 	})
 }
 

@@ -4,14 +4,32 @@ import type { BuildView } from '~/utils/view-models'
 
 definePageMeta({ layout: 'dashboard' })
 
+const route = useRoute()
+const router = useRouter()
 const relic = useRelic()
-const { data: builds, status, error, refresh } = await useAsyncData('builds', async () =>
-  (await relic.builds.listBuilds({})).builds.map((b): BuildView => ({ name: b.name, lastStarted: toIsoDate(b.lastStarted) })))
+const noProject = 'none'
+const project = computed({
+  get: () => typeof route.query.project === 'string' && route.query.project ? route.query.project : noProject,
+  set: (key: string) => router.replace(buildsLink(key === noProject ? '' : key))
+})
+const projectKey = computed(() => project.value === noProject ? '' : project.value)
+const { data: projects } = await useAsyncData('builds:projects', async () =>
+  (await relic.projects.listProjects({})).projects.map(p => p.key), { default: () => [] })
+const projectItems = computed(() => [
+  { label: 'Outside projects', value: noProject },
+  ...projects.value.map(key => ({ label: key, value: key }))
+])
+const { data: builds, status, error, refresh } = await useAsyncData(
+  () => `builds:${projectKey.value}`,
+  async () => (await relic.builds.listBuilds({ project: projectKey.value })).builds
+    .map((b): BuildView => ({ name: b.name, lastStarted: toIsoDate(b.lastStarted) })),
+  { watch: [projectKey] }
+)
 const page = ref(1)
 const pageSize = ref(50)
 const search = ref('')
 const since = ref('all')
-watch([search, since], () => {
+watch([search, since, projectKey], () => {
   page.value = 1
 })
 const sinceItems = [
@@ -66,6 +84,15 @@ const columns: TableColumn<BuildView>[] = [
           class="w-full sm:w-64"
         />
         <USelect
+          v-if="projects.length"
+          v-model="project"
+          aria-label="Filter by project"
+          :items="projectItems"
+          icon="i-lucide-folder-kanban"
+          size="sm"
+          class="w-44"
+        />
+        <USelect
           v-model="since"
           aria-label="Filter by start"
           :items="sinceItems"
@@ -89,7 +116,7 @@ const columns: TableColumn<BuildView>[] = [
         :ui="denseTable"
       >
         <template #name-cell="{ row }">
-          <ULink :to="`/builds/${encodeURIComponent(row.original.name)}`" class="font-medium text-highlighted">
+          <ULink :to="buildRunsLink(row.original.name, projectKey)" class="font-medium text-highlighted">
             {{ row.original.name }}
           </ULink>
         </template>

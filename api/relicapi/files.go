@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -137,6 +138,11 @@ func (d Dependencies) download(w http.ResponseWriter, r *http.Request, key, p st
 func (d Dependencies) upload(w http.ResponseWriter, r *http.Request, key, p string) {
 	ctx := r.Context()
 
+	if _, err := readableRepository(ctx, d, key); err != nil {
+		writeHTTPError(w, d.logged(r, err))
+		return
+	}
+
 	target, err := d.Repositories.DeployTarget(ctx, key)
 	if err != nil {
 		writeHTTPError(w, d.logged(r, err))
@@ -158,6 +164,12 @@ func (d Dependencies) upload(w http.ResponseWriter, r *http.Request, key, p stri
 		return
 	}
 
+	props, err := uploadProperties(r.URL.Query())
+	if err != nil {
+		writeHTTPError(w, codeOf(err))
+		return
+	}
+
 	check, err := repositoryAccess(ctx, d, target)
 	if err != nil {
 		writeHTTPError(w, d.logged(r, err))
@@ -169,6 +181,7 @@ func (d Dependencies) upload(w http.ResponseWriter, r *http.Request, key, p stri
 		Path:       p,
 		Body:       r.Body,
 		Size:       r.ContentLength,
+		Props:      props,
 		User:       auth.FromContext(ctx).Name(),
 		Authorize: func(itemPath string, overwrite bool) error {
 			if !overwrite {
@@ -200,6 +213,26 @@ func (d Dependencies) upload(w http.ResponseWriter, r *http.Request, key, p stri
 			"md5":    item.Checksums.MD5,
 		},
 	})
+}
+
+// uploadProperties reads the properties an upload sets: each query
+// parameter is one, a repeated parameter gives it several values.
+func uploadProperties(query url.Values) (repository.Properties, error) {
+	if len(query) == 0 {
+		return nil, nil
+	}
+
+	props := repository.Properties{}
+
+	for k, values := range query {
+		if err := validProperty(k, values); err != nil {
+			return nil, err
+		}
+
+		props[k] = values
+	}
+
+	return props, nil
 }
 
 func (d Dependencies) logged(r *http.Request, err error) *connect.Error {

@@ -72,6 +72,20 @@ func completeTargets(g *globals) cobra.CompletionFunc {
 	}
 }
 
+// completeTargetArg completes the argument at position from the server and
+// leaves the others, local files, to the shell.
+func completeTargetArg(g *globals, position int) cobra.CompletionFunc {
+	targets := completeTargets(g)
+
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) != position {
+			return nil, cobra.ShellCompDirectiveDefault
+		}
+
+		return targets(cmd, args, toComplete)
+	}
+}
+
 type transfer struct {
 	fromRepo, from, toRepo, to string
 }
@@ -128,8 +142,8 @@ func copyMoveCmd(g *globals, move bool) *cobra.Command {
 		Long: short + " within Relic, between repositories or inside one; folders go with everything below them.\n" +
 			"A destination ending in / is a folder the sources keep their names in; with several sources it always is.",
 		Example: fmt.Sprintf(
-			"  relic %[1]s libs-local/org/app/1.0/app.jar libs-release/org/app/1.0/app.jar\n"+
-				"  relic %[1]s libs-local/org/app/1.0/ libs-release/org/app/ --dry-run",
+			"  relic artifact %[1]s libs-local/org/app/1.0/app.jar libs-release/org/app/1.0/app.jar\n"+
+				"  relic artifact %[1]s libs-local/org/app/1.0/ libs-release/org/app/ --dry-run",
 			use,
 		),
 		Args:              cobra.MinimumNArgs(2),
@@ -189,7 +203,7 @@ func copyMoveCmd(g *globals, move bool) *cobra.Command {
 					return printCompleted(
 						cmd.OutOrStdout(),
 						done,
-						fmt.Errorf("%s %s/%s: %w", use, t.fromRepo, t.from, err),
+						fmt.Errorf("%s %s/%s to %s/%s: %w", use, t.fromRepo, t.from, t.toRepo, t.to, err),
 					)
 				}
 

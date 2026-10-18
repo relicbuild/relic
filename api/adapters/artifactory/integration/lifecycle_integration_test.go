@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -152,6 +153,16 @@ func TestReleaseBundles(t *testing.T) {
 	if !strings.Contains(groups, `"release_bundle_version_latest": "1.1.0"`) ||
 		!strings.Contains(groups, `"release_bundle_versions_count": 2`) {
 		t.Errorf("groups = %s", groups)
+	}
+
+	if _, other := do(t, srv, call{
+		method: "GET",
+		path:   lc + "release_bundle/groups?project=acme",
+	}); strings.Contains(
+		other,
+		`"release_bundle_name": "app"`,
+	) {
+		t.Errorf("groups of project acme = %s; want no release of the default project", other)
 	}
 
 	_, versions := do(t, srv, call{
@@ -470,7 +481,7 @@ func TestReleaseBundles(t *testing.T) {
 		t.Errorf("promoted copy after bundle delete = %d, want 200", resp.StatusCode)
 	}
 
-	if resp, _ := do(
+	if resp, body := do(
 		t,
 		srv,
 		call{
@@ -478,8 +489,8 @@ func TestReleaseBundles(t *testing.T) {
 			path:   lc + "distribution/distribute/app/1.1.0",
 			body:   `{}`,
 		},
-	); resp.StatusCode != 501 {
-		t.Errorf("distribute = %d, want 501", resp.StatusCode)
+	); resp.StatusCode != http.StatusNotFound || !strings.Contains(body, "Relic does not distribute release bundles") {
+		t.Errorf("distribute = %d %s, want 404 and the reason", resp.StatusCode, body)
 	}
 }
 

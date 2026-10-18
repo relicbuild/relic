@@ -48,6 +48,19 @@ func (h *Handler) putPolicy(w http.ResponseWriter, r *http.Request) {
 
 	create := r.Method == http.MethodPost
 
+	if !create {
+		stored, err := h.admin.Policy(r.Context(), p.Name)
+
+		switch {
+		case err == nil:
+			p = xraypolicy.KeepRelicCriteria(p, stored)
+		case !errors.Is(err, policy.ErrNotFound):
+			h.adminError(w, r, err)
+
+			return
+		}
+	}
+
 	if err := h.admin.SavePolicy(r.Context(), p, create); err != nil {
 		h.adminError(w, r, err)
 		return
@@ -169,7 +182,13 @@ func (h *Handler) deleteWatch(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) createIgnoreRule(w http.ResponseWriter, r *http.Request) {
 	var doc xraypolicy.IgnoreRule
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&doc); err != nil {
+		if errors.Is(err, policy.ErrInvalid) {
+			h.adminError(w, r, err)
+			return
+		}
+
 		writeError(w, http.StatusBadRequest, "invalid ignore rule JSON")
+
 		return
 	}
 

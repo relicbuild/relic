@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -153,7 +154,10 @@ func (s *Service) trash(
 			Move:                  true,
 			User:                  user,
 			RefuseFile:            refuseFile,
-			replace:               true,
+			merge:                 true,
+			before: func(q database.Querier) error {
+				return s.clearEarlierEntry(ctx, q, dest)
+			},
 			then: func(q database.Querier) error {
 				trashed, err := q.GetItem(ctx, database.GetItemParams{
 					RepoKey: s.trashLayout.Repository,
@@ -175,6 +179,97 @@ func (s *Service) trash(
 	s.publishDeleted(ctx, item)
 
 	return nil
+}
+
+// clearEarlierEntry deletes what an earlier trash entry at path holds,
+// except the entries trashed on their own below it.
+func (s *Service) clearEarlierEntry(ctx context.Context, q database.Querier, path string) error {
+	parent, name := SplitPath(path)
+
+	_, err := q.GetItem(ctx, database.GetItemParams{
+		RepoKey: s.trashLayout.Repository,
+		Path:    parent,
+		Name:    name,
+	})
+	if database.IsNoRows(err) {
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("get trash item %s: %w", path, err)
+	}
+
+	rows, err := q.ListItemsWithProperty(
+		ctx,
+		database.ListItemsWithPropertyParams{
+			RepoKey: s.trashLayout.Repository,
+			Key:     s.trashLayout.Time,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("list trash: %w", err)
+	}
+
+	var (
+		isEntry bool
+		nested  []string
+	)
+
+	for _, r := range rows {
+		switch entry := domainItem(r.Item).Path(); {
+		case entry == path:
+			isEntry = true
+		case strings.HasPrefix(entry, path+"/"):
+			nested = append(nested, entry)
+		}
+	}
+
+	if !isEntry {
+		return nil
+	}
+
+	held, err := q.ListSubtree(
+		ctx,
+		database.ListSubtreeParams{
+			RepoKey:  s.trashLayout.Repository,
+			Path:     parent,
+			Name:     name,
+			FullPath: path,
+			Prefix:   likePrefix(path),
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("list trash subtree %s: %w", path, err)
+	}
+
+	var deleted []string
+
+	for _, it := range itemsFromRows(held) {
+		p := it.Path()
+		if p == path || withinAny(p, deleted) || withinAny(p, nested) || holdsAny(p, nested) {
+			continue
+		}
+
+		if _, err := deleteItem(ctx, q, it); err != nil {
+			return err
+		}
+
+		deleted = append(deleted, p)
+	}
+
+	return nil
+}
+
+func withinAny(path string, folders []string) bool {
+	return slices.ContainsFunc(folders, func(folder string) bool {
+		return path == folder || strings.HasPrefix(path, folder+"/")
+	})
+}
+
+func holdsAny(folder string, paths []string) bool {
+	return slices.ContainsFunc(paths, func(p string) bool {
+		return strings.HasPrefix(p, folder+"/")
+	})
 }
 
 // TrashEntry is one deleted item in the trash can.
@@ -291,6 +386,7 @@ var ErrNoRestoreTarget = errors.New("no restore destination")
 
 // RestoreFromTrash moves a trash entry (a path inside the trash can) back
 // to toRepo/toPath, or to where it was deleted from when those are empty.
+// It returns ErrConflict when a file it would restore is there already.
 func (s *Service) RestoreFromTrash(ctx context.Context, trashPath, toRepo, toPath, user string) error {
 	item, err := s.Stat(ctx, s.trashLayout.Repository, trashPath)
 	if err != nil {
@@ -321,6 +417,7 @@ func (s *Service) RestoreFromTrash(ctx context.Context, trashPath, toRepo, toPat
 			DestinationPath:       toPath,
 			Move:                  true,
 			User:                  user,
+			keepFiles:             true,
 		},
 	); err != nil {
 		return err
@@ -331,7 +428,7 @@ func (s *Service) RestoreFromTrash(ctx context.Context, trashPath, toRepo, toPat
 		return err
 	}
 
-	return s.DeleteProperties(ctx, restored, s.trashLayout.keys(), false)
+	return s.DeleteProperties(ctx, restored, s.trashLayout.keys(), true)
 }
 
 // EmptyTrash deletes everything in the trash can.
@@ -358,15 +455,24 @@ func (s *Service) PurgeTrash(ctx context.Context, cutoff time.Time) (int, error)
 		return 0, fmt.Errorf("list trash: %w", err)
 	}
 
-	n := 0
+	var (
+		expired []Item
+		kept    []string
+	)
 
 	for _, r := range rows {
-		if !trashTime(r.PropertyValue).Before(cutoff) {
-			continue
-		}
-
 		item := domainItem(r.Item)
-		if err := s.Delete(ctx, s.trashLayout.Repository, item.Path()); err != nil && !errors.Is(err, ErrNotFound) {
+		if trashTime(r.PropertyValue).Before(cutoff) {
+			expired = append(expired, item)
+		} else {
+			kept = append(kept, item.Path())
+		}
+	}
+
+	n := 0
+
+	for _, item := range expired {
+		if err := s.purgeTrashEntry(ctx, item, kept); err != nil && !errors.Is(err, ErrNotFound) {
 			return n, err
 		}
 
@@ -374,6 +480,48 @@ func (s *Service) PurgeTrash(ctx context.Context, cutoff time.Time) (int, error)
 	}
 
 	return n, nil
+}
+
+func (s *Service) purgeTrashEntry(ctx context.Context, entry Item, kept []string) error {
+	nested := slices.ContainsFunc(kept, func(p string) bool {
+		return strings.HasPrefix(p, entry.Path()+"/")
+	})
+	if !nested {
+		return s.Delete(ctx, s.trashLayout.Repository, entry.Path())
+	}
+
+	if err := s.DeleteProperties(ctx, entry, s.trashLayout.keys(), false); err != nil {
+		return err
+	}
+
+	return s.deleteAllBut(ctx, entry, kept)
+}
+
+func (s *Service) deleteAllBut(ctx context.Context, folder Item, kept []string) error {
+	kids, err := s.Children(ctx, folder)
+	if err != nil {
+		return err
+	}
+
+	for _, k := range kids {
+		p := k.Path()
+
+		switch {
+		case slices.Contains(kept, p):
+		case slices.ContainsFunc(kept, func(keptPath string) bool {
+			return strings.HasPrefix(keptPath, p+"/")
+		}):
+			if err := s.deleteAllBut(ctx, k, kept); err != nil {
+				return err
+			}
+		default:
+			if err := s.Delete(ctx, k.Repository, p); err != nil && !errors.Is(err, ErrNotFound) {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func (s *Service) ensureTrashRepo(ctx context.Context) error {

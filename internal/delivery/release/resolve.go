@@ -2,6 +2,7 @@ package release
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,7 +19,7 @@ type entry struct {
 	art  Artifact
 }
 
-func (s *Service) resolve(ctx context.Context, project string, sources []Source) ([]entry, error) {
+func (s *Service) resolve(ctx context.Context, project string, sources []Source, access Access) ([]entry, error) {
 	var out []entry
 
 	seen := map[string]string{}
@@ -57,11 +58,11 @@ func (s *Service) resolve(ctx context.Context, project string, sources []Source)
 
 		switch src.Kind {
 		case SourceQuery:
-			err = s.fromQuery(ctx, src.Query, fromItem)
+			err = s.fromQuery(ctx, src.Query, access, fromItem)
 		case SourceArtifacts:
 			err = s.fromArtifacts(ctx, src.Artifacts, fromItem)
 		case SourceBuilds:
-			err = s.fromBuilds(ctx, src.Builds, fromItem)
+			err = s.fromBuilds(ctx, src.Builds, access, fromItem)
 		case SourceReleases:
 			err = s.fromReleases(ctx, project, src.Releases, add)
 		default:
@@ -76,7 +77,12 @@ func (s *Service) resolve(ctx context.Context, project string, sources []Source)
 	return out, nil
 }
 
-func (s *Service) fromQuery(ctx context.Context, q itemquery.Query, fn func(repository.Item) error) error {
+func (s *Service) fromQuery(
+	ctx context.Context,
+	q itemquery.Query,
+	access Access,
+	fn func(repository.Item) error,
+) error {
 	plan, err := itemquery.Compile(q)
 	if err != nil {
 		return fmt.Errorf("%w: query: %w", ErrInvalid, err)
@@ -85,11 +91,12 @@ func (s *Service) fromQuery(ctx context.Context, q itemquery.Query, fn func(repo
 	var items []repository.Item
 
 	err = itemquery.Run(ctx, s.db, plan, func(row itemquery.Row) error {
-		if row.Type != repository.TypeFile {
+		path := repository.JoinPath(row.Path, row.Name)
+		if row.Type != repository.TypeFile || !access.canRead(row.Repository, path) {
 			return nil
 		}
 
-		it, err := s.repos.Stat(ctx, row.Repository, repository.JoinPath(row.Path, row.Name))
+		it, err := s.repos.Stat(ctx, row.Repository, path)
 		if err != nil {
 			return err
 		}
@@ -139,11 +146,21 @@ func (s *Service) fromArtifacts(ctx context.Context, arts []ArtifactRef, fn func
 	return nil
 }
 
-func (s *Service) fromBuilds(ctx context.Context, builds []BuildRef, fn func(repository.Item) error) error {
+func (s *Service) fromBuilds(
+	ctx context.Context,
+	builds []BuildRef,
+	access Access,
+	fn func(repository.Item) error,
+) error {
 	for _, b := range builds {
+		notFound := fmt.Errorf("%w: build %s/%s not found", ErrInvalid, b.Name, b.Number)
+		if !access.canReadBuild(s.builds.Repository(b.Project), b.Name) {
+			return notFound
+		}
+
 		items, err := s.builds.Items(ctx, b.Project, b.Name, b.Number, b.Dependencies)
 		if errors.Is(err, buildinfo.ErrNotFound) {
-			return fmt.Errorf("%w: build %s/%s not found", ErrInvalid, b.Name, b.Number)
+			return notFound
 		}
 
 		if err != nil {
@@ -181,20 +198,14 @@ func (s *Service) fromReleases(
 			return err
 		}
 
-		for _, a := range b.Artifacts {
-			it, err := s.repos.Stat(ctx, b.Repository, b.artifactPath(a))
-			if err != nil {
-				return fmt.Errorf("release %s/%s: %w", b.Name, b.Version, err)
-			}
+		if b.Draft || b.Status != StatusCompleted {
+			return fmt.Errorf("%w: release %s/%s is %s, not completed", ErrInvalid, b.Name, b.Version, b.Status)
+		}
 
-			if !strings.EqualFold(a.SHA256, it.Checksums.SHA256) {
-				return fmt.Errorf(
-					"%w: release %s/%s: %s does not match its sha256",
-					ErrInvalid,
-					b.Name,
-					b.Version,
-					a.Path,
-				)
+		for _, a := range b.Artifacts {
+			it, err := s.storedArtifact(ctx, b, a)
+			if err != nil {
+				return err
 			}
 
 			if err := add(it, a); err != nil {
@@ -204,6 +215,92 @@ func (s *Service) fromReleases(
 	}
 
 	return nil
+}
+
+// storedArtifact returns b's stored copy of a, and ErrInvalid when its content
+// is no longer the content the signed manifest names.
+func (s *Service) storedArtifact(ctx context.Context, b Release, a Artifact) (repository.Item, error) {
+	it, err := s.repos.Stat(ctx, b.Repository, b.artifactPath(a))
+	if err != nil {
+		return repository.Item{}, fmt.Errorf("release %s/%s: %s: %w", b.Name, b.Version, a.Path, err)
+	}
+
+	if !strings.EqualFold(a.SHA256, it.Checksums.SHA256) {
+		return repository.Item{}, fmt.Errorf(
+			"%w: release %s/%s: %s does not match its signed sha256",
+			ErrInvalid,
+			b.Name,
+			b.Version,
+			a.Path,
+		)
+	}
+
+	return it, nil
+}
+
+// storedArtifacts returns the stored copies of b's artifacts by path, and
+// ErrInvalid when any of them changed.
+func (s *Service) storedArtifacts(ctx context.Context, b Release) (map[string]repository.Item, error) {
+	out := make(map[string]repository.Item, len(b.Artifacts))
+
+	for _, a := range b.Artifacts {
+		it, err := s.storedArtifact(ctx, b, a)
+		if err != nil {
+			return nil, err
+		}
+
+		out[a.Path] = it
+	}
+
+	return out, nil
+}
+
+// signedStatement is the part of a manifest's in-toto statement Relic checks.
+type signedStatement struct {
+	Subject []struct {
+		Name   string            `json:"name"`
+		Digest map[string]string `json:"digest"`
+	} `json:"subject"`
+	Predicate struct {
+		Name      string `json:"name"`
+		Version   string `json:"version"`
+		Project   string `json:"project"`
+		Created   string `json:"created"`
+		CreatedBy string `json:"created_by"`
+	} `json:"predicate"`
+}
+
+func (st signedStatement) digests() map[string]string {
+	out := make(map[string]string, len(st.Subject))
+	for _, sub := range st.Subject {
+		out[sub.Name] = sub.Digest["sha256"]
+	}
+
+	return out
+}
+
+func parseStatement(env evidence.Envelope) (signedStatement, error) {
+	var st signedStatement
+
+	payload, err := base64.StdEncoding.DecodeString(env.Payload)
+	if err != nil {
+		return st, fmt.Errorf("%w: manifest payload: %w", ErrInvalid, err)
+	}
+
+	if err := json.Unmarshal(payload, &st); err != nil {
+		return st, fmt.Errorf("%w: manifest payload: %w", ErrInvalid, err)
+	}
+
+	return st, nil
+}
+
+func artifactDigests(arts []Artifact) map[string]string {
+	out := make(map[string]string, len(arts))
+	for _, a := range arts {
+		out[a.Path] = a.SHA256
+	}
+
+	return out
 }
 
 // Manifest statement types.

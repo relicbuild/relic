@@ -95,7 +95,8 @@ func tokenCreateCmd(g *globals) *cobra.Command {
 		Int32Var(&expiresDays, "expires-days", 0, "lifetime in days, at most 3650 (0: never expires for administrators; other users' tokens expire within 365)")
 	cmd.Flags().StringVar(&scope, "scope", "user", "what the token acts as: user, groups or admin")
 	cmd.Flags().StringSliceVar(&groups, "group", nil, "group the token acts with (implies --scope groups; repeatable)")
-	cmd.Flags().StringVar(&project, "project", "", "project the token is for")
+	cmd.Flags().
+		StringVar(&project, "project", "", "a project to label the token with; it does not limit what the token can do")
 	_ = cmd.RegisterFlagCompletionFunc(
 		"scope",
 		cobra.FixedCompletions(
@@ -122,7 +123,7 @@ func tokenListCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "list",
 		Short:   "List access tokens (without their secrets)",
-		Long:    "Lists your tokens; administrators may name another user with --user.",
+		Long:    "Lists your tokens; administrators and viewers see everyone's, or one user's with --user.",
 		Example: "  relic auth token list\n  relic auth token list --user ci-bot -o yaml",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -153,42 +154,51 @@ func tokenListCmd(g *globals) *cobra.Command {
 					},
 				}
 
+				now := time.Now()
 				for _, t := range r.Msg.GetTokens() {
-					expires := "never"
-					if t.GetExpires() != nil {
-						expires = t.GetExpires().AsTime().Local().Format(time.DateOnly)
-					}
-
-					state := "active"
-					if t.GetRevoked() {
-						state = "revoked"
-					}
-
-					table.Rows = append(table.Rows, []string{
-						t.GetId(),
-						t.GetUsername(),
-						expires,
-						state,
-						tableCell(t.GetDescription()),
-					})
+					table.Rows = append(table.Rows, tokenRow(t, now))
 				}
 
 				return table.Print(w)
 			})
 		},
 	}
-	cmd.Flags().StringVar(&user, "user", "", "list this user's tokens (administrators)")
+	cmd.Flags().StringVar(&user, "user", "", "list this user's tokens (administrators and viewers)")
 	cmd.Flags().BoolVar(&revoked, "include-revoked", false, "list revoked tokens too")
 	outputFlag(cmd, &output)
 
 	return cmd
 }
 
+const tokenExpiresLayout = "2006-01-02 15:04"
+
+func tokenRow(t *relicv1.AccessToken, now time.Time) []string {
+	expires, state := "never", "active"
+	if e := t.GetExpires(); e != nil {
+		expires = localTime(e, tokenExpiresLayout)
+		if !e.AsTime().After(now) {
+			state = "expired"
+		}
+	}
+
+	if t.GetRevoked() {
+		state = "revoked"
+	}
+
+	return []string{
+		t.GetId(),
+		t.GetUsername(),
+		expires,
+		state,
+		tableCell(t.GetDescription()),
+	}
+}
+
 func tokenRevokeCmd(g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:     "revoke <id>...",
 		Short:   "Revoke access tokens",
-		Example: "  relic auth token revoke 3f1c2a",
+		Example: "  relic auth token revoke 01a14acc-9a25-73a0-b25c-c7f3bb3ab7a5",
 		Args:    cobra.MinimumNArgs(1),
 		ValidArgsFunction: func(cmd *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 			c, err := g.dial()

@@ -332,7 +332,21 @@ type Syft struct {
 
 // Catalog implements Cataloger.
 func (s Syft) Catalog(ctx context.Context, source string) ([]byte, error) {
-	return s.run(ctx, "scan", source, "-o", "syft-json", "-q")
+	args := []string{
+		"scan",
+		source,
+		"-o",
+		"syft-json",
+		"-q",
+	}
+
+	// Syft reads an npm package's package.json only in images by default; an
+	// extracted package tarball holds nothing else to catalog.
+	if strings.HasPrefix(source, "dir:") {
+		args = append(args, "--select-catalogers", "+javascript-package-cataloger")
+	}
+
+	return s.run(ctx, args...)
 }
 
 // Grype is the subprocess Matcher.

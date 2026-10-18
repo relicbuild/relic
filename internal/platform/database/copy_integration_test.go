@@ -194,6 +194,21 @@ func TestCopyRefusesATargetWithData(t *testing.T) {
 	}
 }
 
+func TestFailedCopyRollsBackAndReleasesItsConnection(t *testing.T) {
+	t.Parallel()
+
+	dst := databasetest.NewDB(t)
+	cause := errors.New("the target rejected a row")
+
+	if err := database.FailCopy(t.Context(), dst, cause); !errors.Is(err, cause) {
+		t.Fatalf("FailCopy = %v, want %v", err, cause)
+	}
+
+	if n := database.ConnectionsInUse(dst); n != 0 {
+		t.Errorf("a failed copy left %d connections in use, want 0", n)
+	}
+}
+
 func sameRows(a, b []string) bool {
 	norm := func(rows []string) []string {
 		out := make([]string, 0, len(rows))

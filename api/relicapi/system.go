@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
+	"relic/internal/access/auth"
 )
 
 const checkTimeout = 5 * time.Second
@@ -292,19 +293,34 @@ func (s *systemServer) GetDashboardSummary(
 		return nil, err
 	}
 
-	out.Builds = int64(len(builds))
+	readableBuilds := &buildServer{
+		s.d,
+	}
+	for _, b := range builds {
+		ok, err := readableBuilds.canRead(ctx, "", b.Name)
+		if err != nil {
+			return nil, err
+		}
 
-	scans, err := s.d.ScanResults.StatusCounts(ctx)
-	if err != nil {
-		return nil, err
+		if ok {
+			out.Builds++
+		}
 	}
 
-	findings, err := s.d.ScanResults.FindingCounts(ctx)
-	if err != nil {
-		return nil, err
+	if p := auth.FromContext(ctx); p.Admin || p.Viewer {
+		scans, err := s.d.ScanResults.StatusCounts(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		findings, err := s.d.ScanResults.FindingCounts(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		out.Scans, out.Findings = counts(scans), counts(findings)
 	}
 
-	out.Scans, out.Findings = counts(scans), counts(findings)
 	if built, err := s.d.ScanResults.LatestDBBuilt(ctx); err == nil && !built.IsZero() {
 		out.VulnerabilityDatabaseBuilt = timestamppb.New(built)
 	}

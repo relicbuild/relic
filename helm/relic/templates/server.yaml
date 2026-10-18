@@ -125,7 +125,7 @@ spec:
           {{- if .Values.worker.vulnerabilityDatabase.persistence }}
           persistentVolumeClaim: {claimName: {{ include "relic.fullname" . }}-vulnerability-database}
           {{- else }}
-          emptyDir: {}
+          emptyDir: {sizeLimit: {{ .Values.worker.vulnerabilityDatabase.size }}}
           {{- end }}
         {{- end }}
         {{- if .Values.ldap.caCertificate }}

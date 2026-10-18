@@ -14,7 +14,6 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
-	"google.golang.org/protobuf/encoding/protojson"
 
 	relicv1 "relic/api/gen/relic/v1"
 
@@ -25,6 +24,12 @@ func splitTarget(s string) (repo, p string, err error) {
 	repo, p, _ = strings.Cut(strings.Trim(s, "/"), "/")
 	if repo == "" || p == "" {
 		return "", "", fmt.Errorf("%q is not <repository>/<path>", s)
+	}
+
+	for segment := range strings.SplitSeq(p, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return "", "", fmt.Errorf("invalid path %q: it has an empty, \".\" or \"..\" segment", s)
+		}
 	}
 
 	return repo, p, nil
@@ -57,18 +62,29 @@ func httpError(resp *http.Response) error {
 }
 
 func uploadCmd(g *globals) *cobra.Command {
-	var build, moduleID string
+	var (
+		build    buildRunFlag
+		moduleID string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "upload <file> <repository>/<path>",
 		Short: "Upload a file",
-		Long: "Uploads a file and prints its <repository>/<path> and SHA-256. With --build it is also " +
+		Long: "Uploads a file and prints its <repository>/<path> and SHA-256. A destination ending in / is " +
+			"a folder the file keeps its name in. With --build it is also " +
 			"recorded as an artifact of that build run in progress (see relic build).",
 		Example: "  relic artifact upload app-1.0.jar libs-local/org/app/1.0/app-1.0.jar\n" +
+			"  relic artifact upload dist/app.tar.gz libs-local/app/\n" +
 			"  relic artifact upload target/app.jar libs-local/org/app/1.0/app.jar --build app/42",
-		Args: cobra.ExactArgs(2),
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: completeTargetArg(g, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			repo, p, err := splitTarget(args[1])
+			target := args[1]
+			if strings.HasSuffix(target, "/") {
+				target += filepath.Base(args[0])
+			}
+
+			repo, p, err := splitTarget(target)
 			if err != nil {
 				return err
 			}
@@ -92,42 +108,20 @@ func uploadCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			req, err := http.NewRequestWithContext(cmd.Context(), http.MethodPut, c.fileURL(repo, p), f)
+			var props url.Values
+			if build.value != "" {
+				if props, err = g.buildProperties(build.value); err != nil {
+					return err
+				}
+			}
+
+			item, err := c.put(cmd.Context(), repo, p, f, st.Size(), props)
 			if err != nil {
 				return err
 			}
 
-			req.ContentLength = st.Size()
-
-			resp, err := c.http.Do(req)
-			if err != nil {
-				return err
-			}
-
-			defer func() {
-				_ = resp.Body.Close()
-			}()
-
-			if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-				return fmt.Errorf("upload %s/%s: %w", repo, p, httpError(resp))
-			}
-
-			body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-			if err != nil {
-				return err
-			}
-
-			item := &relicv1.Item{}
-			if err := (protojson.UnmarshalOptions{
-				DiscardUnknown: true,
-			}).Unmarshal(body, item); err != nil {
-				return fmt.Errorf("upload %s/%s: read the answer: %w", repo, p, err)
-			}
-
-			item.Name = path.Base(p)
-
-			if build != "" {
-				if err := g.addArtifact(build, moduleID, item); err != nil {
+			if build.value != "" {
+				if err := g.addArtifact(build.value, moduleID, item); err != nil {
 					return err
 				}
 			}
@@ -137,7 +131,7 @@ func uploadCmd(g *globals) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&build, "build", "", "record the file as an artifact of this build run, <name>/<number>")
+	cmd.Flags().Var(&build, "build", "record the file as an artifact of this build run, <name>/<number>")
 	cmd.Flags().StringVar(&moduleID, "module", "", "the build module it belongs to (default: the build's name)")
 
 	return cmd
@@ -147,14 +141,21 @@ func downloadCmd(g *globals) *cobra.Command {
 	var output string
 
 	cmd := &cobra.Command{
-		Use:     "download <repository>/<path>",
-		Short:   "Download a file",
-		Example: "  relic artifact download libs-local/org/app/1.0/app-1.0.jar\n  relic artifact download libs-local/notes.txt -o - | less",
-		Args:    cobra.ExactArgs(1),
+		Use:               "download <repository>/<path>",
+		Short:             "Download a file",
+		Example:           "  relic artifact download libs-local/org/app/1.0/app-1.0.jar\n  relic artifact download libs-local/notes.txt -o - | less",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeTargetArg(g, 0),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			repo, p, err := splitTarget(args[0])
 			if err != nil {
 				return err
+			}
+
+			if output != "-" {
+				if output, err = downloadPath(output, path.Base(p)); err != nil {
+					return fmt.Errorf("download %s/%s: %w", repo, p, err)
+				}
 			}
 
 			c, err := g.dial()
@@ -185,10 +186,6 @@ func downloadCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			if output == "" {
-				output = path.Base(p)
-			}
-
 			tmp, err := os.CreateTemp(filepath.Dir(output), ".relic-download-*")
 			if err != nil {
 				return err
@@ -211,13 +208,44 @@ func downloadCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			return os.Rename(tmp.Name(), output)
+			if err := os.Rename(tmp.Name(), output); err != nil {
+				return fmt.Errorf("download %s/%s: cannot write %s", repo, p, output)
+			}
+
+			return nil
 		},
 	}
 	cmd.Flags().
-		StringVarP(&output, "output", "o", "", "file to write (default: the file's name; - for standard output)")
+		StringVarP(
+			&output,
+			"output",
+			"o",
+			"",
+			"file to write, or a directory to write it into (default: the file's name; - for standard output)",
+		)
 
 	return cmd
+}
+
+// downloadPath is the file a download of name writes for -o output: output
+// itself, or name inside it when it is a directory or ends in a separator.
+func downloadPath(output, name string) (string, error) {
+	switch {
+	case output == "":
+		return name, nil
+	case strings.HasSuffix(output, "/") || strings.HasSuffix(output, string(filepath.Separator)):
+		output = filepath.Join(output, name)
+	default:
+		if st, err := os.Stat(output); err == nil && st.IsDir() {
+			output = filepath.Join(output, name)
+		}
+	}
+
+	if st, err := os.Stat(filepath.Dir(output)); err != nil || !st.IsDir() {
+		return "", fmt.Errorf("no directory %s to write %s into", filepath.Dir(output), filepath.Base(output))
+	}
+
+	return output, nil
 }
 
 func searchCmd(g *globals) *cobra.Command {

@@ -8,7 +8,7 @@
 #   4. Kubernetes pulls from Relic: with imagePullSecrets, refused without;
 #      skopeo inspect, list-tags and copy
 #   5. a rolling restart keeps serving
-#   6. helm upgrade keeps the data, the generated secrets and the PostgreSQL
+#   6. helm upgrade keeps the data, the secrets and the PostgreSQL
 #      cluster
 #   7. HA: server pods SIGKILLed during parallel uploads
 #   8. the backup and restore drill
@@ -51,12 +51,14 @@ if helm dependency list chart | awk 'NR > 1 && NF && $NF != "ok" {missing = 1} E
   helm dependency build chart >/dev/null
 fi
 encryption_key=$(openssl rand -base64 32)
-helm lint chart --set credentials.encryptionKey="$encryption_key" >/dev/null
-helm lint chart --set credentials.encryptionKey="$encryption_key" --set postgresql.enabled=false \
+admin_password=$(openssl rand -hex 12)
+credentials=(--set credentials.encryptionKey="$encryption_key" --set credentials.adminPassword="$admin_password")
+helm lint chart "${credentials[@]}" >/dev/null
+helm lint chart "${credentials[@]}" --set postgresql.enabled=false \
   --set postgresql-operator.enabled=false --set credentials.databaseURL=postgres://lint >/dev/null
 if helm template r chart >/dev/null 2>&1; then echo "the chart rendered without an encryption key" >&2; exit 1; fi
 # Not piped into grep -q: helm would die on the closed pipe (pipefail).
-rendered=$(helm template r chart --set credentials.encryptionKey="$encryption_key")
+rendered=$(helm template r chart "${credentials[@]}")
 [[ "$rendered" == *"kind: Cluster"* && "$rendered" == *"name: r-cloudnative-pg"* ]]
 
 step "the server's certificate: ECDSA P-384 from the tier's own certificate authority"
@@ -110,7 +112,7 @@ data:
 YAML
 helm install relic chart --wait --timeout 10m \
   --set tls.existingSecret=relic-tls \
-  --set credentials.encryptionKey="$encryption_key" \
+  "${credentials[@]}" \
   --set image.repository=relic --set image.tag=k8s --set image.pullPolicy=Never \
   --set postgresql.cluster.instances=1 --set postgresql.cluster.storage.size=1Gi \
   --set server.replicas=1 --set worker.vulnerabilityDatabase.persistence=false \
@@ -121,7 +123,7 @@ cluster_uid=$(kubectl get cluster relic-postgresql -o jsonpath='{.metadata.uid}'
 secret() { kubectl get secret relic-credentials -o "jsonpath={.data.$1}" | base64 -d; }
 password=$(secret adminPassword)
 secrets_key=$(secret encryptionKey)
-[[ ${#password} == 24 && -n "$secrets_key" ]]
+[[ "$password" == "$admin_password" && "$secrets_key" == "$encryption_key" ]]
 url=https://localhost:$port
 auth=(-fsS -u "admin:$password")
 ready() { for _ in $(seq 60); do curl -fsS "$url/readyz" >/dev/null 2>&1 && return; sleep 2; done; return 1; }
@@ -197,7 +199,7 @@ kubectl rollout status deploy/relic-server --timeout=180s
 ready
 fetched
 
-step "6. helm upgrade keeps the data, the generated secrets and the PostgreSQL cluster"
+step "6. helm upgrade keeps the data, the secrets and the PostgreSQL cluster"
 helm upgrade relic chart --wait --timeout 10m --reuse-values --set server.replicas=2 --set server.temporaryVolumeSize=2Gi
 kubectl rollout status deploy/relic-server --timeout=300s >/dev/null
 [[ "$(kubectl get deploy relic-server -o jsonpath='{.status.readyReplicas}')" == 2 ]]

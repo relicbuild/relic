@@ -79,8 +79,9 @@ spec: {class: local, format: gomod}
 		t.Errorf("print = %q %v", out, err)
 	}
 
-	if out, _ := setup("npm", "npm-local", "--show-token"); !strings.Contains(out, token) {
-		t.Errorf("--show-token = %q", out)
+	if out, _ := setup("npm", "npm-local", "--show-token"); strings.Contains(out, token) ||
+		!signsIn(t, srv.URL, authToken(out)) {
+		t.Errorf("--show-token = %q, want a token of its own that signs in", out)
 	}
 
 	if _, err := setup("maven", "npm-local"); err == nil || !strings.Contains(err.Error(), "is a npm repository") {
@@ -108,7 +109,8 @@ spec: {class: local, format: gomod}
 
 	b, _ := os.ReadFile(npmrc)
 	if !strings.HasPrefix(string(b), "fund=false\n# relic setup npm-local begin\n") ||
-		strings.Count(string(b), "_authToken="+token) != 1 {
+		strings.Count(string(b), "_authToken=") != 1 || strings.Contains(string(b), token) ||
+		!signsIn(t, srv.URL, authToken(string(b))) {
 		t.Errorf(".npmrc = %q", b)
 	}
 
@@ -155,7 +157,7 @@ spec: {class: local, format: gomod}
 
 	if !strings.Contains(string(list), " bookworm main\n") || strings.Contains(string(list), token) ||
 		!strings.HasPrefix(string(auth), "machine "+srv.URL+"/") ||
-		!strings.Contains(string(auth), "password "+token) {
+		!strings.Contains(string(auth), "password ") || strings.Contains(string(auth), token) {
 		t.Errorf("sources = %q, auth = %q", list, auth)
 	}
 
@@ -193,7 +195,7 @@ spec: {class: local, format: gomod}
 	dnfRepo, _ := os.ReadFile(repoFile)
 
 	if !strings.Contains(string(dnfRepo), "baseurl="+srv.URL+"/rpm/rpm-local\n") ||
-		!strings.Contains(string(dnfRepo), "password="+token+"\n") {
+		!strings.Contains(string(dnfRepo), "password=") || strings.Contains(string(dnfRepo), token) {
 		t.Errorf("dnf repository file = %q", dnfRepo)
 	}
 
@@ -207,9 +209,88 @@ spec: {class: local, format: gomod}
 
 	out, err = setup("go", "go-local", "--private", "git.example.com/*")
 	if err != nil || !strings.Contains(out, "$ go env -w GOPROXY="+srv.URL) ||
-		!strings.Contains(out, "$ go env -w GONOSUMDB=git.example.com/*") || !strings.Contains(out, ".netrc") {
+		!strings.Contains(out, "$ go env -w GONOSUMDB='git.example.com/*'") || !strings.Contains(out, ".netrc") {
 		t.Errorf("go = %q %v", out, err)
 	}
+}
+
+func TestSetupTokensOutliveTheContextsToken(t *testing.T) {
+	t.Parallel()
+
+	srv := testServer(t)
+	dir := t.TempDir()
+	config := filepath.Join(dir, "config.yaml")
+	home := filepath.Join(dir, "home")
+	login := func() {
+		if _, err := relic(
+			t,
+			config,
+			"password\n",
+			"auth",
+			"login",
+			srv.URL,
+			"--user",
+			"admin",
+			"--password-stdin",
+			"--context",
+			"work",
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	login()
+
+	if _, err := relic(t, config, `apiVersion: relic.build/v1
+kind: Repository
+metadata: {name: npm-local}
+spec: {class: local, format: npm}
+`, "apply", "-f", "-"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := relic(t, config, "", "package", "setup", "npm", "npm-local", "--write", "--home", home); err != nil {
+		t.Fatal(err)
+	}
+
+	npmrc, err := os.ReadFile(filepath.Join(home, ".npmrc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	written := authToken(string(npmrc))
+	if written == strings.TrimSpace(readToken(t, config)) {
+		t.Fatal("relic package setup gave npm the context's own token")
+	}
+
+	if list, err := relic(t, config, "", "auth", "token", "list"); err != nil ||
+		!strings.Contains(list, "relic package setup npm npm-local") {
+		t.Errorf("token list = %q %v, want the token setup issued, named after the client and repository", list, err)
+	}
+
+	login()
+
+	if !signsIn(t, srv.URL, written) {
+		t.Error("signing in again revoked the token relic package setup wrote")
+	}
+
+	if _, err := relic(t, config, "", "auth", "logout", "work"); err != nil {
+		t.Fatal(err)
+	}
+
+	if !signsIn(t, srv.URL, written) {
+		t.Error("logout revoked the token relic package setup wrote")
+	}
+}
+
+func authToken(npmrc string) string {
+	for line := range strings.Lines(npmrc) {
+		if _, v, ok := strings.Cut(line, ":_authToken="); ok {
+			return strings.TrimSpace(v)
+		}
+	}
+
+	return ""
 }
 
 func readToken(t *testing.T, config string) string {

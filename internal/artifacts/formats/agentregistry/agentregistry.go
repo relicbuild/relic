@@ -96,7 +96,9 @@ func (s *Service) index(ctx context.Context, r repository.Repository, item repos
 	)
 
 	switch {
-	case r.Format == repository.FormatMCP && strings.HasSuffix(item.Name, ".json"):
+	case !isEntryFile(r.Format, item.Name):
+		return nil
+	case r.Format == repository.FormatMCP:
 		body, err := s.read(ctx, item, maxServerJSON)
 		if err != nil {
 			return err
@@ -108,7 +110,7 @@ func (s *Service) index(ctx context.Context, r repository.Repository, item repos
 		}
 
 		doc = body
-	case r.Format == repository.FormatSkills && strings.HasSuffix(item.Name, ".zip"):
+	default:
 		body, err := s.read(ctx, item, maxSkillBundle)
 		if err != nil {
 			return err
@@ -129,8 +131,6 @@ func (s *Service) index(ctx context.Context, r repository.Repository, item repos
 		if doc, err = json.Marshal(front); err != nil {
 			return err
 		}
-	default:
-		return nil
 	}
 
 	if name == "" {
@@ -148,6 +148,20 @@ func (s *Service) index(ctx context.Context, r repository.Repository, item repos
 		Doc:         doc,
 		Updated:     s.now(),
 	})
+}
+
+// isEntryFile reports whether a file named name in a repository of format is
+// a registry entry: a server.json in an mcp repository, a skill bundle in a
+// skills repository.
+func isEntryFile(format repository.Format, name string) bool {
+	switch format {
+	case repository.FormatMCP:
+		return strings.HasSuffix(name, ".json")
+	case repository.FormatSkills:
+		return strings.HasSuffix(name, ".zip")
+	default:
+		return false
+	}
 }
 
 func (s *Service) read(ctx context.Context, item repository.Item, limit int64) ([]byte, error) {
@@ -309,7 +323,8 @@ func (s *Service) Entries(ctx context.Context, repoKey string, approvedOnly bool
 
 // Unapproved reports whether the item at itemPath, holding content
 // sha256Hex, is a registry entry whose content no one approved: such an
-// entry is not served.
+// entry is not served. An entry file the registry could not index has no
+// approval and is never served.
 func (s *Service) Unapproved(ctx context.Context, repoKey, itemPath, sha256Hex string) (bool, error) {
 	approved, err := s.db.RegistryEntryApproved(ctx, database.RegistryEntryApprovedParams{
 		Sha256:  sha256Hex,
@@ -317,7 +332,7 @@ func (s *Service) Unapproved(ctx context.Context, repoKey, itemPath, sha256Hex s
 		Path:    itemPath,
 	})
 	if errors.Is(database.NotFound(err), database.ErrNotFound) {
-		return false, nil
+		return s.unindexedEntryFile(ctx, repoKey, itemPath)
 	}
 
 	if err != nil {
@@ -325,6 +340,19 @@ func (s *Service) Unapproved(ctx context.Context, repoKey, itemPath, sha256Hex s
 	}
 
 	return !approved, nil
+}
+
+func (s *Service) unindexedEntryFile(ctx context.Context, repoKey, itemPath string) (bool, error) {
+	if !isEntryFile(repository.FormatMCP, itemPath) && !isEntryFile(repository.FormatSkills, itemPath) {
+		return false, nil
+	}
+
+	r, err := s.repos.GetRepository(ctx, repoKey)
+	if err != nil {
+		return false, fmt.Errorf("registry approval of %s/%s: %w", repoKey, itemPath, err)
+	}
+
+	return isEntryFile(r.Format, itemPath), nil
 }
 
 // Approve approves an entry's current content; a non-empty reviewed SHA-256

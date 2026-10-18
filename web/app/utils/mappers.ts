@@ -64,7 +64,7 @@ export function operationalRiskView(r: OperationalRisk): OperationalRiskView {
 }
 
 function buildLinkView(l: BuildLink): BuildLinkView {
-  return { name: l.name, number: l.number, started: toIsoDate(l.started), module: l.module, scopes: l.scopes || undefined }
+  return { name: l.name, number: l.number, project: l.project, started: toIsoDate(l.started), module: l.module, scopes: l.scopes || undefined }
 }
 
 export function artifactView(d: GetItemDetailsResponse): ArtifactView {

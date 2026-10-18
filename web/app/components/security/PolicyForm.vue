@@ -225,8 +225,12 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
         <UFormField name="blockDownload" description="Downloads of violating artifacts are refused.">
           <USwitch v-model="state.blockDownload" label="Block downloads" />
         </UFormField>
-        <UFormField v-if="state.blockDownload" name="blockUnscanned">
-          <UCheckbox v-model="state.blockUnscanned" label="Also block artifacts not scanned yet" />
+        <UFormField
+          v-if="state.blockDownload"
+          name="blockUnscanned"
+          description="Artifacts not scanned yet, whose scan failed, or that Relic Scan skips, such as files over the scan size limit. Skipped artifacts stay blocked."
+        >
+          <UCheckbox v-model="state.blockUnscanned" label="Also block artifacts without a successful scan" />
         </UFormField>
       </UForm>
     </template>

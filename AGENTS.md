@@ -73,14 +73,13 @@ web/                    Nuxt 4 + Nuxt UI v4 single-page app embedded in the bina
                         a Cloudflare Worker (wrangler.jsonc) that Workers Builds deploys from main
 deploy/                 docker-compose dev stack (PostgreSQL, SeaweedFS; profile observability),
                         docker-compose.single-node.yml (SQLite and a directory), cloudflare/
-  demo/                 the read-only demo at demo.relic.build: demo.yaml, the seed, Caddy, the weekly rebuild
   observability/        Grafana dashboards (generated), Prometheus alert rules and their tests,
                         the Compose profile's configuration
 helm/relic/             the Helm chart; PostgreSQL (cnpg/cluster with the bundled CloudNativePG
                         operator, CRDs in crds/), SeaweedFS and the optional monitoring stack
                         (monitoringStack.enabled) come from their official charts via Chart.lock
 test/                   tier.sh (runs one test tier on its own stack), database-packages.sh (the SQLite pass)
-  compose/              the plain-HTTP overrides of the Compose stacks the tests start
+  compose/              the plain-HTTP overrides of the Compose stacks the tests start, and checks of their settings
   helm/                 chart render tests (no cluster)
   install/              tests of install.sh
   k8s/                  the k8s tier: one kind cluster for everything Kubernetes-specific
@@ -248,7 +247,7 @@ entries only ever become `relic` ones.
   statement of a function literal goes on its own line. `struct{}`, `T{}`
   and `func() {}` stay as they are. `go tool unfold -changed -w`
   applies this to every Go file changed against `origin/main` (then run
-  `golangci-lint fmt ./...`); the CI workflow (run on demand) checks the
+  `golangci-lint fmt ./...`); the CI workflow (on every pull request, or on demand) checks the
   files changed since the latest tag, so every file you touch gets unfolded, and the rest of the repo
   follows as it is edited. `go tool unfold -w <dir>/...` unfolds a
   whole tree.

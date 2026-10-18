@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # covers:
 source "$(dirname "$0")/lib.sh"
+if [[ ${SCENARIO_REMOTE_SERVER:-} == true ]]; then
+  echo "skipped: a remote server cannot reach the scenario's LDAP server" >&2
+  exit 0
+fi
 if [[ -z "${SCENARIO_URL:-}" || -z "${SCENARIO_REGISTRY:-}" || -z "${SCENARIO_USER:-}" ]] || ! docker info >/dev/null 2>&1; then
   echo "skipped: SCENARIO_URL/SCENARIO_REGISTRY/SCENARIO_USER or a docker daemon missing" >&2
   exit 0

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -49,6 +50,11 @@ apiVersion: relic.build/v1
 kind: Repository
 metadata: {name: hf-local}
 spec: {class: local, format: huggingface}
+---
+apiVersion: relic.build/v1
+kind: Repository
+metadata: {name: npm-local}
+spec: {class: local, format: npm}
 `, "apply", "-f", "-"); err != nil {
 		t.Fatal(err)
 	}
@@ -157,6 +163,60 @@ spec: {class: local, format: huggingface}
 		filepath.Join(tf, "network"),
 	); err != nil || out != "acme/network/aws 1.0.0 published to tf-local\n" {
 		t.Fatalf("terraform publish = %q %v", out, err)
+	}
+
+	for _, args := range [][]string{
+		{
+			"banana",
+			"--namespace",
+			"acme",
+		},
+		{
+			"2.0.0",
+			"--namespace",
+			"a/b",
+		},
+		{
+			"2.0.0",
+			"--namespace",
+			"",
+		},
+		{
+			"2.0.0",
+			"--namespace",
+			"acme",
+			"--name",
+			"net/work",
+		},
+	} {
+		publish := append([]string{
+			"package",
+			"publish",
+			"terraform",
+			"tf-local",
+		}, append(args, "--provider", "aws", "--dir", filepath.Join(tf, "network"))...)
+		if _, err := relic(t, config, "", publish...); err == nil {
+			t.Errorf("terraform publish %v succeeded, though the registry cannot list it", args)
+		}
+	}
+
+	if _, err := relic(
+		t,
+		config,
+		"",
+		"package",
+		"publish",
+		"terraform",
+		"tf-local",
+		"2.0.0",
+		"--namespace",
+		"acme",
+		"--provider",
+		"AWS",
+		"--dir",
+		filepath.Join(tf, "network"),
+	); err == nil {
+		t.Error("terraform publish with an upper-case provider succeeded")
 	}
 
 	module := download("tf-local/acme/network/aws/v1.0.0.zip")
@@ -269,5 +329,144 @@ spec: {class: local, format: huggingface}
 
 	if _, err := relic(t, config, "", "package", "hf", "download", "hf-local", "acme/none", out); err == nil {
 		t.Error("download of a missing model succeeded")
+	}
+
+	for _, args := range [][]string{
+		{
+			"acme/slash",
+			"--revision",
+			"feature/x",
+		},
+		{
+			"acme/a/b",
+		},
+		{
+			"acme/x y",
+		},
+		{
+			"acme/t1",
+			"--revision",
+			"v 1",
+		},
+	} {
+		upload := append([]string{
+			"package",
+			"hf",
+			"upload",
+			v1,
+			"hf-local",
+		}, args...)
+		if _, err := relic(t, config, "", upload...); err == nil {
+			t.Errorf("upload %v succeeded, though the Hub API cannot read it back", args)
+		}
+	}
+
+	for _, args := range [][]string{
+		{
+			"publish",
+			"go",
+			"npm-local",
+			"v1.3.0",
+			"--dir",
+			mod,
+		},
+		{
+			"publish",
+			"terraform",
+			"npm-local",
+			"1.0.0",
+			"--namespace",
+			"acme",
+			"--provider",
+			"aws",
+			"--dir",
+			filepath.Join(tf, "network"),
+		},
+		{
+			"hf",
+			"upload",
+			v1,
+			"npm-local",
+			"acme/tiny",
+		},
+	} {
+		_, err := relic(t, config, "", append([]string{
+			"package",
+		}, args...)...)
+		if err == nil || !strings.Contains(err.Error(), "npm-local is a npm repository") {
+			t.Errorf("%s %s into an npm repository: %v", args[0], args[1], err)
+		}
+	}
+}
+
+func TestHuggingFaceDownloadFromRemote(t *testing.T) {
+	t.Parallel()
+
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/models/org/up/revision/main":
+			_, _ = w.Write([]byte(`{"id":"org/up","sha":"` + commit + `","siblings":[` +
+				`{"rfilename":"config.json"},{"rfilename":"onnx/model.onnx"}]}`))
+		case "/org/up/resolve/" + commit + "/config.json":
+			_, _ = w.Write([]byte(`{"up": true}`))
+		case "/org/up/resolve/" + commit + "/onnx/model.onnx":
+			_, _ = w.Write([]byte("onnx"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(upstream.Close)
+
+	srv := testServer(t)
+	dir := t.TempDir()
+	config := filepath.Join(dir, "config.yaml")
+
+	if _, err := relic(
+		t,
+		config,
+		"password\n",
+		"auth",
+		"login",
+		srv.URL,
+		"--user",
+		"admin",
+		"--password-stdin",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := relic(t, config, `apiVersion: relic.build/v1
+kind: Repository
+metadata: {name: hf-remote}
+spec: {class: remote, format: huggingface, remote: {url: "`+upstream.URL+`"}}
+`, "apply", "-f", "-"); err != nil {
+		t.Fatal(err)
+	}
+
+	out := filepath.Join(dir, "up")
+	if got, err := relic(t, config, "", "package", "hf", "download", "hf-remote", "org/up", out); err != nil ||
+		got != "org/up@main: 2 files in "+out+"\n" {
+		t.Fatalf("download = %q %v", got, err)
+	}
+
+	for name, want := range map[string]string{
+		"config.json":     `{"up": true}`,
+		"onnx/model.onnx": "onnx",
+	} {
+		if b, _ := os.ReadFile(filepath.Join(out, filepath.FromSlash(name))); string(b) != want {
+			t.Errorf("%s = %q", name, b)
+		}
+	}
+
+	_, err := relic(t, config, "", "package", "hf", "download", "hf-remote", "org/up", out, "--revision", "dev")
+	if err == nil || !strings.Contains(err.Error(), "has no revision dev") {
+		t.Errorf("download of a missing revision = %v", err)
+	}
+
+	_, err = relic(t, config, "", "package", "hf", "download", "hf-none", "org/up", out)
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Errorf("download from a missing repository = %v", err)
 	}
 }

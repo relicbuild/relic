@@ -4,7 +4,9 @@
 package xraypolicy
 
 import (
+	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -112,15 +114,57 @@ type IgnoreFilters struct {
 	Builds          []IgnoreBuild     `json:"builds,omitempty"`
 }
 
+var ignoreFilterNames = []string{
+	"vulnerabilities",
+	"cves",
+	"licenses",
+	"watches",
+	"policies",
+	"components",
+	"artifacts",
+	"builds",
+}
+
+// UnmarshalJSON reads ignore filters and refuses, with policy.ErrInvalid, a
+// filter Relic does not evaluate.
+func (f *IgnoreFilters) UnmarshalJSON(b []byte) error {
+	var named map[string]json.RawMessage
+	if err := json.Unmarshal(b, &named); err != nil {
+		return err
+	}
+
+	for name, value := range named {
+		if !slices.Contains(ignoreFilterNames, name) && !emptyJSON(value) {
+			return fmt.Errorf("%w: the ignore filter %s is not supported", policy.ErrInvalid, name)
+		}
+	}
+
+	type filters IgnoreFilters
+
+	return json.Unmarshal(b, (*filters)(f))
+}
+
+func emptyJSON(value json.RawMessage) bool {
+	switch strings.TrimSpace(string(value)) {
+	case "null", "[]", "{}", `""`:
+		return true
+	}
+
+	return false
+}
+
 // IgnoreComponent is "<type>://<name>" with an optional version.
 type IgnoreComponent struct {
 	Name    string `json:"name"`
 	Version string `json:"version,omitempty"`
 }
 
-// IgnoreArtifact matches an artifact path ("repo/path/"), as a prefix.
+// IgnoreArtifact matches an artifact path ("repo/path/") as a prefix, and
+// carries Name and Version only to refuse them.
 type IgnoreArtifact struct {
-	Path string `json:"path,omitempty"`
+	Name    string `json:"name,omitempty"`
+	Version string `json:"version,omitempty"`
+	Path    string `json:"path,omitempty"`
 }
 
 // IgnoreBuild matches a build, with an optional number.
@@ -175,6 +219,49 @@ func PolicyFromXray(p Policy) policy.Policy {
 	}
 
 	return out
+}
+
+// KeepRelicCriteria copies onto updated's rules the criteria a policy
+// document cannot carry from the stored rules of the same name.
+func KeepRelicCriteria(updated, stored policy.Policy) policy.Policy {
+	byName := make(map[string]policy.Rule, len(stored.Rules))
+	for _, r := range stored.Rules {
+		byName[r.Name] = r
+	}
+
+	for i, r := range updated.Rules {
+		s, ok := byName[r.Name]
+		if !ok {
+			continue
+		}
+
+		r.Condition = s.Condition
+		r.IgnoreUnreachable = s.IgnoreUnreachable
+
+		if keepsSelection(r, s) {
+			r.Malicious = s.Malicious
+			r.Secrets = s.Secrets
+			r.LiveSecrets = s.LiveSecrets
+			r.Misconfigurations = s.Misconfigurations
+			r.EndOfLife = s.EndOfLife
+			r.Unmaintained = s.Unmaintained
+		}
+
+		updated.Rules[i] = r
+	}
+
+	return updated
+}
+
+// keepsSelection reports whether updated still selects findings the way
+// stored does: it sets no CVSS range, and a minimum severity only where
+// stored grades its findings by severity.
+func keepsSelection(updated, stored policy.Rule) bool {
+	if updated.CVSS != nil {
+		return false
+	}
+
+	return updated.MinSeverity == "" || stored.Misconfigurations || stored.EndOfLife
 }
 
 // PolicyToXray renders a policy as a policy document.
@@ -328,6 +415,10 @@ func IgnoreRuleFromXray(r IgnoreRule) (policy.IgnoreRule, error) {
 		Watches:         f.Watches,
 		Policies:        f.Policies,
 	}
+	if out.Expires != nil && out.Expires.IsZero() {
+		out.Expires = nil
+	}
+
 	for _, c := range f.Components {
 		p, err := xraymap.PackageToPURL(c.Name, c.Version)
 		if err != nil {
@@ -338,6 +429,13 @@ func IgnoreRuleFromXray(r IgnoreRule) (policy.IgnoreRule, error) {
 	}
 
 	for _, a := range f.Artifacts {
+		if a.Name != "" || a.Version != "" {
+			return policy.IgnoreRule{}, fmt.Errorf(
+				"%w: an ignored artifact is matched by its path only, not by name or version",
+				policy.ErrInvalid,
+			)
+		}
+
 		out.ArtifactPaths = append(out.ArtifactPaths, a.Path)
 	}
 

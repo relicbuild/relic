@@ -77,10 +77,11 @@ func registryDecideCmd(g *globals, approve bool) *cobra.Command {
 	}
 
 	return &cobra.Command{
-		Use:     verb + " <repository>/<path>",
-		Short:   short,
-		Example: "  relic registry " + verb + " mcp-servers/weather/1.1.0/server.json",
-		Args:    cobra.ExactArgs(1),
+		Use:               verb + " <repository>/<path>",
+		Short:             short,
+		Example:           "  relic registry " + verb + " mcp-servers/weather/1.1.0/server.json",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeTargetArg(g, 0),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			repo, p, err := splitTarget(args[0])
 			if err != nil {

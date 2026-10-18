@@ -1197,3 +1197,141 @@ func TestImmutableRegistryRefusesMovingATag(t *testing.T) {
 		t.Errorf("moving tag 1.0 to another manifest = %d, want 403", got)
 	}
 }
+
+func TestDockerTagList(t *testing.T) {
+	t.Parallel()
+
+	srv := server(t)
+	do(
+		t,
+		srv,
+		call{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/docker-local",
+			body:   `{"rclass":"local","packageType":"docker"}`,
+		},
+	)
+
+	config := pushBlob(t, srv, "docker-local/app", "{}")
+	layer := pushBlob(t, srv, "docker-local/app", "layer")
+
+	if resp, _ := do(t, srv, call{
+		method: "PUT",
+		path:   "/v2/docker-local/app/manifests/1.0",
+		body:   manifestJSON(config, layer),
+		headers: map[string]string{
+			"Content-Type": "application/vnd.docker.distribution.manifest.v2+json",
+		},
+	}); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("push = %d", resp.StatusCode)
+	}
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		want   int
+		code   string
+	}{
+		{
+			name:   "an image",
+			method: "GET",
+			path:   "/v2/docker-local/app/tags/list",
+			want:   http.StatusOK,
+		},
+		{
+			name:   "an image never pushed",
+			method: "GET",
+			path:   "/v2/docker-local/nope/tags/list",
+			want:   http.StatusNotFound,
+			code:   "NAME_UNKNOWN",
+		},
+		{
+			name:   "a delete",
+			method: "DELETE",
+			path:   "/v2/docker-local/app/tags/list",
+			want:   http.StatusMethodNotAllowed,
+			code:   "UNSUPPORTED",
+		},
+		{
+			name:   "a post",
+			method: "POST",
+			path:   "/v2/docker-local/app/tags/list",
+			want:   http.StatusMethodNotAllowed,
+			code:   "UNSUPPORTED",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, body := do(t, srv, call{
+				method: tt.method,
+				path:   tt.path,
+			})
+			if resp.StatusCode != tt.want || !strings.Contains(body, tt.code) {
+				t.Errorf("%s %s = %d %s, want %d %s", tt.method, tt.path, resp.StatusCode, body, tt.want, tt.code)
+			}
+		})
+	}
+
+	if resp, _ := do(t, srv, call{
+		method: "DELETE",
+		path:   "/v2/docker-local/app/manifests/1.0",
+	}); resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("delete the only tag = %d", resp.StatusCode)
+	}
+
+	if resp, body := do(t, srv, call{
+		method: "GET",
+		path:   "/v2/docker-local/app/tags/list",
+	}); resp.StatusCode != http.StatusOK || !strings.Contains(body, `"tags": []`) {
+		t.Errorf("tags of an image without tags = %d %s, want 200 and none", resp.StatusCode, body)
+	}
+}
+
+func TestDockerRegistryRefusesBadCredentialsInItsErrorFormat(t *testing.T) {
+	t.Parallel()
+
+	srv := server(t)
+
+	tests := []struct {
+		name          string
+		authorization string
+	}{
+		{
+			name:          "a wrong password",
+			authorization: "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:wrong-password")),
+		},
+		{
+			name:          "a malformed token",
+			authorization: "Bearer garbage",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resp, body := do(t, srv, call{
+				method: "GET",
+				path:   "/v2/",
+				noAuth: true,
+				headers: map[string]string{
+					"Authorization": tt.authorization,
+				},
+			})
+
+			var got struct {
+				Errors []struct {
+					Code string `json:"code"`
+				} `json:"errors"`
+			}
+			if resp.StatusCode != http.StatusUnauthorized || json.Unmarshal([]byte(body), &got) != nil ||
+				len(got.Errors) != 1 || got.Errors[0].Code != "UNAUTHORIZED" {
+				t.Errorf("GET /v2/ = %d %s, want 401 UNAUTHORIZED", resp.StatusCode, body)
+			}
+
+			if v := resp.Header.Get("Docker-Distribution-API-Version"); v != "registry/2.0" {
+				t.Errorf("Docker-Distribution-API-Version = %q, want registry/2.0", v)
+			}
+		})
+	}
+}

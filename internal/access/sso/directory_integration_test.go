@@ -155,3 +155,73 @@ func TestDirectoryLeavesPrivilegedAndRelicManagedGroupsAlone(t *testing.T) {
 		t.Errorf("SCIM deleting a group only it manages: %v", err)
 	}
 }
+
+func TestDirectoryKeepsTheLastEnabledAdministrator(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		change func(*Directory, DirectoryUser) error
+	}{
+		{
+			name: "replacing the user as inactive",
+			change: func(dir *Directory, u DirectoryUser) error {
+				u.Active = false
+				_, err := dir.UpdateUser(t.Context(), u)
+
+				return err
+			},
+		},
+		{
+			name: "patching the user inactive",
+			change: func(dir *Directory, u DirectoryUser) error {
+				after := u
+				after.Active = false
+				_, err := dir.PatchUser(t.Context(), u, after)
+
+				return err
+			},
+		},
+		{
+			name: "deleting the user",
+			change: func(dir *Directory, u DirectoryUser) error {
+				return dir.DeleteUser(t.Context(), u.ID)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			db := databasetest.NewDB(t)
+			sec := security.NewService(db, slog.New(slog.DiscardHandler))
+			dir := NewDirectory(db, sec)
+
+			u, err := dir.CreateUser(ctx, DirectoryUser{
+				UserName: "alice",
+				Email:    "alice@example.com",
+				Active:   true,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := sec.PutUser(ctx, security.User{
+				Name:  "alice",
+				Email: "alice@example.com",
+				Admin: true,
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := tt.change(dir, u); !errors.Is(err, ErrInvalidValue) {
+				t.Errorf("change = %v, want %v", err, ErrInvalidValue)
+			}
+
+			if after, err := dir.User(ctx, u.ID); err != nil || !after.Active {
+				t.Errorf("administrator after a refused change = %+v %v, want it active", after, err)
+			}
+		})
+	}
+}

@@ -128,13 +128,16 @@ var notFound = []error{
 	cvecatalog.ErrUnknown,
 	buildinfo.ErrNotFound,
 	release.ErrNotFound,
+	release.ErrGateNotFound,
 	evidence.ErrKeyNotFound,
 	signingkey.ErrNotFound,
 	auth.ErrTokenNotFound,
+	auth.ErrUnknownUser,
 	sso.ErrNotFound,
 	workload.ErrNotFound,
 	webhook.ErrNotFound,
 	project.ErrNotFound,
+	project.ErrMemberNotFound,
 	agentregistry.ErrNotFound,
 }
 
@@ -155,6 +158,7 @@ func codeOf(err error) *connect.Error {
 
 	switch {
 	case errors.Is(err, repository.ErrRepositoryExists),
+		errors.Is(err, repository.ErrRepositoryKeyCaseConflict),
 		errors.Is(err, security.ErrExists),
 		errors.Is(err, policy.ErrExists),
 		errors.Is(err, release.ErrExists),
@@ -162,9 +166,11 @@ func codeOf(err error) *connect.Error {
 		return connect.NewError(connect.CodeAlreadyExists, err)
 	case errors.Is(err, repository.ErrInvalidRepository),
 		errors.Is(err, repository.ErrInvalidPath),
+		errors.Is(err, repository.ErrInvalidProperty),
 		errors.Is(err, security.ErrInvalid),
 		errors.Is(err, ldap.ErrInvalid),
 		errors.Is(err, policy.ErrInvalid),
+		errors.Is(err, policy.ErrInvalidWaiver),
 		errors.Is(err, replication.ErrInvalid),
 		errors.Is(err, cleanup.ErrInvalid),
 		errors.Is(err, audit.ErrInvalid),
@@ -174,10 +180,14 @@ func codeOf(err error) *connect.Error {
 		errors.Is(err, project.ErrInvalid),
 		errors.Is(err, agentregistry.ErrInvalid),
 		errors.Is(err, release.ErrInvalid),
+		errors.Is(err, release.ErrInvalidGate),
 		errors.Is(err, evidence.ErrInvalid),
 		errors.Is(err, buildinfo.ErrInvalid):
 		return connect.NewError(connect.CodeInvalidArgument, err)
-	case errors.Is(err, repository.ErrChecksumMismatch), errors.Is(err, repository.ErrNotAFile):
+	case errors.Is(err, repository.ErrChecksumMismatch),
+		errors.Is(err, repository.ErrNotAFile),
+		errors.Is(err, repository.ErrSelfCopy),
+		errors.Is(err, repository.ErrUnsupportedArchive):
 		return connect.NewError(connect.CodeInvalidArgument, err)
 	case errors.Is(err, repository.ErrForbidden),
 		errors.Is(err, repository.ErrCoolingDown),

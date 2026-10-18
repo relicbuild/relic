@@ -115,6 +115,8 @@ func TestUninstallPurge(t *testing.T) {
 
 	m := installedUserService(t)
 
+	writeCertificateAuthority(t, filepath.Join(m.configDir(), "tls"))
+
 	u, _, _ := testMachineSetup(t, "")
 	u.home, u.configPath, u.executable, u.yes = m.home, m.configPath, m.executable, true
 
@@ -125,11 +127,45 @@ func TestUninstallPurge(t *testing.T) {
 	for _, p := range []string{
 		m.configPath,
 		filepath.Join(m.configDir(), "server.env"),
+		filepath.Join(m.configDir(), "tls"),
 		m.dataDir(),
 	} {
 		if exists(p) {
 			t.Errorf("%s is still there", p)
 		}
+	}
+}
+
+func writeCertificateAuthority(t *testing.T, dir string) {
+	t.Helper()
+
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "ca.key"), []byte("key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUninstallPurgeAnswersNoByDefault(t *testing.T) {
+	t.Parallel()
+
+	m := installedUserService(t)
+
+	u, ran, out := testMachineSetup(t, "\n")
+	u.home, u.configPath, u.executable = m.home, m.configPath, m.executable
+
+	if err := u.runUninstall(t.Context(), true); err == nil || !strings.Contains(err.Error(), "cancelled") {
+		t.Fatalf("err = %v", err)
+	}
+
+	if !strings.Contains(out.String(), "[y/N]") {
+		t.Errorf("output:\n%s", out)
+	}
+
+	if len(*ran) != 0 || !exists(m.dataDir()) {
+		t.Errorf("a purge answered with Enter changed something: %v", *ran)
 	}
 }
 
@@ -174,6 +210,8 @@ func TestUninstallSystem(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	writeCertificateAuthority(t, filepath.Join(m.root, systemTLSDir))
+
 	m.euid = 1000
 	if err := m.runUninstall(t.Context(), false); err == nil || !strings.Contains(err.Error(), "sudo") {
 		t.Fatalf("err = %v", err)
@@ -199,8 +237,9 @@ func TestUninstallSystem(t *testing.T) {
 		}
 	}
 
-	if !exists(filepath.Join(m.root, systemSettings)) || !exists(filepath.Join(m.root, systemDataDir, "relic.db")) {
-		t.Error("the settings or the data were removed")
+	if !exists(filepath.Join(m.root, systemSettings)) || !exists(filepath.Join(m.root, systemDataDir, "relic.db")) ||
+		!exists(filepath.Join(m.root, systemTLSDir, "ca.key")) {
+		t.Error("the settings, the data or the certificate authority were removed")
 	}
 
 	if strings.Contains(strings.Join(*ran, "\n"), "userdel") {
@@ -217,5 +256,9 @@ func TestUninstallSystem(t *testing.T) {
 
 	if exists(filepath.Join(m.root, systemDataDir)) || !strings.Contains(strings.Join(*ran, "\n"), "userdel relic") {
 		t.Errorf("--purge left the data or the user: %v", *ran)
+	}
+
+	if exists(filepath.Join(m.root, systemTLSDir)) {
+		t.Error("--purge left the certificate authority")
 	}
 }

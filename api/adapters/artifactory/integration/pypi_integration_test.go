@@ -305,6 +305,17 @@ func TestPyPIRepository(t *testing.T) {
 	if got := twineUpload(t, srv, "py-local", "x", "1", "notes.txt", "x"); got != 400 {
 		t.Errorf("non-distribution upload = %d, want 400", got)
 	}
+
+	if got := twineUpload(t, srv, "py-local", "x", "2", "other_lib-9.9.tar.gz", "x"); got != 400 {
+		t.Errorf("upload of another project's file = %d, want 400", got)
+	}
+
+	if resp, _ := do(t, srv, call{
+		method: "GET",
+		path:   "/artifactory/api/storage/py-local/x/2/other_lib-9.9.tar.gz",
+	}); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("refused upload stored = %d, want 404", resp.StatusCode)
+	}
 }
 
 func TestPyPIReupload(t *testing.T) {

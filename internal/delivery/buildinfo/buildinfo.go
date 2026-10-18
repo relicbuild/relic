@@ -14,6 +14,7 @@ import (
 	"time"
 	"uuid"
 
+	"relic/internal/access/project"
 	"relic/internal/artifacts/repository"
 	"relic/internal/platform/database"
 	"relic/internal/platform/telemetry"
@@ -101,6 +102,8 @@ type Service struct {
 	layout Layout
 	log    *slog.Logger
 	now    func() time.Time
+	// refuseFile refuses a file whose download is blocked; nil refuses none.
+	refuseFile func(ctx context.Context, file repository.Item) error
 }
 
 // NewService returns a Service.
@@ -133,11 +136,36 @@ var DefaultLayout = Layout{
 
 // Repository is the repository holding a project's build-info documents.
 func (l Layout) Repository(project string) string {
-	if project == "" || project == "default" {
+	if isDefaultProject(project) {
 		return l.DefaultRepository
 	}
 
 	return project + l.ProjectSuffix
+}
+
+func isDefaultProject(key string) bool { return project.IsDefault(key) }
+
+func ownerProject(key string) string {
+	if isDefaultProject(key) {
+		return ""
+	}
+
+	return key
+}
+
+// StorageOwner reports whether name is a build-info repository, and the
+// project ("" outside projects) whose build info it holds.
+func (l Layout) StorageOwner(name string) (repository.Format, string, bool) {
+	if name == l.DefaultRepository {
+		return repository.FormatBuild, "", true
+	}
+
+	key, ok := strings.CutSuffix(name, l.ProjectSuffix)
+	if !ok || isDefaultProject(key) || !project.ValidKey(key) {
+		return "", "", false
+	}
+
+	return repository.FormatBuild, key, true
 }
 
 // Project is the project whose build info repository holds; "" for the
@@ -154,8 +182,20 @@ func (l Layout) Project(repository string) string {
 // SetLayout sets the build-info repository names.
 func (s *Service) SetLayout(l Layout) { s.layout = l }
 
+// SetDownloadBlocker keeps files out of promotions when refuse returns an
+// error for them, as it does for a blocked download.
+func (s *Service) SetDownloadBlocker(refuse func(ctx context.Context, file repository.Item) error) {
+	s.refuseFile = refuse
+}
+
 // Repository is the repository holding a project's build-info documents.
 func (s *Service) Repository(project string) string { return s.layout.Repository(project) }
+
+// StorageOwner reports whether name is a build-info repository, and the
+// project whose build info it holds.
+func (s *Service) StorageOwner(name string) (repository.Format, string, bool) {
+	return s.layout.StorageOwner(name)
+}
 
 // PublishDocument stores a build run published as a Document.
 func (s *Service) PublishDocument(ctx context.Context, project string, doc Document, user string) error {
@@ -188,6 +228,10 @@ func (s *Service) Publish(ctx context.Context, project string, raw []byte, user 
 	}
 
 	started := bi.Started
+
+	if err := s.checkProject(ctx, project); err != nil {
+		return err
+	}
 
 	if raw, err = s.format.Prepare(ctx, raw, s.sha256Of); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalid, err)
@@ -231,7 +275,17 @@ func (s *Service) Publish(ctx context.Context, project string, raw []byte, user 
 	art.BuildID, dep.BuildID = id, id
 
 	err = s.db.WithTx(ctx, func(q database.Querier) error {
-		err := q.InsertBuild(ctx, database.InsertBuildParams{
+		replaced, err := q.ListBuildRunIDsStartedAt(ctx, database.ListBuildRunIDsStartedAtParams{
+			Project:   project,
+			Name:      bi.Name,
+			Number:    bi.Number,
+			StartedMs: started.UnixMilli(),
+		})
+		if err != nil {
+			return fmt.Errorf("find the run to replace: %w", err)
+		}
+
+		err = q.InsertBuild(ctx, database.InsertBuildParams{
 			ID:        id,
 			Project:   project,
 			Name:      bi.Name,
@@ -257,7 +311,7 @@ func (s *Service) Publish(ctx context.Context, project string, raw []byte, user 
 			}
 		}
 
-		return nil
+		return replaceRuns(ctx, q, replaced, id)
 	})
 	if err != nil {
 		return err
@@ -289,6 +343,28 @@ func (s *Service) Publish(ctx context.Context, project string, raw []byte, user 
 	return nil
 }
 
+// replaceRuns hands the promotions of the replaced runs to the run that
+// replaces them, and deletes the replaced runs.
+func replaceRuns(ctx context.Context, q database.Querier, replaced []uuid.UUID, replacement uuid.UUID) error {
+	if len(replaced) == 0 {
+		return nil
+	}
+
+	err := q.MoveBuildPromotions(ctx, database.MoveBuildPromotionsParams{
+		ToBuildID:    replacement,
+		FromBuildIds: replaced,
+	})
+	if err != nil {
+		return fmt.Errorf("keep the promotions of the replaced run: %w", err)
+	}
+
+	if err := q.DeleteBuilds(ctx, replaced); err != nil {
+		return fmt.Errorf("delete the replaced run: %w", err)
+	}
+
+	return nil
+}
+
 // sha256Of looks up stored content's SHA-256 by its SHA-1.
 func (s *Service) sha256Of(ctx context.Context, sha1 string) (string, bool, error) {
 	b, err := s.db.GetBlobBySHA1(ctx, sha1)
@@ -303,17 +379,57 @@ func (s *Service) sha256Of(ctx context.Context, sha1 string) (string, bool, erro
 	return b.Sha256, true, nil
 }
 
+func (s *Service) checkProject(ctx context.Context, key string) error {
+	if isDefaultProject(key) {
+		return nil
+	}
+
+	_, err := s.db.GetProject(ctx, key)
+	if errors.Is(database.NotFound(err), database.ErrNotFound) {
+		return fmt.Errorf("%w: project %s does not exist", ErrInvalid, key)
+	}
+
+	if err != nil {
+		return fmt.Errorf("get project %s: %w", key, err)
+	}
+
+	return nil
+}
+
 func (s *Service) ensureRepo(ctx context.Context, project string) error {
 	key := s.Repository(project)
-	if _, err := s.repos.GetRepository(ctx, key); !errors.Is(err, repository.ErrRepositoryNotFound) {
+	format, owner, _ := s.layout.StorageOwner(key)
+
+	existing, err := s.repos.GetRepository(ctx, key)
+	if err == nil {
+		if existing.Format != format ||
+			ownerProject(existing.Project) != owner {
+			return fmt.Errorf("%w: %s is not the build-info repository of project %q", ErrInvalid, key, project)
+		}
+
+		return nil
+	}
+
+	if !errors.Is(err, repository.ErrRepositoryNotFound) {
 		return err
+	}
+
+	if key != s.layout.DefaultRepository {
+		_, err := s.db.GetProject(ctx, project)
+		if errors.Is(database.NotFound(err), database.ErrNotFound) {
+			return fmt.Errorf("%w: project %q does not exist", ErrInvalid, project)
+		}
+
+		if err != nil {
+			return fmt.Errorf("get project %s: %w", project, err)
+		}
 	}
 
 	r := repository.Repository{
 		Name:    key,
 		Class:   repository.ClassLocal,
-		Format:  repository.FormatBuild,
-		Project: project,
+		Format:  format,
+		Project: owner,
 	}
 	if err := s.repos.CreateRepository(ctx, r); err != nil && !errors.Is(err, repository.ErrRepositoryExists) {
 		return fmt.Errorf("create %s: %w", key, err)
