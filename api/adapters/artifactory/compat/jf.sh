@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-JF_VERSION=2.124.0
+JF_VERSION=2.127.0
 
 case "$(uname -s)-$(uname -m)" in
   Linux-x86_64)
     platform=linux-amd64
-    sha256=5d9040dea5759b776f6961717d6f8633e29af19fb4f7f6e14ae2f1b6fddf6cf2 ;;
+    sha256=54974599482eb223e7559692ec670160bfe03a8f0ac006d316d1efe6135166f8 ;;
   Linux-aarch64 | Linux-arm64)
     platform=linux-arm64
-    sha256=2ddb1ce0aefc8902191a3ba3e3ab979998ef575335565c2a1d9c3d141b785adb ;;
+    sha256=d6cf1d946d32e038f883c34c7399a45f4c0604095d090acf4273f259c6a2ed7a ;;
   Darwin-arm64)
     platform=mac-arm64
-    sha256=2c1f05ef6ae8d4cabafe3732fe0df4d0bc7bb11bedcd48b0d0c128e477dda733 ;;
+    sha256=40af62a3ed27080d52945303285b58fe1454fe6be0ae2e09d116005025e664c7 ;;
   *) echo "jf.sh: unsupported platform $(uname -s)-$(uname -m)" >&2; exit 1 ;;
 esac
 

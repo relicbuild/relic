@@ -2,7 +2,7 @@
 # Point RELIC_URL at a Relic of its own, not the e2e stack.
 set -euo pipefail
 
-JF_TAG=v2.124.0
+JF_TAG=v2.127.0
 check_only=false
 if [[ ${1:-} == --check ]]; then
   check_only=true

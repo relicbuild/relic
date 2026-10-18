@@ -8,8 +8,8 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl git jq zip unzip xz-utils nodejs npm openjdk-21-jdk-headless maven docker-cli golang-go python3 python3-venv python3-pip twine \
  && rm -rf /var/lib/apt/lists/*
 
-ARG JF_VERSION=2.124.0
-ARG JF_SHA256=5d9040dea5759b776f6961717d6f8633e29af19fb4f7f6e14ae2f1b6fddf6cf2
+ARG JF_VERSION=2.127.0
+ARG JF_SHA256=54974599482eb223e7559692ec670160bfe03a8f0ac006d316d1efe6135166f8
 RUN curl -fsSL -o /usr/local/bin/jf "https://releases.jfrog.io/artifactory/jfrog-cli/v2-jf/${JF_VERSION}/jfrog-cli-linux-amd64/jf" \
  && echo "${JF_SHA256}  /usr/local/bin/jf" | sha256sum -c - \
  && chmod 0755 /usr/local/bin/jf
