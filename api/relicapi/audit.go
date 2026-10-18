@@ -2,10 +2,9 @@ package relicapi
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -37,17 +36,17 @@ type auditServer struct {
 
 func (s *auditServer) ListAuditEvents(
 	ctx context.Context,
-	req *connect.Request[relicv1.ListAuditEventsRequest],
-) (*connect.Response[relicv1.ListAuditEventsResponse], error) {
+	req *relicv1.ListAuditEventsRequest,
+) (*relicv1.ListAuditEventsResponse, error) {
 	if s.d.Audit == nil {
 		return nil, unimplemented("the audit log")
 	}
 
-	m := req.Msg
+	m := req
 
 	outcome, known := toDomain[audit.Outcome](m.GetOutcome())
 	if !known && m.GetOutcome() != relicv1.AuditOutcome_AUDIT_OUTCOME_UNSPECIFIED {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("unknown outcome %d", m.GetOutcome()))
+		return nil, connect.Errorf(connect.CodeInvalidArgument, "unknown outcome %d", m.GetOutcome())
 	}
 
 	f := audit.Filter{
@@ -88,26 +87,26 @@ func (s *auditServer) ListAuditEvents(
 		})
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func audited(spec connect.Spec) bool {
 	return accessOf(spec) == relicv1.Access_ACCESS_ADMIN || auditedMethods[spec.Procedure]
 }
 
-func auditInterceptor(a audit.Recorder) connect.UnaryInterceptorFunc {
-	return func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			resp, err := next(ctx, req)
-			if a == nil || !audited(req.Spec()) {
-				return resp, err
+func auditInterceptor(a audit.Recorder) connect.ServerInterceptor {
+	return func(next connect.ServerFunc) connect.ServerFunc {
+		return func(ctx context.Context, spec connect.Spec, stream connect.ServerStream) error {
+			err := next(ctx, spec, stream)
+			if a == nil || !audited(spec) {
+				return err
 			}
 
-			msg, _ := req.Any().(proto.Message)
+			msg := requestMessage(ctx)
 
 			e := audit.Event{
 				Actor:   auth.FromContext(ctx).Name(),
-				Action:  strings.TrimPrefix(req.Spec().Procedure, "/"),
+				Action:  strings.TrimPrefix(spec.Procedure, "/"),
 				Target:  auditTarget(msg),
 				Outcome: rpcOutcome(err),
 			}
@@ -121,7 +120,7 @@ func auditInterceptor(a audit.Recorder) connect.UnaryInterceptorFunc {
 
 			a.Record(ctx, e)
 
-			return resp, err
+			return err
 		}
 	}
 }

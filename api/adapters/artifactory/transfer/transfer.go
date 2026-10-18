@@ -16,8 +16,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"connectrpc.com/connect"
-
 	"relic/api/adapters/artifactory/permissions"
 	"relic/api/adapters/artifactory/repoconfig"
 	relicv1 "relic/api/gen/relic/v1"
@@ -343,9 +341,9 @@ func (im *importer) withCopiedMembers(
 }
 
 func (im *importer) destinationHas(ctx context.Context, key string) bool {
-	_, err := im.relic.repositories.GetRepository(ctx, connect.NewRequest(&relicv1.GetRepositoryRequest{
+	_, err := im.relic.repositories.GetRepository(ctx, &relicv1.GetRepositoryRequest{
 		Name: key,
-	}))
+	})
 
 	exists, err := found(err)
 

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -24,20 +24,20 @@ func TestWorkloadTokenExchange(t *testing.T) {
 	ctx := t.Context()
 	issuer := ssotest.NewOIDC(t, "unused", "unused")
 
-	security := relicv1connect.NewSecurityServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	security := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 	//nolint:gosec // G101: a test user's password
-	if _, err := security.PutUser(ctx, connect.NewRequest(&relicv1.PutUserRequest{
+	if _, err := security.PutUser(ctx, &relicv1.PutUserRequest{
 		User: &relicv1.User{
 			Name:     "ci-bot",
 			Email:    "ci@example.com",
 			Password: "Ci-bot-pw-1",
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	identities := relicv1connect.NewWorkloadIdentityServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
-	if _, err := identities.PutWorkloadIdentity(ctx, connect.NewRequest(&relicv1.PutWorkloadIdentityRequest{
+	identities := relicv1connect.NewWorkloadIdentityServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
+	if _, err := identities.PutWorkloadIdentity(ctx, &relicv1.PutWorkloadIdentityRequest{
 		WorkloadIdentity: &relicv1.WorkloadIdentity{
 			Name:     "github",
 			Enabled:  true,
@@ -52,7 +52,7 @@ func TestWorkloadTokenExchange(t *testing.T) {
 				},
 			},
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -105,12 +105,13 @@ func TestWorkloadTokenExchange(t *testing.T) {
 		t.Fatalf("exchange = %d %v", status, granted)
 	}
 
-	session := relicv1connect.NewSessionServiceClient(http.DefaultClient, srv.URL+"/api")
-	whoami := connect.NewRequest(&relicv1.GetCurrentUserRequest{})
-	whoami.Header().Set("Authorization", "Bearer "+granted["access_token"].(string))
+	session := relicv1connect.NewSessionServiceClient(apiClient(http.DefaultClient, srv.URL))
 
-	me, err := session.GetCurrentUser(ctx, whoami)
-	if err != nil || me.Msg.GetPrincipal().GetUsername() != "ci-bot" {
+	me, err := session.GetCurrentUser(
+		withRequestHeader(ctx, "Authorization", "Bearer "+granted["access_token"].(string)),
+		&relicv1.GetCurrentUserRequest{},
+	)
+	if err != nil || me.GetPrincipal().GetUsername() != "ci-bot" {
 		t.Fatalf("the exchanged token signs in as %v, %v", me, err)
 	}
 
@@ -120,28 +121,28 @@ func TestWorkloadTokenExchange(t *testing.T) {
 		t.Errorf("an unmatched token = %d %v", status, refused)
 	}
 
-	native, err := session.ExchangeWorkloadToken(ctx, connect.NewRequest(&relicv1.ExchangeWorkloadTokenRequest{
+	native, err := session.ExchangeWorkloadToken(ctx, &relicv1.ExchangeWorkloadTokenRequest{
 		Identity: "github",
 		Token: issuer.Mint(t, map[string]any{
 			"sub":        "repo:acme/lib",
 			"aud":        "relic",
 			"repository": "acme/lib",
 		}),
-	}))
-	if err != nil || native.Msg.GetUsername() != "ci-bot" || native.Msg.GetExpiresInSeconds() != 3600 {
+	})
+	if err != nil || native.GetUsername() != "ci-bot" || native.GetExpiresInSeconds() != 3600 {
 		t.Fatalf("Relic API exchange = %v, %v", native, err)
 	}
 
-	workloadToken := native.Msg.GetAccessToken()
+	workloadToken := native.GetAccessToken()
 
-	minted, err := relicv1connect.NewSecurityServiceClient(
+	minted, err := relicv1connect.NewSecurityServiceClient(apiClient(
 		relicHTTP("ci-bot", workloadToken),
-		srv.URL+"/api",
-	).CreateToken(ctx, connect.NewRequest(&relicv1.CreateTokenRequest{
+		srv.URL,
+	)).CreateToken(ctx, &relicv1.CreateTokenRequest{
 		Description: "outlives the job",
 		ExpiresDays: 30,
-	}))
-	if err != nil || minted.Msg.GetExpiresIn() <= 0 || minted.Msg.GetExpiresIn() > 3600 {
+	})
+	if err != nil || minted.GetExpiresIn() <= 0 || minted.GetExpiresIn() > 3600 {
 		t.Errorf("a token minted with a workload token = %v, %v; want it to expire within the hour", minted, err)
 	}
 
@@ -166,51 +167,51 @@ func TestWorkloadTokenExchange(t *testing.T) {
 	}
 
 	const cliSession = "6f1c2d3e-4a5b-4c7d-8e9f-0a1b2c3d4e5f"
-	if _, err := session.StartWebLogin(ctx, connect.NewRequest(&relicv1.StartWebLoginRequest{
+	if _, err := session.StartWebLogin(ctx, &relicv1.StartWebLoginRequest{
 		Session: cliSession,
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := relicv1connect.NewSessionServiceClient(
+	if _, err := relicv1connect.NewSessionServiceClient(apiClient(
 		relicHTTP("ci-bot", workloadToken),
-		srv.URL+"/api",
-	).ApproveLogin(ctx, connect.NewRequest(&relicv1.ApproveLoginRequest{
+		srv.URL,
+	)).ApproveLogin(ctx, &relicv1.ApproveLoginRequest{
 		Session: cliSession,
 		Code:    cliSession[len(cliSession)-4:],
-	})); code(err) != connect.CodePermissionDenied {
+	}); code(err) != connect.CodePermissionDenied {
 		t.Errorf("a workload token approving a CLI sign-in: %v", err)
 	}
 
-	signIn := connect.NewRequest(&relicv1.LoginRequest{
+	signIn := &relicv1.LoginRequest{
 		Username: "ci-bot",
 		Password: workloadToken,
-	})
-	signIn.Header().Set(auth.UIHeader, "1")
+	}
+	signInCtx, signInInfo := connect.NewClientContext(ctx)
+	signInInfo.RequestHeader().Set(auth.UIHeader, "1")
 
-	uiSession, err := session.Login(ctx, signIn)
-	if err != nil {
+	if _, err := session.Login(signInCtx, signIn); err != nil {
 		t.Fatal(err)
 	}
 
-	if cookie, err := http.ParseSetCookie(uiSession.Header().Get("Set-Cookie")); err != nil ||
+	if cookie, err := http.ParseSetCookie(signInInfo.ResponseHeader().Get("Set-Cookie")); err != nil ||
 		cookie.MaxAge <= 0 || cookie.MaxAge > 3600 {
 		t.Errorf("a UI session signed in with a workload token = %v, %v; want it to end within the hour", cookie, err)
 	}
 
-	if _, err := session.ExchangeWorkloadToken(ctx, connect.NewRequest(&relicv1.ExchangeWorkloadTokenRequest{
+	if _, err := session.ExchangeWorkloadToken(ctx, &relicv1.ExchangeWorkloadTokenRequest{
 		Identity: "github",
 		Token:    "not-a-token",
-	})); code(err) != connect.CodeUnauthenticated || !strings.HasSuffix(err.Error(), ": the token exchange was refused") {
+	}); code(err) != connect.CodeUnauthenticated || !strings.HasSuffix(err.Error(), ": the token exchange was refused") {
 		t.Errorf("a malformed token: %v, want a refusal that names no reason", err)
 	}
 
-	log := relicv1connect.NewAuditServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	log := relicv1connect.NewAuditServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
-	events, err := log.ListAuditEvents(ctx, connect.NewRequest(&relicv1.ListAuditEventsRequest{
+	events, err := log.ListAuditEvents(ctx, &relicv1.ListAuditEventsRequest{
 		Action: "workload.exchange",
-	}))
-	if err != nil || events.Msg.GetTotal() != 4 {
+	})
+	if err != nil || events.GetTotal() != 4 {
 		t.Errorf("exchange audit events = %v, %v", events, err)
 	}
 }

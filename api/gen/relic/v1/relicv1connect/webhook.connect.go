@@ -5,256 +5,282 @@
 package relicv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
-	http "net/http"
 	v1 "relic/api/gen/relic/v1"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// WebhookServiceName is the fully-qualified name of the WebhookService service.
 	WebhookServiceName = "relic.v1.WebhookService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// WebhookServiceListWebhooksProcedure is the fully-qualified name of the WebhookService's
-	// ListWebhooks RPC.
+	// WebhookServiceListWebhooksProcedure is the procedure name of the WebhookService's ListWebhooks
+	// RPC.
 	WebhookServiceListWebhooksProcedure = "/relic.v1.WebhookService/ListWebhooks"
-	// WebhookServiceGetWebhookProcedure is the fully-qualified name of the WebhookService's GetWebhook
-	// RPC.
+	// WebhookServiceGetWebhookProcedure is the procedure name of the WebhookService's GetWebhook RPC.
 	WebhookServiceGetWebhookProcedure = "/relic.v1.WebhookService/GetWebhook"
-	// WebhookServicePutWebhookProcedure is the fully-qualified name of the WebhookService's PutWebhook
-	// RPC.
+	// WebhookServicePutWebhookProcedure is the procedure name of the WebhookService's PutWebhook RPC.
 	WebhookServicePutWebhookProcedure = "/relic.v1.WebhookService/PutWebhook"
-	// WebhookServiceDeleteWebhookProcedure is the fully-qualified name of the WebhookService's
-	// DeleteWebhook RPC.
+	// WebhookServiceDeleteWebhookProcedure is the procedure name of the WebhookService's DeleteWebhook
+	// RPC.
 	WebhookServiceDeleteWebhookProcedure = "/relic.v1.WebhookService/DeleteWebhook"
-	// WebhookServiceListWebhookDeliveriesProcedure is the fully-qualified name of the WebhookService's
+	// WebhookServiceListWebhookDeliveriesProcedure is the procedure name of the WebhookService's
 	// ListWebhookDeliveries RPC.
 	WebhookServiceListWebhookDeliveriesProcedure = "/relic.v1.WebhookService/ListWebhookDeliveries"
-	// WebhookServicePingWebhookProcedure is the fully-qualified name of the WebhookService's
-	// PingWebhook RPC.
+	// WebhookServicePingWebhookProcedure is the procedure name of the WebhookService's PingWebhook RPC.
 	WebhookServicePingWebhookProcedure = "/relic.v1.WebhookService/PingWebhook"
+)
+
+var (
+	webhookServiceListWebhooksSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_webhook_proto.Services().ByName("WebhookService").Methods().ByName("ListWebhooks"),
+			Procedure:  WebhookServiceListWebhooksProcedure,
+		}
+	})
+	webhookServiceGetWebhookSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_webhook_proto.Services().ByName("WebhookService").Methods().ByName("GetWebhook"),
+			Procedure:  WebhookServiceGetWebhookProcedure,
+		}
+	})
+	webhookServicePutWebhookSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_webhook_proto.Services().ByName("WebhookService").Methods().ByName("PutWebhook"),
+			Procedure:  WebhookServicePutWebhookProcedure,
+		}
+	})
+	webhookServiceDeleteWebhookSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_webhook_proto.Services().ByName("WebhookService").Methods().ByName("DeleteWebhook"),
+			Procedure:  WebhookServiceDeleteWebhookProcedure,
+		}
+	})
+	webhookServiceListWebhookDeliveriesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_webhook_proto.Services().ByName("WebhookService").Methods().ByName("ListWebhookDeliveries"),
+			Procedure:  WebhookServiceListWebhookDeliveriesProcedure,
+		}
+	})
+	webhookServicePingWebhookSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_webhook_proto.Services().ByName("WebhookService").Methods().ByName("PingWebhook"),
+			Procedure:  WebhookServicePingWebhookProcedure,
+		}
+	})
 )
 
 // WebhookServiceClient is a client for the relic.v1.WebhookService service.
 type WebhookServiceClient interface {
-	ListWebhooks(context.Context, *connect.Request[v1.ListWebhooksRequest]) (*connect.Response[v1.ListWebhooksResponse], error)
-	GetWebhook(context.Context, *connect.Request[v1.GetWebhookRequest]) (*connect.Response[v1.GetWebhookResponse], error)
-	PutWebhook(context.Context, *connect.Request[v1.PutWebhookRequest]) (*connect.Response[v1.PutWebhookResponse], error)
+	ListWebhooks(context.Context, *v1.ListWebhooksRequest) (*v1.ListWebhooksResponse, error)
+	GetWebhook(context.Context, *v1.GetWebhookRequest) (*v1.GetWebhookResponse, error)
+	PutWebhook(context.Context, *v1.PutWebhookRequest) (*v1.PutWebhookResponse, error)
 	// DeleteWebhook removes a webhook and its deliveries.
-	DeleteWebhook(context.Context, *connect.Request[v1.DeleteWebhookRequest]) (*connect.Response[v1.DeleteWebhookResponse], error)
+	DeleteWebhook(context.Context, *v1.DeleteWebhookRequest) (*v1.DeleteWebhookResponse, error)
 	// ListWebhookDeliveries lists the latest deliveries, newest first.
-	ListWebhookDeliveries(context.Context, *connect.Request[v1.ListWebhookDeliveriesRequest]) (*connect.Response[v1.ListWebhookDeliveriesResponse], error)
+	ListWebhookDeliveries(context.Context, *v1.ListWebhookDeliveriesRequest) (*v1.ListWebhookDeliveriesResponse, error)
 	// PingWebhook queues a webhook.ping event for one webhook.
-	PingWebhook(context.Context, *connect.Request[v1.PingWebhookRequest]) (*connect.Response[v1.PingWebhookResponse], error)
+	PingWebhook(context.Context, *v1.PingWebhookRequest) (*v1.PingWebhookResponse, error)
 }
 
-// NewWebhookServiceClient constructs a client for the relic.v1.WebhookService service. By default,
-// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
-// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
-// or connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewWebhookServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) WebhookServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	webhookServiceMethods := v1.File_relic_v1_webhook_proto.Services().ByName("WebhookService").Methods()
-	return &webhookServiceClient{
-		listWebhooks: connect.NewClient[v1.ListWebhooksRequest, v1.ListWebhooksResponse](
-			httpClient,
-			baseURL+WebhookServiceListWebhooksProcedure,
-			connect.WithSchema(webhookServiceMethods.ByName("ListWebhooks")),
-			connect.WithClientOptions(opts...),
-		),
-		getWebhook: connect.NewClient[v1.GetWebhookRequest, v1.GetWebhookResponse](
-			httpClient,
-			baseURL+WebhookServiceGetWebhookProcedure,
-			connect.WithSchema(webhookServiceMethods.ByName("GetWebhook")),
-			connect.WithClientOptions(opts...),
-		),
-		putWebhook: connect.NewClient[v1.PutWebhookRequest, v1.PutWebhookResponse](
-			httpClient,
-			baseURL+WebhookServicePutWebhookProcedure,
-			connect.WithSchema(webhookServiceMethods.ByName("PutWebhook")),
-			connect.WithClientOptions(opts...),
-		),
-		deleteWebhook: connect.NewClient[v1.DeleteWebhookRequest, v1.DeleteWebhookResponse](
-			httpClient,
-			baseURL+WebhookServiceDeleteWebhookProcedure,
-			connect.WithSchema(webhookServiceMethods.ByName("DeleteWebhook")),
-			connect.WithClientOptions(opts...),
-		),
-		listWebhookDeliveries: connect.NewClient[v1.ListWebhookDeliveriesRequest, v1.ListWebhookDeliveriesResponse](
-			httpClient,
-			baseURL+WebhookServiceListWebhookDeliveriesProcedure,
-			connect.WithSchema(webhookServiceMethods.ByName("ListWebhookDeliveries")),
-			connect.WithClientOptions(opts...),
-		),
-		pingWebhook: connect.NewClient[v1.PingWebhookRequest, v1.PingWebhookResponse](
-			httpClient,
-			baseURL+WebhookServicePingWebhookProcedure,
-			connect.WithSchema(webhookServiceMethods.ByName("PingWebhook")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// webhookServiceClient implements WebhookServiceClient.
-type webhookServiceClient struct {
-	listWebhooks          *connect.Client[v1.ListWebhooksRequest, v1.ListWebhooksResponse]
-	getWebhook            *connect.Client[v1.GetWebhookRequest, v1.GetWebhookResponse]
-	putWebhook            *connect.Client[v1.PutWebhookRequest, v1.PutWebhookResponse]
-	deleteWebhook         *connect.Client[v1.DeleteWebhookRequest, v1.DeleteWebhookResponse]
-	listWebhookDeliveries *connect.Client[v1.ListWebhookDeliveriesRequest, v1.ListWebhookDeliveriesResponse]
-	pingWebhook           *connect.Client[v1.PingWebhookRequest, v1.PingWebhookResponse]
-}
-
-// ListWebhooks calls relic.v1.WebhookService.ListWebhooks.
-func (c *webhookServiceClient) ListWebhooks(ctx context.Context, req *connect.Request[v1.ListWebhooksRequest]) (*connect.Response[v1.ListWebhooksResponse], error) {
-	return c.listWebhooks.CallUnary(ctx, req)
-}
-
-// GetWebhook calls relic.v1.WebhookService.GetWebhook.
-func (c *webhookServiceClient) GetWebhook(ctx context.Context, req *connect.Request[v1.GetWebhookRequest]) (*connect.Response[v1.GetWebhookResponse], error) {
-	return c.getWebhook.CallUnary(ctx, req)
-}
-
-// PutWebhook calls relic.v1.WebhookService.PutWebhook.
-func (c *webhookServiceClient) PutWebhook(ctx context.Context, req *connect.Request[v1.PutWebhookRequest]) (*connect.Response[v1.PutWebhookResponse], error) {
-	return c.putWebhook.CallUnary(ctx, req)
-}
-
-// DeleteWebhook calls relic.v1.WebhookService.DeleteWebhook.
-func (c *webhookServiceClient) DeleteWebhook(ctx context.Context, req *connect.Request[v1.DeleteWebhookRequest]) (*connect.Response[v1.DeleteWebhookResponse], error) {
-	return c.deleteWebhook.CallUnary(ctx, req)
-}
-
-// ListWebhookDeliveries calls relic.v1.WebhookService.ListWebhookDeliveries.
-func (c *webhookServiceClient) ListWebhookDeliveries(ctx context.Context, req *connect.Request[v1.ListWebhookDeliveriesRequest]) (*connect.Response[v1.ListWebhookDeliveriesResponse], error) {
-	return c.listWebhookDeliveries.CallUnary(ctx, req)
-}
-
-// PingWebhook calls relic.v1.WebhookService.PingWebhook.
-func (c *webhookServiceClient) PingWebhook(ctx context.Context, req *connect.Request[v1.PingWebhookRequest]) (*connect.Response[v1.PingWebhookResponse], error) {
-	return c.pingWebhook.CallUnary(ctx, req)
+// NewWebhookServiceClient constructs a client for the relic.v1.WebhookService service. Multiple
+// service clients may share a single connect.Client.
+func NewWebhookServiceClient(client *connect.Client) WebhookServiceClient {
+	return &webhookServiceClient{client: client}
 }
 
 // WebhookServiceHandler is an implementation of the relic.v1.WebhookService service.
 type WebhookServiceHandler interface {
-	ListWebhooks(context.Context, *connect.Request[v1.ListWebhooksRequest]) (*connect.Response[v1.ListWebhooksResponse], error)
-	GetWebhook(context.Context, *connect.Request[v1.GetWebhookRequest]) (*connect.Response[v1.GetWebhookResponse], error)
-	PutWebhook(context.Context, *connect.Request[v1.PutWebhookRequest]) (*connect.Response[v1.PutWebhookResponse], error)
+	ListWebhooks(context.Context, *v1.ListWebhooksRequest) (*v1.ListWebhooksResponse, error)
+	GetWebhook(context.Context, *v1.GetWebhookRequest) (*v1.GetWebhookResponse, error)
+	PutWebhook(context.Context, *v1.PutWebhookRequest) (*v1.PutWebhookResponse, error)
 	// DeleteWebhook removes a webhook and its deliveries.
-	DeleteWebhook(context.Context, *connect.Request[v1.DeleteWebhookRequest]) (*connect.Response[v1.DeleteWebhookResponse], error)
+	DeleteWebhook(context.Context, *v1.DeleteWebhookRequest) (*v1.DeleteWebhookResponse, error)
 	// ListWebhookDeliveries lists the latest deliveries, newest first.
-	ListWebhookDeliveries(context.Context, *connect.Request[v1.ListWebhookDeliveriesRequest]) (*connect.Response[v1.ListWebhookDeliveriesResponse], error)
+	ListWebhookDeliveries(context.Context, *v1.ListWebhookDeliveriesRequest) (*v1.ListWebhookDeliveriesResponse, error)
 	// PingWebhook queues a webhook.ping event for one webhook.
-	PingWebhook(context.Context, *connect.Request[v1.PingWebhookRequest]) (*connect.Response[v1.PingWebhookResponse], error)
+	PingWebhook(context.Context, *v1.PingWebhookRequest) (*v1.PingWebhookResponse, error)
 }
 
-// NewWebhookServiceHandler builds an HTTP handler from the service implementation. It returns the
-// path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewWebhookServiceHandler(svc WebhookServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	webhookServiceMethods := v1.File_relic_v1_webhook_proto.Services().ByName("WebhookService").Methods()
-	webhookServiceListWebhooksHandler := connect.NewUnaryHandler(
-		WebhookServiceListWebhooksProcedure,
-		svc.ListWebhooks,
-		connect.WithSchema(webhookServiceMethods.ByName("ListWebhooks")),
-		connect.WithHandlerOptions(opts...),
+// RegisterWebhookServiceHandler registers svc as the relic.v1.WebhookService implementation on
+// server.
+func RegisterWebhookServiceHandler(server *connect.Server, svc WebhookServiceHandler) {
+	adapter := webhookServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: webhookServiceListWebhooksSpec(), Handler: adapter.listWebhooks},
+		connect.Method{Spec: webhookServiceGetWebhookSpec(), Handler: adapter.getWebhook},
+		connect.Method{Spec: webhookServicePutWebhookSpec(), Handler: adapter.putWebhook},
+		connect.Method{Spec: webhookServiceDeleteWebhookSpec(), Handler: adapter.deleteWebhook},
+		connect.Method{Spec: webhookServiceListWebhookDeliveriesSpec(), Handler: adapter.listWebhookDeliveries},
+		connect.Method{Spec: webhookServicePingWebhookSpec(), Handler: adapter.pingWebhook},
 	)
-	webhookServiceGetWebhookHandler := connect.NewUnaryHandler(
-		WebhookServiceGetWebhookProcedure,
-		svc.GetWebhook,
-		connect.WithSchema(webhookServiceMethods.ByName("GetWebhook")),
-		connect.WithHandlerOptions(opts...),
-	)
-	webhookServicePutWebhookHandler := connect.NewUnaryHandler(
-		WebhookServicePutWebhookProcedure,
-		svc.PutWebhook,
-		connect.WithSchema(webhookServiceMethods.ByName("PutWebhook")),
-		connect.WithHandlerOptions(opts...),
-	)
-	webhookServiceDeleteWebhookHandler := connect.NewUnaryHandler(
-		WebhookServiceDeleteWebhookProcedure,
-		svc.DeleteWebhook,
-		connect.WithSchema(webhookServiceMethods.ByName("DeleteWebhook")),
-		connect.WithHandlerOptions(opts...),
-	)
-	webhookServiceListWebhookDeliveriesHandler := connect.NewUnaryHandler(
-		WebhookServiceListWebhookDeliveriesProcedure,
-		svc.ListWebhookDeliveries,
-		connect.WithSchema(webhookServiceMethods.ByName("ListWebhookDeliveries")),
-		connect.WithHandlerOptions(opts...),
-	)
-	webhookServicePingWebhookHandler := connect.NewUnaryHandler(
-		WebhookServicePingWebhookProcedure,
-		svc.PingWebhook,
-		connect.WithSchema(webhookServiceMethods.ByName("PingWebhook")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/relic.v1.WebhookService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case WebhookServiceListWebhooksProcedure:
-			webhookServiceListWebhooksHandler.ServeHTTP(w, r)
-		case WebhookServiceGetWebhookProcedure:
-			webhookServiceGetWebhookHandler.ServeHTTP(w, r)
-		case WebhookServicePutWebhookProcedure:
-			webhookServicePutWebhookHandler.ServeHTTP(w, r)
-		case WebhookServiceDeleteWebhookProcedure:
-			webhookServiceDeleteWebhookHandler.ServeHTTP(w, r)
-		case WebhookServiceListWebhookDeliveriesProcedure:
-			webhookServiceListWebhookDeliveriesHandler.ServeHTTP(w, r)
-		case WebhookServicePingWebhookProcedure:
-			webhookServicePingWebhookHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedWebhookServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedWebhookServiceHandler struct{}
 
-func (UnimplementedWebhookServiceHandler) ListWebhooks(context.Context, *connect.Request[v1.ListWebhooksRequest]) (*connect.Response[v1.ListWebhooksResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.WebhookService.ListWebhooks is not implemented"))
+func (UnimplementedWebhookServiceHandler) ListWebhooks(context.Context, *v1.ListWebhooksRequest) (*v1.ListWebhooksResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.WebhookService.ListWebhooks is not implemented")
 }
 
-func (UnimplementedWebhookServiceHandler) GetWebhook(context.Context, *connect.Request[v1.GetWebhookRequest]) (*connect.Response[v1.GetWebhookResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.WebhookService.GetWebhook is not implemented"))
+func (UnimplementedWebhookServiceHandler) GetWebhook(context.Context, *v1.GetWebhookRequest) (*v1.GetWebhookResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.WebhookService.GetWebhook is not implemented")
 }
 
-func (UnimplementedWebhookServiceHandler) PutWebhook(context.Context, *connect.Request[v1.PutWebhookRequest]) (*connect.Response[v1.PutWebhookResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.WebhookService.PutWebhook is not implemented"))
+func (UnimplementedWebhookServiceHandler) PutWebhook(context.Context, *v1.PutWebhookRequest) (*v1.PutWebhookResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.WebhookService.PutWebhook is not implemented")
 }
 
-func (UnimplementedWebhookServiceHandler) DeleteWebhook(context.Context, *connect.Request[v1.DeleteWebhookRequest]) (*connect.Response[v1.DeleteWebhookResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.WebhookService.DeleteWebhook is not implemented"))
+func (UnimplementedWebhookServiceHandler) DeleteWebhook(context.Context, *v1.DeleteWebhookRequest) (*v1.DeleteWebhookResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.WebhookService.DeleteWebhook is not implemented")
 }
 
-func (UnimplementedWebhookServiceHandler) ListWebhookDeliveries(context.Context, *connect.Request[v1.ListWebhookDeliveriesRequest]) (*connect.Response[v1.ListWebhookDeliveriesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.WebhookService.ListWebhookDeliveries is not implemented"))
+func (UnimplementedWebhookServiceHandler) ListWebhookDeliveries(context.Context, *v1.ListWebhookDeliveriesRequest) (*v1.ListWebhookDeliveriesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.WebhookService.ListWebhookDeliveries is not implemented")
 }
 
-func (UnimplementedWebhookServiceHandler) PingWebhook(context.Context, *connect.Request[v1.PingWebhookRequest]) (*connect.Response[v1.PingWebhookResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.WebhookService.PingWebhook is not implemented"))
+func (UnimplementedWebhookServiceHandler) PingWebhook(context.Context, *v1.PingWebhookRequest) (*v1.PingWebhookResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.WebhookService.PingWebhook is not implemented")
+}
+
+type webhookServiceClient struct {
+	client *connect.Client
+}
+
+func (c *webhookServiceClient) ListWebhooks(ctx context.Context, req *v1.ListWebhooksRequest) (*v1.ListWebhooksResponse, error) {
+	var res v1.ListWebhooksResponse
+	if err := c.client.CallUnary(ctx, webhookServiceListWebhooksSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *webhookServiceClient) GetWebhook(ctx context.Context, req *v1.GetWebhookRequest) (*v1.GetWebhookResponse, error) {
+	var res v1.GetWebhookResponse
+	if err := c.client.CallUnary(ctx, webhookServiceGetWebhookSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *webhookServiceClient) PutWebhook(ctx context.Context, req *v1.PutWebhookRequest) (*v1.PutWebhookResponse, error) {
+	var res v1.PutWebhookResponse
+	if err := c.client.CallUnary(ctx, webhookServicePutWebhookSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *webhookServiceClient) DeleteWebhook(ctx context.Context, req *v1.DeleteWebhookRequest) (*v1.DeleteWebhookResponse, error) {
+	var res v1.DeleteWebhookResponse
+	if err := c.client.CallUnary(ctx, webhookServiceDeleteWebhookSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *webhookServiceClient) ListWebhookDeliveries(ctx context.Context, req *v1.ListWebhookDeliveriesRequest) (*v1.ListWebhookDeliveriesResponse, error) {
+	var res v1.ListWebhookDeliveriesResponse
+	if err := c.client.CallUnary(ctx, webhookServiceListWebhookDeliveriesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *webhookServiceClient) PingWebhook(ctx context.Context, req *v1.PingWebhookRequest) (*v1.PingWebhookResponse, error) {
+	var res v1.PingWebhookResponse
+	if err := c.client.CallUnary(ctx, webhookServicePingWebhookSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type webhookServiceHandler struct{ svc WebhookServiceHandler }
+
+func (h webhookServiceHandler) listWebhooks(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListWebhooksRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListWebhooks(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h webhookServiceHandler) getWebhook(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetWebhookRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetWebhook(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h webhookServiceHandler) putWebhook(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PutWebhookRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.PutWebhook(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h webhookServiceHandler) deleteWebhook(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DeleteWebhookRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.DeleteWebhook(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h webhookServiceHandler) listWebhookDeliveries(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListWebhookDeliveriesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListWebhookDeliveries(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h webhookServiceHandler) pingWebhook(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PingWebhookRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.PingWebhook(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

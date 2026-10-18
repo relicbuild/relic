@@ -2,9 +2,8 @@ package relicapi
 
 import (
 	"context"
-	"fmt"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -53,9 +52,9 @@ func domainWebhook(m *relicv1.Webhook) (webhook.Webhook, error) {
 	}
 
 	if format == "" && m.GetFormat() != relicv1.WebhookFormat_WEBHOOK_FORMAT_UNSPECIFIED {
-		return webhook.Webhook{}, connect.NewError(
+		return webhook.Webhook{}, connect.Errorf(
 			connect.CodeInvalidArgument,
-			fmt.Errorf("unknown webhook format %d", m.GetFormat()),
+			"unknown webhook format %d", m.GetFormat(),
 		)
 	}
 
@@ -72,8 +71,8 @@ func domainWebhook(m *relicv1.Webhook) (webhook.Webhook, error) {
 
 func (s *webhookServer) ListWebhooks(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListWebhooksRequest],
-) (*connect.Response[relicv1.ListWebhooksResponse], error) {
+	_ *relicv1.ListWebhooksRequest,
+) (*relicv1.ListWebhooksResponse, error) {
 	list, err := s.d.Webhooks.List(ctx)
 	if err != nil {
 		return nil, err
@@ -86,28 +85,28 @@ func (s *webhookServer) ListWebhooks(
 		out.Webhooks = append(out.Webhooks, webhookMessage(w))
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *webhookServer) GetWebhook(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetWebhookRequest],
-) (*connect.Response[relicv1.GetWebhookResponse], error) {
-	w, err := s.d.Webhooks.Get(ctx, req.Msg.GetName())
+	req *relicv1.GetWebhookRequest,
+) (*relicv1.GetWebhookResponse, error) {
+	w, err := s.d.Webhooks.Get(ctx, req.GetName())
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.GetWebhookResponse{
+	return &relicv1.GetWebhookResponse{
 		Webhook: webhookMessage(w),
-	}), nil
+	}, nil
 }
 
 func (s *webhookServer) PutWebhook(
 	ctx context.Context,
-	req *connect.Request[relicv1.PutWebhookRequest],
-) (*connect.Response[relicv1.PutWebhookResponse], error) {
-	hook, err := domainWebhook(req.Msg.GetWebhook())
+	req *relicv1.PutWebhookRequest,
+) (*relicv1.PutWebhookResponse, error) {
+	hook, err := domainWebhook(req.GetWebhook())
 	if err != nil {
 		return nil, err
 	}
@@ -117,32 +116,32 @@ func (s *webhookServer) PutWebhook(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.PutWebhookResponse{
+	return &relicv1.PutWebhookResponse{
 		Webhook: webhookMessage(w),
-	}), nil
+	}, nil
 }
 
 func (s *webhookServer) DeleteWebhook(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeleteWebhookRequest],
-) (*connect.Response[relicv1.DeleteWebhookResponse], error) {
-	if err := s.d.Webhooks.Delete(ctx, req.Msg.GetName()); err != nil {
+	req *relicv1.DeleteWebhookRequest,
+) (*relicv1.DeleteWebhookResponse, error) {
+	if err := s.d.Webhooks.Delete(ctx, req.GetName()); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeleteWebhookResponse{}), nil
+	return &relicv1.DeleteWebhookResponse{}, nil
 }
 
 func (s *webhookServer) ListWebhookDeliveries(
 	ctx context.Context,
-	req *connect.Request[relicv1.ListWebhookDeliveriesRequest],
-) (*connect.Response[relicv1.ListWebhookDeliveriesResponse], error) {
-	limit := int(req.Msg.GetLimit())
+	req *relicv1.ListWebhookDeliveriesRequest,
+) (*relicv1.ListWebhookDeliveriesResponse, error) {
+	limit := int(req.GetLimit())
 	if limit <= 0 {
 		limit = defaultDeliveryLimit
 	}
 
-	list, err := s.d.Webhooks.Deliveries(ctx, req.Msg.GetWebhook(), limit)
+	list, err := s.d.Webhooks.Deliveries(ctx, req.GetWebhook(), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -166,19 +165,19 @@ func (s *webhookServer) ListWebhookDeliveries(
 		})
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *webhookServer) PingWebhook(
 	ctx context.Context,
-	req *connect.Request[relicv1.PingWebhookRequest],
-) (*connect.Response[relicv1.PingWebhookResponse], error) {
-	id, err := s.d.Webhooks.Ping(ctx, req.Msg.GetName(), auth.FromContext(ctx).Name())
+	req *relicv1.PingWebhookRequest,
+) (*relicv1.PingWebhookResponse, error) {
+	id, err := s.d.Webhooks.Ping(ctx, req.GetName(), auth.FromContext(ctx).Name())
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.PingWebhookResponse{
+	return &relicv1.PingWebhookResponse{
 		Delivery: id,
-	}), nil
+	}, nil
 }

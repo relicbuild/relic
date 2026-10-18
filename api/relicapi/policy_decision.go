@@ -2,9 +2,8 @@ package relicapi
 
 import (
 	"context"
-	"fmt"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -29,24 +28,24 @@ var decisionKinds = map[policy.DecisionKind]relicv1.PolicyDecisionKind{
 
 func (s *policyDecisionServer) ListPolicyDecisions(
 	ctx context.Context,
-	req *connect.Request[relicv1.ListPolicyDecisionsRequest],
-) (*connect.Response[relicv1.ListPolicyDecisionsResponse], error) {
+	req *relicv1.ListPolicyDecisionsRequest,
+) (*relicv1.ListPolicyDecisionsResponse, error) {
 	kind := policy.DecisionKind("")
 
 	for k, m := range decisionKinds {
-		if m == req.Msg.GetKind() {
+		if m == req.GetKind() {
 			kind = k
 		}
 	}
 
-	if kind == "" && req.Msg.GetKind() != relicv1.PolicyDecisionKind_POLICY_DECISION_KIND_UNSPECIFIED {
-		return nil, connect.NewError(
+	if kind == "" && req.GetKind() != relicv1.PolicyDecisionKind_POLICY_DECISION_KIND_UNSPECIFIED {
+		return nil, connect.Errorf(
 			connect.CodeInvalidArgument,
-			fmt.Errorf("unknown policy decision kind %d", req.Msg.GetKind()),
+			"unknown policy decision kind %d", req.GetKind(),
 		)
 	}
 
-	limit := int(req.Msg.GetLimit())
+	limit := int(req.GetLimit())
 	if limit <= 0 {
 		limit = defaultDecisionLimit
 	}
@@ -74,22 +73,22 @@ func (s *policyDecisionServer) ListPolicyDecisions(
 		})
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *policyDecisionServer) PreviewPolicy(
 	ctx context.Context,
-	req *connect.Request[relicv1.PreviewPolicyRequest],
-) (*connect.Response[relicv1.PreviewPolicyResponse], error) {
-	limit := int(req.Msg.GetLimit())
+	req *relicv1.PreviewPolicyRequest,
+) (*relicv1.PreviewPolicyResponse, error) {
+	limit := int(req.GetLimit())
 	if limit <= 0 {
 		limit = defaultPreviewLimit
 	}
 
 	hits, truncated, err := s.d.ScanPolicies.Preview(
 		ctx,
-		policyOf(req.Msg.GetPolicy()),
-		req.Msg.GetRepositories(),
+		policyOf(req.GetPolicy()),
+		req.GetRepositories(),
 		min(limit, maxPreviewLimit),
 	)
 	if err != nil {
@@ -112,5 +111,5 @@ func (s *policyDecisionServer) PreviewPolicy(
 		})
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }

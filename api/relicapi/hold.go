@@ -3,8 +3,6 @@ package relicapi
 import (
 	"context"
 
-	"connectrpc.com/connect"
-
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/internal/access/auth"
 )
@@ -15,8 +13,8 @@ type holdServer struct {
 
 func (s *holdServer) ListHolds(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListHoldsRequest],
-) (*connect.Response[relicv1.ListHoldsResponse], error) {
+	_ *relicv1.ListHoldsRequest,
+) (*relicv1.ListHoldsResponse, error) {
 	holds, err := s.d.Repositories.Holds(ctx)
 	if err != nil {
 		return nil, err
@@ -35,14 +33,14 @@ func (s *holdServer) ListHolds(
 		})
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *holdServer) PutHold(
 	ctx context.Context,
-	req *connect.Request[relicv1.PutHoldRequest],
-) (*connect.Response[relicv1.PutHoldResponse], error) {
-	m := req.Msg
+	req *relicv1.PutHoldRequest,
+) (*relicv1.PutHoldResponse, error) {
+	m := req
 	if err := s.d.Repositories.PutHold(
 		ctx,
 		m.GetRepository(),
@@ -53,16 +51,16 @@ func (s *holdServer) PutHold(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.PutHoldResponse{}), nil
+	return &relicv1.PutHoldResponse{}, nil
 }
 
 func (s *holdServer) DeleteHold(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeleteHoldRequest],
-) (*connect.Response[relicv1.DeleteHoldResponse], error) {
-	if err := s.d.Repositories.ReleaseHold(ctx, req.Msg.GetRepository(), req.Msg.GetPath()); err != nil {
+	req *relicv1.DeleteHoldRequest,
+) (*relicv1.DeleteHoldResponse, error) {
+	if err := s.d.Repositories.ReleaseHold(ctx, req.GetRepository(), req.GetPath()); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeleteHoldResponse{}), nil
+	return &relicv1.DeleteHoldResponse{}, nil
 }

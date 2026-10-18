@@ -5,299 +5,334 @@
 package relicv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
-	http "net/http"
 	v1 "relic/api/gen/relic/v1"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// ProjectServiceName is the fully-qualified name of the ProjectService service.
 	ProjectServiceName = "relic.v1.ProjectService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// ProjectServiceListProjectsProcedure is the fully-qualified name of the ProjectService's
-	// ListProjects RPC.
+	// ProjectServiceListProjectsProcedure is the procedure name of the ProjectService's ListProjects
+	// RPC.
 	ProjectServiceListProjectsProcedure = "/relic.v1.ProjectService/ListProjects"
-	// ProjectServiceGetProjectProcedure is the fully-qualified name of the ProjectService's GetProject
-	// RPC.
+	// ProjectServiceGetProjectProcedure is the procedure name of the ProjectService's GetProject RPC.
 	ProjectServiceGetProjectProcedure = "/relic.v1.ProjectService/GetProject"
-	// ProjectServicePutProjectProcedure is the fully-qualified name of the ProjectService's PutProject
-	// RPC.
+	// ProjectServicePutProjectProcedure is the procedure name of the ProjectService's PutProject RPC.
 	ProjectServicePutProjectProcedure = "/relic.v1.ProjectService/PutProject"
-	// ProjectServiceDeleteProjectProcedure is the fully-qualified name of the ProjectService's
-	// DeleteProject RPC.
+	// ProjectServiceDeleteProjectProcedure is the procedure name of the ProjectService's DeleteProject
+	// RPC.
 	ProjectServiceDeleteProjectProcedure = "/relic.v1.ProjectService/DeleteProject"
-	// ProjectServiceSetProjectMembersProcedure is the fully-qualified name of the ProjectService's
+	// ProjectServiceSetProjectMembersProcedure is the procedure name of the ProjectService's
 	// SetProjectMembers RPC.
 	ProjectServiceSetProjectMembersProcedure = "/relic.v1.ProjectService/SetProjectMembers"
-	// ProjectServiceAddProjectMemberProcedure is the fully-qualified name of the ProjectService's
+	// ProjectServiceAddProjectMemberProcedure is the procedure name of the ProjectService's
 	// AddProjectMember RPC.
 	ProjectServiceAddProjectMemberProcedure = "/relic.v1.ProjectService/AddProjectMember"
-	// ProjectServiceRemoveProjectMemberProcedure is the fully-qualified name of the ProjectService's
+	// ProjectServiceRemoveProjectMemberProcedure is the procedure name of the ProjectService's
 	// RemoveProjectMember RPC.
 	ProjectServiceRemoveProjectMemberProcedure = "/relic.v1.ProjectService/RemoveProjectMember"
+)
+
+var (
+	projectServiceListProjectsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_project_proto.Services().ByName("ProjectService").Methods().ByName("ListProjects"),
+			Procedure:  ProjectServiceListProjectsProcedure,
+		}
+	})
+	projectServiceGetProjectSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_project_proto.Services().ByName("ProjectService").Methods().ByName("GetProject"),
+			Procedure:  ProjectServiceGetProjectProcedure,
+		}
+	})
+	projectServicePutProjectSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_project_proto.Services().ByName("ProjectService").Methods().ByName("PutProject"),
+			Procedure:  ProjectServicePutProjectProcedure,
+		}
+	})
+	projectServiceDeleteProjectSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_project_proto.Services().ByName("ProjectService").Methods().ByName("DeleteProject"),
+			Procedure:  ProjectServiceDeleteProjectProcedure,
+		}
+	})
+	projectServiceSetProjectMembersSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_project_proto.Services().ByName("ProjectService").Methods().ByName("SetProjectMembers"),
+			Procedure:  ProjectServiceSetProjectMembersProcedure,
+		}
+	})
+	projectServiceAddProjectMemberSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_project_proto.Services().ByName("ProjectService").Methods().ByName("AddProjectMember"),
+			Procedure:  ProjectServiceAddProjectMemberProcedure,
+		}
+	})
+	projectServiceRemoveProjectMemberSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_project_proto.Services().ByName("ProjectService").Methods().ByName("RemoveProjectMember"),
+			Procedure:  ProjectServiceRemoveProjectMemberProcedure,
+		}
+	})
 )
 
 // ProjectServiceClient is a client for the relic.v1.ProjectService service.
 type ProjectServiceClient interface {
 	// ListProjects lists the projects the caller is a member of; administrators
 	// and viewers see all.
-	ListProjects(context.Context, *connect.Request[v1.ListProjectsRequest]) (*connect.Response[v1.ListProjectsResponse], error)
-	GetProject(context.Context, *connect.Request[v1.GetProjectRequest]) (*connect.Response[v1.GetProjectResponse], error)
-	PutProject(context.Context, *connect.Request[v1.PutProjectRequest]) (*connect.Response[v1.PutProjectResponse], error)
+	ListProjects(context.Context, *v1.ListProjectsRequest) (*v1.ListProjectsResponse, error)
+	GetProject(context.Context, *v1.GetProjectRequest) (*v1.GetProjectResponse, error)
+	PutProject(context.Context, *v1.PutProjectRequest) (*v1.PutProjectResponse, error)
 	// DeleteProject removes a project; its repositories keep naming it, with no
 	// members.
-	DeleteProject(context.Context, *connect.Request[v1.DeleteProjectRequest]) (*connect.Response[v1.DeleteProjectResponse], error)
+	DeleteProject(context.Context, *v1.DeleteProjectRequest) (*v1.DeleteProjectResponse, error)
 	// SetProjectMembers replaces the members; administrators and the project's
 	// admins may.
-	SetProjectMembers(context.Context, *connect.Request[v1.SetProjectMembersRequest]) (*connect.Response[v1.SetProjectMembersResponse], error)
+	SetProjectMembers(context.Context, *v1.SetProjectMembersRequest) (*v1.SetProjectMembersResponse, error)
 	// AddProjectMember adds a member, or changes a member's role, leaving the
 	// other members as they are; administrators and the project's admins may.
-	AddProjectMember(context.Context, *connect.Request[v1.AddProjectMemberRequest]) (*connect.Response[v1.AddProjectMemberResponse], error)
+	AddProjectMember(context.Context, *v1.AddProjectMemberRequest) (*v1.AddProjectMemberResponse, error)
 	// RemoveProjectMember removes a member, leaving the other members as they
 	// are; administrators and the project's admins may.
-	RemoveProjectMember(context.Context, *connect.Request[v1.RemoveProjectMemberRequest]) (*connect.Response[v1.RemoveProjectMemberResponse], error)
+	RemoveProjectMember(context.Context, *v1.RemoveProjectMemberRequest) (*v1.RemoveProjectMemberResponse, error)
 }
 
-// NewProjectServiceClient constructs a client for the relic.v1.ProjectService service. By default,
-// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
-// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
-// or connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) ProjectServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	projectServiceMethods := v1.File_relic_v1_project_proto.Services().ByName("ProjectService").Methods()
-	return &projectServiceClient{
-		listProjects: connect.NewClient[v1.ListProjectsRequest, v1.ListProjectsResponse](
-			httpClient,
-			baseURL+ProjectServiceListProjectsProcedure,
-			connect.WithSchema(projectServiceMethods.ByName("ListProjects")),
-			connect.WithClientOptions(opts...),
-		),
-		getProject: connect.NewClient[v1.GetProjectRequest, v1.GetProjectResponse](
-			httpClient,
-			baseURL+ProjectServiceGetProjectProcedure,
-			connect.WithSchema(projectServiceMethods.ByName("GetProject")),
-			connect.WithClientOptions(opts...),
-		),
-		putProject: connect.NewClient[v1.PutProjectRequest, v1.PutProjectResponse](
-			httpClient,
-			baseURL+ProjectServicePutProjectProcedure,
-			connect.WithSchema(projectServiceMethods.ByName("PutProject")),
-			connect.WithClientOptions(opts...),
-		),
-		deleteProject: connect.NewClient[v1.DeleteProjectRequest, v1.DeleteProjectResponse](
-			httpClient,
-			baseURL+ProjectServiceDeleteProjectProcedure,
-			connect.WithSchema(projectServiceMethods.ByName("DeleteProject")),
-			connect.WithClientOptions(opts...),
-		),
-		setProjectMembers: connect.NewClient[v1.SetProjectMembersRequest, v1.SetProjectMembersResponse](
-			httpClient,
-			baseURL+ProjectServiceSetProjectMembersProcedure,
-			connect.WithSchema(projectServiceMethods.ByName("SetProjectMembers")),
-			connect.WithClientOptions(opts...),
-		),
-		addProjectMember: connect.NewClient[v1.AddProjectMemberRequest, v1.AddProjectMemberResponse](
-			httpClient,
-			baseURL+ProjectServiceAddProjectMemberProcedure,
-			connect.WithSchema(projectServiceMethods.ByName("AddProjectMember")),
-			connect.WithClientOptions(opts...),
-		),
-		removeProjectMember: connect.NewClient[v1.RemoveProjectMemberRequest, v1.RemoveProjectMemberResponse](
-			httpClient,
-			baseURL+ProjectServiceRemoveProjectMemberProcedure,
-			connect.WithSchema(projectServiceMethods.ByName("RemoveProjectMember")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// projectServiceClient implements ProjectServiceClient.
-type projectServiceClient struct {
-	listProjects        *connect.Client[v1.ListProjectsRequest, v1.ListProjectsResponse]
-	getProject          *connect.Client[v1.GetProjectRequest, v1.GetProjectResponse]
-	putProject          *connect.Client[v1.PutProjectRequest, v1.PutProjectResponse]
-	deleteProject       *connect.Client[v1.DeleteProjectRequest, v1.DeleteProjectResponse]
-	setProjectMembers   *connect.Client[v1.SetProjectMembersRequest, v1.SetProjectMembersResponse]
-	addProjectMember    *connect.Client[v1.AddProjectMemberRequest, v1.AddProjectMemberResponse]
-	removeProjectMember *connect.Client[v1.RemoveProjectMemberRequest, v1.RemoveProjectMemberResponse]
-}
-
-// ListProjects calls relic.v1.ProjectService.ListProjects.
-func (c *projectServiceClient) ListProjects(ctx context.Context, req *connect.Request[v1.ListProjectsRequest]) (*connect.Response[v1.ListProjectsResponse], error) {
-	return c.listProjects.CallUnary(ctx, req)
-}
-
-// GetProject calls relic.v1.ProjectService.GetProject.
-func (c *projectServiceClient) GetProject(ctx context.Context, req *connect.Request[v1.GetProjectRequest]) (*connect.Response[v1.GetProjectResponse], error) {
-	return c.getProject.CallUnary(ctx, req)
-}
-
-// PutProject calls relic.v1.ProjectService.PutProject.
-func (c *projectServiceClient) PutProject(ctx context.Context, req *connect.Request[v1.PutProjectRequest]) (*connect.Response[v1.PutProjectResponse], error) {
-	return c.putProject.CallUnary(ctx, req)
-}
-
-// DeleteProject calls relic.v1.ProjectService.DeleteProject.
-func (c *projectServiceClient) DeleteProject(ctx context.Context, req *connect.Request[v1.DeleteProjectRequest]) (*connect.Response[v1.DeleteProjectResponse], error) {
-	return c.deleteProject.CallUnary(ctx, req)
-}
-
-// SetProjectMembers calls relic.v1.ProjectService.SetProjectMembers.
-func (c *projectServiceClient) SetProjectMembers(ctx context.Context, req *connect.Request[v1.SetProjectMembersRequest]) (*connect.Response[v1.SetProjectMembersResponse], error) {
-	return c.setProjectMembers.CallUnary(ctx, req)
-}
-
-// AddProjectMember calls relic.v1.ProjectService.AddProjectMember.
-func (c *projectServiceClient) AddProjectMember(ctx context.Context, req *connect.Request[v1.AddProjectMemberRequest]) (*connect.Response[v1.AddProjectMemberResponse], error) {
-	return c.addProjectMember.CallUnary(ctx, req)
-}
-
-// RemoveProjectMember calls relic.v1.ProjectService.RemoveProjectMember.
-func (c *projectServiceClient) RemoveProjectMember(ctx context.Context, req *connect.Request[v1.RemoveProjectMemberRequest]) (*connect.Response[v1.RemoveProjectMemberResponse], error) {
-	return c.removeProjectMember.CallUnary(ctx, req)
+// NewProjectServiceClient constructs a client for the relic.v1.ProjectService service. Multiple
+// service clients may share a single connect.Client.
+func NewProjectServiceClient(client *connect.Client) ProjectServiceClient {
+	return &projectServiceClient{client: client}
 }
 
 // ProjectServiceHandler is an implementation of the relic.v1.ProjectService service.
 type ProjectServiceHandler interface {
 	// ListProjects lists the projects the caller is a member of; administrators
 	// and viewers see all.
-	ListProjects(context.Context, *connect.Request[v1.ListProjectsRequest]) (*connect.Response[v1.ListProjectsResponse], error)
-	GetProject(context.Context, *connect.Request[v1.GetProjectRequest]) (*connect.Response[v1.GetProjectResponse], error)
-	PutProject(context.Context, *connect.Request[v1.PutProjectRequest]) (*connect.Response[v1.PutProjectResponse], error)
+	ListProjects(context.Context, *v1.ListProjectsRequest) (*v1.ListProjectsResponse, error)
+	GetProject(context.Context, *v1.GetProjectRequest) (*v1.GetProjectResponse, error)
+	PutProject(context.Context, *v1.PutProjectRequest) (*v1.PutProjectResponse, error)
 	// DeleteProject removes a project; its repositories keep naming it, with no
 	// members.
-	DeleteProject(context.Context, *connect.Request[v1.DeleteProjectRequest]) (*connect.Response[v1.DeleteProjectResponse], error)
+	DeleteProject(context.Context, *v1.DeleteProjectRequest) (*v1.DeleteProjectResponse, error)
 	// SetProjectMembers replaces the members; administrators and the project's
 	// admins may.
-	SetProjectMembers(context.Context, *connect.Request[v1.SetProjectMembersRequest]) (*connect.Response[v1.SetProjectMembersResponse], error)
+	SetProjectMembers(context.Context, *v1.SetProjectMembersRequest) (*v1.SetProjectMembersResponse, error)
 	// AddProjectMember adds a member, or changes a member's role, leaving the
 	// other members as they are; administrators and the project's admins may.
-	AddProjectMember(context.Context, *connect.Request[v1.AddProjectMemberRequest]) (*connect.Response[v1.AddProjectMemberResponse], error)
+	AddProjectMember(context.Context, *v1.AddProjectMemberRequest) (*v1.AddProjectMemberResponse, error)
 	// RemoveProjectMember removes a member, leaving the other members as they
 	// are; administrators and the project's admins may.
-	RemoveProjectMember(context.Context, *connect.Request[v1.RemoveProjectMemberRequest]) (*connect.Response[v1.RemoveProjectMemberResponse], error)
+	RemoveProjectMember(context.Context, *v1.RemoveProjectMemberRequest) (*v1.RemoveProjectMemberResponse, error)
 }
 
-// NewProjectServiceHandler builds an HTTP handler from the service implementation. It returns the
-// path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	projectServiceMethods := v1.File_relic_v1_project_proto.Services().ByName("ProjectService").Methods()
-	projectServiceListProjectsHandler := connect.NewUnaryHandler(
-		ProjectServiceListProjectsProcedure,
-		svc.ListProjects,
-		connect.WithSchema(projectServiceMethods.ByName("ListProjects")),
-		connect.WithHandlerOptions(opts...),
+// RegisterProjectServiceHandler registers svc as the relic.v1.ProjectService implementation on
+// server.
+func RegisterProjectServiceHandler(server *connect.Server, svc ProjectServiceHandler) {
+	adapter := projectServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: projectServiceListProjectsSpec(), Handler: adapter.listProjects},
+		connect.Method{Spec: projectServiceGetProjectSpec(), Handler: adapter.getProject},
+		connect.Method{Spec: projectServicePutProjectSpec(), Handler: adapter.putProject},
+		connect.Method{Spec: projectServiceDeleteProjectSpec(), Handler: adapter.deleteProject},
+		connect.Method{Spec: projectServiceSetProjectMembersSpec(), Handler: adapter.setProjectMembers},
+		connect.Method{Spec: projectServiceAddProjectMemberSpec(), Handler: adapter.addProjectMember},
+		connect.Method{Spec: projectServiceRemoveProjectMemberSpec(), Handler: adapter.removeProjectMember},
 	)
-	projectServiceGetProjectHandler := connect.NewUnaryHandler(
-		ProjectServiceGetProjectProcedure,
-		svc.GetProject,
-		connect.WithSchema(projectServiceMethods.ByName("GetProject")),
-		connect.WithHandlerOptions(opts...),
-	)
-	projectServicePutProjectHandler := connect.NewUnaryHandler(
-		ProjectServicePutProjectProcedure,
-		svc.PutProject,
-		connect.WithSchema(projectServiceMethods.ByName("PutProject")),
-		connect.WithHandlerOptions(opts...),
-	)
-	projectServiceDeleteProjectHandler := connect.NewUnaryHandler(
-		ProjectServiceDeleteProjectProcedure,
-		svc.DeleteProject,
-		connect.WithSchema(projectServiceMethods.ByName("DeleteProject")),
-		connect.WithHandlerOptions(opts...),
-	)
-	projectServiceSetProjectMembersHandler := connect.NewUnaryHandler(
-		ProjectServiceSetProjectMembersProcedure,
-		svc.SetProjectMembers,
-		connect.WithSchema(projectServiceMethods.ByName("SetProjectMembers")),
-		connect.WithHandlerOptions(opts...),
-	)
-	projectServiceAddProjectMemberHandler := connect.NewUnaryHandler(
-		ProjectServiceAddProjectMemberProcedure,
-		svc.AddProjectMember,
-		connect.WithSchema(projectServiceMethods.ByName("AddProjectMember")),
-		connect.WithHandlerOptions(opts...),
-	)
-	projectServiceRemoveProjectMemberHandler := connect.NewUnaryHandler(
-		ProjectServiceRemoveProjectMemberProcedure,
-		svc.RemoveProjectMember,
-		connect.WithSchema(projectServiceMethods.ByName("RemoveProjectMember")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/relic.v1.ProjectService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case ProjectServiceListProjectsProcedure:
-			projectServiceListProjectsHandler.ServeHTTP(w, r)
-		case ProjectServiceGetProjectProcedure:
-			projectServiceGetProjectHandler.ServeHTTP(w, r)
-		case ProjectServicePutProjectProcedure:
-			projectServicePutProjectHandler.ServeHTTP(w, r)
-		case ProjectServiceDeleteProjectProcedure:
-			projectServiceDeleteProjectHandler.ServeHTTP(w, r)
-		case ProjectServiceSetProjectMembersProcedure:
-			projectServiceSetProjectMembersHandler.ServeHTTP(w, r)
-		case ProjectServiceAddProjectMemberProcedure:
-			projectServiceAddProjectMemberHandler.ServeHTTP(w, r)
-		case ProjectServiceRemoveProjectMemberProcedure:
-			projectServiceRemoveProjectMemberHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedProjectServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedProjectServiceHandler struct{}
 
-func (UnimplementedProjectServiceHandler) ListProjects(context.Context, *connect.Request[v1.ListProjectsRequest]) (*connect.Response[v1.ListProjectsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ProjectService.ListProjects is not implemented"))
+func (UnimplementedProjectServiceHandler) ListProjects(context.Context, *v1.ListProjectsRequest) (*v1.ListProjectsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ProjectService.ListProjects is not implemented")
 }
 
-func (UnimplementedProjectServiceHandler) GetProject(context.Context, *connect.Request[v1.GetProjectRequest]) (*connect.Response[v1.GetProjectResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ProjectService.GetProject is not implemented"))
+func (UnimplementedProjectServiceHandler) GetProject(context.Context, *v1.GetProjectRequest) (*v1.GetProjectResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ProjectService.GetProject is not implemented")
 }
 
-func (UnimplementedProjectServiceHandler) PutProject(context.Context, *connect.Request[v1.PutProjectRequest]) (*connect.Response[v1.PutProjectResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ProjectService.PutProject is not implemented"))
+func (UnimplementedProjectServiceHandler) PutProject(context.Context, *v1.PutProjectRequest) (*v1.PutProjectResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ProjectService.PutProject is not implemented")
 }
 
-func (UnimplementedProjectServiceHandler) DeleteProject(context.Context, *connect.Request[v1.DeleteProjectRequest]) (*connect.Response[v1.DeleteProjectResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ProjectService.DeleteProject is not implemented"))
+func (UnimplementedProjectServiceHandler) DeleteProject(context.Context, *v1.DeleteProjectRequest) (*v1.DeleteProjectResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ProjectService.DeleteProject is not implemented")
 }
 
-func (UnimplementedProjectServiceHandler) SetProjectMembers(context.Context, *connect.Request[v1.SetProjectMembersRequest]) (*connect.Response[v1.SetProjectMembersResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ProjectService.SetProjectMembers is not implemented"))
+func (UnimplementedProjectServiceHandler) SetProjectMembers(context.Context, *v1.SetProjectMembersRequest) (*v1.SetProjectMembersResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ProjectService.SetProjectMembers is not implemented")
 }
 
-func (UnimplementedProjectServiceHandler) AddProjectMember(context.Context, *connect.Request[v1.AddProjectMemberRequest]) (*connect.Response[v1.AddProjectMemberResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ProjectService.AddProjectMember is not implemented"))
+func (UnimplementedProjectServiceHandler) AddProjectMember(context.Context, *v1.AddProjectMemberRequest) (*v1.AddProjectMemberResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ProjectService.AddProjectMember is not implemented")
 }
 
-func (UnimplementedProjectServiceHandler) RemoveProjectMember(context.Context, *connect.Request[v1.RemoveProjectMemberRequest]) (*connect.Response[v1.RemoveProjectMemberResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.ProjectService.RemoveProjectMember is not implemented"))
+func (UnimplementedProjectServiceHandler) RemoveProjectMember(context.Context, *v1.RemoveProjectMemberRequest) (*v1.RemoveProjectMemberResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.ProjectService.RemoveProjectMember is not implemented")
+}
+
+type projectServiceClient struct {
+	client *connect.Client
+}
+
+func (c *projectServiceClient) ListProjects(ctx context.Context, req *v1.ListProjectsRequest) (*v1.ListProjectsResponse, error) {
+	var res v1.ListProjectsResponse
+	if err := c.client.CallUnary(ctx, projectServiceListProjectsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *projectServiceClient) GetProject(ctx context.Context, req *v1.GetProjectRequest) (*v1.GetProjectResponse, error) {
+	var res v1.GetProjectResponse
+	if err := c.client.CallUnary(ctx, projectServiceGetProjectSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *projectServiceClient) PutProject(ctx context.Context, req *v1.PutProjectRequest) (*v1.PutProjectResponse, error) {
+	var res v1.PutProjectResponse
+	if err := c.client.CallUnary(ctx, projectServicePutProjectSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *projectServiceClient) DeleteProject(ctx context.Context, req *v1.DeleteProjectRequest) (*v1.DeleteProjectResponse, error) {
+	var res v1.DeleteProjectResponse
+	if err := c.client.CallUnary(ctx, projectServiceDeleteProjectSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *projectServiceClient) SetProjectMembers(ctx context.Context, req *v1.SetProjectMembersRequest) (*v1.SetProjectMembersResponse, error) {
+	var res v1.SetProjectMembersResponse
+	if err := c.client.CallUnary(ctx, projectServiceSetProjectMembersSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *projectServiceClient) AddProjectMember(ctx context.Context, req *v1.AddProjectMemberRequest) (*v1.AddProjectMemberResponse, error) {
+	var res v1.AddProjectMemberResponse
+	if err := c.client.CallUnary(ctx, projectServiceAddProjectMemberSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *projectServiceClient) RemoveProjectMember(ctx context.Context, req *v1.RemoveProjectMemberRequest) (*v1.RemoveProjectMemberResponse, error) {
+	var res v1.RemoveProjectMemberResponse
+	if err := c.client.CallUnary(ctx, projectServiceRemoveProjectMemberSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type projectServiceHandler struct{ svc ProjectServiceHandler }
+
+func (h projectServiceHandler) listProjects(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListProjectsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListProjects(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h projectServiceHandler) getProject(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetProjectRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetProject(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h projectServiceHandler) putProject(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PutProjectRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.PutProject(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h projectServiceHandler) deleteProject(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DeleteProjectRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.DeleteProject(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h projectServiceHandler) setProjectMembers(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SetProjectMembersRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.SetProjectMembers(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h projectServiceHandler) addProjectMember(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.AddProjectMemberRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.AddProjectMember(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h projectServiceHandler) removeProjectMember(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RemoveProjectMemberRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RemoveProjectMember(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

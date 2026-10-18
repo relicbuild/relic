@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/internal/access/auth"

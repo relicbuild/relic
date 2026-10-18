@@ -11,7 +11,7 @@ import (
 	"slices"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -46,7 +46,7 @@ func (s *releaseServer) canRelease(ctx context.Context, project, name, version s
 	}
 
 	if a != auth.ActionRead && !perms.CanRelease(p.Subject(), repository, name, version, a) {
-		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("the release permission does not grant %s", a))
+		return connect.Errorf(connect.CodePermissionDenied, "the release permission does not grant %s", a)
 	}
 
 	return nil
@@ -240,15 +240,15 @@ func specOf(m *relicv1.ReleaseSpec) (release.Spec, error) {
 
 func (s *releaseServer) ListReleases(
 	ctx context.Context,
-	req *connect.Request[relicv1.ListReleasesRequest],
-) (*connect.Response[relicv1.ListReleasesResponse], error) {
+	req *relicv1.ListReleasesRequest,
+) (*relicv1.ListReleasesResponse, error) {
 	all, err := s.d.Releases.Groups(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	if req.Msg.Project != nil {
-		stored := s.d.Releases.Layout().Repository(req.Msg.GetProject())
+	if req.Project != nil {
+		stored := s.d.Releases.Layout().Repository(req.GetProject())
 		all = slices.DeleteFunc(all, func(r release.Release) bool {
 			return r.Repository != stored
 		})
@@ -265,14 +265,14 @@ func (s *releaseServer) ListReleases(
 		out.Releases = append(out.Releases, releaseMessage(r, s.d.Releases.ManifestPath(r)))
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *releaseServer) ListReleaseVersions(
 	ctx context.Context,
-	req *connect.Request[relicv1.ListReleaseVersionsRequest],
-) (*connect.Response[relicv1.ListReleaseVersionsResponse], error) {
-	all, err := s.d.Releases.Versions(ctx, req.Msg.GetProject(), req.Msg.GetName())
+	req *relicv1.ListReleaseVersionsRequest,
+) (*relicv1.ListReleaseVersionsResponse, error) {
+	all, err := s.d.Releases.Versions(ctx, req.GetProject(), req.GetName())
 	if err != nil {
 		return nil, err
 	}
@@ -288,14 +288,14 @@ func (s *releaseServer) ListReleaseVersions(
 		out.Releases = append(out.Releases, releaseMessage(r, s.d.Releases.ManifestPath(r)))
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *releaseServer) GetRelease(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetReleaseRequest],
-) (*connect.Response[relicv1.GetReleaseResponse], error) {
-	m := req.Msg
+	req *relicv1.GetReleaseRequest,
+) (*relicv1.GetReleaseResponse, error) {
+	m := req
 	if err := s.canRelease(ctx, m.GetProject(), m.GetName(), m.GetVersion(), auth.ActionRead); err != nil {
 		return nil, err
 	}
@@ -305,9 +305,9 @@ func (s *releaseServer) GetRelease(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.GetReleaseResponse{
+	return &relicv1.GetReleaseResponse{
 		Release: releaseMessage(r, s.d.Releases.ManifestPath(r)),
-	}), nil
+	}, nil
 }
 
 func (s *releaseServer) write(ctx context.Context, project string, m *relicv1.ReleaseSpec,
@@ -337,37 +337,37 @@ func (s *releaseServer) write(ctx context.Context, project string, m *relicv1.Re
 
 func (s *releaseServer) CreateRelease(
 	ctx context.Context,
-	req *connect.Request[relicv1.CreateReleaseRequest],
-) (*connect.Response[relicv1.CreateReleaseResponse], error) {
-	r, err := s.write(ctx, req.Msg.GetProject(), req.Msg.GetSpec(), s.d.Releases.Create)
+	req *relicv1.CreateReleaseRequest,
+) (*relicv1.CreateReleaseResponse, error) {
+	r, err := s.write(ctx, req.GetProject(), req.GetSpec(), s.d.Releases.Create)
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.CreateReleaseResponse{
+	return &relicv1.CreateReleaseResponse{
 		Release: r,
-	}), nil
+	}, nil
 }
 
 func (s *releaseServer) UpdateRelease(
 	ctx context.Context,
-	req *connect.Request[relicv1.UpdateReleaseRequest],
-) (*connect.Response[relicv1.UpdateReleaseResponse], error) {
-	r, err := s.write(ctx, req.Msg.GetProject(), req.Msg.GetSpec(), s.d.Releases.Update)
+	req *relicv1.UpdateReleaseRequest,
+) (*relicv1.UpdateReleaseResponse, error) {
+	r, err := s.write(ctx, req.GetProject(), req.GetSpec(), s.d.Releases.Update)
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.UpdateReleaseResponse{
+	return &relicv1.UpdateReleaseResponse{
 		Release: r,
-	}), nil
+	}, nil
 }
 
 func (s *releaseServer) FinalizeRelease(
 	ctx context.Context,
-	req *connect.Request[relicv1.FinalizeReleaseRequest],
-) (*connect.Response[relicv1.FinalizeReleaseResponse], error) {
-	m := req.Msg
+	req *relicv1.FinalizeReleaseRequest,
+) (*relicv1.FinalizeReleaseResponse, error) {
+	m := req
 	if err := s.canRelease(ctx, m.GetProject(), m.GetName(), m.GetVersion(), auth.ActionWrite); err != nil {
 		return nil, err
 	}
@@ -377,16 +377,16 @@ func (s *releaseServer) FinalizeRelease(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.FinalizeReleaseResponse{
+	return &relicv1.FinalizeReleaseResponse{
 		Release: releaseMessage(r, s.d.Releases.ManifestPath(r)),
-	}), nil
+	}, nil
 }
 
 func (s *releaseServer) DeleteRelease(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeleteReleaseRequest],
-) (*connect.Response[relicv1.DeleteReleaseResponse], error) {
-	m := req.Msg
+	req *relicv1.DeleteReleaseRequest,
+) (*relicv1.DeleteReleaseResponse, error) {
+	m := req
 	if err := s.canRelease(ctx, m.GetProject(), m.GetName(), m.GetVersion(), auth.ActionDelete); err != nil {
 		return nil, err
 	}
@@ -395,14 +395,14 @@ func (s *releaseServer) DeleteRelease(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeleteReleaseResponse{}), nil
+	return &relicv1.DeleteReleaseResponse{}, nil
 }
 
 func (s *releaseServer) SetReleaseTag(
 	ctx context.Context,
-	req *connect.Request[relicv1.SetReleaseTagRequest],
-) (*connect.Response[relicv1.SetReleaseTagResponse], error) {
-	m := req.Msg
+	req *relicv1.SetReleaseTagRequest,
+) (*relicv1.SetReleaseTagResponse, error) {
+	m := req
 	if err := s.canRelease(ctx, m.GetProject(), m.GetName(), m.GetVersion(), auth.ActionAnnotate); err != nil {
 		return nil, err
 	}
@@ -411,14 +411,14 @@ func (s *releaseServer) SetReleaseTag(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.SetReleaseTagResponse{}), nil
+	return &relicv1.SetReleaseTagResponse{}, nil
 }
 
 func (s *releaseServer) PromoteRelease(
 	ctx context.Context,
-	req *connect.Request[relicv1.PromoteReleaseRequest],
-) (*connect.Response[relicv1.PromoteReleaseResponse], error) {
-	m := req.Msg
+	req *relicv1.PromoteReleaseRequest,
+) (*relicv1.PromoteReleaseResponse, error) {
+	m := req
 	if err := s.canRelease(ctx, m.GetProject(), m.GetName(), m.GetVersion(), auth.ActionPromote); err != nil {
 		return nil, err
 	}
@@ -448,16 +448,16 @@ func (s *releaseServer) PromoteRelease(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.PromoteReleaseResponse{
+	return &relicv1.PromoteReleaseResponse{
 		Promotion: promotionMessage(p),
-	}), nil
+	}, nil
 }
 
 func (s *releaseServer) ListReleasePromotions(
 	ctx context.Context,
-	req *connect.Request[relicv1.ListReleasePromotionsRequest],
-) (*connect.Response[relicv1.ListReleasePromotionsResponse], error) {
-	m := req.Msg
+	req *relicv1.ListReleasePromotionsRequest,
+) (*relicv1.ListReleasePromotionsResponse, error) {
+	m := req
 	if err := s.canRelease(ctx, m.GetProject(), m.GetName(), m.GetVersion(), auth.ActionRead); err != nil {
 		return nil, err
 	}
@@ -474,14 +474,14 @@ func (s *releaseServer) ListReleasePromotions(
 		out.Promotions = append(out.Promotions, promotionMessage(p))
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *releaseServer) DeleteReleasePromotion(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeleteReleasePromotionRequest],
-) (*connect.Response[relicv1.DeleteReleasePromotionResponse], error) {
-	m := req.Msg
+	req *relicv1.DeleteReleasePromotionRequest,
+) (*relicv1.DeleteReleasePromotionResponse, error) {
+	m := req
 	if err := s.canRelease(ctx, m.GetProject(), m.GetName(), m.GetVersion(), auth.ActionPromote); err != nil {
 		return nil, err
 	}
@@ -496,14 +496,14 @@ func (s *releaseServer) DeleteReleasePromotion(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeleteReleasePromotionResponse{}), nil
+	return &relicv1.DeleteReleasePromotionResponse{}, nil
 }
 
 func (s *releaseServer) ExportRelease(
 	ctx context.Context,
-	req *connect.Request[relicv1.ExportReleaseRequest],
-) (*connect.Response[relicv1.ExportReleaseResponse], error) {
-	m := req.Msg
+	req *relicv1.ExportReleaseRequest,
+) (*relicv1.ExportReleaseResponse, error) {
+	m := req
 	if err := s.canRelease(ctx, m.GetProject(), m.GetName(), m.GetVersion(), auth.ActionWrite); err != nil {
 		return nil, err
 	}
@@ -513,21 +513,21 @@ func (s *releaseServer) ExportRelease(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.ExportReleaseResponse{
+	return &relicv1.ExportReleaseResponse{
 		Archive: itemMessage(it),
-	}), nil
+	}, nil
 }
 
 func (d Dependencies) importRelease(w http.ResponseWriter, r *http.Request) {
 	p := auth.FromContext(r.Context())
 	switch {
 	case p.Anonymous():
-		writeHTTPError(w, connect.NewError(connect.CodeUnauthenticated, errors.New("sign in first")))
+		writeHTTPError(w, connect.NewError(connect.CodeUnauthenticated, "sign in first"))
 		return
 	case !p.Admin:
 		writeHTTPError(
 			w,
-			connect.NewError(connect.CodePermissionDenied, errors.New("importing releases needs an administrator")),
+			connect.NewError(connect.CodePermissionDenied, "importing releases needs an administrator"),
 		)
 
 		return
@@ -551,7 +551,7 @@ func (d Dependencies) importRelease(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		writeHTTPError(w, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("read archive: %w", err)))
+		writeHTTPError(w, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("read archive: %w", err).Error()))
 		return
 	}
 

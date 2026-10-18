@@ -2,10 +2,10 @@ package relicapi
 
 import (
 	"context"
-	"errors"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connectproto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -34,9 +34,9 @@ func (s *buildServer) canRead(ctx context.Context, project, name string) (bool, 
 
 func (s *buildServer) ListBuilds(
 	ctx context.Context,
-	req *connect.Request[relicv1.ListBuildsRequest],
-) (*connect.Response[relicv1.ListBuildsResponse], error) {
-	list, err := s.d.Builds.List(ctx, req.Msg.GetProject())
+	req *relicv1.ListBuildsRequest,
+) (*relicv1.ListBuildsResponse, error) {
+	list, err := s.d.Builds.List(ctx, req.GetProject())
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +45,7 @@ func (s *buildServer) ListBuilds(
 		Builds: make([]*relicv1.Build, 0, len(list)),
 	}
 	for _, b := range list {
-		ok, err := s.canRead(ctx, req.Msg.GetProject(), b.Name)
+		ok, err := s.canRead(ctx, req.GetProject(), b.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -58,14 +58,14 @@ func (s *buildServer) ListBuilds(
 		}
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *buildServer) ListBuildRuns(
 	ctx context.Context,
-	req *connect.Request[relicv1.ListBuildRunsRequest],
-) (*connect.Response[relicv1.ListBuildRunsResponse], error) {
-	ok, err := s.canRead(ctx, req.Msg.GetProject(), req.Msg.GetName())
+	req *relicv1.ListBuildRunsRequest,
+) (*relicv1.ListBuildRunsResponse, error) {
+	ok, err := s.canRead(ctx, req.GetProject(), req.GetName())
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +74,7 @@ func (s *buildServer) ListBuildRuns(
 		return nil, buildinfo.ErrNotFound
 	}
 
-	runs, err := s.d.Builds.Runs(ctx, req.Msg.GetProject(), req.Msg.GetName())
+	runs, err := s.d.Builds.Runs(ctx, req.GetProject(), req.GetName())
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +93,7 @@ func (s *buildServer) ListBuildRuns(
 		})
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *buildServer) canBuild(ctx context.Context, project, name string, a auth.Action) error {
@@ -116,7 +116,7 @@ func (s *buildServer) canBuild(ctx context.Context, project, name string, a auth
 	}
 
 	if !perms.CanBuild(auth.FromContext(ctx).Subject(), s.d.Builds.Repository(project), name, a) {
-		return connect.NewError(connect.CodePermissionDenied, errors.New("no "+string(a)+" permission on build "+name))
+		return connect.NewError(connect.CodePermissionDenied, "no "+string(a)+" permission on build "+name)
 	}
 
 	return nil
@@ -130,15 +130,15 @@ func (s *buildServer) itemCheck(ctx context.Context) buildinfo.ItemCheck {
 
 func (s *buildServer) DeleteBuildRuns(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeleteBuildRunsRequest],
-) (*connect.Response[relicv1.DeleteBuildRunsResponse], error) {
-	m := req.Msg
+	req *relicv1.DeleteBuildRunsRequest,
+) (*relicv1.DeleteBuildRunsResponse, error) {
+	m := req
 	if err := s.canBuild(ctx, m.GetProject(), m.GetName(), auth.ActionDelete); err != nil {
 		return nil, err
 	}
 
 	if !m.GetAll() && len(m.GetNumbers()) == 0 {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name the runs to delete, or set all"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, "name the runs to delete, or set all")
 	}
 
 	if err := s.d.Builds.Delete(
@@ -153,20 +153,20 @@ func (s *buildServer) DeleteBuildRuns(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeleteBuildRunsResponse{}), nil
+	return &relicv1.DeleteBuildRunsResponse{}, nil
 }
 
 func (s *buildServer) ApplyBuildRetention(
 	ctx context.Context,
-	req *connect.Request[relicv1.ApplyBuildRetentionRequest],
-) (*connect.Response[relicv1.ApplyBuildRetentionResponse], error) {
-	m := req.Msg
+	req *relicv1.ApplyBuildRetentionRequest,
+) (*relicv1.ApplyBuildRetentionResponse, error) {
+	m := req
 	if err := s.canBuild(ctx, m.GetProject(), m.GetName(), auth.ActionDelete); err != nil {
 		return nil, err
 	}
 
 	if m.GetMaxRuns() == 0 && m.GetMinStarted() == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("set max_runs, min_started or both"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, "set max_runs, min_started or both")
 	}
 
 	if _, err := s.d.Builds.Runs(ctx, m.GetProject(), m.GetName()); err != nil {
@@ -186,14 +186,14 @@ func (s *buildServer) ApplyBuildRetention(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.ApplyBuildRetentionResponse{}), nil
+	return &relicv1.ApplyBuildRetentionResponse{}, nil
 }
 
 func (s *buildServer) PromoteBuildRun(
 	ctx context.Context,
-	req *connect.Request[relicv1.PromoteBuildRunRequest],
-) (*connect.Response[relicv1.PromoteBuildRunResponse], error) {
-	m := req.Msg
+	req *relicv1.PromoteBuildRunRequest,
+) (*relicv1.PromoteBuildRunResponse, error) {
+	m := req
 	if err := s.canBuild(ctx, m.GetProject(), m.GetName(), auth.ActionWrite); err != nil {
 		return nil, err
 	}
@@ -240,8 +240,8 @@ func (s *buildServer) PromoteBuildRun(
 			s.d.Log.ErrorContext(ctx, "relic api: promote build run", "error", err)
 		}
 
-		if detail, derr := connect.NewErrorDetail(out); derr == nil {
-			ce.AddDetail(detail)
+		if detail, derr := connectproto.NewErrorDetail(out); derr == nil {
+			ce = ce.WithDetail(detail)
 		}
 
 		return nil, ce
@@ -251,14 +251,14 @@ func (s *buildServer) PromoteBuildRun(
 		return nil, err
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *buildServer) GetBuildRun(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetBuildRunRequest],
-) (*connect.Response[relicv1.GetBuildRunResponse], error) {
-	m := req.Msg
+	req *relicv1.GetBuildRunRequest,
+) (*relicv1.GetBuildRunResponse, error) {
+	m := req
 
 	ok, err := s.canRead(ctx, m.GetProject(), m.GetName())
 	if err != nil {
@@ -327,16 +327,16 @@ func (s *buildServer) GetBuildRun(
 		out.Modules = append(out.Modules, bm)
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *buildServer) PublishBuildRun(
 	ctx context.Context,
-	req *connect.Request[relicv1.PublishBuildRunRequest],
-) (*connect.Response[relicv1.PublishBuildRunResponse], error) {
-	run := req.Msg.GetRun()
+	req *relicv1.PublishBuildRunRequest,
+) (*relicv1.PublishBuildRunResponse, error) {
+	run := req.GetRun()
 	if run.GetName() == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("run.name is required"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, "run.name is required")
 	}
 
 	p := auth.FromContext(ctx)
@@ -348,22 +348,22 @@ func (s *buildServer) PublishBuildRun(
 
 		if !perms.CanBuild(
 			p.Subject(),
-			s.d.Builds.Repository(req.Msg.GetProject()),
+			s.d.Builds.Repository(req.GetProject()),
 			run.GetName(),
 			auth.ActionWrite,
 		) {
 			return nil, connect.NewError(
 				connect.CodePermissionDenied,
-				errors.New("no write permission on build "+run.GetName()),
+				"no write permission on build "+run.GetName(),
 			)
 		}
 	}
 
-	if err := s.d.Builds.PublishDocument(ctx, req.Msg.GetProject(), documentOf(run), p.Name()); err != nil {
+	if err := s.d.Builds.PublishDocument(ctx, req.GetProject(), documentOf(run), p.Name()); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.PublishBuildRunResponse{}), nil
+	return &relicv1.PublishBuildRunResponse{}, nil
 }
 
 func documentOf(m *relicv1.PublishedBuildRun) buildinfo.Document {

@@ -151,6 +151,22 @@ func TestRESTRoutes(t *testing.T) {
 	}
 }
 
+func TestRESTResponseLeavesOutUnsetFields(t *testing.T) {
+	t.Parallel()
+
+	h := Handler(Dependencies{
+		Version: "1.2.3",
+		Log:     slog.New(slog.DiscardHandler),
+	})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/version", nil))
+
+	if got := strings.TrimSpace(rec.Body.String()); rec.Code != http.StatusOK || got != `{"version":"1.2.3"}` {
+		t.Errorf("GET /api/v1/version = %d %s, want 200 {\"version\":\"1.2.3\"}", rec.Code, got)
+	}
+}
+
 func TestRESTDecodeErrors(t *testing.T) {
 	t.Parallel()
 

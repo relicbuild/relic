@@ -21,7 +21,6 @@ import (
 	"slices"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -118,10 +117,10 @@ func evidenceKeygenCmd(g *globals) *cobra.Command {
 
 			r, err := c.evidence.AddTrustedKey(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.AddTrustedKeyRequest{
+				&relicv1.AddTrustedKeyRequest{
 					Alias:     alias,
 					PublicKey: string(pubPEM),
-				}),
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("keygen: trust the key: %w", err)
@@ -130,8 +129,8 @@ func evidenceKeygenCmd(g *globals) *cobra.Command {
 			_, _ = fmt.Fprintf(
 				cmd.OutOrStdout(),
 				"trusted as %s (fingerprint %s)\n",
-				r.Msg.GetKey().GetAlias(),
-				r.Msg.GetKey().GetFingerprint(),
+				r.GetKey().GetAlias(),
+				r.GetKey().GetFingerprint(),
 			)
 
 			return nil
@@ -205,10 +204,10 @@ func evidenceCreateCmd(g *globals) *cobra.Command {
 
 			st, err := c.artifacts.StatItem(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.StatItemRequest{
+				&relicv1.StatItemRequest{
 					Repository: repo,
 					Path:       p,
-				}),
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("evidence create: %w", err)
@@ -220,7 +219,7 @@ func evidenceCreateCmd(g *globals) *cobra.Command {
 					{
 						Name: p,
 						Digest: map[string]string{
-							"sha256": st.Msg.GetItem().GetChecksums().GetSha256(),
+							"sha256": st.GetItem().GetChecksums().GetSha256(),
 						},
 					},
 				},
@@ -243,18 +242,18 @@ func evidenceCreateCmd(g *globals) *cobra.Command {
 
 			r, err := c.evidence.CreateEvidence(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.CreateEvidenceRequest{
+				&relicv1.CreateEvidenceRequest{
 					Repository: repo,
 					Path:       p,
 					Envelope:   string(envelope),
 					Provider:   provider,
-				}),
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("evidence create: %w", err)
 			}
 
-			ev := r.Msg.GetEvidence()
+			ev := r.GetEvidence()
 
 			return printMessage(cmd.OutOrStdout(), output, ev, func(w io.Writer) error {
 				_, err := fmt.Fprintf(w, "%s/%s: evidence %s (%s) stored, verified %v\n", repo, p, ev.GetId(),
@@ -291,16 +290,16 @@ func (c *client) listEvidence(cmd *cobra.Command, target string) (string, string
 
 	r, err := c.evidence.ListEvidence(
 		cmd.Context(),
-		connect.NewRequest(&relicv1.ListEvidenceRequest{
+		&relicv1.ListEvidenceRequest{
 			Repository: repo,
 			Path:       p,
-		}),
+		},
 	)
 	if err != nil {
 		return "", "", nil, fmt.Errorf("evidence: %w", err)
 	}
 
-	return repo, p, r.Msg.GetEvidence(), nil
+	return repo, p, r.GetEvidence(), nil
 }
 
 func evidenceGetCmd(g *globals) *cobra.Command {
@@ -391,10 +390,10 @@ func evidenceVerifyCmd(g *globals) *cobra.Command {
 
 			st, err := c.artifacts.StatItem(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.StatItemRequest{
+				&relicv1.StatItemRequest{
 					Repository: repo,
 					Path:       p,
-				}),
+				},
 			)
 			if err != nil {
 				return err
@@ -424,7 +423,7 @@ func evidenceVerifyCmd(g *globals) *cobra.Command {
 					c,
 					e,
 					keys,
-					st.Msg.GetItem().GetChecksums().GetSha256(),
+					st.GetItem().GetChecksums().GetSha256(),
 				); reason != "" {
 					failed++
 					result, detail = "FAILED", reason
@@ -536,12 +535,12 @@ func verificationKeys(cmd *cobra.Command, c *client, files []string) (map[string
 		return out, nil
 	}
 
-	r, err := c.evidence.ListTrustedKeys(cmd.Context(), connect.NewRequest(&relicv1.ListTrustedKeysRequest{}))
+	r, err := c.evidence.ListTrustedKeys(cmd.Context(), &relicv1.ListTrustedKeysRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("trusted keys: %w", err)
 	}
 
-	for _, t := range r.Msg.GetKeys() {
+	for _, t := range r.GetKeys() {
 		k, _, err := evidence.ParsePublicKey(t.GetPublicKey())
 		if err != nil {
 			continue

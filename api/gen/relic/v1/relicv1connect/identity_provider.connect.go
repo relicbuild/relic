@@ -5,201 +5,216 @@
 package relicv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
-	http "net/http"
 	v1 "relic/api/gen/relic/v1"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// IdentityProviderServiceName is the fully-qualified name of the IdentityProviderService service.
 	IdentityProviderServiceName = "relic.v1.IdentityProviderService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// IdentityProviderServiceListIdentityProvidersProcedure is the fully-qualified name of the
+	// IdentityProviderServiceListIdentityProvidersProcedure is the procedure name of the
 	// IdentityProviderService's ListIdentityProviders RPC.
 	IdentityProviderServiceListIdentityProvidersProcedure = "/relic.v1.IdentityProviderService/ListIdentityProviders"
-	// IdentityProviderServiceGetIdentityProviderProcedure is the fully-qualified name of the
+	// IdentityProviderServiceGetIdentityProviderProcedure is the procedure name of the
 	// IdentityProviderService's GetIdentityProvider RPC.
 	IdentityProviderServiceGetIdentityProviderProcedure = "/relic.v1.IdentityProviderService/GetIdentityProvider"
-	// IdentityProviderServicePutIdentityProviderProcedure is the fully-qualified name of the
+	// IdentityProviderServicePutIdentityProviderProcedure is the procedure name of the
 	// IdentityProviderService's PutIdentityProvider RPC.
 	IdentityProviderServicePutIdentityProviderProcedure = "/relic.v1.IdentityProviderService/PutIdentityProvider"
-	// IdentityProviderServiceDeleteIdentityProviderProcedure is the fully-qualified name of the
+	// IdentityProviderServiceDeleteIdentityProviderProcedure is the procedure name of the
 	// IdentityProviderService's DeleteIdentityProvider RPC.
 	IdentityProviderServiceDeleteIdentityProviderProcedure = "/relic.v1.IdentityProviderService/DeleteIdentityProvider"
 )
 
+var (
+	identityProviderServiceListIdentityProvidersSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_identity_provider_proto.Services().ByName("IdentityProviderService").Methods().ByName("ListIdentityProviders"),
+			Procedure:  IdentityProviderServiceListIdentityProvidersProcedure,
+		}
+	})
+	identityProviderServiceGetIdentityProviderSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_identity_provider_proto.Services().ByName("IdentityProviderService").Methods().ByName("GetIdentityProvider"),
+			Procedure:  IdentityProviderServiceGetIdentityProviderProcedure,
+		}
+	})
+	identityProviderServicePutIdentityProviderSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_identity_provider_proto.Services().ByName("IdentityProviderService").Methods().ByName("PutIdentityProvider"),
+			Procedure:  IdentityProviderServicePutIdentityProviderProcedure,
+		}
+	})
+	identityProviderServiceDeleteIdentityProviderSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_identity_provider_proto.Services().ByName("IdentityProviderService").Methods().ByName("DeleteIdentityProvider"),
+			Procedure:  IdentityProviderServiceDeleteIdentityProviderProcedure,
+		}
+	})
+)
+
 // IdentityProviderServiceClient is a client for the relic.v1.IdentityProviderService service.
 type IdentityProviderServiceClient interface {
-	ListIdentityProviders(context.Context, *connect.Request[v1.ListIdentityProvidersRequest]) (*connect.Response[v1.ListIdentityProvidersResponse], error)
-	GetIdentityProvider(context.Context, *connect.Request[v1.GetIdentityProviderRequest]) (*connect.Response[v1.GetIdentityProviderResponse], error)
+	ListIdentityProviders(context.Context, *v1.ListIdentityProvidersRequest) (*v1.ListIdentityProvidersResponse, error)
+	GetIdentityProvider(context.Context, *v1.GetIdentityProviderRequest) (*v1.GetIdentityProviderResponse, error)
 	// PutIdentityProvider creates or replaces an identity provider. An empty
 	// client secret keeps the stored one.
-	PutIdentityProvider(context.Context, *connect.Request[v1.PutIdentityProviderRequest]) (*connect.Response[v1.PutIdentityProviderResponse], error)
+	PutIdentityProvider(context.Context, *v1.PutIdentityProviderRequest) (*v1.PutIdentityProviderResponse, error)
 	// DeleteIdentityProvider removes an identity provider. The users it created
 	// stay.
-	DeleteIdentityProvider(context.Context, *connect.Request[v1.DeleteIdentityProviderRequest]) (*connect.Response[v1.DeleteIdentityProviderResponse], error)
+	DeleteIdentityProvider(context.Context, *v1.DeleteIdentityProviderRequest) (*v1.DeleteIdentityProviderResponse, error)
 }
 
 // NewIdentityProviderServiceClient constructs a client for the relic.v1.IdentityProviderService
-// service. By default, it uses the Connect protocol with the binary Protobuf Codec, asks for
-// gzipped responses, and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply
-// the connect.WithGRPC() or connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewIdentityProviderServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) IdentityProviderServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	identityProviderServiceMethods := v1.File_relic_v1_identity_provider_proto.Services().ByName("IdentityProviderService").Methods()
-	return &identityProviderServiceClient{
-		listIdentityProviders: connect.NewClient[v1.ListIdentityProvidersRequest, v1.ListIdentityProvidersResponse](
-			httpClient,
-			baseURL+IdentityProviderServiceListIdentityProvidersProcedure,
-			connect.WithSchema(identityProviderServiceMethods.ByName("ListIdentityProviders")),
-			connect.WithClientOptions(opts...),
-		),
-		getIdentityProvider: connect.NewClient[v1.GetIdentityProviderRequest, v1.GetIdentityProviderResponse](
-			httpClient,
-			baseURL+IdentityProviderServiceGetIdentityProviderProcedure,
-			connect.WithSchema(identityProviderServiceMethods.ByName("GetIdentityProvider")),
-			connect.WithClientOptions(opts...),
-		),
-		putIdentityProvider: connect.NewClient[v1.PutIdentityProviderRequest, v1.PutIdentityProviderResponse](
-			httpClient,
-			baseURL+IdentityProviderServicePutIdentityProviderProcedure,
-			connect.WithSchema(identityProviderServiceMethods.ByName("PutIdentityProvider")),
-			connect.WithClientOptions(opts...),
-		),
-		deleteIdentityProvider: connect.NewClient[v1.DeleteIdentityProviderRequest, v1.DeleteIdentityProviderResponse](
-			httpClient,
-			baseURL+IdentityProviderServiceDeleteIdentityProviderProcedure,
-			connect.WithSchema(identityProviderServiceMethods.ByName("DeleteIdentityProvider")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// identityProviderServiceClient implements IdentityProviderServiceClient.
-type identityProviderServiceClient struct {
-	listIdentityProviders  *connect.Client[v1.ListIdentityProvidersRequest, v1.ListIdentityProvidersResponse]
-	getIdentityProvider    *connect.Client[v1.GetIdentityProviderRequest, v1.GetIdentityProviderResponse]
-	putIdentityProvider    *connect.Client[v1.PutIdentityProviderRequest, v1.PutIdentityProviderResponse]
-	deleteIdentityProvider *connect.Client[v1.DeleteIdentityProviderRequest, v1.DeleteIdentityProviderResponse]
-}
-
-// ListIdentityProviders calls relic.v1.IdentityProviderService.ListIdentityProviders.
-func (c *identityProviderServiceClient) ListIdentityProviders(ctx context.Context, req *connect.Request[v1.ListIdentityProvidersRequest]) (*connect.Response[v1.ListIdentityProvidersResponse], error) {
-	return c.listIdentityProviders.CallUnary(ctx, req)
-}
-
-// GetIdentityProvider calls relic.v1.IdentityProviderService.GetIdentityProvider.
-func (c *identityProviderServiceClient) GetIdentityProvider(ctx context.Context, req *connect.Request[v1.GetIdentityProviderRequest]) (*connect.Response[v1.GetIdentityProviderResponse], error) {
-	return c.getIdentityProvider.CallUnary(ctx, req)
-}
-
-// PutIdentityProvider calls relic.v1.IdentityProviderService.PutIdentityProvider.
-func (c *identityProviderServiceClient) PutIdentityProvider(ctx context.Context, req *connect.Request[v1.PutIdentityProviderRequest]) (*connect.Response[v1.PutIdentityProviderResponse], error) {
-	return c.putIdentityProvider.CallUnary(ctx, req)
-}
-
-// DeleteIdentityProvider calls relic.v1.IdentityProviderService.DeleteIdentityProvider.
-func (c *identityProviderServiceClient) DeleteIdentityProvider(ctx context.Context, req *connect.Request[v1.DeleteIdentityProviderRequest]) (*connect.Response[v1.DeleteIdentityProviderResponse], error) {
-	return c.deleteIdentityProvider.CallUnary(ctx, req)
+// service. Multiple service clients may share a single connect.Client.
+func NewIdentityProviderServiceClient(client *connect.Client) IdentityProviderServiceClient {
+	return &identityProviderServiceClient{client: client}
 }
 
 // IdentityProviderServiceHandler is an implementation of the relic.v1.IdentityProviderService
 // service.
 type IdentityProviderServiceHandler interface {
-	ListIdentityProviders(context.Context, *connect.Request[v1.ListIdentityProvidersRequest]) (*connect.Response[v1.ListIdentityProvidersResponse], error)
-	GetIdentityProvider(context.Context, *connect.Request[v1.GetIdentityProviderRequest]) (*connect.Response[v1.GetIdentityProviderResponse], error)
+	ListIdentityProviders(context.Context, *v1.ListIdentityProvidersRequest) (*v1.ListIdentityProvidersResponse, error)
+	GetIdentityProvider(context.Context, *v1.GetIdentityProviderRequest) (*v1.GetIdentityProviderResponse, error)
 	// PutIdentityProvider creates or replaces an identity provider. An empty
 	// client secret keeps the stored one.
-	PutIdentityProvider(context.Context, *connect.Request[v1.PutIdentityProviderRequest]) (*connect.Response[v1.PutIdentityProviderResponse], error)
+	PutIdentityProvider(context.Context, *v1.PutIdentityProviderRequest) (*v1.PutIdentityProviderResponse, error)
 	// DeleteIdentityProvider removes an identity provider. The users it created
 	// stay.
-	DeleteIdentityProvider(context.Context, *connect.Request[v1.DeleteIdentityProviderRequest]) (*connect.Response[v1.DeleteIdentityProviderResponse], error)
+	DeleteIdentityProvider(context.Context, *v1.DeleteIdentityProviderRequest) (*v1.DeleteIdentityProviderResponse, error)
 }
 
-// NewIdentityProviderServiceHandler builds an HTTP handler from the service implementation. It
-// returns the path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewIdentityProviderServiceHandler(svc IdentityProviderServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	identityProviderServiceMethods := v1.File_relic_v1_identity_provider_proto.Services().ByName("IdentityProviderService").Methods()
-	identityProviderServiceListIdentityProvidersHandler := connect.NewUnaryHandler(
-		IdentityProviderServiceListIdentityProvidersProcedure,
-		svc.ListIdentityProviders,
-		connect.WithSchema(identityProviderServiceMethods.ByName("ListIdentityProviders")),
-		connect.WithHandlerOptions(opts...),
+// RegisterIdentityProviderServiceHandler registers svc as the relic.v1.IdentityProviderService
+// implementation on server.
+func RegisterIdentityProviderServiceHandler(server *connect.Server, svc IdentityProviderServiceHandler) {
+	adapter := identityProviderServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: identityProviderServiceListIdentityProvidersSpec(), Handler: adapter.listIdentityProviders},
+		connect.Method{Spec: identityProviderServiceGetIdentityProviderSpec(), Handler: adapter.getIdentityProvider},
+		connect.Method{Spec: identityProviderServicePutIdentityProviderSpec(), Handler: adapter.putIdentityProvider},
+		connect.Method{Spec: identityProviderServiceDeleteIdentityProviderSpec(), Handler: adapter.deleteIdentityProvider},
 	)
-	identityProviderServiceGetIdentityProviderHandler := connect.NewUnaryHandler(
-		IdentityProviderServiceGetIdentityProviderProcedure,
-		svc.GetIdentityProvider,
-		connect.WithSchema(identityProviderServiceMethods.ByName("GetIdentityProvider")),
-		connect.WithHandlerOptions(opts...),
-	)
-	identityProviderServicePutIdentityProviderHandler := connect.NewUnaryHandler(
-		IdentityProviderServicePutIdentityProviderProcedure,
-		svc.PutIdentityProvider,
-		connect.WithSchema(identityProviderServiceMethods.ByName("PutIdentityProvider")),
-		connect.WithHandlerOptions(opts...),
-	)
-	identityProviderServiceDeleteIdentityProviderHandler := connect.NewUnaryHandler(
-		IdentityProviderServiceDeleteIdentityProviderProcedure,
-		svc.DeleteIdentityProvider,
-		connect.WithSchema(identityProviderServiceMethods.ByName("DeleteIdentityProvider")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/relic.v1.IdentityProviderService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case IdentityProviderServiceListIdentityProvidersProcedure:
-			identityProviderServiceListIdentityProvidersHandler.ServeHTTP(w, r)
-		case IdentityProviderServiceGetIdentityProviderProcedure:
-			identityProviderServiceGetIdentityProviderHandler.ServeHTTP(w, r)
-		case IdentityProviderServicePutIdentityProviderProcedure:
-			identityProviderServicePutIdentityProviderHandler.ServeHTTP(w, r)
-		case IdentityProviderServiceDeleteIdentityProviderProcedure:
-			identityProviderServiceDeleteIdentityProviderHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedIdentityProviderServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedIdentityProviderServiceHandler struct{}
 
-func (UnimplementedIdentityProviderServiceHandler) ListIdentityProviders(context.Context, *connect.Request[v1.ListIdentityProvidersRequest]) (*connect.Response[v1.ListIdentityProvidersResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.IdentityProviderService.ListIdentityProviders is not implemented"))
+func (UnimplementedIdentityProviderServiceHandler) ListIdentityProviders(context.Context, *v1.ListIdentityProvidersRequest) (*v1.ListIdentityProvidersResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.IdentityProviderService.ListIdentityProviders is not implemented")
 }
 
-func (UnimplementedIdentityProviderServiceHandler) GetIdentityProvider(context.Context, *connect.Request[v1.GetIdentityProviderRequest]) (*connect.Response[v1.GetIdentityProviderResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.IdentityProviderService.GetIdentityProvider is not implemented"))
+func (UnimplementedIdentityProviderServiceHandler) GetIdentityProvider(context.Context, *v1.GetIdentityProviderRequest) (*v1.GetIdentityProviderResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.IdentityProviderService.GetIdentityProvider is not implemented")
 }
 
-func (UnimplementedIdentityProviderServiceHandler) PutIdentityProvider(context.Context, *connect.Request[v1.PutIdentityProviderRequest]) (*connect.Response[v1.PutIdentityProviderResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.IdentityProviderService.PutIdentityProvider is not implemented"))
+func (UnimplementedIdentityProviderServiceHandler) PutIdentityProvider(context.Context, *v1.PutIdentityProviderRequest) (*v1.PutIdentityProviderResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.IdentityProviderService.PutIdentityProvider is not implemented")
 }
 
-func (UnimplementedIdentityProviderServiceHandler) DeleteIdentityProvider(context.Context, *connect.Request[v1.DeleteIdentityProviderRequest]) (*connect.Response[v1.DeleteIdentityProviderResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.IdentityProviderService.DeleteIdentityProvider is not implemented"))
+func (UnimplementedIdentityProviderServiceHandler) DeleteIdentityProvider(context.Context, *v1.DeleteIdentityProviderRequest) (*v1.DeleteIdentityProviderResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.IdentityProviderService.DeleteIdentityProvider is not implemented")
+}
+
+type identityProviderServiceClient struct {
+	client *connect.Client
+}
+
+func (c *identityProviderServiceClient) ListIdentityProviders(ctx context.Context, req *v1.ListIdentityProvidersRequest) (*v1.ListIdentityProvidersResponse, error) {
+	var res v1.ListIdentityProvidersResponse
+	if err := c.client.CallUnary(ctx, identityProviderServiceListIdentityProvidersSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *identityProviderServiceClient) GetIdentityProvider(ctx context.Context, req *v1.GetIdentityProviderRequest) (*v1.GetIdentityProviderResponse, error) {
+	var res v1.GetIdentityProviderResponse
+	if err := c.client.CallUnary(ctx, identityProviderServiceGetIdentityProviderSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *identityProviderServiceClient) PutIdentityProvider(ctx context.Context, req *v1.PutIdentityProviderRequest) (*v1.PutIdentityProviderResponse, error) {
+	var res v1.PutIdentityProviderResponse
+	if err := c.client.CallUnary(ctx, identityProviderServicePutIdentityProviderSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *identityProviderServiceClient) DeleteIdentityProvider(ctx context.Context, req *v1.DeleteIdentityProviderRequest) (*v1.DeleteIdentityProviderResponse, error) {
+	var res v1.DeleteIdentityProviderResponse
+	if err := c.client.CallUnary(ctx, identityProviderServiceDeleteIdentityProviderSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type identityProviderServiceHandler struct {
+	svc IdentityProviderServiceHandler
+}
+
+func (h identityProviderServiceHandler) listIdentityProviders(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListIdentityProvidersRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListIdentityProviders(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h identityProviderServiceHandler) getIdentityProvider(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetIdentityProviderRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetIdentityProvider(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h identityProviderServiceHandler) putIdentityProvider(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PutIdentityProviderRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.PutIdentityProvider(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h identityProviderServiceHandler) deleteIdentityProvider(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DeleteIdentityProviderRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.DeleteIdentityProvider(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

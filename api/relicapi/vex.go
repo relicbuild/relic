@@ -3,12 +3,11 @@ package relicapi
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 	"uuid"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/internal/access/auth"
@@ -20,8 +19,8 @@ const maxVexDocument = 16 << 20
 
 func (s *scanServer) ExportVex(
 	ctx context.Context,
-	req *connect.Request[relicv1.ExportVexRequest],
-) (_ *connect.Response[relicv1.ExportVexResponse], err error) {
+	req *relicv1.ExportVexRequest,
+) (_ *relicv1.ExportVexResponse, err error) {
 	ctx, span := telemetry.Tracer().Start(ctx, "scan.ExportVex")
 
 	defer func() {
@@ -40,7 +39,7 @@ func (s *scanServer) ExportVex(
 		time.Now(),
 	)
 
-	if req.Msg.GetIncludeUnreachable() {
+	if req.GetIncludeUnreachable() {
 		found, err := s.d.ScanResults.UnreachableFindings(ctx)
 		if err != nil {
 			return nil, err
@@ -51,7 +50,7 @@ func (s *scanServer) ExportVex(
 
 	var b []byte
 
-	switch req.Msg.GetFormat() {
+	switch req.GetFormat() {
 	case relicv1.VexFormat_VEX_FORMAT_CYCLONEDX:
 		b, err = policy.CycloneDXVEX(doc)
 	default:
@@ -62,30 +61,30 @@ func (s *scanServer) ExportVex(
 		return nil, err
 	}
 
-	telemetry.VEXExported(req.Msg.GetFormat() == relicv1.VexFormat_VEX_FORMAT_CYCLONEDX)
+	telemetry.VEXExported(req.GetFormat() == relicv1.VexFormat_VEX_FORMAT_CYCLONEDX)
 
-	return connect.NewResponse(&relicv1.ExportVexResponse{
+	return &relicv1.ExportVexResponse{
 		Document: string(b),
 		Skipped:  int32(min(skipped, 1<<30)), //nolint:gosec // bounded
-	}), nil
+	}, nil
 }
 
 func (s *scanServer) ImportVex(
 	ctx context.Context,
-	req *connect.Request[relicv1.ImportVexRequest],
-) (_ *connect.Response[relicv1.ImportVexResponse], err error) {
+	req *relicv1.ImportVexRequest,
+) (_ *relicv1.ImportVexResponse, err error) {
 	ctx, span := telemetry.Tracer().Start(ctx, "scan.ImportVex")
 	defer func() {
 		telemetry.End(span, err)
 	}()
 
-	if len(req.Msg.GetDocument()) > maxVexDocument {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("the document is larger than 16 MiB"))
+	if len(req.GetDocument()) > maxVexDocument {
+		return nil, connect.NewError(connect.CodeInvalidArgument, "the document is larger than 16 MiB")
 	}
 
-	doc, err := policy.ParseAnyVEX([]byte(req.Msg.GetDocument()))
+	doc, err := policy.ParseAnyVEX([]byte(req.GetDocument()))
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
 	}
 
 	rules, skipped := policy.ImportVEX(doc)
@@ -116,5 +115,5 @@ func (s *scanServer) ImportVex(
 		user,
 	)
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -34,8 +34,8 @@ func userMessage(u security.User) *relicv1.User {
 
 func (s *securityServer) ListUsers(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListUsersRequest],
-) (*connect.Response[relicv1.ListUsersResponse], error) {
+	_ *relicv1.ListUsersRequest,
+) (*relicv1.ListUsersResponse, error) {
 	names, err := s.d.Security.ListUsers(ctx)
 	if err != nil {
 		return nil, err
@@ -57,28 +57,28 @@ func (s *securityServer) ListUsers(
 		out.Users = append(out.Users, userMessage(u))
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *securityServer) GetUser(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetUserRequest],
-) (*connect.Response[relicv1.GetUserResponse], error) {
-	u, err := s.d.Security.GetUser(ctx, req.Msg.GetName())
+	req *relicv1.GetUserRequest,
+) (*relicv1.GetUserResponse, error) {
+	u, err := s.d.Security.GetUser(ctx, req.GetName())
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.GetUserResponse{
+	return &relicv1.GetUserResponse{
 		User: userMessage(u),
-	}), nil
+	}, nil
 }
 
 func (s *securityServer) PutUser(
 	ctx context.Context,
-	req *connect.Request[relicv1.PutUserRequest],
-) (*connect.Response[relicv1.PutUserResponse], error) {
-	m := req.Msg.GetUser()
+	req *relicv1.PutUserRequest,
+) (*relicv1.PutUserResponse, error) {
+	m := req.GetUser()
 
 	u := security.User{
 		Name:     m.GetName(),
@@ -99,7 +99,7 @@ func (s *securityServer) PutUser(
 	}
 
 	if m.GetDisabled() && strings.EqualFold(u.Name, auth.FromContext(ctx).Username) {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("you cannot disable your own account"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, "you cannot disable your own account")
 	}
 
 	created, err := s.d.Security.ReplaceUser(ctx, u)
@@ -112,21 +112,21 @@ func (s *securityServer) PutUser(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.PutUserResponse{
+	return &relicv1.PutUserResponse{
 		User:    userMessage(saved),
 		Created: created,
-	}), nil
+	}, nil
 }
 
 func (s *securityServer) DeleteUser(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeleteUserRequest],
-) (*connect.Response[relicv1.DeleteUserResponse], error) {
-	if err := s.d.Security.DeleteUser(ctx, req.Msg.GetName()); err != nil {
+	req *relicv1.DeleteUserRequest,
+) (*relicv1.DeleteUserResponse, error) {
+	if err := s.d.Security.DeleteUser(ctx, req.GetName()); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeleteUserResponse{}), nil
+	return &relicv1.DeleteUserResponse{}, nil
 }
 
 func groupMessage(g security.Group) *relicv1.Group {
@@ -142,8 +142,8 @@ func groupMessage(g security.Group) *relicv1.Group {
 
 func (s *securityServer) ListGroups(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListGroupsRequest],
-) (*connect.Response[relicv1.ListGroupsResponse], error) {
+	_ *relicv1.ListGroupsRequest,
+) (*relicv1.ListGroupsResponse, error) {
 	names, err := s.d.Security.ListGroups(ctx)
 	if err != nil {
 		return nil, err
@@ -165,28 +165,28 @@ func (s *securityServer) ListGroups(
 		out.Groups = append(out.Groups, groupMessage(g))
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *securityServer) GetGroup(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetGroupRequest],
-) (*connect.Response[relicv1.GetGroupResponse], error) {
-	g, err := s.d.Security.GetGroup(ctx, req.Msg.GetName(), true)
+	req *relicv1.GetGroupRequest,
+) (*relicv1.GetGroupResponse, error) {
+	g, err := s.d.Security.GetGroup(ctx, req.GetName(), true)
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.GetGroupResponse{
+	return &relicv1.GetGroupResponse{
 		Group: groupMessage(g),
-	}), nil
+	}, nil
 }
 
 func (s *securityServer) PutGroup(
 	ctx context.Context,
-	req *connect.Request[relicv1.PutGroupRequest],
-) (*connect.Response[relicv1.PutGroupResponse], error) {
-	m := req.Msg.GetGroup()
+	req *relicv1.PutGroupRequest,
+) (*relicv1.PutGroupResponse, error) {
+	m := req.GetGroup()
 
 	members := m.GetMembers()
 	if members == nil {
@@ -209,21 +209,21 @@ func (s *securityServer) PutGroup(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.PutGroupResponse{
+	return &relicv1.PutGroupResponse{
 		Group:   groupMessage(g),
 		Created: created,
-	}), nil
+	}, nil
 }
 
 func (s *securityServer) DeleteGroup(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeleteGroupRequest],
-) (*connect.Response[relicv1.DeleteGroupResponse], error) {
-	if err := s.d.Security.DeleteGroup(ctx, req.Msg.GetName()); err != nil {
+	req *relicv1.DeleteGroupRequest,
+) (*relicv1.DeleteGroupResponse, error) {
+	if err := s.d.Security.DeleteGroup(ctx, req.GetName()); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeleteGroupResponse{}), nil
+	return &relicv1.DeleteGroupResponse{}, nil
 }
 
 func actionMessages(actions []auth.Action) []relicv1.Action {
@@ -334,8 +334,8 @@ func permissionOf(m *relicv1.Permission) (security.Permission, error) {
 
 func (s *securityServer) ListPermissions(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListPermissionsRequest],
-) (*connect.Response[relicv1.ListPermissionsResponse], error) {
+	_ *relicv1.ListPermissionsRequest,
+) (*relicv1.ListPermissionsResponse, error) {
 	names, err := s.d.Security.ListPermissions(ctx)
 	if err != nil {
 		return nil, err
@@ -357,28 +357,28 @@ func (s *securityServer) ListPermissions(
 		out.Permissions = append(out.Permissions, PermissionMessage(p))
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *securityServer) GetPermission(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetPermissionRequest],
-) (*connect.Response[relicv1.GetPermissionResponse], error) {
-	p, err := s.d.Security.GetPermission(ctx, req.Msg.GetName())
+	req *relicv1.GetPermissionRequest,
+) (*relicv1.GetPermissionResponse, error) {
+	p, err := s.d.Security.GetPermission(ctx, req.GetName())
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.GetPermissionResponse{
+	return &relicv1.GetPermissionResponse{
 		Permission: PermissionMessage(p),
-	}), nil
+	}, nil
 }
 
 func (s *securityServer) PutPermission(
 	ctx context.Context,
-	req *connect.Request[relicv1.PutPermissionRequest],
-) (*connect.Response[relicv1.PutPermissionResponse], error) {
-	p, err := permissionOf(req.Msg.GetPermission())
+	req *relicv1.PutPermissionRequest,
+) (*relicv1.PutPermissionResponse, error) {
+	p, err := permissionOf(req.GetPermission())
 	if err != nil {
 		return nil, err
 	}
@@ -401,49 +401,49 @@ func (s *securityServer) PutPermission(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.PutPermissionResponse{
+	return &relicv1.PutPermissionResponse{
 		Permission: PermissionMessage(saved),
-	}), nil
+	}, nil
 }
 
 func (s *securityServer) DeletePermission(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeletePermissionRequest],
-) (*connect.Response[relicv1.DeletePermissionResponse], error) {
-	if err := s.d.Security.DeletePermission(ctx, req.Msg.GetName()); err != nil {
+	req *relicv1.DeletePermissionRequest,
+) (*relicv1.DeletePermissionResponse, error) {
+	if err := s.d.Security.DeletePermission(ctx, req.GetName()); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeletePermissionResponse{}), nil
+	return &relicv1.DeletePermissionResponse{}, nil
 }
 
 const maxTokenDays = 3650
 
 func (s *securityServer) CreateToken(
 	ctx context.Context,
-	req *connect.Request[relicv1.CreateTokenRequest],
-) (*connect.Response[relicv1.CreateTokenResponse], error) {
+	req *relicv1.CreateTokenRequest,
+) (*relicv1.CreateTokenResponse, error) {
 	if s.d.Tokens == nil {
 		return nil, unimplemented("tokens")
 	}
 
-	days := req.Msg.GetExpiresDays()
+	days := req.GetExpiresDays()
 	if days < 0 || days > maxTokenDays {
-		return nil, connect.NewError(
+		return nil, connect.Errorf(
 			connect.CodeInvalidArgument,
-			fmt.Errorf("expires_days must be 0 to %d", maxTokenDays),
+			"expires_days must be 0 to %d", maxTokenDays,
 		)
 	}
 
 	caller := auth.FromContext(ctx)
 	scope := auth.UserScope
 
-	if sm := req.Msg.GetScope(); sm != nil {
+	if sm := req.GetScope(); sm != nil {
 		kind, ok := toDomain[auth.ScopeKind](sm.GetKind())
 
 		switch {
 		case !ok && sm.GetKind() != relicv1.TokenScopeKind_TOKEN_SCOPE_KIND_UNSPECIFIED:
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("unknown scope kind %d", sm.GetKind()))
+			return nil, connect.Errorf(connect.CodeInvalidArgument, "unknown scope kind %d", sm.GetKind())
 		case !ok:
 			kind = auth.ScopeUser
 		}
@@ -457,11 +457,11 @@ func (s *securityServer) CreateToken(
 	if !caller.MayGrant(scope) {
 		return nil, connect.NewError(
 			connect.CodePermissionDenied,
-			errors.New("only administrators can create admin tokens or tokens for groups they are not in"),
+			"only administrators can create admin tokens or tokens for groups they are not in",
 		)
 	}
 
-	if key := req.Msg.GetProject(); key != "" {
+	if key := req.GetProject(); key != "" {
 		if err := s.requireVisibleProject(ctx, caller, key); err != nil {
 			return nil, err
 		}
@@ -471,21 +471,21 @@ func (s *securityServer) CreateToken(
 		Username:    caller.Name(),
 		Scope:       scope,
 		ExpiresIn:   time.Duration(days) * 24 * time.Hour,
-		Description: req.Msg.GetDescription(),
-		Project:     req.Msg.GetProject(),
+		Description: req.GetDescription(),
+		Project:     req.GetProject(),
 	}, time.Now()))
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.CreateTokenResponse{
+	return &relicv1.CreateTokenResponse{
 		AccessToken: tok.AccessToken,
 		ExpiresIn:   int64(tok.ExpiresIn / time.Second),
 		Scope: &relicv1.TokenScope{
 			Kind:   fromDomain[relicv1.TokenScopeKind](tok.Scope.Kind),
 			Groups: tok.Scope.Groups,
 		},
-	}), nil
+	}, nil
 }
 
 func (s *securityServer) requireVisibleProject(ctx context.Context, caller auth.Principal, key string) error {
@@ -499,7 +499,7 @@ func (s *securityServer) requireVisibleProject(ctx context.Context, caller auth.
 	}
 
 	if !seesAllProjects(caller) && p.Role(caller) == "" {
-		return connect.NewError(connect.CodeNotFound, fmt.Errorf("%w: %s", project.ErrNotFound, key))
+		return connect.NewError(connect.CodeNotFound, fmt.Errorf("%w: %s", project.ErrNotFound, key).Error())
 	}
 
 	return nil
@@ -509,16 +509,16 @@ func (s *securityServer) requireVisibleProject(ctx context.Context, caller auth.
 // everyone's (or one user's).
 func (s *securityServer) ListTokens(
 	ctx context.Context,
-	req *connect.Request[relicv1.ListTokensRequest],
-) (*connect.Response[relicv1.ListTokensResponse], error) {
+	req *relicv1.ListTokensRequest,
+) (*relicv1.ListTokensResponse, error) {
 	caller := auth.FromContext(ctx)
 
-	user := req.Msg.GetUsername()
+	user := req.GetUsername()
 	if !caller.Admin && !caller.Viewer {
 		user = caller.Name()
 	}
 
-	list, err := s.d.Tokens.List(ctx, user, req.Msg.GetIncludeRevoked())
+	list, err := s.d.Tokens.List(ctx, user, req.GetIncludeRevoked())
 	if err != nil {
 		return nil, err
 	}
@@ -547,15 +547,15 @@ func (s *securityServer) ListTokens(
 		out.Tokens = append(out.Tokens, m)
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 // RevokeToken revokes one of the caller's tokens, or any token for an
 // administrator.
 func (s *securityServer) RevokeToken(
 	ctx context.Context,
-	req *connect.Request[relicv1.RevokeTokenRequest],
-) (*connect.Response[relicv1.RevokeTokenResponse], error) {
+	req *relicv1.RevokeTokenRequest,
+) (*relicv1.RevokeTokenResponse, error) {
 	caller := auth.FromContext(ctx)
 
 	owner := caller.Name()
@@ -563,9 +563,9 @@ func (s *securityServer) RevokeToken(
 		owner = ""
 	}
 
-	if err := s.d.Tokens.RevokeID(ctx, req.Msg.GetId(), owner); err != nil {
+	if err := s.d.Tokens.RevokeID(ctx, req.GetId(), owner); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.RevokeTokenResponse{}), nil
+	return &relicv1.RevokeTokenResponse{}, nil
 }

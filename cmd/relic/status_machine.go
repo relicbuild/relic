@@ -16,8 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
-
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/internal/platform/localdisk"
 
@@ -303,12 +301,12 @@ func probe(ctx context.Context, listen, certificateAuthority string) (version st
 
 	c := newClient(url, certificateAuthority, credentials{})
 
-	v, err := c.system.GetVersion(ctx, connect.NewRequest(&relicv1.GetVersionRequest{}))
+	v, err := c.system.GetVersion(ctx, &relicv1.GetVersionRequest{})
 	if err != nil {
 		return "", false
 	}
 
-	return v.Msg.GetVersion(), true
+	return v.GetVersion(), true
 }
 
 func (m *machineSetup) printMachineStatus(w io.Writer, s *machineStatus) {

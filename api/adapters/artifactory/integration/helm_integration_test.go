@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"go.yaml.in/yaml/v3"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -247,37 +247,35 @@ func TestRelicAPIPackageInfo(t *testing.T) {
 	)
 
 	ctx := t.Context()
-	pkgs := relicv1connect.NewPackageServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	pkgs := relicv1connect.NewPackageServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
 	chart, err := pkgs.GetHelmChart(
 		ctx,
-		connect.NewRequest(&relicv1.GetHelmChartRequest{
+		&relicv1.GetHelmChartRequest{
 			Repository: "charts",
 			Path:       "web-1.2.0.tgz",
-		}),
+		},
 	)
-	if err != nil || chart.Msg.GetName() != "web" || chart.Msg.GetAppVersion() != "1.0" {
+	if err != nil || chart.GetName() != "web" || chart.GetAppVersion() != "1.0" {
 		t.Errorf("chart = %v %v", chart, err)
 	}
 
 	wheel, err := pkgs.GetPythonPackage(
 		ctx,
-		connect.NewRequest(
-			&relicv1.GetPythonPackageRequest{
-				Repository: "py-local",
-				Path:       "demo/1.0/demo-1.0-py3-none-any.whl",
-			},
-		),
+		&relicv1.GetPythonPackageRequest{
+			Repository: "py-local",
+			Path:       "demo/1.0/demo-1.0-py3-none-any.whl",
+		},
 	)
-	if err != nil || wheel.Msg.GetName() != "demo" || len(wheel.Msg.GetRequiresDist()) != 1 {
+	if err != nil || wheel.GetName() != "demo" || len(wheel.GetRequiresDist()) != 1 {
 		t.Errorf("wheel = %v %v", wheel, err)
 	}
 
 	if _, err := pkgs.GetHelmChart(
 		ctx,
-		connect.NewRequest(&relicv1.GetHelmChartRequest{
+		&relicv1.GetHelmChartRequest{
 			Repository: "charts",
-		}),
+		},
 	); code(err) != connect.CodeNotFound &&
 		code(err) != connect.CodeInvalidArgument {
 		t.Errorf("repository root: %v", err)

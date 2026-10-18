@@ -2,9 +2,8 @@ package relicapi
 
 import (
 	"context"
-	"errors"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/internal/access/auth"
@@ -55,8 +54,8 @@ func (s *cleanupServer) service() (*cleanup.Service, error) {
 
 func (s *cleanupServer) ListCleanupPolicies(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListCleanupPoliciesRequest],
-) (*connect.Response[relicv1.ListCleanupPoliciesResponse], error) {
+	_ *relicv1.ListCleanupPoliciesRequest,
+) (*relicv1.ListCleanupPoliciesResponse, error) {
 	svc, err := s.service()
 	if err != nil {
 		return nil, err
@@ -74,71 +73,71 @@ func (s *cleanupServer) ListCleanupPolicies(
 		out.Policies = append(out.Policies, cleanupPolicyMessage(p))
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *cleanupServer) GetCleanupPolicy(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetCleanupPolicyRequest],
-) (*connect.Response[relicv1.GetCleanupPolicyResponse], error) {
+	req *relicv1.GetCleanupPolicyRequest,
+) (*relicv1.GetCleanupPolicyResponse, error) {
 	svc, err := s.service()
 	if err != nil {
 		return nil, err
 	}
 
-	p, err := svc.Get(ctx, req.Msg.GetName())
+	p, err := svc.Get(ctx, req.GetName())
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.GetCleanupPolicyResponse{
+	return &relicv1.GetCleanupPolicyResponse{
 		Policy: cleanupPolicyMessage(p),
-	}), nil
+	}, nil
 }
 
 func (s *cleanupServer) PutCleanupPolicy(
 	ctx context.Context,
-	req *connect.Request[relicv1.PutCleanupPolicyRequest],
-) (*connect.Response[relicv1.PutCleanupPolicyResponse], error) {
+	req *relicv1.PutCleanupPolicyRequest,
+) (*relicv1.PutCleanupPolicyResponse, error) {
 	svc, err := s.service()
 	if err != nil {
 		return nil, err
 	}
 
-	if err := svc.Put(ctx, domainCleanupPolicy(req.Msg.GetPolicy())); err != nil {
+	if err := svc.Put(ctx, domainCleanupPolicy(req.GetPolicy())); err != nil {
 		return nil, err
 	}
 
-	p, err := svc.Get(ctx, req.Msg.GetPolicy().GetName())
+	p, err := svc.Get(ctx, req.GetPolicy().GetName())
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.PutCleanupPolicyResponse{
+	return &relicv1.PutCleanupPolicyResponse{
 		Policy: cleanupPolicyMessage(p),
-	}), nil
+	}, nil
 }
 
 func (s *cleanupServer) DeleteCleanupPolicy(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeleteCleanupPolicyRequest],
-) (*connect.Response[relicv1.DeleteCleanupPolicyResponse], error) {
+	req *relicv1.DeleteCleanupPolicyRequest,
+) (*relicv1.DeleteCleanupPolicyResponse, error) {
 	svc, err := s.service()
 	if err != nil {
 		return nil, err
 	}
 
-	if err := svc.Delete(ctx, req.Msg.GetName()); err != nil {
+	if err := svc.Delete(ctx, req.GetName()); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeleteCleanupPolicyResponse{}), nil
+	return &relicv1.DeleteCleanupPolicyResponse{}, nil
 }
 
 func (s *cleanupServer) PreviewCleanupPolicy(
 	ctx context.Context,
-	req *connect.Request[relicv1.PreviewCleanupPolicyRequest],
-) (*connect.Response[relicv1.PreviewCleanupPolicyResponse], error) {
+	req *relicv1.PreviewCleanupPolicyRequest,
+) (*relicv1.PreviewCleanupPolicyResponse, error) {
 	svc, err := s.service()
 	if err != nil {
 		return nil, err
@@ -146,13 +145,13 @@ func (s *cleanupServer) PreviewCleanupPolicy(
 
 	var found []cleanup.Candidate
 
-	switch name := req.Msg.GetName(); {
+	switch name := req.GetName(); {
 	case name != "":
 		found, err = svc.PreviewByName(ctx, name)
-	case req.Msg.GetPolicy() != nil:
-		found, err = svc.Preview(ctx, domainCleanupPolicy(req.Msg.GetPolicy()))
+	case req.GetPolicy() != nil:
+		found, err = svc.Preview(ctx, domainCleanupPolicy(req.GetPolicy()))
 	default:
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("give a policy or the name of one"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, "give a policy or the name of one")
 	}
 
 	if err != nil {
@@ -177,7 +176,7 @@ func (s *cleanupServer) PreviewCleanupPolicy(
 		})
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *cleanupServer) readableCandidates(
@@ -208,19 +207,19 @@ func (s *cleanupServer) readableCandidates(
 
 func (s *cleanupServer) RunCleanupPolicy(
 	ctx context.Context,
-	req *connect.Request[relicv1.RunCleanupPolicyRequest],
-) (*connect.Response[relicv1.RunCleanupPolicyResponse], error) {
+	req *relicv1.RunCleanupPolicyRequest,
+) (*relicv1.RunCleanupPolicyResponse, error) {
 	svc, err := s.service()
 	if err != nil {
 		return nil, err
 	}
 
-	moved, err := svc.Run(ctx, req.Msg.GetName())
+	moved, err := svc.Run(ctx, req.GetName())
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.RunCleanupPolicyResponse{
+	return &relicv1.RunCleanupPolicyResponse{
 		Moved: int64(moved),
-	}), nil
+	}, nil
 }

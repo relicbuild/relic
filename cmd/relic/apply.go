@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/pmezard/go-difflib/difflib"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/encoding/protojson"

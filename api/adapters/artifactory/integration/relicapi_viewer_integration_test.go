@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -17,14 +17,14 @@ func TestRelicAPIViewer(t *testing.T) {
 	t.Parallel()
 	srv := server(t)
 	ctx := t.Context()
-	admin := relicv1connect.NewSecurityServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	admin := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
-	if _, err := admin.PutGroup(ctx, connect.NewRequest(&relicv1.PutGroupRequest{
+	if _, err := admin.PutGroup(ctx, &relicv1.PutGroupRequest{
 		Group: &relicv1.Group{
 			Name:   "auditors",
 			Viewer: true,
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -49,9 +49,9 @@ func TestRelicAPIViewer(t *testing.T) {
 			Password: "Plain-pw-1",
 		},
 	} {
-		if _, err := admin.PutUser(ctx, connect.NewRequest(&relicv1.PutUserRequest{
+		if _, err := admin.PutUser(ctx, &relicv1.PutUserRequest{
 			User: u,
-		})); err != nil {
+		}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -81,32 +81,32 @@ func TestRelicAPIViewer(t *testing.T) {
 		t.Run(tt.user, func(t *testing.T) {
 			t.Parallel()
 
-			sec := relicv1connect.NewSecurityServiceClient(relicHTTP(tt.user, tt.password), srv.URL+"/api")
-			system := relicv1connect.NewSystemServiceClient(relicHTTP(tt.user, tt.password), srv.URL+"/api")
+			sec := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP(tt.user, tt.password), srv.URL))
+			system := relicv1connect.NewSystemServiceClient(apiClient(relicHTTP(tt.user, tt.password), srv.URL))
 
-			_, err := sec.ListUsers(ctx, connect.NewRequest(&relicv1.ListUsersRequest{}))
+			_, err := sec.ListUsers(ctx, &relicv1.ListUsersRequest{})
 			if got := code(err); got != tt.read {
 				t.Errorf("list users: %v, want %v", err, tt.read)
 			}
 
-			_, err = system.GetSystemStatus(ctx, connect.NewRequest(&relicv1.GetSystemStatusRequest{}))
+			_, err = system.GetSystemStatus(ctx, &relicv1.GetSystemStatusRequest{})
 			if got := code(err); got != tt.read {
 				t.Errorf("system status: %v, want %v", err, tt.read)
 			}
 
-			_, err = sec.DeleteUser(ctx, connect.NewRequest(&relicv1.DeleteUserRequest{
+			_, err = sec.DeleteUser(ctx, &relicv1.DeleteUserRequest{
 				Name: "plain",
-			}))
+			})
 			if got := code(err); got != tt.write {
 				t.Errorf("delete user: %v, want %v", err, tt.write)
 			}
 		})
 	}
 
-	session := relicv1connect.NewSessionServiceClient(relicHTTP("audrey", "Audrey-pw-1"), srv.URL+"/api")
+	session := relicv1connect.NewSessionServiceClient(apiClient(relicHTTP("audrey", "Audrey-pw-1"), srv.URL))
 
-	me, err := session.GetCurrentUser(ctx, connect.NewRequest(&relicv1.GetCurrentUserRequest{}))
-	if err != nil || !me.Msg.GetPrincipal().GetViewer() || me.Msg.GetPrincipal().GetAdmin() {
+	me, err := session.GetCurrentUser(ctx, &relicv1.GetCurrentUserRequest{})
+	if err != nil || !me.GetPrincipal().GetViewer() || me.GetPrincipal().GetAdmin() {
 		t.Errorf("current user = %v, %v", me, err)
 	}
 
@@ -130,10 +130,10 @@ func TestRelicAPIViewer(t *testing.T) {
 
 	_ = resp.Body.Close()
 
-	vera, err := admin.GetUser(ctx, connect.NewRequest(&relicv1.GetUserRequest{
+	vera, err := admin.GetUser(ctx, &relicv1.GetUserRequest{
 		Name: "vera",
-	}))
-	if err != nil || !vera.Msg.GetUser().GetViewer() || vera.Msg.GetUser().GetEmail() != "vera2@example.com" {
+	})
+	if err != nil || !vera.GetUser().GetViewer() || vera.GetUser().GetEmail() != "vera2@example.com" {
 		t.Errorf("after an update through the adapter, vera = %v, %v", vera, err)
 	}
 }
@@ -142,24 +142,24 @@ func TestRelicAPIDisableUser(t *testing.T) {
 	t.Parallel()
 	srv := server(t)
 	ctx := t.Context()
-	admin := relicv1connect.NewSecurityServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	admin := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
 	put := func(disabled bool) error {
-		_, err := admin.PutUser(ctx, connect.NewRequest(&relicv1.PutUserRequest{
+		_, err := admin.PutUser(ctx, &relicv1.PutUserRequest{
 			User: &relicv1.User{
 				Name:     "ivy",
 				Email:    "ivy@example.com",
 				Password: "Ivy-pw-1",
 				Disabled: disabled,
 			},
-		}))
+		})
 
 		return err
 	}
 
 	signIn := func() connect.Code {
-		session := relicv1connect.NewSessionServiceClient(relicHTTP("ivy", "Ivy-pw-1"), srv.URL+"/api")
-		_, err := session.GetCurrentUser(ctx, connect.NewRequest(&relicv1.GetCurrentUserRequest{}))
+		session := relicv1connect.NewSessionServiceClient(apiClient(relicHTTP("ivy", "Ivy-pw-1"), srv.URL))
+		_, err := session.GetCurrentUser(ctx, &relicv1.GetCurrentUserRequest{})
 
 		return code(err)
 	}
@@ -208,13 +208,13 @@ func TestRelicAPIDisableUser(t *testing.T) {
 		t.Errorf("an enabled user cannot sign in: %v", got)
 	}
 
-	if _, err := admin.PutUser(ctx, connect.NewRequest(&relicv1.PutUserRequest{
+	if _, err := admin.PutUser(ctx, &relicv1.PutUserRequest{
 		User: &relicv1.User{
 			Name:     "admin",
 			Admin:    true,
 			Disabled: true,
 		},
-	})); code(err) != connect.CodeInvalidArgument {
+	}); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("disabling yourself: %v", err)
 	}
 }

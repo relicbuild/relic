@@ -9,8 +9,6 @@ import (
 
 	"relic/api/adapters/artifactory/access"
 
-	"connectrpc.com/connect"
-
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
 	"relic/internal/access/auth"
@@ -99,23 +97,23 @@ func TestDownloadStats(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	arts := relicv1connect.NewArtifactServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	arts := relicv1connect.NewArtifactServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
 	downloads := func() *relicv1.DownloadStats {
 		t.Helper()
 
 		d, err := arts.GetItemDetails(
 			t.Context(),
-			connect.NewRequest(&relicv1.GetItemDetailsRequest{
+			&relicv1.GetItemDetailsRequest{
 				Repository: "libs",
 				Path:       "a.txt",
-			}),
+			},
 		)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		return d.Msg.GetDownloads()
+		return d.GetDownloads()
 	}
 	if d := downloads(); d.GetCount() != 2 || d.GetLastDownloadedBy() != "admin" {
 		t.Errorf("downloads = %v", d)
@@ -167,16 +165,16 @@ func TestDownloadStats(t *testing.T) {
 
 	module, err := arts.GetItemDetails(
 		t.Context(),
-		connect.NewRequest(&relicv1.GetItemDetailsRequest{
+		&relicv1.GetItemDetailsRequest{
 			Repository: "tf-local",
 			Path:       "acme/network/aws/v1.0.0.zip",
-		}),
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if d := module.Msg.GetDownloads(); d.GetCount() != 1 || d.GetLastDownloadedBy() != "admin" {
+	if d := module.GetDownloads(); d.GetCount() != 1 || d.GetLastDownloadedBy() != "admin" {
 		t.Errorf("signed module download = %v, want one by admin", d)
 	}
 }

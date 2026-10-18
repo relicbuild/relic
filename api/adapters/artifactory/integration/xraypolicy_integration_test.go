@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
-
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
 )
@@ -18,9 +16,9 @@ func TestXrayPolicyUpdateKeepsCriteriaTheDocumentCannotCarry(t *testing.T) {
 
 	srv := server(t)
 	ctx := t.Context()
-	scans := relicv1connect.NewScanServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	scans := relicv1connect.NewScanServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
-	if _, err := scans.PutPolicy(ctx, connect.NewRequest(&relicv1.PutPolicyRequest{
+	if _, err := scans.PutPolicy(ctx, &relicv1.PutPolicyRequest{
 		Policy: &relicv1.Policy{
 			Name:        "narrow",
 			Kind:        relicv1.PolicyKind_POLICY_KIND_SECURITY,
@@ -48,7 +46,7 @@ func TestXrayPolicyUpdateKeepsCriteriaTheDocumentCannotCarry(t *testing.T) {
 				},
 			},
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -68,14 +66,14 @@ func TestXrayPolicyUpdateKeepsCriteriaTheDocumentCannotCarry(t *testing.T) {
 		t.Fatalf("PUT of the policy as GET returned it = %d %s", resp.StatusCode, body)
 	}
 
-	list, err := scans.ListPolicies(ctx, connect.NewRequest(&relicv1.ListPoliciesRequest{}))
+	list, err := scans.ListPolicies(ctx, &relicv1.ListPoliciesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	rules := map[string]*relicv1.PolicyRule{}
 
-	for _, p := range list.Msg.GetPolicies() {
+	for _, p := range list.GetPolicies() {
 		if p.GetName() != "narrow" {
 			continue
 		}

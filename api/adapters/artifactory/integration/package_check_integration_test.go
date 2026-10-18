@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -44,8 +44,8 @@ func TestCheckPackage(t *testing.T) {
 	}))
 	t.Cleanup(upstream.Close)
 
-	repos := relicv1connect.NewRepositoryServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
-	if _, err := repos.CreateRepository(ctx, connect.NewRequest(&relicv1.CreateRepositoryRequest{
+	repos := relicv1connect.NewRepositoryServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
+	if _, err := repos.CreateRepository(ctx, &relicv1.CreateRepositoryRequest{
 		Repository: &relicv1.Repository{
 			Name:   "npm-checked",
 			Class:  relicv1.RepositoryClass_REPOSITORY_CLASS_REMOTE,
@@ -55,7 +55,7 @@ func TestCheckPackage(t *testing.T) {
 				CooldownDays: 7,
 			},
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -117,8 +117,8 @@ func TestCheckPackage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	scans := relicv1connect.NewScanServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
-	if _, err := scans.PutPolicy(ctx, connect.NewRequest(&relicv1.PutPolicyRequest{
+	scans := relicv1connect.NewScanServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
+	if _, err := scans.PutPolicy(ctx, &relicv1.PutPolicyRequest{
 		Policy: &relicv1.Policy{
 			Name: "no-critical",
 			Kind: relicv1.PolicyKind_POLICY_KIND_SECURITY,
@@ -130,11 +130,11 @@ func TestCheckPackage(t *testing.T) {
 				},
 			},
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := scans.PutWatch(ctx, connect.NewRequest(&relicv1.PutWatchRequest{
+	if _, err := scans.PutWatch(ctx, &relicv1.PutWatchRequest{
 		Watch: &relicv1.Watch{
 			Name:   "npm",
 			Active: true,
@@ -150,20 +150,20 @@ func TestCheckPackage(t *testing.T) {
 				"no-critical",
 			},
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
 	check := func(purl, repo string) (*relicv1.CheckPackageResponse, error) {
-		r, err := scans.CheckPackage(ctx, connect.NewRequest(&relicv1.CheckPackageRequest{
+		r, err := scans.CheckPackage(ctx, &relicv1.CheckPackageRequest{
 			Purl:       purl,
 			Repository: repo,
-		}))
+		})
 		if err != nil {
 			return nil, err
 		}
 
-		return r.Msg, nil
+		return r, nil
 	}
 
 	kinds := func(r *relicv1.CheckPackageResponse) map[relicv1.PackageRefusalKind]bool {

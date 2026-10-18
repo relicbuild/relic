@@ -12,7 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -69,17 +70,17 @@ func TestBrowserLogin(t *testing.T) {
 			continue
 		}
 
-		approve := connect.NewRequest(&relicv1.ApproveLoginRequest{
+		approve := &relicv1.ApproveLoginRequest{
 			Session: m[1],
 			Code:    m[2],
-		})
+		}
 
-		if _, err := relicv1connect.NewSessionServiceClient(&http.Client{
+		if _, err := relicv1connect.NewSessionServiceClient(connect.NewClient(connecthttp.NewTransport(&http.Client{
 			Transport: basicAuth{
 				user:     "admin",
 				password: "password",
 			},
-		}, srv.URL+"/api").ApproveLogin(t.Context(), approve); err != nil {
+		}, srv.URL+"/api"))).ApproveLogin(t.Context(), approve); err != nil {
 			t.Fatal(err)
 		}
 
@@ -284,11 +285,11 @@ func TestLogoutRevokesTheContextsToken(t *testing.T) {
 func signsIn(t *testing.T, serverURL, token string) bool {
 	t.Helper()
 
-	req := connect.NewRequest(&relicv1.GetCurrentUserRequest{})
-	req.Header().Set("Authorization", "Bearer "+token)
+	ctx, info := connect.NewClientContext(t.Context())
+	info.RequestHeader().Set("Authorization", "Bearer "+token)
 
-	_, err := relicv1connect.NewSessionServiceClient(http.DefaultClient, serverURL+"/api").
-		GetCurrentUser(t.Context(), req)
+	_, err := relicv1connect.NewSessionServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, serverURL+"/api"))).
+		GetCurrentUser(ctx, &relicv1.GetCurrentUserRequest{})
 
 	return err == nil
 }

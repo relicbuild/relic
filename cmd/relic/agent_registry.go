@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -27,15 +26,15 @@ func registryListCmd(g *globals) *cobra.Command {
 
 			res, err := c.agentRegistry.ListRegistryEntries(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.ListRegistryEntriesRequest{
+				&relicv1.ListRegistryEntriesRequest{
 					Repository: args[0],
-				}),
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("list %s: %w", args[0], err)
 			}
 
-			return printMessage(cmd.OutOrStdout(), output, res.Msg, func(w io.Writer) error {
+			return printMessage(cmd.OutOrStdout(), output, res, func(w io.Writer) error {
 				table := terminal.Table{
 					Headers: []string{
 						"NAME",
@@ -46,7 +45,7 @@ func registryListCmd(g *globals) *cobra.Command {
 					},
 				}
 
-				for _, e := range res.Msg.GetEntries() {
+				for _, e := range res.GetEntries() {
 					approved := "no"
 					if e.GetApproved() {
 						approved = "by " + e.GetApprovedBy()
@@ -96,18 +95,18 @@ func registryDecideCmd(g *globals, approve bool) *cobra.Command {
 			if approve {
 				_, err = c.agentRegistry.ApproveRegistryEntry(
 					cmd.Context(),
-					connect.NewRequest(&relicv1.ApproveRegistryEntryRequest{
+					&relicv1.ApproveRegistryEntryRequest{
 						Repository: repo,
 						Path:       p,
-					}),
+					},
 				)
 			} else {
 				_, err = c.agentRegistry.RevokeRegistryApproval(
 					cmd.Context(),
-					connect.NewRequest(&relicv1.RevokeRegistryApprovalRequest{
+					&relicv1.RevokeRegistryApprovalRequest{
 						Repository: repo,
 						Path:       p,
-					}),
+					},
 				)
 			}
 

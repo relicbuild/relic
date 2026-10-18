@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -510,19 +510,17 @@ func TestRelicAPINpmPackage(t *testing.T) {
 		t.Fatalf("deploy = %d %s", resp.StatusCode, body)
 	}
 
-	pkgs := relicv1connect.NewPackageServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	pkgs := relicv1connect.NewPackageServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
 	got, err := pkgs.GetNpmPackage(
 		t.Context(),
-		connect.NewRequest(
-			&relicv1.GetNpmPackageRequest{
-				Repository: "npm-local",
-				Path:       "left-pad/-/left-pad-1.3.0.tgz",
-			},
-		),
+		&relicv1.GetNpmPackageRequest{
+			Repository: "npm-local",
+			Path:       "left-pad/-/left-pad-1.3.0.tgz",
+		},
 	)
-	if err != nil || got.Msg.GetName() != "left-pad" || got.Msg.GetVersion() != "1.3.0" ||
-		got.Msg.GetDescription() != "test package" {
+	if err != nil || got.GetName() != "left-pad" || got.GetVersion() != "1.3.0" ||
+		got.GetDescription() != "test package" {
 		t.Errorf("npm info = %v %v", got, err)
 	}
 
@@ -534,10 +532,10 @@ func TestRelicAPINpmPackage(t *testing.T) {
 
 	if _, err := pkgs.GetNpmPackage(
 		t.Context(),
-		connect.NewRequest(&relicv1.GetNpmPackageRequest{
+		&relicv1.GetNpmPackageRequest{
 			Repository: "npm-local",
 			Path:       "notes.txt",
-		}),
+		},
 	); code(err) != connect.CodeNotFound {
 		t.Errorf("non-tarball: %v, want not found", err)
 	}

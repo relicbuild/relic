@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -39,20 +38,20 @@ func projectMemberAddCmd(g *globals) *cobra.Command {
 
 			res, err := c.projects.AddProjectMember(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.AddProjectMemberRequest{
+				&relicv1.AddProjectMemberRequest{
 					Key: args[0],
 					Member: &relicv1.ProjectMember{
 						Name:  args[1],
 						Group: group,
 						Role:  r,
 					},
-				}),
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("add %s to %s: %w", args[1], args[0], err)
 			}
 
-			return printProjectMemberCount(cmd, res.Msg.GetProject())
+			return printProjectMemberCount(cmd, res.GetProject())
 		},
 	}
 	cmd.Flags().StringVar(&role, "role", "developer", "admin, developer or viewer")
@@ -88,17 +87,17 @@ func projectMemberRemoveCmd(g *globals) *cobra.Command {
 
 			res, err := c.projects.RemoveProjectMember(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.RemoveProjectMemberRequest{
+				&relicv1.RemoveProjectMemberRequest{
 					Key:   args[0],
 					Name:  args[1],
 					Group: group,
-				}),
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("remove %s from %s: %w", args[1], args[0], err)
 			}
 
-			return printProjectMemberCount(cmd, res.Msg.GetProject())
+			return printProjectMemberCount(cmd, res.GetProject())
 		},
 	}
 	cmd.Flags().BoolVar(&group, "group", false, "the member is a group")

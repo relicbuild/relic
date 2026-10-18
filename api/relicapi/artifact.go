@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -94,7 +94,7 @@ func repositoryAccess(
 		if action != auth.ActionRead && !perms.CanInRepository(p.Subject(), target, path, action) {
 			return connect.NewError(
 				connect.CodePermissionDenied,
-				errors.New("no "+string(action)+" permission on "+repoKey+"/"+path),
+				"no "+string(action)+" permission on "+repoKey+"/"+path,
 			)
 		}
 
@@ -130,9 +130,9 @@ func cleanPath(p string) string { return strings.Trim(p, "/") }
 
 func (s *artifactServer) StatItem(
 	ctx context.Context,
-	req *connect.Request[relicv1.StatItemRequest],
-) (*connect.Response[relicv1.StatItemResponse], error) {
-	key, p := req.Msg.GetRepository(), cleanPath(req.Msg.GetPath())
+	req *relicv1.StatItemRequest,
+) (*relicv1.StatItemResponse, error) {
+	key, p := req.GetRepository(), cleanPath(req.GetPath())
 	if err := can(ctx, s.d, key, p, auth.ActionRead); err != nil {
 		return nil, err
 	}
@@ -142,9 +142,9 @@ func (s *artifactServer) StatItem(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.StatItemResponse{
+	return &relicv1.StatItemResponse{
 		Item: itemMessage(it),
-	}), nil
+	}, nil
 }
 
 func canList(ctx context.Context, d Dependencies, repoKey, p string) error {
@@ -175,9 +175,9 @@ func canList(ctx context.Context, d Dependencies, repoKey, p string) error {
 
 func (s *artifactServer) ListChildren(
 	ctx context.Context,
-	req *connect.Request[relicv1.ListChildrenRequest],
-) (*connect.Response[relicv1.ListChildrenResponse], error) {
-	key, p := req.Msg.GetRepository(), cleanPath(req.Msg.GetPath())
+	req *relicv1.ListChildrenRequest,
+) (*relicv1.ListChildrenResponse, error) {
+	key, p := req.GetRepository(), cleanPath(req.GetPath())
 	if err := canList(ctx, s.d, key, p); err != nil {
 		return nil, err
 	}
@@ -208,7 +208,7 @@ func (s *artifactServer) ListChildren(
 		return strings.Compare(a.GetName(), b.GetName())
 	})
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *artifactServer) children(ctx context.Context, key, p string) ([]*relicv1.Item, error) {
@@ -218,7 +218,7 @@ func (s *artifactServer) children(ctx context.Context, key, p string) ([]*relicv
 	}
 
 	if !folder.IsFolder() {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New(key+"/"+p+" is not a folder"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, key+"/"+p+" is not a folder")
 	}
 
 	kids, err := s.d.Repositories.Children(ctx, folder)
@@ -247,19 +247,19 @@ func (s *artifactServer) children(ctx context.Context, key, p string) ([]*relicv
 
 func (s *artifactServer) SearchItems(
 	ctx context.Context,
-	req *connect.Request[relicv1.SearchItemsRequest],
-) (*connect.Response[relicv1.SearchItemsResponse], error) {
-	name := strings.TrimSpace(req.Msg.GetName())
+	req *relicv1.SearchItemsRequest,
+) (*relicv1.SearchItemsResponse, error) {
+	name := strings.TrimSpace(req.GetName())
 	if utf8.RuneCountInString(name) < 2 {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("search needs at least two characters"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, "search needs at least two characters")
 	}
 
-	limit := req.Msg.GetLimit()
+	limit := req.GetLimit()
 	if limit <= 0 || limit > 1000 {
 		limit = defaultSearchLimit
 	}
 
-	keys, err := s.searchedRepositories(ctx, req.Msg.GetRepository())
+	keys, err := s.searchedRepositories(ctx, req.GetRepository())
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +268,7 @@ func (s *artifactServer) SearchItems(
 
 	for _, key := range keys {
 		check, err := repositoryAccess(ctx, s.d, key)
-		if errors.Is(err, repository.ErrRepositoryNotFound) && req.Msg.GetRepository() == "" {
+		if errors.Is(err, repository.ErrRepositoryNotFound) && req.GetRepository() == "" {
 			continue
 		}
 
@@ -296,7 +296,7 @@ func (s *artifactServer) SearchItems(
 		out.Items = append(out.Items, found...)
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *artifactServer) searchedRepositories(ctx context.Context, key string) ([]string, error) {
@@ -339,9 +339,9 @@ func (s *artifactServer) searchedRepositories(ctx context.Context, key string) (
 
 func (s *artifactServer) GetProperties(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetPropertiesRequest],
-) (*connect.Response[relicv1.GetPropertiesResponse], error) {
-	key, p := req.Msg.GetRepository(), cleanPath(req.Msg.GetPath())
+	req *relicv1.GetPropertiesRequest,
+) (*relicv1.GetPropertiesResponse, error) {
+	key, p := req.GetRepository(), cleanPath(req.GetPath())
 	if err := can(ctx, s.d, key, p, auth.ActionRead); err != nil {
 		return nil, err
 	}
@@ -365,16 +365,16 @@ func (s *artifactServer) GetProperties(
 		}
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *artifactServer) SetProperties(
 	ctx context.Context,
-	req *connect.Request[relicv1.SetPropertiesRequest],
-) (*connect.Response[relicv1.SetPropertiesResponse], error) {
+	req *relicv1.SetPropertiesRequest,
+) (*relicv1.SetPropertiesResponse, error) {
 	props := repository.Properties{}
 
-	for k, v := range req.Msg.GetProperties() {
+	for k, v := range req.GetProperties() {
 		if err := validProperty(k, v.GetValues()); err != nil {
 			return nil, err
 		}
@@ -382,32 +382,32 @@ func (s *artifactServer) SetProperties(
 		props[k] = v.GetValues()
 	}
 
-	it, err := s.annotatable(ctx, req.Msg.GetRepository(), req.Msg.GetPath(), req.Msg.GetRecursive())
+	it, err := s.annotatable(ctx, req.GetRepository(), req.GetPath(), req.GetRecursive())
 	if err != nil {
 		return nil, err
 	}
 
-	if err := s.d.Repositories.SetProperties(ctx, it, props, req.Msg.GetRecursive()); err != nil {
+	if err := s.d.Repositories.SetProperties(ctx, it, props, req.GetRecursive()); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.SetPropertiesResponse{}), nil
+	return &relicv1.SetPropertiesResponse{}, nil
 }
 
 func (s *artifactServer) DeleteProperties(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeletePropertiesRequest],
-) (*connect.Response[relicv1.DeletePropertiesResponse], error) {
-	it, err := s.annotatable(ctx, req.Msg.GetRepository(), req.Msg.GetPath(), req.Msg.GetRecursive())
+	req *relicv1.DeletePropertiesRequest,
+) (*relicv1.DeletePropertiesResponse, error) {
+	it, err := s.annotatable(ctx, req.GetRepository(), req.GetPath(), req.GetRecursive())
 	if err != nil {
 		return nil, err
 	}
 
-	if err := s.d.Repositories.DeleteProperties(ctx, it, req.Msg.GetKeys(), req.Msg.GetRecursive()); err != nil {
+	if err := s.d.Repositories.DeleteProperties(ctx, it, req.GetKeys(), req.GetRecursive()); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeletePropertiesResponse{}), nil
+	return &relicv1.DeletePropertiesResponse{}, nil
 }
 
 const (
@@ -418,14 +418,14 @@ const (
 func validProperty(k string, values []string) error {
 	switch {
 	case !repository.ValidPropertyKey(k):
-		return connect.NewError(connect.CodeInvalidArgument, errors.New(repository.PropertyKeyRule))
+		return connect.NewError(connect.CodeInvalidArgument, repository.PropertyKeyRule)
 	case len(values) == 0 || len(values) > maxPropertyValues:
-		return connect.NewError(connect.CodeInvalidArgument, errors.New("give 1 to 100 values"))
+		return connect.NewError(connect.CodeInvalidArgument, "give 1 to 100 values")
 	}
 
 	for _, v := range values {
 		if len(v) > maxPropertyValue {
-			return connect.NewError(connect.CodeInvalidArgument, errors.New("a value is at most 4096 bytes"))
+			return connect.NewError(connect.CodeInvalidArgument, "a value is at most 4096 bytes")
 		}
 	}
 
@@ -458,7 +458,7 @@ func (s *artifactServer) annotatable(ctx context.Context, key, p string, recursi
 			if err := check(sub.Path(), auth.ActionAnnotate); err != nil {
 				return repository.Item{}, connect.NewError(
 					connect.CodePermissionDenied,
-					errors.New("no annotate permission on "+key+"/"+sub.Path()),
+					"no annotate permission on "+key+"/"+sub.Path(),
 				)
 			}
 		}
@@ -481,7 +481,7 @@ func canWriteDestination(ctx context.Context, d Dependencies, repoKey, path stri
 		if readable {
 			return connect.NewError(
 				connect.CodePermissionDenied,
-				errors.New("no write permission on "+repoKey+"/"+path),
+				"no write permission on "+repoKey+"/"+path,
 			)
 		}
 	default:
@@ -490,7 +490,7 @@ func canWriteDestination(ctx context.Context, d Dependencies, repoKey, path stri
 
 	return connect.NewError(
 		connect.CodeNotFound,
-		errors.New("destination "+repoKey+"/"+path+" not found"),
+		"destination "+repoKey+"/"+path+" not found",
 	)
 }
 
@@ -585,9 +585,9 @@ func repositoryPermits(
 
 func (s *artifactServer) CopyItem(
 	ctx context.Context,
-	req *connect.Request[relicv1.CopyItemRequest],
-) (*connect.Response[relicv1.CopyItemResponse], error) {
-	m := req.Msg
+	req *relicv1.CopyItemRequest,
+) (*relicv1.CopyItemResponse, error) {
+	m := req
 	if err := s.copyOrMove(
 		ctx,
 		m.GetRepository(),
@@ -600,14 +600,14 @@ func (s *artifactServer) CopyItem(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.CopyItemResponse{}), nil
+	return &relicv1.CopyItemResponse{}, nil
 }
 
 func (s *artifactServer) MoveItem(
 	ctx context.Context,
-	req *connect.Request[relicv1.MoveItemRequest],
-) (*connect.Response[relicv1.MoveItemResponse], error) {
-	m := req.Msg
+	req *relicv1.MoveItemRequest,
+) (*relicv1.MoveItemResponse, error) {
+	m := req
 	if err := s.copyOrMove(
 		ctx,
 		m.GetRepository(),
@@ -620,19 +620,19 @@ func (s *artifactServer) MoveItem(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.MoveItemResponse{}), nil
+	return &relicv1.MoveItemResponse{}, nil
 }
 
 // DeleteItem deletes a file or folder.
 func (s *artifactServer) DeleteItem(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeleteItemRequest],
-) (*connect.Response[relicv1.DeleteItemResponse], error) {
-	key, p := req.Msg.GetRepository(), cleanPath(req.Msg.GetPath())
+	req *relicv1.DeleteItemRequest,
+) (*relicv1.DeleteItemResponse, error) {
+	key, p := req.GetRepository(), cleanPath(req.GetPath())
 	if p == "" {
 		return nil, connect.NewError(
 			connect.CodeInvalidArgument,
-			errors.New("delete the repository with RepositoryService.DeleteRepository"),
+			"delete the repository with RepositoryService.DeleteRepository",
 		)
 	}
 
@@ -648,7 +648,7 @@ func (s *artifactServer) DeleteItem(
 	if r.Class == repository.ClassVirtual {
 		return nil, connect.NewError(
 			connect.CodeInvalidArgument,
-			errors.New("virtual repositories hold no content; delete it in a member repository"),
+			"virtual repositories hold no content; delete it in a member repository",
 		)
 	}
 
@@ -669,7 +669,7 @@ func (s *artifactServer) DeleteItem(
 			if err := check(file.Path(), auth.ActionDelete); err != nil {
 				return connect.NewError(
 					connect.CodePermissionDenied,
-					errors.New("no delete permission on "+key+"/"+file.Path()),
+					"no delete permission on "+key+"/"+file.Path(),
 				)
 			}
 
@@ -681,5 +681,5 @@ func (s *artifactServer) DeleteItem(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeleteItemResponse{}), nil
+	return &relicv1.DeleteItemResponse{}, nil
 }

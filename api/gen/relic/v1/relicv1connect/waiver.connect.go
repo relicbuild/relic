@@ -5,229 +5,248 @@
 package relicv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
-	http "net/http"
 	v1 "relic/api/gen/relic/v1"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// WaiverServiceName is the fully-qualified name of the WaiverService service.
 	WaiverServiceName = "relic.v1.WaiverService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// WaiverServiceRequestWaiverProcedure is the fully-qualified name of the WaiverService's
-	// RequestWaiver RPC.
-	WaiverServiceRequestWaiverProcedure = "/relic.v1.WaiverService/RequestWaiver"
-	// WaiverServiceListWaiversProcedure is the fully-qualified name of the WaiverService's ListWaivers
+	// WaiverServiceRequestWaiverProcedure is the procedure name of the WaiverService's RequestWaiver
 	// RPC.
+	WaiverServiceRequestWaiverProcedure = "/relic.v1.WaiverService/RequestWaiver"
+	// WaiverServiceListWaiversProcedure is the procedure name of the WaiverService's ListWaivers RPC.
 	WaiverServiceListWaiversProcedure = "/relic.v1.WaiverService/ListWaivers"
-	// WaiverServiceWithdrawWaiverProcedure is the fully-qualified name of the WaiverService's
-	// WithdrawWaiver RPC.
+	// WaiverServiceWithdrawWaiverProcedure is the procedure name of the WaiverService's WithdrawWaiver
+	// RPC.
 	WaiverServiceWithdrawWaiverProcedure = "/relic.v1.WaiverService/WithdrawWaiver"
-	// WaiverServiceApproveWaiverProcedure is the fully-qualified name of the WaiverService's
-	// ApproveWaiver RPC.
+	// WaiverServiceApproveWaiverProcedure is the procedure name of the WaiverService's ApproveWaiver
+	// RPC.
 	WaiverServiceApproveWaiverProcedure = "/relic.v1.WaiverService/ApproveWaiver"
-	// WaiverServiceRejectWaiverProcedure is the fully-qualified name of the WaiverService's
-	// RejectWaiver RPC.
+	// WaiverServiceRejectWaiverProcedure is the procedure name of the WaiverService's RejectWaiver RPC.
 	WaiverServiceRejectWaiverProcedure = "/relic.v1.WaiverService/RejectWaiver"
+)
+
+var (
+	waiverServiceRequestWaiverSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_waiver_proto.Services().ByName("WaiverService").Methods().ByName("RequestWaiver"),
+			Procedure:  WaiverServiceRequestWaiverProcedure,
+		}
+	})
+	waiverServiceListWaiversSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_waiver_proto.Services().ByName("WaiverService").Methods().ByName("ListWaivers"),
+			Procedure:  WaiverServiceListWaiversProcedure,
+		}
+	})
+	waiverServiceWithdrawWaiverSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_waiver_proto.Services().ByName("WaiverService").Methods().ByName("WithdrawWaiver"),
+			Procedure:  WaiverServiceWithdrawWaiverProcedure,
+		}
+	})
+	waiverServiceApproveWaiverSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_waiver_proto.Services().ByName("WaiverService").Methods().ByName("ApproveWaiver"),
+			Procedure:  WaiverServiceApproveWaiverProcedure,
+		}
+	})
+	waiverServiceRejectWaiverSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_waiver_proto.Services().ByName("WaiverService").Methods().ByName("RejectWaiver"),
+			Procedure:  WaiverServiceRejectWaiverProcedure,
+		}
+	})
 )
 
 // WaiverServiceClient is a client for the relic.v1.WaiverService service.
 type WaiverServiceClient interface {
-	RequestWaiver(context.Context, *connect.Request[v1.RequestWaiverRequest]) (*connect.Response[v1.RequestWaiverResponse], error)
+	RequestWaiver(context.Context, *v1.RequestWaiverRequest) (*v1.RequestWaiverResponse, error)
 	// ListWaivers lists a page of the caller's waivers, newest first;
 	// administrators and viewers see everyone's.
-	ListWaivers(context.Context, *connect.Request[v1.ListWaiversRequest]) (*connect.Response[v1.ListWaiversResponse], error)
+	ListWaivers(context.Context, *v1.ListWaiversRequest) (*v1.ListWaiversResponse, error)
 	// WithdrawWaiver deletes the caller's own pending waiver.
-	WithdrawWaiver(context.Context, *connect.Request[v1.WithdrawWaiverRequest]) (*connect.Response[v1.WithdrawWaiverResponse], error)
+	WithdrawWaiver(context.Context, *v1.WithdrawWaiverRequest) (*v1.WithdrawWaiverResponse, error)
 	// ApproveWaiver turns a pending waiver into an ignore rule that expires.
-	ApproveWaiver(context.Context, *connect.Request[v1.ApproveWaiverRequest]) (*connect.Response[v1.ApproveWaiverResponse], error)
-	RejectWaiver(context.Context, *connect.Request[v1.RejectWaiverRequest]) (*connect.Response[v1.RejectWaiverResponse], error)
+	ApproveWaiver(context.Context, *v1.ApproveWaiverRequest) (*v1.ApproveWaiverResponse, error)
+	RejectWaiver(context.Context, *v1.RejectWaiverRequest) (*v1.RejectWaiverResponse, error)
 }
 
-// NewWaiverServiceClient constructs a client for the relic.v1.WaiverService service. By default, it
-// uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
-// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
-// connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewWaiverServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) WaiverServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	waiverServiceMethods := v1.File_relic_v1_waiver_proto.Services().ByName("WaiverService").Methods()
-	return &waiverServiceClient{
-		requestWaiver: connect.NewClient[v1.RequestWaiverRequest, v1.RequestWaiverResponse](
-			httpClient,
-			baseURL+WaiverServiceRequestWaiverProcedure,
-			connect.WithSchema(waiverServiceMethods.ByName("RequestWaiver")),
-			connect.WithClientOptions(opts...),
-		),
-		listWaivers: connect.NewClient[v1.ListWaiversRequest, v1.ListWaiversResponse](
-			httpClient,
-			baseURL+WaiverServiceListWaiversProcedure,
-			connect.WithSchema(waiverServiceMethods.ByName("ListWaivers")),
-			connect.WithClientOptions(opts...),
-		),
-		withdrawWaiver: connect.NewClient[v1.WithdrawWaiverRequest, v1.WithdrawWaiverResponse](
-			httpClient,
-			baseURL+WaiverServiceWithdrawWaiverProcedure,
-			connect.WithSchema(waiverServiceMethods.ByName("WithdrawWaiver")),
-			connect.WithClientOptions(opts...),
-		),
-		approveWaiver: connect.NewClient[v1.ApproveWaiverRequest, v1.ApproveWaiverResponse](
-			httpClient,
-			baseURL+WaiverServiceApproveWaiverProcedure,
-			connect.WithSchema(waiverServiceMethods.ByName("ApproveWaiver")),
-			connect.WithClientOptions(opts...),
-		),
-		rejectWaiver: connect.NewClient[v1.RejectWaiverRequest, v1.RejectWaiverResponse](
-			httpClient,
-			baseURL+WaiverServiceRejectWaiverProcedure,
-			connect.WithSchema(waiverServiceMethods.ByName("RejectWaiver")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// waiverServiceClient implements WaiverServiceClient.
-type waiverServiceClient struct {
-	requestWaiver  *connect.Client[v1.RequestWaiverRequest, v1.RequestWaiverResponse]
-	listWaivers    *connect.Client[v1.ListWaiversRequest, v1.ListWaiversResponse]
-	withdrawWaiver *connect.Client[v1.WithdrawWaiverRequest, v1.WithdrawWaiverResponse]
-	approveWaiver  *connect.Client[v1.ApproveWaiverRequest, v1.ApproveWaiverResponse]
-	rejectWaiver   *connect.Client[v1.RejectWaiverRequest, v1.RejectWaiverResponse]
-}
-
-// RequestWaiver calls relic.v1.WaiverService.RequestWaiver.
-func (c *waiverServiceClient) RequestWaiver(ctx context.Context, req *connect.Request[v1.RequestWaiverRequest]) (*connect.Response[v1.RequestWaiverResponse], error) {
-	return c.requestWaiver.CallUnary(ctx, req)
-}
-
-// ListWaivers calls relic.v1.WaiverService.ListWaivers.
-func (c *waiverServiceClient) ListWaivers(ctx context.Context, req *connect.Request[v1.ListWaiversRequest]) (*connect.Response[v1.ListWaiversResponse], error) {
-	return c.listWaivers.CallUnary(ctx, req)
-}
-
-// WithdrawWaiver calls relic.v1.WaiverService.WithdrawWaiver.
-func (c *waiverServiceClient) WithdrawWaiver(ctx context.Context, req *connect.Request[v1.WithdrawWaiverRequest]) (*connect.Response[v1.WithdrawWaiverResponse], error) {
-	return c.withdrawWaiver.CallUnary(ctx, req)
-}
-
-// ApproveWaiver calls relic.v1.WaiverService.ApproveWaiver.
-func (c *waiverServiceClient) ApproveWaiver(ctx context.Context, req *connect.Request[v1.ApproveWaiverRequest]) (*connect.Response[v1.ApproveWaiverResponse], error) {
-	return c.approveWaiver.CallUnary(ctx, req)
-}
-
-// RejectWaiver calls relic.v1.WaiverService.RejectWaiver.
-func (c *waiverServiceClient) RejectWaiver(ctx context.Context, req *connect.Request[v1.RejectWaiverRequest]) (*connect.Response[v1.RejectWaiverResponse], error) {
-	return c.rejectWaiver.CallUnary(ctx, req)
+// NewWaiverServiceClient constructs a client for the relic.v1.WaiverService service. Multiple
+// service clients may share a single connect.Client.
+func NewWaiverServiceClient(client *connect.Client) WaiverServiceClient {
+	return &waiverServiceClient{client: client}
 }
 
 // WaiverServiceHandler is an implementation of the relic.v1.WaiverService service.
 type WaiverServiceHandler interface {
-	RequestWaiver(context.Context, *connect.Request[v1.RequestWaiverRequest]) (*connect.Response[v1.RequestWaiverResponse], error)
+	RequestWaiver(context.Context, *v1.RequestWaiverRequest) (*v1.RequestWaiverResponse, error)
 	// ListWaivers lists a page of the caller's waivers, newest first;
 	// administrators and viewers see everyone's.
-	ListWaivers(context.Context, *connect.Request[v1.ListWaiversRequest]) (*connect.Response[v1.ListWaiversResponse], error)
+	ListWaivers(context.Context, *v1.ListWaiversRequest) (*v1.ListWaiversResponse, error)
 	// WithdrawWaiver deletes the caller's own pending waiver.
-	WithdrawWaiver(context.Context, *connect.Request[v1.WithdrawWaiverRequest]) (*connect.Response[v1.WithdrawWaiverResponse], error)
+	WithdrawWaiver(context.Context, *v1.WithdrawWaiverRequest) (*v1.WithdrawWaiverResponse, error)
 	// ApproveWaiver turns a pending waiver into an ignore rule that expires.
-	ApproveWaiver(context.Context, *connect.Request[v1.ApproveWaiverRequest]) (*connect.Response[v1.ApproveWaiverResponse], error)
-	RejectWaiver(context.Context, *connect.Request[v1.RejectWaiverRequest]) (*connect.Response[v1.RejectWaiverResponse], error)
+	ApproveWaiver(context.Context, *v1.ApproveWaiverRequest) (*v1.ApproveWaiverResponse, error)
+	RejectWaiver(context.Context, *v1.RejectWaiverRequest) (*v1.RejectWaiverResponse, error)
 }
 
-// NewWaiverServiceHandler builds an HTTP handler from the service implementation. It returns the
-// path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewWaiverServiceHandler(svc WaiverServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	waiverServiceMethods := v1.File_relic_v1_waiver_proto.Services().ByName("WaiverService").Methods()
-	waiverServiceRequestWaiverHandler := connect.NewUnaryHandler(
-		WaiverServiceRequestWaiverProcedure,
-		svc.RequestWaiver,
-		connect.WithSchema(waiverServiceMethods.ByName("RequestWaiver")),
-		connect.WithHandlerOptions(opts...),
+// RegisterWaiverServiceHandler registers svc as the relic.v1.WaiverService implementation on
+// server.
+func RegisterWaiverServiceHandler(server *connect.Server, svc WaiverServiceHandler) {
+	adapter := waiverServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: waiverServiceRequestWaiverSpec(), Handler: adapter.requestWaiver},
+		connect.Method{Spec: waiverServiceListWaiversSpec(), Handler: adapter.listWaivers},
+		connect.Method{Spec: waiverServiceWithdrawWaiverSpec(), Handler: adapter.withdrawWaiver},
+		connect.Method{Spec: waiverServiceApproveWaiverSpec(), Handler: adapter.approveWaiver},
+		connect.Method{Spec: waiverServiceRejectWaiverSpec(), Handler: adapter.rejectWaiver},
 	)
-	waiverServiceListWaiversHandler := connect.NewUnaryHandler(
-		WaiverServiceListWaiversProcedure,
-		svc.ListWaivers,
-		connect.WithSchema(waiverServiceMethods.ByName("ListWaivers")),
-		connect.WithHandlerOptions(opts...),
-	)
-	waiverServiceWithdrawWaiverHandler := connect.NewUnaryHandler(
-		WaiverServiceWithdrawWaiverProcedure,
-		svc.WithdrawWaiver,
-		connect.WithSchema(waiverServiceMethods.ByName("WithdrawWaiver")),
-		connect.WithHandlerOptions(opts...),
-	)
-	waiverServiceApproveWaiverHandler := connect.NewUnaryHandler(
-		WaiverServiceApproveWaiverProcedure,
-		svc.ApproveWaiver,
-		connect.WithSchema(waiverServiceMethods.ByName("ApproveWaiver")),
-		connect.WithHandlerOptions(opts...),
-	)
-	waiverServiceRejectWaiverHandler := connect.NewUnaryHandler(
-		WaiverServiceRejectWaiverProcedure,
-		svc.RejectWaiver,
-		connect.WithSchema(waiverServiceMethods.ByName("RejectWaiver")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/relic.v1.WaiverService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case WaiverServiceRequestWaiverProcedure:
-			waiverServiceRequestWaiverHandler.ServeHTTP(w, r)
-		case WaiverServiceListWaiversProcedure:
-			waiverServiceListWaiversHandler.ServeHTTP(w, r)
-		case WaiverServiceWithdrawWaiverProcedure:
-			waiverServiceWithdrawWaiverHandler.ServeHTTP(w, r)
-		case WaiverServiceApproveWaiverProcedure:
-			waiverServiceApproveWaiverHandler.ServeHTTP(w, r)
-		case WaiverServiceRejectWaiverProcedure:
-			waiverServiceRejectWaiverHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedWaiverServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedWaiverServiceHandler struct{}
 
-func (UnimplementedWaiverServiceHandler) RequestWaiver(context.Context, *connect.Request[v1.RequestWaiverRequest]) (*connect.Response[v1.RequestWaiverResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.WaiverService.RequestWaiver is not implemented"))
+func (UnimplementedWaiverServiceHandler) RequestWaiver(context.Context, *v1.RequestWaiverRequest) (*v1.RequestWaiverResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.WaiverService.RequestWaiver is not implemented")
 }
 
-func (UnimplementedWaiverServiceHandler) ListWaivers(context.Context, *connect.Request[v1.ListWaiversRequest]) (*connect.Response[v1.ListWaiversResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.WaiverService.ListWaivers is not implemented"))
+func (UnimplementedWaiverServiceHandler) ListWaivers(context.Context, *v1.ListWaiversRequest) (*v1.ListWaiversResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.WaiverService.ListWaivers is not implemented")
 }
 
-func (UnimplementedWaiverServiceHandler) WithdrawWaiver(context.Context, *connect.Request[v1.WithdrawWaiverRequest]) (*connect.Response[v1.WithdrawWaiverResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.WaiverService.WithdrawWaiver is not implemented"))
+func (UnimplementedWaiverServiceHandler) WithdrawWaiver(context.Context, *v1.WithdrawWaiverRequest) (*v1.WithdrawWaiverResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.WaiverService.WithdrawWaiver is not implemented")
 }
 
-func (UnimplementedWaiverServiceHandler) ApproveWaiver(context.Context, *connect.Request[v1.ApproveWaiverRequest]) (*connect.Response[v1.ApproveWaiverResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.WaiverService.ApproveWaiver is not implemented"))
+func (UnimplementedWaiverServiceHandler) ApproveWaiver(context.Context, *v1.ApproveWaiverRequest) (*v1.ApproveWaiverResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.WaiverService.ApproveWaiver is not implemented")
 }
 
-func (UnimplementedWaiverServiceHandler) RejectWaiver(context.Context, *connect.Request[v1.RejectWaiverRequest]) (*connect.Response[v1.RejectWaiverResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.WaiverService.RejectWaiver is not implemented"))
+func (UnimplementedWaiverServiceHandler) RejectWaiver(context.Context, *v1.RejectWaiverRequest) (*v1.RejectWaiverResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.WaiverService.RejectWaiver is not implemented")
+}
+
+type waiverServiceClient struct {
+	client *connect.Client
+}
+
+func (c *waiverServiceClient) RequestWaiver(ctx context.Context, req *v1.RequestWaiverRequest) (*v1.RequestWaiverResponse, error) {
+	var res v1.RequestWaiverResponse
+	if err := c.client.CallUnary(ctx, waiverServiceRequestWaiverSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *waiverServiceClient) ListWaivers(ctx context.Context, req *v1.ListWaiversRequest) (*v1.ListWaiversResponse, error) {
+	var res v1.ListWaiversResponse
+	if err := c.client.CallUnary(ctx, waiverServiceListWaiversSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *waiverServiceClient) WithdrawWaiver(ctx context.Context, req *v1.WithdrawWaiverRequest) (*v1.WithdrawWaiverResponse, error) {
+	var res v1.WithdrawWaiverResponse
+	if err := c.client.CallUnary(ctx, waiverServiceWithdrawWaiverSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *waiverServiceClient) ApproveWaiver(ctx context.Context, req *v1.ApproveWaiverRequest) (*v1.ApproveWaiverResponse, error) {
+	var res v1.ApproveWaiverResponse
+	if err := c.client.CallUnary(ctx, waiverServiceApproveWaiverSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *waiverServiceClient) RejectWaiver(ctx context.Context, req *v1.RejectWaiverRequest) (*v1.RejectWaiverResponse, error) {
+	var res v1.RejectWaiverResponse
+	if err := c.client.CallUnary(ctx, waiverServiceRejectWaiverSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type waiverServiceHandler struct{ svc WaiverServiceHandler }
+
+func (h waiverServiceHandler) requestWaiver(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RequestWaiverRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RequestWaiver(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h waiverServiceHandler) listWaivers(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListWaiversRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListWaivers(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h waiverServiceHandler) withdrawWaiver(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.WithdrawWaiverRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.WithdrawWaiver(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h waiverServiceHandler) approveWaiver(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ApproveWaiverRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ApproveWaiver(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h waiverServiceHandler) rejectWaiver(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RejectWaiverRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RejectWaiver(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

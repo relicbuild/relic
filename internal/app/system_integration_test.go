@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/proto"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -49,35 +49,35 @@ func TestRelicAPISystemStatus(t *testing.T) {
 	upload(t, srv, "libs", "b.txt", "bb")
 	ctx := t.Context()
 
-	arts := relicv1connect.NewArtifactServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	arts := relicv1connect.NewArtifactServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 	if _, err := arts.DeleteItem(
 		ctx,
-		connect.NewRequest(&relicv1.DeleteItemRequest{
+		&relicv1.DeleteItemRequest{
 			Repository: "libs",
 			Path:       "b.txt",
-		}),
+		},
 	); err != nil {
 		t.Fatal(err)
 	}
 
-	trash := relicv1connect.NewTrashServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
-	if _, err := trash.EmptyTrash(ctx, connect.NewRequest(&relicv1.EmptyTrashRequest{})); err != nil {
+	trash := relicv1connect.NewTrashServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
+	if _, err := trash.EmptyTrash(ctx, &relicv1.EmptyTrashRequest{}); err != nil {
 		t.Fatal(err)
 	}
 
-	sys := relicv1connect.NewSystemServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	sys := relicv1connect.NewSystemServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 	for range 2 {
-		if _, err := sys.CollectGarbage(ctx, connect.NewRequest(&relicv1.CollectGarbageRequest{})); err != nil {
+		if _, err := sys.CollectGarbage(ctx, &relicv1.CollectGarbageRequest{}); err != nil {
 			t.Fatalf("run gc: %v", err)
 		}
 	}
 
-	st, err := sys.GetSystemStatus(ctx, connect.NewRequest(&relicv1.GetSystemStatusRequest{}))
+	st, err := sys.GetSystemStatus(ctx, &relicv1.GetSystemStatusRequest{})
 	if err != nil {
 		t.Fatalf("system: %v", err)
 	}
 
-	got := st.Msg
+	got := st
 	if len(got.GetChecks()) != 2 || !got.GetChecks()[0].GetOk() || !got.GetChecks()[1].GetOk() {
 		t.Errorf("checks = %v", got.GetChecks())
 	}
@@ -141,13 +141,13 @@ func TestRelicAPISystemStatus(t *testing.T) {
 		}
 	}
 
-	st, err = sys.GetSystemStatus(ctx, connect.NewRequest(&relicv1.GetSystemStatusRequest{}))
+	st, err = sys.GetSystemStatus(ctx, &relicv1.GetSystemStatusRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	workers := make([]string, 0, len(st.Msg.GetWorkers()))
-	for _, w := range st.Msg.GetWorkers() {
+	workers := make([]string, 0, len(st.GetWorkers()))
+	for _, w := range st.GetWorkers() {
 		workers = append(workers, fmt.Sprintf("%s running=%d leader=%v", w.GetId(), w.GetRunning(), w.GetLeader()))
 	}
 
@@ -158,21 +158,21 @@ func TestRelicAPISystemStatus(t *testing.T) {
 		t.Errorf("workers = %v, want %v", workers, want)
 	}
 
-	if qs := st.Msg.GetQueues(); len(qs) != 1 || qs[0].GetName() != "scan" || qs[0].GetRunning() != 1 {
+	if qs := st.GetQueues(); len(qs) != 1 || qs[0].GetName() != "scan" || qs[0].GetRunning() != 1 {
 		t.Errorf("queues = %v", qs)
 	}
 
 	jobs, err := sys.ListBackgroundJobs(
 		ctx,
-		connect.NewRequest(&relicv1.ListBackgroundJobsRequest{
+		&relicv1.ListBackgroundJobsRequest{
 			Kind: "replication",
-		}),
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if j := jobs.Msg.GetJobs(); len(j) != 1 || j[0].GetState() != "discarded" || j[0].GetWorker() != "relic-1_2026" ||
+	if j := jobs.GetJobs(); len(j) != 1 || j[0].GetState() != "discarded" || j[0].GetWorker() != "relic-1_2026" ||
 		!sameJSON(j[0].GetArgs(), `{"repository": "libs"}`) ||
 		len(j[0].GetErrors()) != 2 ||
 		j[0].GetErrors()[1].GetError() != long ||
@@ -182,28 +182,28 @@ func TestRelicAPISystemStatus(t *testing.T) {
 
 	if all, err := sys.ListBackgroundJobs(
 		ctx,
-		connect.NewRequest(&relicv1.ListBackgroundJobsRequest{
+		&relicv1.ListBackgroundJobsRequest{
 			State: "running",
-		}),
-	); err != nil || len(all.Msg.GetJobs()) != 1 ||
-		all.Msg.GetJobs()[0].GetKind() != "scan" {
+		},
+	); err != nil || len(all.GetJobs()) != 1 ||
+		all.GetJobs()[0].GetKind() != "scan" {
 		t.Errorf("running jobs = %v %v", all, err)
 	}
 
 	plain := server(t)
 
-	plainSys := relicv1connect.NewSystemServiceClient(relicHTTP("admin", "password"), plain.URL+"/api")
+	plainSys := relicv1connect.NewSystemServiceClient(apiClient(relicHTTP("admin", "password"), plain.URL))
 	if _, err := plainSys.CollectGarbage(
 		ctx,
-		connect.NewRequest(&relicv1.CollectGarbageRequest{}),
+		&relicv1.CollectGarbageRequest{},
 	); code(err) != connect.CodeUnavailable {
 		t.Errorf("run gc without a queue: %v, want unavailable", err)
 	}
 
-	anon := relicv1connect.NewSystemServiceClient(relicHTTP("", ""), srv.URL+"/api")
+	anon := relicv1connect.NewSystemServiceClient(apiClient(relicHTTP("", ""), srv.URL))
 	if _, err := anon.GetSystemStatus(
 		ctx,
-		connect.NewRequest(&relicv1.GetSystemStatusRequest{}),
+		&relicv1.GetSystemStatusRequest{},
 	); code(err) != connect.CodeUnauthenticated {
 		t.Errorf("anonymous system: %v, want unauthenticated", err)
 	}

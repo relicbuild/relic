@@ -3,7 +3,6 @@ package relicapi
 import (
 	"context"
 
-	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -27,8 +26,8 @@ func promotionGateMessage(g release.Gate) *relicv1.PromotionGate {
 
 func (s *promotionGateServer) ListPromotionGates(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListPromotionGatesRequest],
-) (*connect.Response[relicv1.ListPromotionGatesResponse], error) {
+	_ *relicv1.ListPromotionGatesRequest,
+) (*relicv1.ListPromotionGatesResponse, error) {
 	list, err := s.d.Releases.Gates(ctx)
 	if err != nil {
 		return nil, err
@@ -41,28 +40,28 @@ func (s *promotionGateServer) ListPromotionGates(
 		out.PromotionGates = append(out.PromotionGates, promotionGateMessage(g))
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *promotionGateServer) GetPromotionGate(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetPromotionGateRequest],
-) (*connect.Response[relicv1.GetPromotionGateResponse], error) {
-	g, err := s.d.Releases.Gate(ctx, req.Msg.GetName())
+	req *relicv1.GetPromotionGateRequest,
+) (*relicv1.GetPromotionGateResponse, error) {
+	g, err := s.d.Releases.Gate(ctx, req.GetName())
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.GetPromotionGateResponse{
+	return &relicv1.GetPromotionGateResponse{
 		PromotionGate: promotionGateMessage(g),
-	}), nil
+	}, nil
 }
 
 func (s *promotionGateServer) PutPromotionGate(
 	ctx context.Context,
-	req *connect.Request[relicv1.PutPromotionGateRequest],
-) (*connect.Response[relicv1.PutPromotionGateResponse], error) {
-	m := req.Msg.GetPromotionGate()
+	req *relicv1.PutPromotionGateRequest,
+) (*relicv1.PutPromotionGateResponse, error) {
+	m := req.GetPromotionGate()
 
 	g, err := s.d.Releases.PutGate(ctx, release.Gate{
 		Name:        m.GetName(),
@@ -74,18 +73,18 @@ func (s *promotionGateServer) PutPromotionGate(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.PutPromotionGateResponse{
+	return &relicv1.PutPromotionGateResponse{
 		PromotionGate: promotionGateMessage(g),
-	}), nil
+	}, nil
 }
 
 func (s *promotionGateServer) DeletePromotionGate(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeletePromotionGateRequest],
-) (*connect.Response[relicv1.DeletePromotionGateResponse], error) {
-	if err := s.d.Releases.DeleteGate(ctx, req.Msg.GetName()); err != nil {
+	req *relicv1.DeletePromotionGateRequest,
+) (*relicv1.DeletePromotionGateResponse, error) {
+	if err := s.d.Releases.DeleteGate(ctx, req.GetName()); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeletePromotionGateResponse{}), nil
+	return &relicv1.DeletePromotionGateResponse{}, nil
 }

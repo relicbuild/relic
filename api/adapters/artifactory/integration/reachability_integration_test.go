@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
-
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
 	"relic/internal/platform/database"
@@ -21,7 +19,7 @@ func TestReachability(t *testing.T) {
 
 	srv, db := serverDB(t)
 	ctx := t.Context()
-	scans := relicv1connect.NewScanServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	scans := relicv1connect.NewScanServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
 	do(t, srv, call{
 		method: "PUT",
@@ -104,16 +102,16 @@ func TestReachability(t *testing.T) {
 		}
 	}
 
-	item, err := scans.GetItemScan(ctx, connect.NewRequest(&relicv1.GetItemScanRequest{
+	item, err := scans.GetItemScan(ctx, &relicv1.GetItemScanRequest{
 		Repository: "go-bins",
 		Path:       "app-1.0",
-	}))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	got := map[string]*relicv1.Finding{}
-	for _, f := range item.Msg.GetScan().GetFindings() {
+	for _, f := range item.GetScan().GetFindings() {
 		got[f.GetId()] = f
 	}
 
@@ -126,40 +124,40 @@ func TestReachability(t *testing.T) {
 		t.Errorf("the uncalled vulnerability = %v", f)
 	}
 
-	list, err := scans.ListFindings(ctx, connect.NewRequest(&relicv1.ListFindingsRequest{
+	list, err := scans.ListFindings(ctx, &relicv1.ListFindingsRequest{
 		Repository: "go-bins",
-	}))
-	if err != nil || len(list.Msg.GetFindings()) != 2 {
+	})
+	if err != nil || len(list.GetFindings()) != 2 {
 		t.Fatalf("findings = %v, %v", list, err)
 	}
 
-	for _, f := range list.Msg.GetFindings() {
+	for _, f := range list.GetFindings() {
 		if want := got[f.GetId()].GetReachability(); f.GetReachability() != want {
 			t.Errorf("listed %s reachability = %q, want %q", f.GetId(), f.GetReachability(), want)
 		}
 	}
 
-	vex, err := scans.ExportVex(ctx, connect.NewRequest(&relicv1.ExportVexRequest{
+	vex, err := scans.ExportVex(ctx, &relicv1.ExportVexRequest{
 		Format:             relicv1.VexFormat_VEX_FORMAT_CYCLONEDX,
 		IncludeUnreachable: true,
-	}))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if doc := vex.Msg.GetDocument(); !strings.Contains(doc, `"id": "GHSA-69ch-w2m2-3vjp"`) ||
+	if doc := vex.GetDocument(); !strings.Contains(doc, `"id": "GHSA-69ch-w2m2-3vjp"`) ||
 		!strings.Contains(doc, `"justification": "code_not_reachable"`) ||
 		!strings.Contains(doc, `"ref": "pkg:golang/golang.org/x/text@v0.3.6"`) ||
 		strings.Contains(doc, "GHSA-ppp9-7jff-5vj2") {
 		t.Errorf("VEX with unreachable findings = %s", doc)
 	}
 
-	if plain, err := scans.ExportVex(ctx, connect.NewRequest(&relicv1.ExportVexRequest{})); err != nil ||
-		strings.Contains(plain.Msg.GetDocument(), "GHSA-69ch-w2m2-3vjp") {
+	if plain, err := scans.ExportVex(ctx, &relicv1.ExportVexRequest{}); err != nil ||
+		strings.Contains(plain.GetDocument(), "GHSA-69ch-w2m2-3vjp") {
 		t.Errorf("VEX without asking for unreachable findings = %v %v", plain, err)
 	}
 
-	if _, err := scans.PutPolicy(ctx, connect.NewRequest(&relicv1.PutPolicyRequest{
+	if _, err := scans.PutPolicy(ctx, &relicv1.PutPolicyRequest{
 		Policy: &relicv1.Policy{
 			Name: "reachable-high",
 			Kind: relicv1.PolicyKind_POLICY_KIND_SECURITY,
@@ -172,11 +170,11 @@ func TestReachability(t *testing.T) {
 				},
 			},
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := scans.PutWatch(ctx, connect.NewRequest(&relicv1.PutWatchRequest{
+	if _, err := scans.PutWatch(ctx, &relicv1.PutWatchRequest{
 		Watch: &relicv1.Watch{
 			Name:   "go",
 			Active: true,
@@ -192,7 +190,7 @@ func TestReachability(t *testing.T) {
 				"reachable-high",
 			},
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 

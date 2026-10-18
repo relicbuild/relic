@@ -9,7 +9,7 @@ import (
 	"time"
 	"uuid"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -59,9 +59,9 @@ func findingMessage(f scan.Finding) *relicv1.Finding {
 
 func (s *scanServer) GetItemScan(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetItemScanRequest],
-) (*connect.Response[relicv1.GetItemScanResponse], error) {
-	key, p := req.Msg.GetRepository(), cleanPath(req.Msg.GetPath())
+	req *relicv1.GetItemScanRequest,
+) (*relicv1.GetItemScanResponse, error) {
+	key, p := req.GetRepository(), cleanPath(req.GetPath())
 	if err := can(ctx, s.d, key, p, auth.ActionRead); err != nil {
 		return nil, err
 	}
@@ -76,16 +76,16 @@ func (s *scanServer) GetItemScan(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.GetItemScanResponse{
+	return &relicv1.GetItemScanResponse{
 		Scan: out,
-	}), nil
+	}, nil
 }
 
 func (s *scanServer) ExplainDownload(
 	ctx context.Context,
-	req *connect.Request[relicv1.ExplainDownloadRequest],
-) (*connect.Response[relicv1.ExplainDownloadResponse], error) {
-	key, p := req.Msg.GetRepository(), cleanPath(req.Msg.GetPath())
+	req *relicv1.ExplainDownloadRequest,
+) (*relicv1.ExplainDownloadResponse, error) {
+	key, p := req.GetRepository(), cleanPath(req.GetPath())
 	if err := can(ctx, s.d, key, p, auth.ActionRead); err != nil {
 		return nil, err
 	}
@@ -96,12 +96,12 @@ func (s *scanServer) ExplainDownload(
 	}
 
 	if it.IsFolder() {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New(key+"/"+p+" is a folder"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, key+"/"+p+" is a folder")
 	}
 
 	out := &relicv1.ExplainDownloadResponse{}
 	if s.d.DownloadBlocker == nil {
-		return connect.NewResponse(out), nil
+		return out, nil
 	}
 
 	d, err := s.d.DownloadBlocker.Explain(ctx, key, it.Path(), it.Checksums.SHA256)
@@ -111,7 +111,7 @@ func (s *scanServer) ExplainDownload(
 
 	out.Blocked, out.Reason, out.Policy, out.Watch, out.Rule = d.Blocked, d.Reason, d.Policy, d.Watch, d.Rule
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func page(p, size int32) (int, int) {
@@ -139,18 +139,18 @@ func cveIDs(id string, aliases []string) []string {
 
 func (s *scanServer) ListFindings(
 	ctx context.Context,
-	req *connect.Request[relicv1.ListFindingsRequest],
-) (*connect.Response[relicv1.ListFindingsResponse], error) {
-	n, size := page(req.Msg.GetPage(), req.Msg.GetPageSize())
+	req *relicv1.ListFindingsRequest,
+) (*relicv1.ListFindingsResponse, error) {
+	n, size := page(req.GetPage(), req.GetPageSize())
 
 	rows, total, err := s.d.ScanResults.FindingsPage(ctx, scan.FindingsQuery{
-		Severity:      severityOf(req.Msg.GetSeverity()),
-		Query:         req.Msg.GetQuery(),
-		Repository:    req.Msg.GetRepository(),
-		PurlType:      req.Msg.GetPurlType(),
-		FixableOnly:   req.Msg.GetFixableOnly(),
-		KEVOnly:       req.Msg.GetKevOnly(),
-		MaliciousOnly: req.Msg.GetMaliciousOnly(),
+		Severity:      severityOf(req.GetSeverity()),
+		Query:         req.GetQuery(),
+		Repository:    req.GetRepository(),
+		PurlType:      req.GetPurlType(),
+		FixableOnly:   req.GetFixableOnly(),
+		KEVOnly:       req.GetKevOnly(),
+		MaliciousOnly: req.GetMaliciousOnly(),
 		Skip:          (n - 1) * size,
 		Max:           size,
 	})
@@ -213,7 +213,7 @@ func (s *scanServer) ListFindings(
 		out.Findings = append(out.Findings, m)
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func severityOfRank(rank int32) relicv1.Severity {
@@ -226,9 +226,9 @@ func severityOfRank(rank int32) relicv1.Severity {
 
 func (s *scanServer) ListCves(
 	ctx context.Context,
-	req *connect.Request[relicv1.ListCvesRequest],
-) (*connect.Response[relicv1.ListCvesResponse], error) {
-	m := req.Msg
+	req *relicv1.ListCvesRequest,
+) (*relicv1.ListCvesResponse, error) {
+	m := req
 	n, size := page(m.GetPage(), m.GetPageSize())
 
 	//nolint:gosec // a small index
@@ -283,14 +283,14 @@ func (s *scanServer) ListCves(
 		)
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *scanServer) GetCve(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetCveRequest],
-) (*connect.Response[relicv1.GetCveResponse], error) {
-	id := strings.ToUpper(req.Msg.GetId())
+	req *relicv1.GetCveRequest,
+) (*relicv1.GetCveResponse, error) {
+	id := strings.ToUpper(req.GetId())
 
 	c, err := s.d.CVEs.Get(ctx, id)
 	if err != nil {
@@ -355,9 +355,9 @@ func (s *scanServer) GetCve(
 		Packages:       int64(len(packages)),
 	}
 
-	return connect.NewResponse(&relicv1.GetCveResponse{
+	return &relicv1.GetCveResponse{
 		Cve: out,
-	}), nil
+	}, nil
 }
 
 func policyMessage(p policy.Policy) *relicv1.Policy {
@@ -444,8 +444,8 @@ func policyOf(m *relicv1.Policy) policy.Policy {
 
 func (s *scanServer) ListPolicies(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListPoliciesRequest],
-) (*connect.Response[relicv1.ListPoliciesResponse], error) {
+	_ *relicv1.ListPoliciesRequest,
+) (*relicv1.ListPoliciesResponse, error) {
 	list, err := s.d.ScanPolicies.Policies(ctx)
 	if err != nil {
 		return nil, err
@@ -456,7 +456,7 @@ func (s *scanServer) ListPolicies(
 		out.Policies = append(out.Policies, policyMessage(p))
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func save(create func(bool) error) error {
@@ -474,9 +474,9 @@ func save(create func(bool) error) error {
 
 func (s *scanServer) PutPolicy(
 	ctx context.Context,
-	req *connect.Request[relicv1.PutPolicyRequest],
-) (*connect.Response[relicv1.PutPolicyResponse], error) {
-	p := policyOf(req.Msg.GetPolicy())
+	req *relicv1.PutPolicyRequest,
+) (*relicv1.PutPolicyResponse, error) {
+	p := policyOf(req.GetPolicy())
 
 	if err := save(func(create bool) error {
 		return s.d.ScanPolicies.SavePolicy(ctx, p, create)
@@ -484,24 +484,24 @@ func (s *scanServer) PutPolicy(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.PutPolicyResponse{}), nil
+	return &relicv1.PutPolicyResponse{}, nil
 }
 
 func (s *scanServer) DeletePolicy(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeletePolicyRequest],
-) (*connect.Response[relicv1.DeletePolicyResponse], error) {
-	if err := s.d.ScanPolicies.DeletePolicy(ctx, req.Msg.GetName()); err != nil {
+	req *relicv1.DeletePolicyRequest,
+) (*relicv1.DeletePolicyResponse, error) {
+	if err := s.d.ScanPolicies.DeletePolicy(ctx, req.GetName()); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeletePolicyResponse{}), nil
+	return &relicv1.DeletePolicyResponse{}, nil
 }
 
 func (s *scanServer) ListWatches(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListWatchesRequest],
-) (*connect.Response[relicv1.ListWatchesResponse], error) {
+	_ *relicv1.ListWatchesRequest,
+) (*relicv1.ListWatchesResponse, error) {
 	list, err := s.d.ScanPolicies.Watches(ctx)
 	if err != nil {
 		return nil, err
@@ -530,14 +530,14 @@ func (s *scanServer) ListWatches(
 		out.Watches = append(out.Watches, m)
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *scanServer) PutWatch(
 	ctx context.Context,
-	req *connect.Request[relicv1.PutWatchRequest],
-) (*connect.Response[relicv1.PutWatchResponse], error) {
-	m := req.Msg.GetWatch()
+	req *relicv1.PutWatchRequest,
+) (*relicv1.PutWatchResponse, error) {
+	m := req.GetWatch()
 
 	w := policy.Watch{
 		Name:        m.GetName(),
@@ -549,7 +549,7 @@ func (s *scanServer) PutWatch(
 	for _, sc := range m.GetScopes() {
 		kind, ok := toDomain[policy.ScopeKind](sc.GetKind())
 		if !ok {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("a watch scope needs a kind"))
+			return nil, connect.NewError(connect.CodeInvalidArgument, "a watch scope needs a kind")
 		}
 
 		w.Scopes = append(w.Scopes, policy.Scope{
@@ -569,18 +569,18 @@ func (s *scanServer) PutWatch(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.PutWatchResponse{}), nil
+	return &relicv1.PutWatchResponse{}, nil
 }
 
 func (s *scanServer) DeleteWatch(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeleteWatchRequest],
-) (*connect.Response[relicv1.DeleteWatchResponse], error) {
-	if err := s.d.ScanPolicies.DeleteWatch(ctx, req.Msg.GetName()); err != nil {
+	req *relicv1.DeleteWatchRequest,
+) (*relicv1.DeleteWatchResponse, error) {
+	if err := s.d.ScanPolicies.DeleteWatch(ctx, req.GetName()); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeleteWatchResponse{}), nil
+	return &relicv1.DeleteWatchResponse{}, nil
 }
 
 func ignoreRuleMessage(r policy.IgnoreRule) *relicv1.IgnoreRule {
@@ -634,8 +634,8 @@ func ignoreRuleOf(m *relicv1.IgnoreRule) policy.IgnoreRule {
 
 func (s *scanServer) ListIgnoreRules(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListIgnoreRulesRequest],
-) (*connect.Response[relicv1.ListIgnoreRulesResponse], error) {
+	_ *relicv1.ListIgnoreRulesRequest,
+) (*relicv1.ListIgnoreRulesResponse, error) {
 	list, err := s.d.ScanPolicies.IgnoreRules(ctx, false)
 	if err != nil {
 		return nil, err
@@ -646,35 +646,35 @@ func (s *scanServer) ListIgnoreRules(
 		out.Rules = append(out.Rules, ignoreRuleMessage(r))
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *scanServer) CreateIgnoreRule(
 	ctx context.Context,
-	req *connect.Request[relicv1.CreateIgnoreRuleRequest],
-) (*connect.Response[relicv1.CreateIgnoreRuleResponse], error) {
-	r, err := s.d.ScanPolicies.CreateIgnoreRule(ctx, ignoreRuleOf(req.Msg.GetRule()), auth.FromContext(ctx).Name())
+	req *relicv1.CreateIgnoreRuleRequest,
+) (*relicv1.CreateIgnoreRuleResponse, error) {
+	r, err := s.d.ScanPolicies.CreateIgnoreRule(ctx, ignoreRuleOf(req.GetRule()), auth.FromContext(ctx).Name())
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.CreateIgnoreRuleResponse{
+	return &relicv1.CreateIgnoreRuleResponse{
 		Rule: ignoreRuleMessage(r),
-	}), nil
+	}, nil
 }
 
 func (s *scanServer) DeleteIgnoreRule(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeleteIgnoreRuleRequest],
-) (*connect.Response[relicv1.DeleteIgnoreRuleResponse], error) {
-	id, err := uuid.Parse(req.Msg.GetId())
+	req *relicv1.DeleteIgnoreRuleRequest,
+) (*relicv1.DeleteIgnoreRuleResponse, error) {
+	id, err := uuid.Parse(req.GetId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("ignore rule not found"))
+		return nil, connect.NewError(connect.CodeNotFound, "ignore rule not found")
 	}
 
 	if err := s.d.ScanPolicies.DeleteIgnoreRule(ctx, id); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeleteIgnoreRuleResponse{}), nil
+	return &relicv1.DeleteIgnoreRuleResponse{}, nil
 }

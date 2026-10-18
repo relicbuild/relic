@@ -5,197 +5,212 @@
 package relicv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
-	http "net/http"
 	v1 "relic/api/gen/relic/v1"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// WorkloadIdentityServiceName is the fully-qualified name of the WorkloadIdentityService service.
 	WorkloadIdentityServiceName = "relic.v1.WorkloadIdentityService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// WorkloadIdentityServiceListWorkloadIdentitiesProcedure is the fully-qualified name of the
+	// WorkloadIdentityServiceListWorkloadIdentitiesProcedure is the procedure name of the
 	// WorkloadIdentityService's ListWorkloadIdentities RPC.
 	WorkloadIdentityServiceListWorkloadIdentitiesProcedure = "/relic.v1.WorkloadIdentityService/ListWorkloadIdentities"
-	// WorkloadIdentityServiceGetWorkloadIdentityProcedure is the fully-qualified name of the
+	// WorkloadIdentityServiceGetWorkloadIdentityProcedure is the procedure name of the
 	// WorkloadIdentityService's GetWorkloadIdentity RPC.
 	WorkloadIdentityServiceGetWorkloadIdentityProcedure = "/relic.v1.WorkloadIdentityService/GetWorkloadIdentity"
-	// WorkloadIdentityServicePutWorkloadIdentityProcedure is the fully-qualified name of the
+	// WorkloadIdentityServicePutWorkloadIdentityProcedure is the procedure name of the
 	// WorkloadIdentityService's PutWorkloadIdentity RPC.
 	WorkloadIdentityServicePutWorkloadIdentityProcedure = "/relic.v1.WorkloadIdentityService/PutWorkloadIdentity"
-	// WorkloadIdentityServiceDeleteWorkloadIdentityProcedure is the fully-qualified name of the
+	// WorkloadIdentityServiceDeleteWorkloadIdentityProcedure is the procedure name of the
 	// WorkloadIdentityService's DeleteWorkloadIdentity RPC.
 	WorkloadIdentityServiceDeleteWorkloadIdentityProcedure = "/relic.v1.WorkloadIdentityService/DeleteWorkloadIdentity"
 )
 
+var (
+	workloadIdentityServiceListWorkloadIdentitiesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_workload_identity_proto.Services().ByName("WorkloadIdentityService").Methods().ByName("ListWorkloadIdentities"),
+			Procedure:  WorkloadIdentityServiceListWorkloadIdentitiesProcedure,
+		}
+	})
+	workloadIdentityServiceGetWorkloadIdentitySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_workload_identity_proto.Services().ByName("WorkloadIdentityService").Methods().ByName("GetWorkloadIdentity"),
+			Procedure:  WorkloadIdentityServiceGetWorkloadIdentityProcedure,
+		}
+	})
+	workloadIdentityServicePutWorkloadIdentitySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_workload_identity_proto.Services().ByName("WorkloadIdentityService").Methods().ByName("PutWorkloadIdentity"),
+			Procedure:  WorkloadIdentityServicePutWorkloadIdentityProcedure,
+		}
+	})
+	workloadIdentityServiceDeleteWorkloadIdentitySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_workload_identity_proto.Services().ByName("WorkloadIdentityService").Methods().ByName("DeleteWorkloadIdentity"),
+			Procedure:  WorkloadIdentityServiceDeleteWorkloadIdentityProcedure,
+		}
+	})
+)
+
 // WorkloadIdentityServiceClient is a client for the relic.v1.WorkloadIdentityService service.
 type WorkloadIdentityServiceClient interface {
-	ListWorkloadIdentities(context.Context, *connect.Request[v1.ListWorkloadIdentitiesRequest]) (*connect.Response[v1.ListWorkloadIdentitiesResponse], error)
-	GetWorkloadIdentity(context.Context, *connect.Request[v1.GetWorkloadIdentityRequest]) (*connect.Response[v1.GetWorkloadIdentityResponse], error)
-	PutWorkloadIdentity(context.Context, *connect.Request[v1.PutWorkloadIdentityRequest]) (*connect.Response[v1.PutWorkloadIdentityResponse], error)
+	ListWorkloadIdentities(context.Context, *v1.ListWorkloadIdentitiesRequest) (*v1.ListWorkloadIdentitiesResponse, error)
+	GetWorkloadIdentity(context.Context, *v1.GetWorkloadIdentityRequest) (*v1.GetWorkloadIdentityResponse, error)
+	PutWorkloadIdentity(context.Context, *v1.PutWorkloadIdentityRequest) (*v1.PutWorkloadIdentityResponse, error)
 	// DeleteWorkloadIdentity removes a workload identity; tokens it issued stay
 	// valid until they expire.
-	DeleteWorkloadIdentity(context.Context, *connect.Request[v1.DeleteWorkloadIdentityRequest]) (*connect.Response[v1.DeleteWorkloadIdentityResponse], error)
+	DeleteWorkloadIdentity(context.Context, *v1.DeleteWorkloadIdentityRequest) (*v1.DeleteWorkloadIdentityResponse, error)
 }
 
 // NewWorkloadIdentityServiceClient constructs a client for the relic.v1.WorkloadIdentityService
-// service. By default, it uses the Connect protocol with the binary Protobuf Codec, asks for
-// gzipped responses, and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply
-// the connect.WithGRPC() or connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewWorkloadIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) WorkloadIdentityServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	workloadIdentityServiceMethods := v1.File_relic_v1_workload_identity_proto.Services().ByName("WorkloadIdentityService").Methods()
-	return &workloadIdentityServiceClient{
-		listWorkloadIdentities: connect.NewClient[v1.ListWorkloadIdentitiesRequest, v1.ListWorkloadIdentitiesResponse](
-			httpClient,
-			baseURL+WorkloadIdentityServiceListWorkloadIdentitiesProcedure,
-			connect.WithSchema(workloadIdentityServiceMethods.ByName("ListWorkloadIdentities")),
-			connect.WithClientOptions(opts...),
-		),
-		getWorkloadIdentity: connect.NewClient[v1.GetWorkloadIdentityRequest, v1.GetWorkloadIdentityResponse](
-			httpClient,
-			baseURL+WorkloadIdentityServiceGetWorkloadIdentityProcedure,
-			connect.WithSchema(workloadIdentityServiceMethods.ByName("GetWorkloadIdentity")),
-			connect.WithClientOptions(opts...),
-		),
-		putWorkloadIdentity: connect.NewClient[v1.PutWorkloadIdentityRequest, v1.PutWorkloadIdentityResponse](
-			httpClient,
-			baseURL+WorkloadIdentityServicePutWorkloadIdentityProcedure,
-			connect.WithSchema(workloadIdentityServiceMethods.ByName("PutWorkloadIdentity")),
-			connect.WithClientOptions(opts...),
-		),
-		deleteWorkloadIdentity: connect.NewClient[v1.DeleteWorkloadIdentityRequest, v1.DeleteWorkloadIdentityResponse](
-			httpClient,
-			baseURL+WorkloadIdentityServiceDeleteWorkloadIdentityProcedure,
-			connect.WithSchema(workloadIdentityServiceMethods.ByName("DeleteWorkloadIdentity")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// workloadIdentityServiceClient implements WorkloadIdentityServiceClient.
-type workloadIdentityServiceClient struct {
-	listWorkloadIdentities *connect.Client[v1.ListWorkloadIdentitiesRequest, v1.ListWorkloadIdentitiesResponse]
-	getWorkloadIdentity    *connect.Client[v1.GetWorkloadIdentityRequest, v1.GetWorkloadIdentityResponse]
-	putWorkloadIdentity    *connect.Client[v1.PutWorkloadIdentityRequest, v1.PutWorkloadIdentityResponse]
-	deleteWorkloadIdentity *connect.Client[v1.DeleteWorkloadIdentityRequest, v1.DeleteWorkloadIdentityResponse]
-}
-
-// ListWorkloadIdentities calls relic.v1.WorkloadIdentityService.ListWorkloadIdentities.
-func (c *workloadIdentityServiceClient) ListWorkloadIdentities(ctx context.Context, req *connect.Request[v1.ListWorkloadIdentitiesRequest]) (*connect.Response[v1.ListWorkloadIdentitiesResponse], error) {
-	return c.listWorkloadIdentities.CallUnary(ctx, req)
-}
-
-// GetWorkloadIdentity calls relic.v1.WorkloadIdentityService.GetWorkloadIdentity.
-func (c *workloadIdentityServiceClient) GetWorkloadIdentity(ctx context.Context, req *connect.Request[v1.GetWorkloadIdentityRequest]) (*connect.Response[v1.GetWorkloadIdentityResponse], error) {
-	return c.getWorkloadIdentity.CallUnary(ctx, req)
-}
-
-// PutWorkloadIdentity calls relic.v1.WorkloadIdentityService.PutWorkloadIdentity.
-func (c *workloadIdentityServiceClient) PutWorkloadIdentity(ctx context.Context, req *connect.Request[v1.PutWorkloadIdentityRequest]) (*connect.Response[v1.PutWorkloadIdentityResponse], error) {
-	return c.putWorkloadIdentity.CallUnary(ctx, req)
-}
-
-// DeleteWorkloadIdentity calls relic.v1.WorkloadIdentityService.DeleteWorkloadIdentity.
-func (c *workloadIdentityServiceClient) DeleteWorkloadIdentity(ctx context.Context, req *connect.Request[v1.DeleteWorkloadIdentityRequest]) (*connect.Response[v1.DeleteWorkloadIdentityResponse], error) {
-	return c.deleteWorkloadIdentity.CallUnary(ctx, req)
+// service. Multiple service clients may share a single connect.Client.
+func NewWorkloadIdentityServiceClient(client *connect.Client) WorkloadIdentityServiceClient {
+	return &workloadIdentityServiceClient{client: client}
 }
 
 // WorkloadIdentityServiceHandler is an implementation of the relic.v1.WorkloadIdentityService
 // service.
 type WorkloadIdentityServiceHandler interface {
-	ListWorkloadIdentities(context.Context, *connect.Request[v1.ListWorkloadIdentitiesRequest]) (*connect.Response[v1.ListWorkloadIdentitiesResponse], error)
-	GetWorkloadIdentity(context.Context, *connect.Request[v1.GetWorkloadIdentityRequest]) (*connect.Response[v1.GetWorkloadIdentityResponse], error)
-	PutWorkloadIdentity(context.Context, *connect.Request[v1.PutWorkloadIdentityRequest]) (*connect.Response[v1.PutWorkloadIdentityResponse], error)
+	ListWorkloadIdentities(context.Context, *v1.ListWorkloadIdentitiesRequest) (*v1.ListWorkloadIdentitiesResponse, error)
+	GetWorkloadIdentity(context.Context, *v1.GetWorkloadIdentityRequest) (*v1.GetWorkloadIdentityResponse, error)
+	PutWorkloadIdentity(context.Context, *v1.PutWorkloadIdentityRequest) (*v1.PutWorkloadIdentityResponse, error)
 	// DeleteWorkloadIdentity removes a workload identity; tokens it issued stay
 	// valid until they expire.
-	DeleteWorkloadIdentity(context.Context, *connect.Request[v1.DeleteWorkloadIdentityRequest]) (*connect.Response[v1.DeleteWorkloadIdentityResponse], error)
+	DeleteWorkloadIdentity(context.Context, *v1.DeleteWorkloadIdentityRequest) (*v1.DeleteWorkloadIdentityResponse, error)
 }
 
-// NewWorkloadIdentityServiceHandler builds an HTTP handler from the service implementation. It
-// returns the path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewWorkloadIdentityServiceHandler(svc WorkloadIdentityServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	workloadIdentityServiceMethods := v1.File_relic_v1_workload_identity_proto.Services().ByName("WorkloadIdentityService").Methods()
-	workloadIdentityServiceListWorkloadIdentitiesHandler := connect.NewUnaryHandler(
-		WorkloadIdentityServiceListWorkloadIdentitiesProcedure,
-		svc.ListWorkloadIdentities,
-		connect.WithSchema(workloadIdentityServiceMethods.ByName("ListWorkloadIdentities")),
-		connect.WithHandlerOptions(opts...),
+// RegisterWorkloadIdentityServiceHandler registers svc as the relic.v1.WorkloadIdentityService
+// implementation on server.
+func RegisterWorkloadIdentityServiceHandler(server *connect.Server, svc WorkloadIdentityServiceHandler) {
+	adapter := workloadIdentityServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: workloadIdentityServiceListWorkloadIdentitiesSpec(), Handler: adapter.listWorkloadIdentities},
+		connect.Method{Spec: workloadIdentityServiceGetWorkloadIdentitySpec(), Handler: adapter.getWorkloadIdentity},
+		connect.Method{Spec: workloadIdentityServicePutWorkloadIdentitySpec(), Handler: adapter.putWorkloadIdentity},
+		connect.Method{Spec: workloadIdentityServiceDeleteWorkloadIdentitySpec(), Handler: adapter.deleteWorkloadIdentity},
 	)
-	workloadIdentityServiceGetWorkloadIdentityHandler := connect.NewUnaryHandler(
-		WorkloadIdentityServiceGetWorkloadIdentityProcedure,
-		svc.GetWorkloadIdentity,
-		connect.WithSchema(workloadIdentityServiceMethods.ByName("GetWorkloadIdentity")),
-		connect.WithHandlerOptions(opts...),
-	)
-	workloadIdentityServicePutWorkloadIdentityHandler := connect.NewUnaryHandler(
-		WorkloadIdentityServicePutWorkloadIdentityProcedure,
-		svc.PutWorkloadIdentity,
-		connect.WithSchema(workloadIdentityServiceMethods.ByName("PutWorkloadIdentity")),
-		connect.WithHandlerOptions(opts...),
-	)
-	workloadIdentityServiceDeleteWorkloadIdentityHandler := connect.NewUnaryHandler(
-		WorkloadIdentityServiceDeleteWorkloadIdentityProcedure,
-		svc.DeleteWorkloadIdentity,
-		connect.WithSchema(workloadIdentityServiceMethods.ByName("DeleteWorkloadIdentity")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/relic.v1.WorkloadIdentityService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case WorkloadIdentityServiceListWorkloadIdentitiesProcedure:
-			workloadIdentityServiceListWorkloadIdentitiesHandler.ServeHTTP(w, r)
-		case WorkloadIdentityServiceGetWorkloadIdentityProcedure:
-			workloadIdentityServiceGetWorkloadIdentityHandler.ServeHTTP(w, r)
-		case WorkloadIdentityServicePutWorkloadIdentityProcedure:
-			workloadIdentityServicePutWorkloadIdentityHandler.ServeHTTP(w, r)
-		case WorkloadIdentityServiceDeleteWorkloadIdentityProcedure:
-			workloadIdentityServiceDeleteWorkloadIdentityHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedWorkloadIdentityServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedWorkloadIdentityServiceHandler struct{}
 
-func (UnimplementedWorkloadIdentityServiceHandler) ListWorkloadIdentities(context.Context, *connect.Request[v1.ListWorkloadIdentitiesRequest]) (*connect.Response[v1.ListWorkloadIdentitiesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.WorkloadIdentityService.ListWorkloadIdentities is not implemented"))
+func (UnimplementedWorkloadIdentityServiceHandler) ListWorkloadIdentities(context.Context, *v1.ListWorkloadIdentitiesRequest) (*v1.ListWorkloadIdentitiesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.WorkloadIdentityService.ListWorkloadIdentities is not implemented")
 }
 
-func (UnimplementedWorkloadIdentityServiceHandler) GetWorkloadIdentity(context.Context, *connect.Request[v1.GetWorkloadIdentityRequest]) (*connect.Response[v1.GetWorkloadIdentityResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.WorkloadIdentityService.GetWorkloadIdentity is not implemented"))
+func (UnimplementedWorkloadIdentityServiceHandler) GetWorkloadIdentity(context.Context, *v1.GetWorkloadIdentityRequest) (*v1.GetWorkloadIdentityResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.WorkloadIdentityService.GetWorkloadIdentity is not implemented")
 }
 
-func (UnimplementedWorkloadIdentityServiceHandler) PutWorkloadIdentity(context.Context, *connect.Request[v1.PutWorkloadIdentityRequest]) (*connect.Response[v1.PutWorkloadIdentityResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.WorkloadIdentityService.PutWorkloadIdentity is not implemented"))
+func (UnimplementedWorkloadIdentityServiceHandler) PutWorkloadIdentity(context.Context, *v1.PutWorkloadIdentityRequest) (*v1.PutWorkloadIdentityResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.WorkloadIdentityService.PutWorkloadIdentity is not implemented")
 }
 
-func (UnimplementedWorkloadIdentityServiceHandler) DeleteWorkloadIdentity(context.Context, *connect.Request[v1.DeleteWorkloadIdentityRequest]) (*connect.Response[v1.DeleteWorkloadIdentityResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.WorkloadIdentityService.DeleteWorkloadIdentity is not implemented"))
+func (UnimplementedWorkloadIdentityServiceHandler) DeleteWorkloadIdentity(context.Context, *v1.DeleteWorkloadIdentityRequest) (*v1.DeleteWorkloadIdentityResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.WorkloadIdentityService.DeleteWorkloadIdentity is not implemented")
+}
+
+type workloadIdentityServiceClient struct {
+	client *connect.Client
+}
+
+func (c *workloadIdentityServiceClient) ListWorkloadIdentities(ctx context.Context, req *v1.ListWorkloadIdentitiesRequest) (*v1.ListWorkloadIdentitiesResponse, error) {
+	var res v1.ListWorkloadIdentitiesResponse
+	if err := c.client.CallUnary(ctx, workloadIdentityServiceListWorkloadIdentitiesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *workloadIdentityServiceClient) GetWorkloadIdentity(ctx context.Context, req *v1.GetWorkloadIdentityRequest) (*v1.GetWorkloadIdentityResponse, error) {
+	var res v1.GetWorkloadIdentityResponse
+	if err := c.client.CallUnary(ctx, workloadIdentityServiceGetWorkloadIdentitySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *workloadIdentityServiceClient) PutWorkloadIdentity(ctx context.Context, req *v1.PutWorkloadIdentityRequest) (*v1.PutWorkloadIdentityResponse, error) {
+	var res v1.PutWorkloadIdentityResponse
+	if err := c.client.CallUnary(ctx, workloadIdentityServicePutWorkloadIdentitySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *workloadIdentityServiceClient) DeleteWorkloadIdentity(ctx context.Context, req *v1.DeleteWorkloadIdentityRequest) (*v1.DeleteWorkloadIdentityResponse, error) {
+	var res v1.DeleteWorkloadIdentityResponse
+	if err := c.client.CallUnary(ctx, workloadIdentityServiceDeleteWorkloadIdentitySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type workloadIdentityServiceHandler struct {
+	svc WorkloadIdentityServiceHandler
+}
+
+func (h workloadIdentityServiceHandler) listWorkloadIdentities(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListWorkloadIdentitiesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListWorkloadIdentities(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h workloadIdentityServiceHandler) getWorkloadIdentity(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetWorkloadIdentityRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetWorkloadIdentity(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h workloadIdentityServiceHandler) putWorkloadIdentity(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PutWorkloadIdentityRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.PutWorkloadIdentity(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h workloadIdentityServiceHandler) deleteWorkloadIdentity(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DeleteWorkloadIdentityRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.DeleteWorkloadIdentity(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

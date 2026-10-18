@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -338,13 +338,13 @@ func TestRelicAPITrash(t *testing.T) {
 
 	admin := relicHTTP("admin", "password")
 
-	arts := relicv1connect.NewArtifactServiceClient(admin, srv.URL+"/api")
+	arts := relicv1connect.NewArtifactServiceClient(apiClient(admin, srv.URL))
 	if _, err := arts.DeleteItem(
 		ctx,
-		connect.NewRequest(&relicv1.DeleteItemRequest{
+		&relicv1.DeleteItemRequest{
 			Repository: "libs",
 			Path:       "org/a.txt",
-		}),
+		},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -354,14 +354,14 @@ func TestRelicAPITrash(t *testing.T) {
 		path:   "/artifactory/libs/org/b.txt",
 	})
 
-	trash := relicv1connect.NewTrashServiceClient(admin, srv.URL+"/api")
+	trash := relicv1connect.NewTrashServiceClient(apiClient(admin, srv.URL))
 
-	list, err := trash.ListTrash(ctx, connect.NewRequest(&relicv1.ListTrashRequest{}))
-	if err != nil || len(list.Msg.GetEntries()) != 2 {
+	list, err := trash.ListTrash(ctx, &relicv1.ListTrashRequest{})
+	if err != nil || len(list.GetEntries()) != 2 {
 		t.Fatalf("trash = %v %v", list, err)
 	}
 
-	for _, e := range list.Msg.GetEntries() {
+	for _, e := range list.GetEntries() {
 		if e.GetOriginalRepository() != "libs" || e.GetDeletedBy() != "admin" ||
 			e.GetPath() != "libs/"+e.GetOriginalPath() {
 			t.Errorf("entry = %v", e)
@@ -369,12 +369,12 @@ func TestRelicAPITrash(t *testing.T) {
 	}
 
 	listPage := func(r *relicv1.ListTrashRequest) (*relicv1.ListTrashResponse, error) {
-		resp, err := trash.ListTrash(ctx, connect.NewRequest(r))
+		resp, err := trash.ListTrash(ctx, r)
 		if err != nil {
 			return nil, err
 		}
 
-		return resp.Msg, nil
+		return resp, nil
 	}
 
 	first, err := listPage(&relicv1.ListTrashRequest{
@@ -480,7 +480,7 @@ func TestRelicAPITrash(t *testing.T) {
 	}
 
 	restore := func(r *relicv1.RestoreTrashRequest) error {
-		_, err := trash.RestoreTrash(ctx, connect.NewRequest(r))
+		_, err := trash.RestoreTrash(ctx, r)
 		return err
 	}
 
@@ -526,9 +526,9 @@ func TestRelicAPITrash(t *testing.T) {
 			func() error {
 				_, err := trash.DeleteTrashEntry(
 					ctx,
-					connect.NewRequest(&relicv1.DeleteTrashEntryRequest{
+					&relicv1.DeleteTrashEntryRequest{
 						Path: "libs/org/b.txt",
-					}),
+					},
 				)
 
 				return err
@@ -538,7 +538,7 @@ func TestRelicAPITrash(t *testing.T) {
 		{
 			"empty",
 			func() error {
-				_, err := trash.EmptyTrash(ctx, connect.NewRequest(&relicv1.EmptyTrashRequest{}))
+				_, err := trash.EmptyTrash(ctx, &relicv1.EmptyTrashRequest{})
 				return err
 			}(),
 			0,
@@ -557,8 +557,8 @@ func TestRelicAPITrash(t *testing.T) {
 		t.Errorf("restored file = %d", resp.StatusCode)
 	}
 
-	if list, err := trash.ListTrash(ctx, connect.NewRequest(&relicv1.ListTrashRequest{})); err != nil ||
-		len(list.Msg.GetEntries()) != 0 {
+	if list, err := trash.ListTrash(ctx, &relicv1.ListTrashRequest{}); err != nil ||
+		len(list.GetEntries()) != 0 {
 		t.Errorf("trash after empty = %v %v", list, err)
 	}
 }

@@ -6,7 +6,7 @@ import (
 	"errors"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/internal/access/auth"
@@ -36,14 +36,14 @@ func packageFile(ctx context.Context, d Dependencies, key, p string) (repository
 }
 
 func notPackage(what string) error {
-	return connect.NewError(connect.CodeNotFound, errors.New("not "+what))
+	return connect.NewError(connect.CodeNotFound, "not "+what)
 }
 
 func (s *packageServer) GetContainerImage(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetContainerImageRequest],
-) (*connect.Response[relicv1.GetContainerImageResponse], error) {
-	key, p := req.Msg.GetRepository(), cleanPath(req.Msg.GetPath())
+	req *relicv1.GetContainerImageRequest,
+) (*relicv1.GetContainerImageResponse, error) {
+	key, p := req.GetRepository(), cleanPath(req.GetPath())
 	if err := can(ctx, s.d, key, p, auth.ActionRead); err != nil {
 		return nil, err
 	}
@@ -92,14 +92,14 @@ func (s *packageServer) GetContainerImage(
 		)
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *packageServer) GetNpmPackage(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetNpmPackageRequest],
-) (*connect.Response[relicv1.GetNpmPackageResponse], error) {
-	_, it, err := packageFile(ctx, s.d, req.Msg.GetRepository(), cleanPath(req.Msg.GetPath()))
+	req *relicv1.GetNpmPackageRequest,
+) (*relicv1.GetNpmPackageResponse, error) {
+	_, it, err := packageFile(ctx, s.d, req.GetRepository(), cleanPath(req.GetPath()))
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +117,7 @@ func (s *packageServer) GetNpmPackage(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.GetNpmPackageResponse{
+	return &relicv1.GetNpmPackageResponse{
 		Name:             info.Name,
 		Version:          info.Version,
 		Description:      info.Description,
@@ -128,14 +128,14 @@ func (s *packageServer) GetNpmPackage(
 		Dependencies:     info.Dependencies,
 		DevDependencies:  info.DevDependencies,
 		PeerDependencies: info.PeerDependencies,
-	}), nil
+	}, nil
 }
 
 func (s *packageServer) GetPythonPackage(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetPythonPackageRequest],
-) (*connect.Response[relicv1.GetPythonPackageResponse], error) {
-	r, it, err := packageFile(ctx, s.d, req.Msg.GetRepository(), cleanPath(req.Msg.GetPath()))
+	req *relicv1.GetPythonPackageRequest,
+) (*relicv1.GetPythonPackageResponse, error) {
+	r, it, err := packageFile(ctx, s.d, req.GetRepository(), cleanPath(req.GetPath()))
 	if err != nil {
 		return nil, err
 	}
@@ -150,10 +150,10 @@ func (s *packageServer) GetPythonPackage(
 	}
 
 	if err != nil {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("cannot read the package metadata"))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, "cannot read the package metadata")
 	}
 
-	return connect.NewResponse(&relicv1.GetPythonPackageResponse{
+	return &relicv1.GetPythonPackageResponse{
 		Name:           m.Name,
 		Version:        m.Version,
 		Summary:        m.Summary,
@@ -164,14 +164,14 @@ func (s *packageServer) GetPythonPackage(
 		ProjectUrls:    m.ProjectURLs,
 		RequiresDist:   m.RequiresDist,
 		Classifiers:    m.Classifiers,
-	}), nil
+	}, nil
 }
 
 func (s *packageServer) GetHelmChart(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetHelmChartRequest],
-) (*connect.Response[relicv1.GetHelmChartResponse], error) {
-	r, it, err := packageFile(ctx, s.d, req.Msg.GetRepository(), cleanPath(req.Msg.GetPath()))
+	req *relicv1.GetHelmChartRequest,
+) (*relicv1.GetHelmChartResponse, error) {
+	r, it, err := packageFile(ctx, s.d, req.GetRepository(), cleanPath(req.GetPath()))
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +182,7 @@ func (s *packageServer) GetHelmChart(
 
 	c, err := s.d.HelmCharts.ChartInfo(ctx, it)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("cannot read Chart.yaml"))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, "cannot read Chart.yaml")
 	}
 
 	named := func(in []map[string]string) []*relicv1.PackageMetadataEntry {
@@ -196,7 +196,7 @@ func (s *packageServer) GetHelmChart(
 		return out
 	}
 
-	return connect.NewResponse(&relicv1.GetHelmChartResponse{
+	return &relicv1.GetHelmChartResponse{
 		Name:         c.Name,
 		Version:      c.Version,
 		AppVersion:   c.AppVersion,
@@ -211,21 +211,21 @@ func (s *packageServer) GetHelmChart(
 		Sources:      c.Sources,
 		Maintainers:  named(c.Maintainers),
 		Dependencies: named(c.Dependencies),
-	}), nil
+	}, nil
 }
 
 func (s *packageServer) PromoteContainerImage(
 	ctx context.Context,
-	req *connect.Request[relicv1.PromoteContainerImageRequest],
-) (*connect.Response[relicv1.PromoteContainerImageResponse], error) {
-	m := req.Msg
+	req *relicv1.PromoteContainerImageRequest,
+) (*relicv1.PromoteContainerImageResponse, error) {
+	m := req
 	image := strings.Trim(m.GetImage(), "/")
 	targetImage := cmp.Or(strings.Trim(m.GetTargetImage(), "/"), image)
 
 	if !docker.ValidImage(image) || !docker.ValidImage(targetImage) ||
 		(m.GetTag() != "" && !docker.ValidTag(m.GetTag())) ||
 		(m.GetTargetTag() != "" && !docker.ValidTag(m.GetTargetTag())) || m.GetTargetRepository() == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid image, tag or target repository"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, "invalid image, tag or target repository")
 	}
 
 	sourceAction := auth.ActionDelete
@@ -258,12 +258,12 @@ func (s *packageServer) PromoteContainerImage(
 		Permits:          permits,
 	})
 	if errors.Is(err, docker.ErrManifestUnknown) {
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such image tag"))
+		return nil, connect.NewError(connect.CodeNotFound, "no such image tag")
 	}
 
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.PromoteContainerImageResponse{}), nil
+	return &relicv1.PromoteContainerImageResponse{}, nil
 }

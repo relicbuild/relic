@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
-
 	"relic/api/adapters/artifactory"
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -20,8 +18,8 @@ import (
 func replicate(t *testing.T, in instance, direction relicv1.ReplicationDirection, peer instance) *replication.Pusher {
 	t.Helper()
 
-	reps := relicv1connect.NewReplicationServiceClient(relicHTTP("admin", "password"), in.srv.URL+"/api")
-	if _, err := reps.PutReplication(t.Context(), connect.NewRequest(&relicv1.PutReplicationRequest{
+	reps := relicv1connect.NewReplicationServiceClient(apiClient(relicHTTP("admin", "password"), in.srv.URL))
+	if _, err := reps.PutReplication(t.Context(), &relicv1.PutReplicationRequest{
 		Replication: &relicv1.Replication{
 			Repository: "fed",
 			TargetUrl:  peer.srv.URL + "/artifactory/fed",
@@ -31,7 +29,7 @@ func replicate(t *testing.T, in instance, direction relicv1.ReplicationDirection
 			Schedule:   "@daily",
 			Direction:  direction,
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 

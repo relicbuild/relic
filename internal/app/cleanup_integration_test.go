@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -24,28 +24,28 @@ func TestCleanupPreviewShowsViewersOnlyWhatTheyMayRead(t *testing.T) {
 	upload(t, srv, "preview-secrets", "c/b.txt", "second")
 	upload(t, srv, "preview-secrets", "d/gone.txt", "deleted")
 
-	artifacts := relicv1connect.NewArtifactServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
-	if _, err := artifacts.DeleteItem(ctx, connect.NewRequest(&relicv1.DeleteItemRequest{
+	artifacts := relicv1connect.NewArtifactServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
+	if _, err := artifacts.DeleteItem(ctx, &relicv1.DeleteItemRequest{
 		Repository: "preview-secrets",
 		Path:       "d/gone.txt",
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	security := relicv1connect.NewSecurityServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
-	if _, err := security.PutUser(ctx, connect.NewRequest(&relicv1.PutUserRequest{
+	security := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
+	if _, err := security.PutUser(ctx, &relicv1.PutUserRequest{
 		User: &relicv1.User{
 			Name:     "vera",
 			Email:    "vera@example.com",
 			Password: "Vera-pass-1",
 			Viewer:   true,
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	admin := relicv1connect.NewCleanupServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
-	viewer := relicv1connect.NewCleanupServiceClient(relicHTTP("vera", "Vera-pass-1"), srv.URL+"/api")
+	admin := relicv1connect.NewCleanupServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
+	viewer := relicv1connect.NewCleanupServiceClient(apiClient(relicHTTP("vera", "Vera-pass-1"), srv.URL))
 
 	policy := &relicv1.CleanupPolicy{
 		Name: "keep-one",
@@ -55,9 +55,9 @@ func TestCleanupPreviewShowsViewersOnlyWhatTheyMayRead(t *testing.T) {
 		PathPattern: "**/*.txt",
 		KeepLatest:  1,
 	}
-	if _, err := admin.PutCleanupPolicy(ctx, connect.NewRequest(&relicv1.PutCleanupPolicyRequest{
+	if _, err := admin.PutCleanupPolicy(ctx, &relicv1.PutCleanupPolicyRequest{
 		Policy: policy,
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -99,13 +99,13 @@ func TestCleanupPreviewShowsViewersOnlyWhatTheyMayRead(t *testing.T) {
 			want:   0,
 		},
 	} {
-		res, err := tc.client.PreviewCleanupPolicy(ctx, connect.NewRequest(tc.req))
+		res, err := tc.client.PreviewCleanupPolicy(ctx, tc.req)
 		if err != nil {
 			t.Fatalf("%s: %v", tc.name, err)
 		}
 
-		if got := len(res.Msg.GetCandidates()); got != tc.want {
-			t.Errorf("%s: %d candidates %v, want %d", tc.name, got, res.Msg.GetCandidates(), tc.want)
+		if got := len(res.GetCandidates()); got != tc.want {
+			t.Errorf("%s: %d candidates %v, want %d", tc.name, got, res.GetCandidates(), tc.want)
 		}
 	}
 
@@ -123,9 +123,9 @@ func TestCleanupPreviewShowsViewersOnlyWhatTheyMayRead(t *testing.T) {
 			PathPattern: "**/*.txt",
 		},
 	} {
-		_, err := viewer.PreviewCleanupPolicy(ctx, connect.NewRequest(&relicv1.PreviewCleanupPolicyRequest{
+		_, err := viewer.PreviewCleanupPolicy(ctx, &relicv1.PreviewCleanupPolicyRequest{
 			Policy: rejected,
-		}))
+		})
 		if code(err) != connect.CodeInvalidArgument {
 			t.Errorf("preview of %s = %v, want invalid_argument", name, err)
 		}

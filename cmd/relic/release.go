@@ -18,7 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -287,29 +286,29 @@ func releaseCreateCmd(g *globals, update bool) *cobra.Command {
 			if update {
 				resp, err := c.releases.UpdateRelease(
 					cmd.Context(),
-					connect.NewRequest(&relicv1.UpdateReleaseRequest{
+					&relicv1.UpdateReleaseRequest{
 						Project: project,
 						Spec:    spec,
-					}),
+					},
 				)
 				if err != nil {
 					return fmt.Errorf("release update: %w", err)
 				}
 
-				r = resp.Msg.GetRelease()
+				r = resp.GetRelease()
 			} else {
 				resp, err := c.releases.CreateRelease(
 					cmd.Context(),
-					connect.NewRequest(&relicv1.CreateReleaseRequest{
+					&relicv1.CreateReleaseRequest{
 						Project: project,
 						Spec:    spec,
-					}),
+					},
 				)
 				if err != nil {
 					return fmt.Errorf("release create: %w", err)
 				}
 
-				r = resp.Msg.GetRelease()
+				r = resp.GetRelease()
 			}
 
 			return printMessage(cmd.OutOrStdout(), output, r, func(w io.Writer) error {
@@ -354,17 +353,17 @@ func releaseFinalizeCmd(g *globals) *cobra.Command {
 
 			r, err := c.releases.FinalizeRelease(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.FinalizeReleaseRequest{
+				&relicv1.FinalizeReleaseRequest{
 					Project: ref.project,
 					Name:    args[0],
 					Version: args[1],
-				}),
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("release finalize: %w", err)
 			}
 
-			printRelease(cmd.OutOrStdout(), r.Msg.GetRelease())
+			printRelease(cmd.OutOrStdout(), r.GetRelease())
 
 			return nil
 		},
@@ -397,12 +396,12 @@ func releaseListCmd(g *globals) *cobra.Command {
 					req.Project = &ref.project
 				}
 
-				r, err := c.releases.ListReleases(cmd.Context(), connect.NewRequest(req))
+				r, err := c.releases.ListReleases(cmd.Context(), req)
 				if err != nil {
 					return fmt.Errorf("release list: %w", err)
 				}
 
-				return printMessage(cmd.OutOrStdout(), output, r.Msg, func(w io.Writer) error {
+				return printMessage(cmd.OutOrStdout(), output, r, func(w io.Writer) error {
 					table := terminal.Table{
 						Headers: []string{
 							"NAME",
@@ -415,7 +414,7 @@ func releaseListCmd(g *globals) *cobra.Command {
 						},
 					}
 
-					for _, rel := range r.Msg.GetReleases() {
+					for _, rel := range r.GetReleases() {
 						table.Rows = append(table.Rows, []string{
 							rel.GetName(),
 							cmp.Or(rel.GetProject(), "default"),
@@ -430,16 +429,16 @@ func releaseListCmd(g *globals) *cobra.Command {
 
 			r, err := c.releases.ListReleaseVersions(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.ListReleaseVersionsRequest{
+				&relicv1.ListReleaseVersionsRequest{
 					Project: ref.project,
 					Name:    args[0],
-				}),
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("release list %s: %w", args[0], err)
 			}
 
-			return printMessage(cmd.OutOrStdout(), output, r.Msg, func(w io.Writer) error {
+			return printMessage(cmd.OutOrStdout(), output, r, func(w io.Writer) error {
 				table := terminal.Table{
 					Headers: []string{
 						"VERSION",
@@ -454,7 +453,7 @@ func releaseListCmd(g *globals) *cobra.Command {
 					},
 				}
 
-				for _, v := range r.Msg.GetReleases() {
+				for _, v := range r.GetReleases() {
 					table.Rows = append(table.Rows, []string{
 						v.GetVersion(),
 						strings.TrimPrefix(strings.ToLower(v.GetStatus().String()), "release_status_"),
@@ -494,17 +493,17 @@ func releaseGetCmd(g *globals) *cobra.Command {
 
 			r, err := c.releases.GetRelease(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.GetReleaseRequest{
+				&relicv1.GetReleaseRequest{
 					Project: ref.project,
 					Name:    args[0],
 					Version: args[1],
-				}),
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("release get: %w", err)
 			}
 
-			rel := r.Msg.GetRelease()
+			rel := r.GetRelease()
 
 			return printMessage(cmd.OutOrStdout(), output, rel, func(w io.Writer) error {
 				printRelease(w, rel)
@@ -561,7 +560,7 @@ func releasePromoteCmd(g *globals) *cobra.Command {
 
 			r, err := c.releases.PromoteRelease(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.PromoteReleaseRequest{
+				&relicv1.PromoteReleaseRequest{
 					Project:     ref.project,
 					Name:        args[0],
 					Version:     args[1],
@@ -569,18 +568,18 @@ func releasePromoteCmd(g *globals) *cobra.Command {
 					Include:     include,
 					Exclude:     exclude,
 					Move:        move,
-				}),
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("release promote: %w", err)
 			}
 
-			return printMessage(cmd.OutOrStdout(), output, r.Msg, func(w io.Writer) error {
+			return printMessage(cmd.OutOrStdout(), output, r, func(w io.Writer) error {
 				if _, err := fmt.Fprintf(w, "%s/%s promoted to %s\n", args[0], args[1], args[2]); err != nil {
 					return err
 				}
 
-				for _, m := range r.Msg.GetPromotion().GetMessages() {
+				for _, m := range r.GetPromotion().GetMessages() {
 					if _, err := fmt.Fprintf(w, "  %s\n", m); err != nil {
 						return err
 					}
@@ -620,12 +619,12 @@ func releaseTagCmd(g *globals) *cobra.Command {
 
 			if _, err := c.releases.SetReleaseTag(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.SetReleaseTagRequest{
+				&relicv1.SetReleaseTagRequest{
 					Project: ref.project,
 					Name:    args[0],
 					Version: args[1],
 					Tag:     tag,
-				}),
+				},
 			); err != nil {
 				return fmt.Errorf("release tag: %w", err)
 			}
@@ -664,17 +663,17 @@ func releaseExportCmd(g *globals) *cobra.Command {
 
 			r, err := c.releases.ExportRelease(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.ExportReleaseRequest{
+				&relicv1.ExportReleaseRequest{
 					Project: ref.project,
 					Name:    args[0],
 					Version: args[1],
-				}),
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("release export: %w", err)
 			}
 
-			a := r.Msg.GetArchive()
+			a := r.GetArchive()
 			if file == "" {
 				file = path.Base(a.GetPath())
 			}
@@ -913,11 +912,11 @@ func releaseDeleteCmd(g *globals) *cobra.Command {
 
 			if _, err := c.releases.DeleteRelease(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.DeleteReleaseRequest{
+				&relicv1.DeleteReleaseRequest{
 					Project: ref.project,
 					Name:    args[0],
 					Version: args[1],
-				}),
+				},
 			); err != nil {
 				return fmt.Errorf("release delete: %w", err)
 			}

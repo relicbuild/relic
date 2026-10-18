@@ -2,11 +2,9 @@ package relicapi
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"slices"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	packageurl "github.com/package-url/packageurl-go"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -18,17 +16,17 @@ import (
 
 func (s *scanServer) CheckPackage(
 	ctx context.Context,
-	req *connect.Request[relicv1.CheckPackageRequest],
-) (*connect.Response[relicv1.CheckPackageResponse], error) {
-	purl, err := packageurl.FromString(req.Msg.GetPurl())
+	req *relicv1.CheckPackageRequest,
+) (*relicv1.CheckPackageResponse, error) {
+	purl, err := packageurl.FromString(req.GetPurl())
 	if err != nil || purl.Name == "" || purl.Version == "" {
 		return nil, connect.NewError(
 			connect.CodeInvalidArgument,
-			errors.New("purl must be a package URL with a version, such as pkg:npm/lodash@4.17.21"),
+			"purl must be a package URL with a version, such as pkg:npm/lodash@4.17.21",
 		)
 	}
 
-	repo := req.Msg.GetRepository()
+	repo := req.GetRepository()
 	out := &relicv1.CheckPackageResponse{}
 
 	if s.d.MaliciousPackages != nil {
@@ -94,7 +92,7 @@ func (s *scanServer) CheckPackage(
 
 	out.Allowed = len(out.Refusals) == 0
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 // packageRisks are the operational risks of the version purl names, from
@@ -211,14 +209,15 @@ func (s *scanServer) offered(
 		Name:  r.Name,
 		Class: string(r.Class),
 	}) {
-		return nil, connect.NewError(connect.CodeNotFound, repository.ErrRepositoryNotFound)
+		return nil, connect.NewError(connect.CodeNotFound, repository.ErrRepositoryNotFound.Error()).
+			WithCause(repository.ErrRepositoryNotFound)
 	}
 
 	if formats, known := purlFormats[purl.Type]; known && r.Format != repository.FormatGeneric &&
 		!slices.Contains(formats, r.Format) {
-		return nil, connect.NewError(
+		return nil, connect.Errorf(
 			connect.CodeInvalidArgument,
-			fmt.Errorf("%s is a %s repository: it serves no pkg:%s packages", repo, r.Format, purl.Type),
+			"%s is a %s repository: it serves no pkg:%s packages", repo, r.Format, purl.Type,
 		)
 	}
 

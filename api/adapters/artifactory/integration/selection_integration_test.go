@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
-
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
 	"relic/internal/platform/database"
@@ -45,8 +43,8 @@ func TestVersionSelectionSkipsRefusedVersions(t *testing.T) {
 	}))
 	t.Cleanup(upstream.Close)
 
-	repos := relicv1connect.NewRepositoryServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
-	if _, err := repos.CreateRepository(ctx, connect.NewRequest(&relicv1.CreateRepositoryRequest{
+	repos := relicv1connect.NewRepositoryServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
+	if _, err := repos.CreateRepository(ctx, &relicv1.CreateRepositoryRequest{
 		Repository: &relicv1.Repository{
 			Name:   "npm-selected",
 			Class:  relicv1.RepositoryClass_REPOSITORY_CLASS_REMOTE,
@@ -56,7 +54,7 @@ func TestVersionSelectionSkipsRefusedVersions(t *testing.T) {
 				Quarantine: true,
 			},
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 

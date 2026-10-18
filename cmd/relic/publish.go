@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"golang.org/x/mod/modfile"
 	gomodule "golang.org/x/mod/module"
@@ -454,10 +453,10 @@ type hfCommit struct {
 }
 
 func (c *client) latestCommit(ctx context.Context, repo, base, rev string) (hfCommit, bool, error) {
-	r, err := c.artifacts.ListChildren(ctx, connect.NewRequest(&relicv1.ListChildrenRequest{
+	r, err := c.artifacts.ListChildren(ctx, &relicv1.ListChildrenRequest{
 		Repository: repo,
 		Path:       base,
-	}))
+	})
 	if isNotFound(err) {
 		return hfCommit{}, false, nil
 	}
@@ -471,7 +470,7 @@ func (c *client) latestCommit(ctx context.Context, repo, base, rev string) (hfCo
 		found  bool
 	)
 
-	for _, it := range r.Msg.GetItems() {
+	for _, it := range r.GetItems() {
 		name, stamp, ok := cutLast(it.GetName(), "_")
 		if !it.GetFolder() || !ok || name != rev {
 			continue
@@ -482,15 +481,15 @@ func (c *client) latestCommit(ctx context.Context, repo, base, rev string) (hfCo
 			continue
 		}
 
-		kids, err := c.artifacts.ListChildren(ctx, connect.NewRequest(&relicv1.ListChildrenRequest{
+		kids, err := c.artifacts.ListChildren(ctx, &relicv1.ListChildrenRequest{
 			Repository: repo,
 			Path:       it.GetPath(),
-		}))
+		})
 		if err != nil {
 			return hfCommit{}, false, err
 		}
 
-		for _, k := range kids.Msg.GetItems() {
+		for _, k := range kids.GetItems() {
 			if k.GetFolder() && len(k.GetName()) == 40 {
 				latest, found = hfCommit{
 					dir:  k.GetPath(),
@@ -606,10 +605,10 @@ func huggingFaceUploadCmd(g *globals) *cobra.Command {
 			discard := func(err error) error {
 				_, derr := c.artifacts.DeleteItem(
 					context.WithoutCancel(ctx),
-					connect.NewRequest(&relicv1.DeleteItemRequest{
+					&relicv1.DeleteItemRequest{
 						Repository: repo,
 						Path:       commit,
-					}),
+					},
 				)
 				if derr != nil && !isNotFound(derr) {
 					return errors.Join(
@@ -622,12 +621,12 @@ func huggingFaceUploadCmd(g *globals) *cobra.Command {
 			}
 
 			if hasPrev {
-				if _, err := c.artifacts.CopyItem(ctx, connect.NewRequest(&relicv1.CopyItemRequest{
+				if _, err := c.artifacts.CopyItem(ctx, &relicv1.CopyItemRequest{
 					Repository:   repo,
 					Path:         prev.dir,
 					ToRepository: repo,
 					ToPath:       commit,
-				})); err != nil {
+				}); err != nil {
 					return discard(fmt.Errorf("huggingface upload: copy the previous commit: %w", err))
 				}
 			}
@@ -750,14 +749,14 @@ func huggingFaceDownloadCmd(g *globals) *cobra.Command {
 }
 
 func (c *client) requireFormat(ctx context.Context, repo string, formats ...relicv1.Format) error {
-	r, err := c.repositories.GetRepository(ctx, connect.NewRequest(&relicv1.GetRepositoryRequest{
+	r, err := c.repositories.GetRepository(ctx, &relicv1.GetRepositoryRequest{
 		Name: repo,
-	}))
+	})
 	if err != nil {
 		return err
 	}
 
-	if format := r.Msg.GetRepository().GetFormat(); !slices.Contains(formats, format) {
+	if format := r.GetRepository().GetFormat(); !slices.Contains(formats, format) {
 		return fmt.Errorf("%s is a %s repository", repo, formatName(format))
 	}
 

@@ -3,13 +3,15 @@ package relicapi
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/reflect/protoregistry"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/internal/access/audit"
@@ -46,19 +48,19 @@ func accessOf(spec connect.Spec) relicv1.Access {
 	return a
 }
 
-func accessInterceptor() connect.UnaryInterceptorFunc {
-	return func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			access := accessOf(req.Spec())
+func accessInterceptor() connect.ServerInterceptor {
+	return func(next connect.ServerFunc) connect.ServerFunc {
+		return func(ctx context.Context, spec connect.Spec, stream connect.ServerStream) error {
+			access := accessOf(spec)
 			err := allowed(access, auth.FromContext(ctx))
 			trace.SpanFromContext(ctx).SetAttributes(
 				attribute.String("relic.access", access.String()), attribute.Bool("relic.access.allowed", err == nil))
 
 			if err != nil {
-				return nil, err
+				return err
 			}
 
-			return next(ctx, req)
+			return next(ctx, spec, stream)
 		}
 	}
 }
@@ -69,51 +71,122 @@ func allowed(a relicv1.Access, p auth.Principal) error {
 		return nil
 	case relicv1.Access_ACCESS_AUTHENTICATED:
 		if p.Anonymous() {
-			return connect.NewError(connect.CodeUnauthenticated, errors.New("sign in first"))
+			return connect.NewError(connect.CodeUnauthenticated, "sign in first")
 		}
 
 		return nil
 	case relicv1.Access_ACCESS_ADMIN:
 		if p.Anonymous() {
-			return connect.NewError(connect.CodeUnauthenticated, errors.New("sign in first"))
+			return connect.NewError(connect.CodeUnauthenticated, "sign in first")
 		}
 
 		if !p.Admin {
-			return connect.NewError(connect.CodePermissionDenied, errors.New("administrators only"))
+			return connect.NewError(connect.CodePermissionDenied, "administrators only")
 		}
 
 		return nil
 	case relicv1.Access_ACCESS_VIEWER:
 		if p.Anonymous() {
-			return connect.NewError(connect.CodeUnauthenticated, errors.New("sign in first"))
+			return connect.NewError(connect.CodeUnauthenticated, "sign in first")
 		}
 
 		if !p.Admin && !p.Viewer {
-			return connect.NewError(connect.CodePermissionDenied, errors.New("viewers and administrators only"))
+			return connect.NewError(connect.CodePermissionDenied, "viewers and administrators only")
 		}
 
 		return nil
 	default:
-		return connect.NewError(connect.CodePermissionDenied, errors.New("method has no access rule"))
+		return connect.NewError(connect.CodePermissionDenied, "method has no access rule")
 	}
 }
 
-func errorInterceptor(log *slog.Logger) connect.UnaryInterceptorFunc {
-	return func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			resp, err := next(ctx, req)
+func errorInterceptor(log *slog.Logger) connect.ServerInterceptor {
+	return func(next connect.ServerFunc) connect.ServerFunc {
+		return func(ctx context.Context, spec connect.Spec, stream connect.ServerStream) error {
+			err := next(ctx, spec, stream)
 			if err == nil {
-				return resp, nil
+				return nil
 			}
 
 			ce := codeOf(err)
 			if ce.Code() == connect.CodeInternal {
-				log.ErrorContext(ctx, "relic api", "procedure", req.Spec().Procedure, "error", err)
+				log.ErrorContext(ctx, "relic api", "procedure", spec.Procedure, "error", err)
 			}
 
-			return nil, ce
+			return ce
 		}
 	}
+}
+
+type requestMessageKey struct{}
+
+// receiveRequest decodes a unary call's request before the interceptors
+// after it run, so they see the request and a body that cannot be decoded
+// fails before the access check.
+func receiveRequest() connect.ServerInterceptor {
+	return func(next connect.ServerFunc) connect.ServerFunc {
+		return func(ctx context.Context, spec connect.Spec, stream connect.ServerStream) error {
+			request := unaryRequestMessage(spec)
+			if request == nil {
+				return next(ctx, spec, stream)
+			}
+
+			if err := stream.Receive(request); err != nil {
+				return err
+			}
+
+			ctx = context.WithValue(ctx, requestMessageKey{}, request)
+
+			return next(ctx, spec, &receivedStream{
+				ServerStream: stream,
+				request:      request,
+			})
+		}
+	}
+}
+
+func unaryRequestMessage(spec connect.Spec) proto.Message {
+	md, ok := spec.Schema.(protoreflect.MethodDescriptor)
+	if !ok || spec.StreamType != connect.StreamTypeUnary {
+		return nil
+	}
+
+	messageType, err := protoregistry.GlobalTypes.FindMessageByName(md.Input().FullName())
+	if err != nil {
+		return nil
+	}
+
+	return messageType.New().Interface()
+}
+
+func requestMessage(ctx context.Context) proto.Message {
+	msg, _ := ctx.Value(requestMessageKey{}).(proto.Message)
+
+	return msg
+}
+
+// receivedStream hands the handler the request receiveRequest decoded.
+type receivedStream struct {
+	connect.ServerStream
+
+	request  proto.Message
+	received bool
+}
+
+func (s *receivedStream) Receive(msg any) error {
+	if s.received {
+		return io.EOF
+	}
+
+	dst, ok := msg.(proto.Message)
+	if !ok {
+		return connect.Errorf(connect.CodeInternal, "%T is not a protobuf message", msg)
+	}
+
+	proto.Merge(dst, s.request)
+	s.received = true
+
+	return nil
 }
 
 var notFound = []error{
@@ -147,12 +220,12 @@ func codeOf(err error) *connect.Error {
 	}
 
 	if errors.Is(err, repository.ErrContentMissing) || errors.Is(err, repository.ErrContentCorrupt) {
-		return connect.NewError(connect.CodeDataLoss, errors.New("stored content is missing or damaged"))
+		return connect.NewError(connect.CodeDataLoss, "stored content is missing or damaged")
 	}
 
 	for _, nf := range notFound {
 		if errors.Is(err, nf) {
-			return connect.NewError(connect.CodeNotFound, err)
+			return connect.NewError(connect.CodeNotFound, err.Error()).WithCause(err)
 		}
 	}
 
@@ -163,7 +236,7 @@ func codeOf(err error) *connect.Error {
 		errors.Is(err, policy.ErrExists),
 		errors.Is(err, release.ErrExists),
 		errors.Is(err, evidence.ErrKeyExists):
-		return connect.NewError(connect.CodeAlreadyExists, err)
+		return connect.NewError(connect.CodeAlreadyExists, err.Error()).WithCause(err)
 	case errors.Is(err, repository.ErrInvalidRepository),
 		errors.Is(err, repository.ErrInvalidPath),
 		errors.Is(err, repository.ErrInvalidProperty),
@@ -183,20 +256,20 @@ func codeOf(err error) *connect.Error {
 		errors.Is(err, release.ErrInvalidGate),
 		errors.Is(err, evidence.ErrInvalid),
 		errors.Is(err, buildinfo.ErrInvalid):
-		return connect.NewError(connect.CodeInvalidArgument, err)
+		return connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
 	case errors.Is(err, repository.ErrChecksumMismatch),
 		errors.Is(err, repository.ErrNotAFile),
 		errors.Is(err, repository.ErrSelfCopy),
 		errors.Is(err, repository.ErrUnsupportedArchive):
-		return connect.NewError(connect.CodeInvalidArgument, err)
+		return connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
 	case errors.Is(err, repository.ErrForbidden),
 		errors.Is(err, repository.ErrCoolingDown),
 		errors.Is(err, release.ErrForbidden):
-		return connect.NewError(connect.CodePermissionDenied, err)
+		return connect.NewError(connect.CodePermissionDenied, err.Error()).WithCause(err)
 	case errors.Is(err, blocking.ErrNotQuarantined):
-		return connect.NewError(connect.CodeFailedPrecondition, err)
+		return connect.NewError(connect.CodeFailedPrecondition, err.Error()).WithCause(err)
 	case errors.Is(err, blocking.ErrInvalid):
-		return connect.NewError(connect.CodeInvalidArgument, err)
+		return connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
 	case errors.Is(err, policy.ErrInUse),
 		errors.Is(err, policy.ErrDecided),
 		errors.Is(err, release.ErrRefused),
@@ -206,18 +279,19 @@ func codeOf(err error) *connect.Error {
 		errors.Is(err, repository.ErrImmutable),
 		errors.Is(err, release.ErrNotDraft),
 		errors.Is(err, signingkey.ErrKind):
-		return connect.NewError(connect.CodeFailedPrecondition, err)
+		return connect.NewError(connect.CodeFailedPrecondition, err.Error()).WithCause(err)
 	case errors.Is(err, repository.ErrUpstream):
-		return connect.NewError(connect.CodeUnavailable, err)
+		return connect.NewError(connect.CodeUnavailable, err.Error()).WithCause(err)
 	case errors.Is(err, repository.ErrTooLarge), errors.Is(err, repository.ErrQuotaExceeded):
-		return connect.NewError(connect.CodeResourceExhausted, err)
+		return connect.NewError(connect.CodeResourceExhausted, err.Error()).WithCause(err)
 	case errors.Is(err, objectstore.ErrStorageFull):
-		return connect.NewError(connect.CodeResourceExhausted, objectstore.ErrStorageFull)
+		return connect.NewError(connect.CodeResourceExhausted, objectstore.ErrStorageFull.Error()).
+			WithCause(objectstore.ErrStorageFull)
 	case errors.Is(err, context.Canceled):
-		return connect.NewError(connect.CodeCanceled, err)
+		return connect.NewError(connect.CodeCanceled, err.Error()).WithCause(err)
 	case errors.Is(err, context.DeadlineExceeded):
-		return connect.NewError(connect.CodeDeadlineExceeded, err)
+		return connect.NewError(connect.CodeDeadlineExceeded, err.Error()).WithCause(err)
 	}
 
-	return connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	return connect.NewError(connect.CodeInternal, "internal error")
 }

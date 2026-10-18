@@ -5,8 +5,6 @@ package integration
 import (
 	"testing"
 
-	"connectrpc.com/connect"
-
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
 )
@@ -135,20 +133,20 @@ func TestGetRepositoryTellsTheCallerWhetherTheyMayUploadAndDelete(t *testing.T) 
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			repos := relicv1connect.NewRepositoryServiceClient(relicHTTP(tt.user, tt.password), srv.URL+"/api")
+			repos := relicv1connect.NewRepositoryServiceClient(apiClient(relicHTTP(tt.user, tt.password), srv.URL))
 
-			resp, err := repos.GetRepository(t.Context(), connect.NewRequest(&relicv1.GetRepositoryRequest{
+			resp, err := repos.GetRepository(t.Context(), &relicv1.GetRepositoryRequest{
 				Name: tt.repository,
-			}))
+			})
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			if got := resp.Msg.GetCanUpload(); got != tt.canUpload {
+			if got := resp.GetCanUpload(); got != tt.canUpload {
 				t.Errorf("can_upload = %v, want %v", got, tt.canUpload)
 			}
 
-			if got := resp.Msg.GetCanDelete(); got != tt.canDelete {
+			if got := resp.GetCanDelete(); got != tt.canDelete {
 				t.Errorf("can_delete = %v, want %v", got, tt.canDelete)
 			}
 		})

@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -269,17 +268,17 @@ func searchCmd(g *globals) *cobra.Command {
 
 			r, err := c.artifacts.SearchItems(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.SearchItemsRequest{
+				&relicv1.SearchItemsRequest{
 					Name:       args[0],
 					Repository: repo,
 					Limit:      limit,
-				}),
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("search: %w", err)
 			}
 
-			return printMessage(cmd.OutOrStdout(), output, r.Msg, func(w io.Writer) error {
+			return printMessage(cmd.OutOrStdout(), output, r, func(w io.Writer) error {
 				table := terminal.Table{
 					Headers: []string{
 						"ITEM",
@@ -293,7 +292,7 @@ func searchCmd(g *globals) *cobra.Command {
 					},
 				}
 
-				for _, item := range r.Msg.GetItems() {
+				for _, item := range r.GetItems() {
 					kind, size := "file", terminal.ByteSize(item.GetSize())
 					if item.GetFolder() {
 						kind, size = "folder", ""

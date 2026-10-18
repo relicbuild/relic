@@ -5,7 +5,6 @@ import (
 	"io"
 	"strings"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -52,15 +51,15 @@ func reportCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			r, err := c.scans.GetItemScan(cmd.Context(), connect.NewRequest(&relicv1.GetItemScanRequest{
+			r, err := c.scans.GetItemScan(cmd.Context(), &relicv1.GetItemScanRequest{
 				Repository: repo,
 				Path:       p,
-			}))
+			})
 			if err != nil {
 				return fmt.Errorf("report: %w", err)
 			}
 
-			s := r.Msg.GetScan()
+			s := r.GetScan()
 
 			if err := printMessage(cmd.OutOrStdout(), output, s, func(w io.Writer) error {
 				status := strings.TrimPrefix(strings.ToLower(s.GetStatus().String()), "scan_status_")

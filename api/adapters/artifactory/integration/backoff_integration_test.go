@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -71,14 +71,12 @@ func TestSignInBackoff(t *testing.T) {
 		)
 	}
 
-	login := connect.NewRequest(&relicv1.LoginRequest{
+	login := &relicv1.LoginRequest{
 		Username: "admin",
 		Password: "password",
-	})
-	login.Header().Set("X-Relic-UI", "1")
-
-	if _, err := relicv1connect.NewSessionServiceClient(relicHTTP("", ""), srv.URL+"/api").
-		Login(t.Context(), login); code(err) != connect.CodeResourceExhausted {
+	}
+	if _, err := relicv1connect.NewSessionServiceClient(apiClient(relicHTTP("", ""), srv.URL)).
+		Login(withRequestHeader(t.Context(), "X-Relic-UI", "1"), login); code(err) != connect.CodeResourceExhausted {
 		t.Errorf("UI sign-in while throttled: %v, want resource exhausted", err)
 	}
 

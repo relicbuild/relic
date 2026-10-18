@@ -5,289 +5,323 @@
 package relicv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
-	http "net/http"
 	v1 "relic/api/gen/relic/v1"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// LdapServiceName is the fully-qualified name of the LdapService service.
 	LdapServiceName = "relic.v1.LdapService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// LdapServiceListLdapServersProcedure is the fully-qualified name of the LdapService's
-	// ListLdapServers RPC.
-	LdapServiceListLdapServersProcedure = "/relic.v1.LdapService/ListLdapServers"
-	// LdapServicePutLdapServerProcedure is the fully-qualified name of the LdapService's PutLdapServer
+	// LdapServiceListLdapServersProcedure is the procedure name of the LdapService's ListLdapServers
 	// RPC.
+	LdapServiceListLdapServersProcedure = "/relic.v1.LdapService/ListLdapServers"
+	// LdapServicePutLdapServerProcedure is the procedure name of the LdapService's PutLdapServer RPC.
 	LdapServicePutLdapServerProcedure = "/relic.v1.LdapService/PutLdapServer"
-	// LdapServiceDeleteLdapServerProcedure is the fully-qualified name of the LdapService's
-	// DeleteLdapServer RPC.
+	// LdapServiceDeleteLdapServerProcedure is the procedure name of the LdapService's DeleteLdapServer
+	// RPC.
 	LdapServiceDeleteLdapServerProcedure = "/relic.v1.LdapService/DeleteLdapServer"
-	// LdapServiceListLdapGroupMappingsProcedure is the fully-qualified name of the LdapService's
+	// LdapServiceListLdapGroupMappingsProcedure is the procedure name of the LdapService's
 	// ListLdapGroupMappings RPC.
 	LdapServiceListLdapGroupMappingsProcedure = "/relic.v1.LdapService/ListLdapGroupMappings"
-	// LdapServicePutLdapGroupMappingProcedure is the fully-qualified name of the LdapService's
+	// LdapServicePutLdapGroupMappingProcedure is the procedure name of the LdapService's
 	// PutLdapGroupMapping RPC.
 	LdapServicePutLdapGroupMappingProcedure = "/relic.v1.LdapService/PutLdapGroupMapping"
-	// LdapServiceDeleteLdapGroupMappingProcedure is the fully-qualified name of the LdapService's
+	// LdapServiceDeleteLdapGroupMappingProcedure is the procedure name of the LdapService's
 	// DeleteLdapGroupMapping RPC.
 	LdapServiceDeleteLdapGroupMappingProcedure = "/relic.v1.LdapService/DeleteLdapGroupMapping"
-	// LdapServiceTestLdapSignInProcedure is the fully-qualified name of the LdapService's
-	// TestLdapSignIn RPC.
+	// LdapServiceTestLdapSignInProcedure is the procedure name of the LdapService's TestLdapSignIn RPC.
 	LdapServiceTestLdapSignInProcedure = "/relic.v1.LdapService/TestLdapSignIn"
+)
+
+var (
+	ldapServiceListLdapServersSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_ldap_proto.Services().ByName("LdapService").Methods().ByName("ListLdapServers"),
+			Procedure:  LdapServiceListLdapServersProcedure,
+		}
+	})
+	ldapServicePutLdapServerSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_ldap_proto.Services().ByName("LdapService").Methods().ByName("PutLdapServer"),
+			Procedure:  LdapServicePutLdapServerProcedure,
+		}
+	})
+	ldapServiceDeleteLdapServerSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_ldap_proto.Services().ByName("LdapService").Methods().ByName("DeleteLdapServer"),
+			Procedure:  LdapServiceDeleteLdapServerProcedure,
+		}
+	})
+	ldapServiceListLdapGroupMappingsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_ldap_proto.Services().ByName("LdapService").Methods().ByName("ListLdapGroupMappings"),
+			Procedure:  LdapServiceListLdapGroupMappingsProcedure,
+		}
+	})
+	ldapServicePutLdapGroupMappingSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_ldap_proto.Services().ByName("LdapService").Methods().ByName("PutLdapGroupMapping"),
+			Procedure:  LdapServicePutLdapGroupMappingProcedure,
+		}
+	})
+	ldapServiceDeleteLdapGroupMappingSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_ldap_proto.Services().ByName("LdapService").Methods().ByName("DeleteLdapGroupMapping"),
+			Procedure:  LdapServiceDeleteLdapGroupMappingProcedure,
+		}
+	})
+	ldapServiceTestLdapSignInSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_ldap_proto.Services().ByName("LdapService").Methods().ByName("TestLdapSignIn"),
+			Procedure:  LdapServiceTestLdapSignInProcedure,
+		}
+	})
 )
 
 // LdapServiceClient is a client for the relic.v1.LdapService service.
 type LdapServiceClient interface {
-	ListLdapServers(context.Context, *connect.Request[v1.ListLdapServersRequest]) (*connect.Response[v1.ListLdapServersResponse], error)
+	ListLdapServers(context.Context, *v1.ListLdapServersRequest) (*v1.ListLdapServersResponse, error)
 	// PutLdapServer creates or replaces an LDAP server. An empty manager password
 	// keeps the stored one.
-	PutLdapServer(context.Context, *connect.Request[v1.PutLdapServerRequest]) (*connect.Response[v1.PutLdapServerResponse], error)
-	DeleteLdapServer(context.Context, *connect.Request[v1.DeleteLdapServerRequest]) (*connect.Response[v1.DeleteLdapServerResponse], error)
-	ListLdapGroupMappings(context.Context, *connect.Request[v1.ListLdapGroupMappingsRequest]) (*connect.Response[v1.ListLdapGroupMappingsResponse], error)
-	PutLdapGroupMapping(context.Context, *connect.Request[v1.PutLdapGroupMappingRequest]) (*connect.Response[v1.PutLdapGroupMappingResponse], error)
-	DeleteLdapGroupMapping(context.Context, *connect.Request[v1.DeleteLdapGroupMappingRequest]) (*connect.Response[v1.DeleteLdapGroupMappingResponse], error)
+	PutLdapServer(context.Context, *v1.PutLdapServerRequest) (*v1.PutLdapServerResponse, error)
+	DeleteLdapServer(context.Context, *v1.DeleteLdapServerRequest) (*v1.DeleteLdapServerResponse, error)
+	ListLdapGroupMappings(context.Context, *v1.ListLdapGroupMappingsRequest) (*v1.ListLdapGroupMappingsResponse, error)
+	PutLdapGroupMapping(context.Context, *v1.PutLdapGroupMappingRequest) (*v1.PutLdapGroupMappingResponse, error)
+	DeleteLdapGroupMapping(context.Context, *v1.DeleteLdapGroupMappingRequest) (*v1.DeleteLdapGroupMappingResponse, error)
 	// TestLdapSignIn signs a user in with LDAP server settings that need not be
 	// saved. Refused credentials and unreachable servers are answers, not
 	// errors.
-	TestLdapSignIn(context.Context, *connect.Request[v1.TestLdapSignInRequest]) (*connect.Response[v1.TestLdapSignInResponse], error)
+	TestLdapSignIn(context.Context, *v1.TestLdapSignInRequest) (*v1.TestLdapSignInResponse, error)
 }
 
-// NewLdapServiceClient constructs a client for the relic.v1.LdapService service. By default, it
-// uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
-// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
-// connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewLdapServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) LdapServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	ldapServiceMethods := v1.File_relic_v1_ldap_proto.Services().ByName("LdapService").Methods()
-	return &ldapServiceClient{
-		listLdapServers: connect.NewClient[v1.ListLdapServersRequest, v1.ListLdapServersResponse](
-			httpClient,
-			baseURL+LdapServiceListLdapServersProcedure,
-			connect.WithSchema(ldapServiceMethods.ByName("ListLdapServers")),
-			connect.WithClientOptions(opts...),
-		),
-		putLdapServer: connect.NewClient[v1.PutLdapServerRequest, v1.PutLdapServerResponse](
-			httpClient,
-			baseURL+LdapServicePutLdapServerProcedure,
-			connect.WithSchema(ldapServiceMethods.ByName("PutLdapServer")),
-			connect.WithClientOptions(opts...),
-		),
-		deleteLdapServer: connect.NewClient[v1.DeleteLdapServerRequest, v1.DeleteLdapServerResponse](
-			httpClient,
-			baseURL+LdapServiceDeleteLdapServerProcedure,
-			connect.WithSchema(ldapServiceMethods.ByName("DeleteLdapServer")),
-			connect.WithClientOptions(opts...),
-		),
-		listLdapGroupMappings: connect.NewClient[v1.ListLdapGroupMappingsRequest, v1.ListLdapGroupMappingsResponse](
-			httpClient,
-			baseURL+LdapServiceListLdapGroupMappingsProcedure,
-			connect.WithSchema(ldapServiceMethods.ByName("ListLdapGroupMappings")),
-			connect.WithClientOptions(opts...),
-		),
-		putLdapGroupMapping: connect.NewClient[v1.PutLdapGroupMappingRequest, v1.PutLdapGroupMappingResponse](
-			httpClient,
-			baseURL+LdapServicePutLdapGroupMappingProcedure,
-			connect.WithSchema(ldapServiceMethods.ByName("PutLdapGroupMapping")),
-			connect.WithClientOptions(opts...),
-		),
-		deleteLdapGroupMapping: connect.NewClient[v1.DeleteLdapGroupMappingRequest, v1.DeleteLdapGroupMappingResponse](
-			httpClient,
-			baseURL+LdapServiceDeleteLdapGroupMappingProcedure,
-			connect.WithSchema(ldapServiceMethods.ByName("DeleteLdapGroupMapping")),
-			connect.WithClientOptions(opts...),
-		),
-		testLdapSignIn: connect.NewClient[v1.TestLdapSignInRequest, v1.TestLdapSignInResponse](
-			httpClient,
-			baseURL+LdapServiceTestLdapSignInProcedure,
-			connect.WithSchema(ldapServiceMethods.ByName("TestLdapSignIn")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// ldapServiceClient implements LdapServiceClient.
-type ldapServiceClient struct {
-	listLdapServers        *connect.Client[v1.ListLdapServersRequest, v1.ListLdapServersResponse]
-	putLdapServer          *connect.Client[v1.PutLdapServerRequest, v1.PutLdapServerResponse]
-	deleteLdapServer       *connect.Client[v1.DeleteLdapServerRequest, v1.DeleteLdapServerResponse]
-	listLdapGroupMappings  *connect.Client[v1.ListLdapGroupMappingsRequest, v1.ListLdapGroupMappingsResponse]
-	putLdapGroupMapping    *connect.Client[v1.PutLdapGroupMappingRequest, v1.PutLdapGroupMappingResponse]
-	deleteLdapGroupMapping *connect.Client[v1.DeleteLdapGroupMappingRequest, v1.DeleteLdapGroupMappingResponse]
-	testLdapSignIn         *connect.Client[v1.TestLdapSignInRequest, v1.TestLdapSignInResponse]
-}
-
-// ListLdapServers calls relic.v1.LdapService.ListLdapServers.
-func (c *ldapServiceClient) ListLdapServers(ctx context.Context, req *connect.Request[v1.ListLdapServersRequest]) (*connect.Response[v1.ListLdapServersResponse], error) {
-	return c.listLdapServers.CallUnary(ctx, req)
-}
-
-// PutLdapServer calls relic.v1.LdapService.PutLdapServer.
-func (c *ldapServiceClient) PutLdapServer(ctx context.Context, req *connect.Request[v1.PutLdapServerRequest]) (*connect.Response[v1.PutLdapServerResponse], error) {
-	return c.putLdapServer.CallUnary(ctx, req)
-}
-
-// DeleteLdapServer calls relic.v1.LdapService.DeleteLdapServer.
-func (c *ldapServiceClient) DeleteLdapServer(ctx context.Context, req *connect.Request[v1.DeleteLdapServerRequest]) (*connect.Response[v1.DeleteLdapServerResponse], error) {
-	return c.deleteLdapServer.CallUnary(ctx, req)
-}
-
-// ListLdapGroupMappings calls relic.v1.LdapService.ListLdapGroupMappings.
-func (c *ldapServiceClient) ListLdapGroupMappings(ctx context.Context, req *connect.Request[v1.ListLdapGroupMappingsRequest]) (*connect.Response[v1.ListLdapGroupMappingsResponse], error) {
-	return c.listLdapGroupMappings.CallUnary(ctx, req)
-}
-
-// PutLdapGroupMapping calls relic.v1.LdapService.PutLdapGroupMapping.
-func (c *ldapServiceClient) PutLdapGroupMapping(ctx context.Context, req *connect.Request[v1.PutLdapGroupMappingRequest]) (*connect.Response[v1.PutLdapGroupMappingResponse], error) {
-	return c.putLdapGroupMapping.CallUnary(ctx, req)
-}
-
-// DeleteLdapGroupMapping calls relic.v1.LdapService.DeleteLdapGroupMapping.
-func (c *ldapServiceClient) DeleteLdapGroupMapping(ctx context.Context, req *connect.Request[v1.DeleteLdapGroupMappingRequest]) (*connect.Response[v1.DeleteLdapGroupMappingResponse], error) {
-	return c.deleteLdapGroupMapping.CallUnary(ctx, req)
-}
-
-// TestLdapSignIn calls relic.v1.LdapService.TestLdapSignIn.
-func (c *ldapServiceClient) TestLdapSignIn(ctx context.Context, req *connect.Request[v1.TestLdapSignInRequest]) (*connect.Response[v1.TestLdapSignInResponse], error) {
-	return c.testLdapSignIn.CallUnary(ctx, req)
+// NewLdapServiceClient constructs a client for the relic.v1.LdapService service. Multiple service
+// clients may share a single connect.Client.
+func NewLdapServiceClient(client *connect.Client) LdapServiceClient {
+	return &ldapServiceClient{client: client}
 }
 
 // LdapServiceHandler is an implementation of the relic.v1.LdapService service.
 type LdapServiceHandler interface {
-	ListLdapServers(context.Context, *connect.Request[v1.ListLdapServersRequest]) (*connect.Response[v1.ListLdapServersResponse], error)
+	ListLdapServers(context.Context, *v1.ListLdapServersRequest) (*v1.ListLdapServersResponse, error)
 	// PutLdapServer creates or replaces an LDAP server. An empty manager password
 	// keeps the stored one.
-	PutLdapServer(context.Context, *connect.Request[v1.PutLdapServerRequest]) (*connect.Response[v1.PutLdapServerResponse], error)
-	DeleteLdapServer(context.Context, *connect.Request[v1.DeleteLdapServerRequest]) (*connect.Response[v1.DeleteLdapServerResponse], error)
-	ListLdapGroupMappings(context.Context, *connect.Request[v1.ListLdapGroupMappingsRequest]) (*connect.Response[v1.ListLdapGroupMappingsResponse], error)
-	PutLdapGroupMapping(context.Context, *connect.Request[v1.PutLdapGroupMappingRequest]) (*connect.Response[v1.PutLdapGroupMappingResponse], error)
-	DeleteLdapGroupMapping(context.Context, *connect.Request[v1.DeleteLdapGroupMappingRequest]) (*connect.Response[v1.DeleteLdapGroupMappingResponse], error)
+	PutLdapServer(context.Context, *v1.PutLdapServerRequest) (*v1.PutLdapServerResponse, error)
+	DeleteLdapServer(context.Context, *v1.DeleteLdapServerRequest) (*v1.DeleteLdapServerResponse, error)
+	ListLdapGroupMappings(context.Context, *v1.ListLdapGroupMappingsRequest) (*v1.ListLdapGroupMappingsResponse, error)
+	PutLdapGroupMapping(context.Context, *v1.PutLdapGroupMappingRequest) (*v1.PutLdapGroupMappingResponse, error)
+	DeleteLdapGroupMapping(context.Context, *v1.DeleteLdapGroupMappingRequest) (*v1.DeleteLdapGroupMappingResponse, error)
 	// TestLdapSignIn signs a user in with LDAP server settings that need not be
 	// saved. Refused credentials and unreachable servers are answers, not
 	// errors.
-	TestLdapSignIn(context.Context, *connect.Request[v1.TestLdapSignInRequest]) (*connect.Response[v1.TestLdapSignInResponse], error)
+	TestLdapSignIn(context.Context, *v1.TestLdapSignInRequest) (*v1.TestLdapSignInResponse, error)
 }
 
-// NewLdapServiceHandler builds an HTTP handler from the service implementation. It returns the path
-// on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewLdapServiceHandler(svc LdapServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	ldapServiceMethods := v1.File_relic_v1_ldap_proto.Services().ByName("LdapService").Methods()
-	ldapServiceListLdapServersHandler := connect.NewUnaryHandler(
-		LdapServiceListLdapServersProcedure,
-		svc.ListLdapServers,
-		connect.WithSchema(ldapServiceMethods.ByName("ListLdapServers")),
-		connect.WithHandlerOptions(opts...),
+// RegisterLdapServiceHandler registers svc as the relic.v1.LdapService implementation on server.
+func RegisterLdapServiceHandler(server *connect.Server, svc LdapServiceHandler) {
+	adapter := ldapServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: ldapServiceListLdapServersSpec(), Handler: adapter.listLdapServers},
+		connect.Method{Spec: ldapServicePutLdapServerSpec(), Handler: adapter.putLdapServer},
+		connect.Method{Spec: ldapServiceDeleteLdapServerSpec(), Handler: adapter.deleteLdapServer},
+		connect.Method{Spec: ldapServiceListLdapGroupMappingsSpec(), Handler: adapter.listLdapGroupMappings},
+		connect.Method{Spec: ldapServicePutLdapGroupMappingSpec(), Handler: adapter.putLdapGroupMapping},
+		connect.Method{Spec: ldapServiceDeleteLdapGroupMappingSpec(), Handler: adapter.deleteLdapGroupMapping},
+		connect.Method{Spec: ldapServiceTestLdapSignInSpec(), Handler: adapter.testLdapSignIn},
 	)
-	ldapServicePutLdapServerHandler := connect.NewUnaryHandler(
-		LdapServicePutLdapServerProcedure,
-		svc.PutLdapServer,
-		connect.WithSchema(ldapServiceMethods.ByName("PutLdapServer")),
-		connect.WithHandlerOptions(opts...),
-	)
-	ldapServiceDeleteLdapServerHandler := connect.NewUnaryHandler(
-		LdapServiceDeleteLdapServerProcedure,
-		svc.DeleteLdapServer,
-		connect.WithSchema(ldapServiceMethods.ByName("DeleteLdapServer")),
-		connect.WithHandlerOptions(opts...),
-	)
-	ldapServiceListLdapGroupMappingsHandler := connect.NewUnaryHandler(
-		LdapServiceListLdapGroupMappingsProcedure,
-		svc.ListLdapGroupMappings,
-		connect.WithSchema(ldapServiceMethods.ByName("ListLdapGroupMappings")),
-		connect.WithHandlerOptions(opts...),
-	)
-	ldapServicePutLdapGroupMappingHandler := connect.NewUnaryHandler(
-		LdapServicePutLdapGroupMappingProcedure,
-		svc.PutLdapGroupMapping,
-		connect.WithSchema(ldapServiceMethods.ByName("PutLdapGroupMapping")),
-		connect.WithHandlerOptions(opts...),
-	)
-	ldapServiceDeleteLdapGroupMappingHandler := connect.NewUnaryHandler(
-		LdapServiceDeleteLdapGroupMappingProcedure,
-		svc.DeleteLdapGroupMapping,
-		connect.WithSchema(ldapServiceMethods.ByName("DeleteLdapGroupMapping")),
-		connect.WithHandlerOptions(opts...),
-	)
-	ldapServiceTestLdapSignInHandler := connect.NewUnaryHandler(
-		LdapServiceTestLdapSignInProcedure,
-		svc.TestLdapSignIn,
-		connect.WithSchema(ldapServiceMethods.ByName("TestLdapSignIn")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/relic.v1.LdapService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case LdapServiceListLdapServersProcedure:
-			ldapServiceListLdapServersHandler.ServeHTTP(w, r)
-		case LdapServicePutLdapServerProcedure:
-			ldapServicePutLdapServerHandler.ServeHTTP(w, r)
-		case LdapServiceDeleteLdapServerProcedure:
-			ldapServiceDeleteLdapServerHandler.ServeHTTP(w, r)
-		case LdapServiceListLdapGroupMappingsProcedure:
-			ldapServiceListLdapGroupMappingsHandler.ServeHTTP(w, r)
-		case LdapServicePutLdapGroupMappingProcedure:
-			ldapServicePutLdapGroupMappingHandler.ServeHTTP(w, r)
-		case LdapServiceDeleteLdapGroupMappingProcedure:
-			ldapServiceDeleteLdapGroupMappingHandler.ServeHTTP(w, r)
-		case LdapServiceTestLdapSignInProcedure:
-			ldapServiceTestLdapSignInHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedLdapServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedLdapServiceHandler struct{}
 
-func (UnimplementedLdapServiceHandler) ListLdapServers(context.Context, *connect.Request[v1.ListLdapServersRequest]) (*connect.Response[v1.ListLdapServersResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.LdapService.ListLdapServers is not implemented"))
+func (UnimplementedLdapServiceHandler) ListLdapServers(context.Context, *v1.ListLdapServersRequest) (*v1.ListLdapServersResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.LdapService.ListLdapServers is not implemented")
 }
 
-func (UnimplementedLdapServiceHandler) PutLdapServer(context.Context, *connect.Request[v1.PutLdapServerRequest]) (*connect.Response[v1.PutLdapServerResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.LdapService.PutLdapServer is not implemented"))
+func (UnimplementedLdapServiceHandler) PutLdapServer(context.Context, *v1.PutLdapServerRequest) (*v1.PutLdapServerResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.LdapService.PutLdapServer is not implemented")
 }
 
-func (UnimplementedLdapServiceHandler) DeleteLdapServer(context.Context, *connect.Request[v1.DeleteLdapServerRequest]) (*connect.Response[v1.DeleteLdapServerResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.LdapService.DeleteLdapServer is not implemented"))
+func (UnimplementedLdapServiceHandler) DeleteLdapServer(context.Context, *v1.DeleteLdapServerRequest) (*v1.DeleteLdapServerResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.LdapService.DeleteLdapServer is not implemented")
 }
 
-func (UnimplementedLdapServiceHandler) ListLdapGroupMappings(context.Context, *connect.Request[v1.ListLdapGroupMappingsRequest]) (*connect.Response[v1.ListLdapGroupMappingsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.LdapService.ListLdapGroupMappings is not implemented"))
+func (UnimplementedLdapServiceHandler) ListLdapGroupMappings(context.Context, *v1.ListLdapGroupMappingsRequest) (*v1.ListLdapGroupMappingsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.LdapService.ListLdapGroupMappings is not implemented")
 }
 
-func (UnimplementedLdapServiceHandler) PutLdapGroupMapping(context.Context, *connect.Request[v1.PutLdapGroupMappingRequest]) (*connect.Response[v1.PutLdapGroupMappingResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.LdapService.PutLdapGroupMapping is not implemented"))
+func (UnimplementedLdapServiceHandler) PutLdapGroupMapping(context.Context, *v1.PutLdapGroupMappingRequest) (*v1.PutLdapGroupMappingResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.LdapService.PutLdapGroupMapping is not implemented")
 }
 
-func (UnimplementedLdapServiceHandler) DeleteLdapGroupMapping(context.Context, *connect.Request[v1.DeleteLdapGroupMappingRequest]) (*connect.Response[v1.DeleteLdapGroupMappingResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.LdapService.DeleteLdapGroupMapping is not implemented"))
+func (UnimplementedLdapServiceHandler) DeleteLdapGroupMapping(context.Context, *v1.DeleteLdapGroupMappingRequest) (*v1.DeleteLdapGroupMappingResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.LdapService.DeleteLdapGroupMapping is not implemented")
 }
 
-func (UnimplementedLdapServiceHandler) TestLdapSignIn(context.Context, *connect.Request[v1.TestLdapSignInRequest]) (*connect.Response[v1.TestLdapSignInResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("relic.v1.LdapService.TestLdapSignIn is not implemented"))
+func (UnimplementedLdapServiceHandler) TestLdapSignIn(context.Context, *v1.TestLdapSignInRequest) (*v1.TestLdapSignInResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.LdapService.TestLdapSignIn is not implemented")
+}
+
+type ldapServiceClient struct {
+	client *connect.Client
+}
+
+func (c *ldapServiceClient) ListLdapServers(ctx context.Context, req *v1.ListLdapServersRequest) (*v1.ListLdapServersResponse, error) {
+	var res v1.ListLdapServersResponse
+	if err := c.client.CallUnary(ctx, ldapServiceListLdapServersSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *ldapServiceClient) PutLdapServer(ctx context.Context, req *v1.PutLdapServerRequest) (*v1.PutLdapServerResponse, error) {
+	var res v1.PutLdapServerResponse
+	if err := c.client.CallUnary(ctx, ldapServicePutLdapServerSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *ldapServiceClient) DeleteLdapServer(ctx context.Context, req *v1.DeleteLdapServerRequest) (*v1.DeleteLdapServerResponse, error) {
+	var res v1.DeleteLdapServerResponse
+	if err := c.client.CallUnary(ctx, ldapServiceDeleteLdapServerSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *ldapServiceClient) ListLdapGroupMappings(ctx context.Context, req *v1.ListLdapGroupMappingsRequest) (*v1.ListLdapGroupMappingsResponse, error) {
+	var res v1.ListLdapGroupMappingsResponse
+	if err := c.client.CallUnary(ctx, ldapServiceListLdapGroupMappingsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *ldapServiceClient) PutLdapGroupMapping(ctx context.Context, req *v1.PutLdapGroupMappingRequest) (*v1.PutLdapGroupMappingResponse, error) {
+	var res v1.PutLdapGroupMappingResponse
+	if err := c.client.CallUnary(ctx, ldapServicePutLdapGroupMappingSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *ldapServiceClient) DeleteLdapGroupMapping(ctx context.Context, req *v1.DeleteLdapGroupMappingRequest) (*v1.DeleteLdapGroupMappingResponse, error) {
+	var res v1.DeleteLdapGroupMappingResponse
+	if err := c.client.CallUnary(ctx, ldapServiceDeleteLdapGroupMappingSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *ldapServiceClient) TestLdapSignIn(ctx context.Context, req *v1.TestLdapSignInRequest) (*v1.TestLdapSignInResponse, error) {
+	var res v1.TestLdapSignInResponse
+	if err := c.client.CallUnary(ctx, ldapServiceTestLdapSignInSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type ldapServiceHandler struct{ svc LdapServiceHandler }
+
+func (h ldapServiceHandler) listLdapServers(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListLdapServersRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListLdapServers(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h ldapServiceHandler) putLdapServer(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PutLdapServerRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.PutLdapServer(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h ldapServiceHandler) deleteLdapServer(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DeleteLdapServerRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.DeleteLdapServer(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h ldapServiceHandler) listLdapGroupMappings(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListLdapGroupMappingsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListLdapGroupMappings(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h ldapServiceHandler) putLdapGroupMapping(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PutLdapGroupMappingRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.PutLdapGroupMapping(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h ldapServiceHandler) deleteLdapGroupMapping(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DeleteLdapGroupMappingRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.DeleteLdapGroupMapping(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h ldapServiceHandler) testLdapSignIn(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.TestLdapSignInRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.TestLdapSignIn(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

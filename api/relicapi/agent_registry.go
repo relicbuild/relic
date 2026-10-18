@@ -3,12 +3,11 @@ package relicapi
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -57,7 +56,7 @@ func registryRepository(ctx context.Context, d Dependencies, repo string) error 
 	if r.Format != repository.FormatMCP && r.Format != repository.FormatSkills {
 		return connect.NewError(
 			connect.CodeInvalidArgument,
-			errors.New(repo+" is not an mcp or skills repository"),
+			repo+" is not an mcp or skills repository",
 		)
 	}
 
@@ -66,9 +65,9 @@ func registryRepository(ctx context.Context, d Dependencies, repo string) error 
 
 func (s *agentRegistryServer) ListRegistryEntries(
 	ctx context.Context,
-	req *connect.Request[relicv1.ListRegistryEntriesRequest],
-) (*connect.Response[relicv1.ListRegistryEntriesResponse], error) {
-	repo := req.Msg.GetRepository()
+	req *relicv1.ListRegistryEntriesRequest,
+) (*relicv1.ListRegistryEntriesResponse, error) {
+	repo := req.GetRepository()
 	if err := registryRepository(ctx, s.d, repo); err != nil {
 		return nil, err
 	}
@@ -87,14 +86,14 @@ func (s *agentRegistryServer) ListRegistryEntries(
 		out.Entries = append(out.Entries, registryEntryMessage(e))
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *agentRegistryServer) ApproveRegistryEntry(
 	ctx context.Context,
-	req *connect.Request[relicv1.ApproveRegistryEntryRequest],
-) (*connect.Response[relicv1.ApproveRegistryEntryResponse], error) {
-	m := req.Msg
+	req *relicv1.ApproveRegistryEntryRequest,
+) (*relicv1.ApproveRegistryEntryResponse, error) {
+	m := req
 	if err := s.d.AgentRegistry.Approve(
 		ctx,
 		m.GetRepository(),
@@ -105,19 +104,19 @@ func (s *agentRegistryServer) ApproveRegistryEntry(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.ApproveRegistryEntryResponse{}), nil
+	return &relicv1.ApproveRegistryEntryResponse{}, nil
 }
 
 func (s *agentRegistryServer) RevokeRegistryApproval(
 	ctx context.Context,
-	req *connect.Request[relicv1.RevokeRegistryApprovalRequest],
-) (*connect.Response[relicv1.RevokeRegistryApprovalResponse], error) {
-	m := req.Msg
+	req *relicv1.RevokeRegistryApprovalRequest,
+) (*relicv1.RevokeRegistryApprovalResponse, error) {
+	m := req
 	if err := s.d.AgentRegistry.Revoke(ctx, m.GetRepository(), cleanPath(m.GetPath())); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.RevokeRegistryApprovalResponse{}), nil
+	return &relicv1.RevokeRegistryApprovalResponse{}, nil
 }
 
 type registryServer struct {

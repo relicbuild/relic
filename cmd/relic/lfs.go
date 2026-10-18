@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -112,10 +111,10 @@ func lfsCleanCmd(g *globals) *cobra.Command {
 				if !dryRun {
 					if _, err := c.artifacts.DeleteItem(
 						cmd.Context(),
-						connect.NewRequest(&relicv1.DeleteItemRequest{
+						&relicv1.DeleteItemRequest{
 							Repository: repo,
 							Path:       it.GetPath(),
-						}),
+						},
 					); err != nil && !isNotFound(err) {
 						return fmt.Errorf("lfs clean: delete %s/%s: %w", repo, it.GetPath(), err)
 					}
@@ -341,10 +340,10 @@ func git(ctx context.Context, args ...string) ([]byte, error) {
 func (c *client) files(ctx context.Context, repo, dir string) ([]*relicv1.Item, error) {
 	r, err := c.artifacts.ListChildren(
 		ctx,
-		connect.NewRequest(&relicv1.ListChildrenRequest{
+		&relicv1.ListChildrenRequest{
 			Repository: repo,
 			Path:       dir,
-		}),
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -352,7 +351,7 @@ func (c *client) files(ctx context.Context, repo, dir string) ([]*relicv1.Item, 
 
 	var out []*relicv1.Item
 
-	for _, it := range r.Msg.GetItems() {
+	for _, it := range r.GetItems() {
 		if !it.GetFolder() {
 			out = append(out, it)
 

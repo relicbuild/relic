@@ -9,7 +9,7 @@ import (
 	"slices"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -190,9 +190,9 @@ func addVulnerabilities(ctx context.Context, d Dependencies, repoKey string, ite
 
 func (s *artifactServer) GetItemDetails(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetItemDetailsRequest],
-) (*connect.Response[relicv1.GetItemDetailsResponse], error) {
-	key, p := req.Msg.GetRepository(), cleanPath(req.Msg.GetPath())
+	req *relicv1.GetItemDetailsRequest,
+) (*relicv1.GetItemDetailsResponse, error) {
+	key, p := req.GetRepository(), cleanPath(req.GetPath())
 	if err := canList(ctx, s.d, key, p); err != nil {
 		return nil, err
 	}
@@ -275,7 +275,7 @@ func (s *artifactServer) GetItemDetails(
 		}
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *artifactServer) addBuildLinks(ctx context.Context, out *relicv1.GetItemDetailsResponse, sha1 string) error {
@@ -329,9 +329,9 @@ func (s *artifactServer) addBuildLinks(ctx context.Context, out *relicv1.GetItem
 
 func (s *artifactServer) GetEffectivePermissions(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetEffectivePermissionsRequest],
-) (*connect.Response[relicv1.GetEffectivePermissionsResponse], error) {
-	key, p := req.Msg.GetRepository(), cleanPath(req.Msg.GetPath())
+	req *relicv1.GetEffectivePermissionsRequest,
+) (*relicv1.GetEffectivePermissionsResponse, error) {
+	key, p := req.GetRepository(), cleanPath(req.GetPath())
 	if err := canList(ctx, s.d, key, p); err != nil {
 		return nil, err
 	}
@@ -359,14 +359,14 @@ func (s *artifactServer) GetEffectivePermissions(
 		})
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *scanServer) GetItemSbom(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetItemSbomRequest],
-) (*connect.Response[relicv1.GetItemSbomResponse], error) {
-	key, p := req.Msg.GetRepository(), cleanPath(req.Msg.GetPath())
+	req *relicv1.GetItemSbomRequest,
+) (*relicv1.GetItemSbomResponse, error) {
+	key, p := req.GetRepository(), cleanPath(req.GetPath())
 	if err := can(ctx, s.d, key, p, auth.ActionRead); err != nil {
 		return nil, err
 	}
@@ -387,7 +387,7 @@ func (s *scanServer) GetItemSbom(
 	}
 
 	if !ok || errors.Is(err, scan.ErrNoScan) || (err == nil && a.SBOM == nil) {
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("no SBOM for this item"))
+		return nil, connect.NewError(connect.CodeNotFound, "no SBOM for this item")
 	}
 
 	if err != nil {
@@ -439,7 +439,7 @@ func (s *scanServer) GetItemSbom(
 		})
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *scanServer) licenseViolations(

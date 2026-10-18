@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -159,11 +158,11 @@ func scanPackages(
 
 	q, err := c.scans.ScanPackages(
 		cmd.Context(),
-		connect.NewRequest(&relicv1.ScanPackagesRequest{
+		&relicv1.ScanPackagesRequest{
 			Purls:      purls,
 			Watches:    f.watches,
 			Repository: f.repository,
-		}),
+		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("scan: %w", err)
@@ -177,20 +176,20 @@ func scanPackages(
 	for {
 		r, err := c.scans.GetPackagesScan(
 			ctx,
-			connect.NewRequest(&relicv1.GetPackagesScanRequest{
-				Id: q.Msg.GetId(),
-			}),
+			&relicv1.GetPackagesScanRequest{
+				Id: q.GetId(),
+			},
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
 
-		switch r.Msg.GetScan().GetStatus() {
+		switch r.GetScan().GetStatus() {
 		case relicv1.ScanStatus_SCAN_STATUS_QUEUED:
 		case relicv1.ScanStatus_SCAN_STATUS_FAILED:
-			return nil, fmt.Errorf("scan failed: %s", r.Msg.GetScan().GetReason())
+			return nil, fmt.Errorf("scan failed: %s", r.GetScan().GetReason())
 		default:
-			return r.Msg, nil
+			return r, nil
 		}
 
 		select {

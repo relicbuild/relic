@@ -10,8 +10,6 @@ import (
 	"slices"
 	"testing"
 
-	"connectrpc.com/connect"
-
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
 )
@@ -66,16 +64,16 @@ func adminToken(t *testing.T, srv *httptest.Server, form string) string {
 func userTokens(t *testing.T, srv *httptest.Server, username, description string) []*relicv1.AccessToken {
 	t.Helper()
 
-	security := relicv1connect.NewSecurityServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	security := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
-	list, err := security.ListTokens(t.Context(), connect.NewRequest(&relicv1.ListTokensRequest{
+	list, err := security.ListTokens(t.Context(), &relicv1.ListTokensRequest{
 		Username: username,
-	}))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	return slices.DeleteFunc(list.Msg.GetTokens(), func(tok *relicv1.AccessToken) bool {
+	return slices.DeleteFunc(list.GetTokens(), func(tok *relicv1.AccessToken) bool {
 		return tok.GetDescription() != description
 	})
 }
@@ -161,18 +159,15 @@ func accessTokenFor(t *testing.T, srv *httptest.Server, credentials, request str
 func signsInAs(t *testing.T, srv *httptest.Server, token string) string {
 	t.Helper()
 
-	whoami := connect.NewRequest(&relicv1.GetCurrentUserRequest{})
-	whoami.Header().Set("Authorization", "Bearer "+token)
-
-	me, err := relicv1connect.NewSessionServiceClient(http.DefaultClient, srv.URL+"/api").GetCurrentUser(
-		t.Context(),
-		whoami,
+	me, err := relicv1connect.NewSessionServiceClient(apiClient(http.DefaultClient, srv.URL)).GetCurrentUser(
+		withRequestHeader(t.Context(), "Authorization", "Bearer "+token),
+		&relicv1.GetCurrentUserRequest{},
 	)
 	if err != nil {
 		return ""
 	}
 
-	return me.Msg.GetPrincipal().GetUsername()
+	return me.GetPrincipal().GetUsername()
 }
 
 func TestAccessTokensKeepTheUsernamesCase(t *testing.T) {

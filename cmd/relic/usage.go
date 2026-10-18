@@ -5,7 +5,6 @@ import (
 	"io"
 	"strconv"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -29,15 +28,15 @@ func usageCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			res, err := c.system.GetUsageReport(cmd.Context(), connect.NewRequest(&relicv1.GetUsageReportRequest{
+			res, err := c.system.GetUsageReport(cmd.Context(), &relicv1.GetUsageReportRequest{
 				Days: days,
-			}))
+			})
 			if err != nil {
 				return fmt.Errorf("usage report: %w", err)
 			}
 
-			return printMessage(cmd.OutOrStdout(), output, res.Msg, func(w io.Writer) error {
-				return printUsage(w, res.Msg)
+			return printMessage(cmd.OutOrStdout(), output, res, func(w io.Writer) error {
+				return printUsage(w, res)
 			})
 		},
 	}

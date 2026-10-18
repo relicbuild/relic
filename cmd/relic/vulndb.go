@@ -7,7 +7,6 @@ import (
 	"os"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -114,12 +113,12 @@ func vulnerabilityDatabaseStatusCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			r, err := c.system.GetSystemStatus(cmd.Context(), connect.NewRequest(&relicv1.GetSystemStatusRequest{}))
+			r, err := c.system.GetSystemStatus(cmd.Context(), &relicv1.GetSystemStatusRequest{})
 			if err != nil {
 				return fmt.Errorf("vulnerability-database status: %w", err)
 			}
 
-			s := r.Msg.GetScanner()
+			s := r.GetScanner()
 
 			return printMessage(cmd.OutOrStdout(), output, s, func(w io.Writer) error {
 				if s.GetVulnerabilityDatabaseBuilt() == nil {

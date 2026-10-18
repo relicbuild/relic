@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -205,21 +204,21 @@ func packageCheckCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			res, err := c.scans.CheckPackage(cmd.Context(), connect.NewRequest(&relicv1.CheckPackageRequest{
+			res, err := c.scans.CheckPackage(cmd.Context(), &relicv1.CheckPackageRequest{
 				Purl:       args[0],
 				Repository: repo,
-			}))
+			})
 			if err != nil {
 				return fmt.Errorf("check %s: %w", args[0], err)
 			}
 
-			if err := printMessage(cmd.OutOrStdout(), output, res.Msg, func(w io.Writer) error {
-				return writePackageCheck(w, args[0], res.Msg)
+			if err := printMessage(cmd.OutOrStdout(), output, res, func(w io.Writer) error {
+				return writePackageCheck(w, args[0], res)
 			}); err != nil {
 				return err
 			}
 
-			if !res.Msg.GetAllowed() {
+			if !res.GetAllowed() {
 				return exitCode(1)
 			}
 

@@ -2,14 +2,13 @@ package relicapi
 
 import (
 	"encoding/json"
-	"errors"
 	"io"
 	"mime"
 	"net/http"
 	"net/url"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	"relic/internal/access/auth"
 	"relic/internal/artifacts/repository"
@@ -27,14 +26,14 @@ func (d Dependencies) files(w http.ResponseWriter, r *http.Request) {
 	if key == "" || p == "" {
 		writeHTTPError(
 			w,
-			connect.NewError(connect.CodeInvalidArgument, errors.New("expected "+FilesPath+"<repository>/<path>")),
+			connect.NewError(connect.CodeInvalidArgument, "expected "+FilesPath+"<repository>/<path>"),
 		)
 
 		return
 	}
 
 	if auth.FromContext(r.Context()).Anonymous() {
-		writeHTTPError(w, connect.NewError(connect.CodeUnauthenticated, errors.New("sign in first")))
+		writeHTTPError(w, connect.NewError(connect.CodeUnauthenticated, "sign in first"))
 		return
 	}
 
@@ -45,7 +44,7 @@ func (d Dependencies) files(w http.ResponseWriter, r *http.Request) {
 		d.upload(w, r, key, p)
 	default:
 		w.Header().Set("Allow", "GET, HEAD, PUT")
-		writeHTTPError(w, connect.NewError(connect.CodeUnimplemented, errors.New("method not allowed")))
+		writeHTTPError(w, connect.NewError(connect.CodeUnimplemented, "method not allowed"))
 	}
 }
 
@@ -71,7 +70,7 @@ func (d Dependencies) download(w http.ResponseWriter, r *http.Request, key, p st
 			w,
 			connect.NewError(
 				connect.CodeInvalidArgument,
-				errors.New(key+"/"+p+" is a folder: list it with ArtifactService.ListChildren"),
+				key+"/"+p+" is a folder: list it with ArtifactService.ListChildren",
 			),
 		)
 
@@ -90,7 +89,7 @@ func (d Dependencies) download(w http.ResponseWriter, r *http.Request, key, p st
 				w,
 				connect.NewError(
 					connect.CodePermissionDenied,
-					errors.New("download blocked: "+decision.Reason),
+					"download blocked: "+decision.Reason,
 				),
 			)
 

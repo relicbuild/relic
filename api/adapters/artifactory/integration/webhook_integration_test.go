@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -18,9 +18,9 @@ func TestWebhooks(t *testing.T) {
 	srv := server(t)
 	ctx := t.Context()
 
-	hooks := relicv1connect.NewWebhookServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	hooks := relicv1connect.NewWebhookServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
-	put, err := hooks.PutWebhook(ctx, connect.NewRequest(&relicv1.PutWebhookRequest{
+	put, err := hooks.PutWebhook(ctx, &relicv1.PutWebhookRequest{
 		Webhook: &relicv1.Webhook{
 			Name: "deploys",
 			Url:  "https://hooks.example.com/relic",
@@ -31,17 +31,17 @@ func TestWebhooks(t *testing.T) {
 			Enabled: true,
 			Secret:  "hook-secret",
 		},
-	}))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	w := put.Msg.GetWebhook()
+	w := put.GetWebhook()
 	if w.GetSecret() != "" || !w.GetHasSecret() || w.GetFormat() != relicv1.WebhookFormat_WEBHOOK_FORMAT_JSON {
 		t.Errorf("put = %v, want the secret hidden and the JSON format", w)
 	}
 
-	if _, err := hooks.PutWebhook(ctx, connect.NewRequest(&relicv1.PutWebhookRequest{
+	if _, err := hooks.PutWebhook(ctx, &relicv1.PutWebhookRequest{
 		Webhook: &relicv1.Webhook{
 			Name: "deploys",
 			Url:  "https://hooks.example.com/relic",
@@ -50,18 +50,18 @@ func TestWebhooks(t *testing.T) {
 			},
 			Enabled: true,
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := hooks.GetWebhook(ctx, connect.NewRequest(&relicv1.GetWebhookRequest{
+	got, err := hooks.GetWebhook(ctx, &relicv1.GetWebhookRequest{
 		Name: "deploys",
-	}))
-	if err != nil || !got.Msg.GetWebhook().GetHasSecret() || len(got.Msg.GetWebhook().GetEvents()) != 1 {
+	})
+	if err != nil || !got.GetWebhook().GetHasSecret() || len(got.GetWebhook().GetEvents()) != 1 {
 		t.Errorf("an update without a secret = %v, %v; want the secret kept", got, err)
 	}
 
-	if _, err := hooks.PutWebhook(ctx, connect.NewRequest(&relicv1.PutWebhookRequest{
+	if _, err := hooks.PutWebhook(ctx, &relicv1.PutWebhookRequest{
 		Webhook: &relicv1.Webhook{
 			Name: "nope",
 			Url:  "https://hooks.example.com/relic",
@@ -69,7 +69,7 @@ func TestWebhooks(t *testing.T) {
 				"artifact.renamed",
 			},
 		},
-	})); code(err) != connect.CodeInvalidArgument {
+	}); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("an unknown event type: %v", err)
 	}
 
@@ -89,21 +89,21 @@ func TestWebhooks(t *testing.T) {
 		t.Fatalf("deploy = %d %s", resp.StatusCode, body)
 	}
 
-	ping, err := hooks.PingWebhook(ctx, connect.NewRequest(&relicv1.PingWebhookRequest{
+	ping, err := hooks.PingWebhook(ctx, &relicv1.PingWebhookRequest{
 		Name: "deploys",
-	}))
-	if err != nil || ping.Msg.GetDelivery() == "" {
+	})
+	if err != nil || ping.GetDelivery() == "" {
 		t.Fatalf("ping = %v, %v", ping, err)
 	}
 
-	deliveries, err := hooks.ListWebhookDeliveries(ctx, connect.NewRequest(&relicv1.ListWebhookDeliveriesRequest{
+	deliveries, err := hooks.ListWebhookDeliveries(ctx, &relicv1.ListWebhookDeliveriesRequest{
 		Webhook: "deploys",
-	}))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	d := deliveries.Msg.GetDeliveries()
+	d := deliveries.GetDeliveries()
 	if len(d) != 2 || d[0].GetEvent() != "webhook.ping" || d[1].GetEvent() != "artifact.deployed" ||
 		d[1].GetStatus() != relicv1.WebhookDeliveryStatus_WEBHOOK_DELIVERY_STATUS_PENDING {
 		t.Fatalf("deliveries = %v", d)
@@ -121,22 +121,22 @@ func TestWebhooks(t *testing.T) {
 		t.Errorf("the deploy's event = %s, %v", d[1].GetPayload(), err)
 	}
 
-	if _, err := relicv1connect.NewWebhookServiceClient(relicHTTP("", ""), srv.URL+"/api").ListWebhooks(
+	if _, err := relicv1connect.NewWebhookServiceClient(apiClient(relicHTTP("", ""), srv.URL)).ListWebhooks(
 		ctx,
-		connect.NewRequest(&relicv1.ListWebhooksRequest{}),
+		&relicv1.ListWebhooksRequest{},
 	); code(err) != connect.CodeUnauthenticated {
 		t.Errorf("anonymous list: %v", err)
 	}
 
-	if _, err := hooks.DeleteWebhook(ctx, connect.NewRequest(&relicv1.DeleteWebhookRequest{
+	if _, err := hooks.DeleteWebhook(ctx, &relicv1.DeleteWebhookRequest{
 		Name: "deploys",
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := hooks.GetWebhook(ctx, connect.NewRequest(&relicv1.GetWebhookRequest{
+	if _, err := hooks.GetWebhook(ctx, &relicv1.GetWebhookRequest{
 		Name: "deploys",
-	})); code(err) != connect.CodeNotFound {
+	}); code(err) != connect.CodeNotFound {
 		t.Errorf("get after delete: %v", err)
 	}
 }

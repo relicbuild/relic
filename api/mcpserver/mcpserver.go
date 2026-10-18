@@ -9,7 +9,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -32,11 +33,19 @@ type Clients struct {
 
 // NewClients returns the clients of the Relic API at baseURL (ending in
 // /api).
-func NewClients(hc connect.HTTPClient, baseURL string) Clients {
+func NewClients(hc connecthttp.HTTPClient, baseURL string) Clients {
+	rpc := connect.NewClient(
+		connecthttp.NewTransport(
+			hc,
+			baseURL,
+			connecthttp.WithReadMaxBytes(0),
+		),
+	)
+
 	return Clients{
-		Artifacts:    relicv1connect.NewArtifactServiceClient(hc, baseURL),
-		Repositories: relicv1connect.NewRepositoryServiceClient(hc, baseURL),
-		Scans:        relicv1connect.NewScanServiceClient(hc, baseURL),
+		Artifacts:    relicv1connect.NewArtifactServiceClient(rpc),
+		Repositories: relicv1connect.NewRepositoryServiceClient(rpc),
+		Scans:        relicv1connect.NewScanServiceClient(rpc),
 	}
 }
 
@@ -81,11 +90,11 @@ func NewServer(c Clients, version string) *mcp.Server {
 		Annotations: readOnly(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in SearchInput) (*mcp.CallToolResult, any, error) {
 		return reply(ctx, "search_artifacts", func() (proto.Message, error) {
-			r, err := c.Artifacts.SearchItems(ctx, connect.NewRequest(&relicv1.SearchItemsRequest{
+			r, err := c.Artifacts.SearchItems(ctx, &relicv1.SearchItemsRequest{
 				Name:       in.Name,
 				Repository: in.Repository,
 				Limit:      in.Limit,
-			}))
+			})
 
 			return message(r, err)
 		})
@@ -97,10 +106,10 @@ func NewServer(c Clients, version string) *mcp.Server {
 		Annotations: readOnly(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in ItemRef) (*mcp.CallToolResult, any, error) {
 		return reply(ctx, "artifact_details", func() (proto.Message, error) {
-			r, err := c.Artifacts.GetItemDetails(ctx, connect.NewRequest(&relicv1.GetItemDetailsRequest{
+			r, err := c.Artifacts.GetItemDetails(ctx, &relicv1.GetItemDetailsRequest{
 				Repository: in.Repository,
 				Path:       in.Path,
-			}))
+			})
 
 			return message(r, err)
 		})
@@ -112,10 +121,10 @@ func NewServer(c Clients, version string) *mcp.Server {
 		Annotations: readOnly(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in ItemRef) (*mcp.CallToolResult, any, error) {
 		return reply(ctx, "artifact_findings", func() (proto.Message, error) {
-			r, err := c.Scans.GetItemScan(ctx, connect.NewRequest(&relicv1.GetItemScanRequest{
+			r, err := c.Scans.GetItemScan(ctx, &relicv1.GetItemScanRequest{
 				Repository: in.Repository,
 				Path:       in.Path,
-			}))
+			})
 
 			return message(r, err)
 		})
@@ -127,10 +136,10 @@ func NewServer(c Clients, version string) *mcp.Server {
 		Annotations: readOnly(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in ItemRef) (*mcp.CallToolResult, any, error) {
 		return reply(ctx, "explain_download", func() (proto.Message, error) {
-			r, err := c.Scans.ExplainDownload(ctx, connect.NewRequest(&relicv1.ExplainDownloadRequest{
+			r, err := c.Scans.ExplainDownload(ctx, &relicv1.ExplainDownloadRequest{
 				Repository: in.Repository,
 				Path:       in.Path,
-			}))
+			})
 
 			return message(r, err)
 		})
@@ -142,7 +151,7 @@ func NewServer(c Clients, version string) *mcp.Server {
 		Annotations: readOnly(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ RepositoriesInput) (*mcp.CallToolResult, any, error) {
 		return reply(ctx, "list_repositories", func() (proto.Message, error) {
-			r, err := c.Repositories.ListRepositories(ctx, connect.NewRequest(&relicv1.ListRepositoriesRequest{}))
+			r, err := c.Repositories.ListRepositories(ctx, &relicv1.ListRepositoriesRequest{})
 
 			return message(r, err)
 		})
@@ -154,9 +163,9 @@ func NewServer(c Clients, version string) *mcp.Server {
 		Annotations: readOnly(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in RepositoryInput) (*mcp.CallToolResult, any, error) {
 		return reply(ctx, "repository_setup", func() (proto.Message, error) {
-			r, err := c.Repositories.GetClientEndpoints(ctx, connect.NewRequest(&relicv1.GetClientEndpointsRequest{
+			r, err := c.Repositories.GetClientEndpoints(ctx, &relicv1.GetClientEndpointsRequest{
 				Name: in.Name,
-			}))
+			})
 
 			return message(r, err)
 		})
@@ -170,10 +179,10 @@ func NewServer(c Clients, version string) *mcp.Server {
 		Annotations: readOnly(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in PackageInput) (*mcp.CallToolResult, any, error) {
 		return reply(ctx, "package_allowed", func() (proto.Message, error) {
-			r, err := c.Scans.CheckPackage(ctx, connect.NewRequest(&relicv1.CheckPackageRequest{
+			r, err := c.Scans.CheckPackage(ctx, &relicv1.CheckPackageRequest{
 				Purl:       in.Purl,
 				Repository: in.Repository,
-			}))
+			})
 
 			return message(r, err)
 		})
@@ -191,12 +200,12 @@ func readOnly() *mcp.ToolAnnotations {
 func message[T any, PT interface {
 	*T
 	proto.Message
-}](r *connect.Response[T], err error) (proto.Message, error) {
+}](r *T, err error) (proto.Message, error) {
 	if err != nil {
 		return nil, err
 	}
 
-	return PT(r.Msg), nil
+	return PT(r), nil
 }
 
 // reply calls fn and returns its message as JSON text, or its error as a

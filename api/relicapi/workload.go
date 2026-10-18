@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/internal/access/workload"
@@ -59,8 +59,8 @@ func domainWorkloadIdentity(m *relicv1.WorkloadIdentity) workload.Identity {
 
 func (s *workloadIdentityServer) ListWorkloadIdentities(
 	ctx context.Context,
-	_ *connect.Request[relicv1.ListWorkloadIdentitiesRequest],
-) (*connect.Response[relicv1.ListWorkloadIdentitiesResponse], error) {
+	_ *relicv1.ListWorkloadIdentitiesRequest,
+) (*relicv1.ListWorkloadIdentitiesResponse, error) {
 	if s.d.Workloads == nil {
 		return nil, unimplemented("workload identities")
 	}
@@ -77,82 +77,82 @@ func (s *workloadIdentityServer) ListWorkloadIdentities(
 		out.WorkloadIdentities = append(out.WorkloadIdentities, workloadIdentityMessage(id))
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *workloadIdentityServer) GetWorkloadIdentity(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetWorkloadIdentityRequest],
-) (*connect.Response[relicv1.GetWorkloadIdentityResponse], error) {
+	req *relicv1.GetWorkloadIdentityRequest,
+) (*relicv1.GetWorkloadIdentityResponse, error) {
 	if s.d.Workloads == nil {
 		return nil, unimplemented("workload identities")
 	}
 
-	id, err := s.d.Workloads.Identity(ctx, req.Msg.GetName())
+	id, err := s.d.Workloads.Identity(ctx, req.GetName())
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.GetWorkloadIdentityResponse{
+	return &relicv1.GetWorkloadIdentityResponse{
 		WorkloadIdentity: workloadIdentityMessage(id),
-	}), nil
+	}, nil
 }
 
 func (s *workloadIdentityServer) PutWorkloadIdentity(
 	ctx context.Context,
-	req *connect.Request[relicv1.PutWorkloadIdentityRequest],
-) (*connect.Response[relicv1.PutWorkloadIdentityResponse], error) {
+	req *relicv1.PutWorkloadIdentityRequest,
+) (*relicv1.PutWorkloadIdentityResponse, error) {
 	if s.d.Workloads == nil {
 		return nil, unimplemented("workload identities")
 	}
 
-	id := domainWorkloadIdentity(req.Msg.GetWorkloadIdentity())
+	id := domainWorkloadIdentity(req.GetWorkloadIdentity())
 	if err := s.d.Workloads.PutIdentity(ctx, id); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.PutWorkloadIdentityResponse{
+	return &relicv1.PutWorkloadIdentityResponse{
 		WorkloadIdentity: workloadIdentityMessage(id),
-	}), nil
+	}, nil
 }
 
 func (s *workloadIdentityServer) DeleteWorkloadIdentity(
 	ctx context.Context,
-	req *connect.Request[relicv1.DeleteWorkloadIdentityRequest],
-) (*connect.Response[relicv1.DeleteWorkloadIdentityResponse], error) {
+	req *relicv1.DeleteWorkloadIdentityRequest,
+) (*relicv1.DeleteWorkloadIdentityResponse, error) {
 	if s.d.Workloads == nil {
 		return nil, unimplemented("workload identities")
 	}
 
-	if err := s.d.Workloads.DeleteIdentity(ctx, req.Msg.GetName()); err != nil {
+	if err := s.d.Workloads.DeleteIdentity(ctx, req.GetName()); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.DeleteWorkloadIdentityResponse{}), nil
+	return &relicv1.DeleteWorkloadIdentityResponse{}, nil
 }
 
 func (s *sessionServer) ExchangeWorkloadToken(
 	ctx context.Context,
-	req *connect.Request[relicv1.ExchangeWorkloadTokenRequest],
-) (*connect.Response[relicv1.ExchangeWorkloadTokenResponse], error) {
+	req *relicv1.ExchangeWorkloadTokenRequest,
+) (*relicv1.ExchangeWorkloadTokenResponse, error) {
 	if s.d.Workloads == nil {
 		return nil, unimplemented("workload identities")
 	}
 
-	got, err := s.d.Workloads.Exchange(ctx, req.Msg.GetIdentity(), req.Msg.GetToken())
+	got, err := s.d.Workloads.Exchange(ctx, req.GetIdentity(), req.GetToken())
 	if errors.Is(err, workload.ErrRefused) {
-		s.d.Log.InfoContext(ctx, "workload token exchange refused", "identity", req.Msg.GetIdentity(), "error", err)
+		s.d.Log.InfoContext(ctx, "workload token exchange refused", "identity", req.GetIdentity(), "error", err)
 
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("the token exchange was refused"))
+		return nil, connect.NewError(connect.CodeUnauthenticated, "the token exchange was refused")
 	}
 
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.ExchangeWorkloadTokenResponse{
+	return &relicv1.ExchangeWorkloadTokenResponse{
 		AccessToken:      got.Token.AccessToken,
 		ExpiresInSeconds: int64(got.Token.ExpiresIn / time.Second),
 		Username:         got.User,
-	}), nil
+	}, nil
 }

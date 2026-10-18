@@ -5,7 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -23,12 +24,20 @@ func newRelic(s Server) relic {
 	base := strings.TrimSuffix(s.URL, "/")
 	api := base + "/api"
 
+	rpc := connect.NewClient(
+		connecthttp.NewTransport(
+			s.Client,
+			api,
+			connecthttp.WithReadMaxBytes(0),
+		),
+	)
+
 	return relic{
 		url:          base,
 		client:       s.Client,
-		repositories: relicv1connect.NewRepositoryServiceClient(s.Client, api),
-		security:     relicv1connect.NewSecurityServiceClient(s.Client, api),
-		artifacts:    relicv1connect.NewArtifactServiceClient(s.Client, api),
+		repositories: relicv1connect.NewRepositoryServiceClient(rpc),
+		security:     relicv1connect.NewSecurityServiceClient(rpc),
+		artifacts:    relicv1connect.NewArtifactServiceClient(rpc),
 	}
 }
 
@@ -76,9 +85,9 @@ type groupDoc struct {
 }
 
 func (im *importer) putGroup(ctx context.Context, doc groupDoc) error {
-	existing, err := im.relic.security.GetGroup(ctx, connect.NewRequest(&relicv1.GetGroupRequest{
+	existing, err := im.relic.security.GetGroup(ctx, &relicv1.GetGroupRequest{
 		Name: doc.Name,
-	}))
+	})
 
 	exists, err := found(err)
 	if err != nil {
@@ -96,12 +105,12 @@ func (im *importer) putGroup(ctx context.Context, doc groupDoc) error {
 		Admin:              doc.AdminPrivileges,
 	}
 	if exists {
-		g.Members = existing.Msg.GetGroup().GetMembers()
+		g.Members = existing.GetGroup().GetMembers()
 	}
 
-	if _, err := im.relic.security.PutGroup(ctx, connect.NewRequest(&relicv1.PutGroupRequest{
+	if _, err := im.relic.security.PutGroup(ctx, &relicv1.PutGroupRequest{
 		Group: g,
-	})); err != nil {
+	}); err != nil {
 		return err
 	}
 
@@ -111,9 +120,9 @@ func (im *importer) putGroup(ctx context.Context, doc groupDoc) error {
 }
 
 func (im *importer) putRepository(ctx context.Context, r *relicv1.Repository) error {
-	_, err := im.relic.repositories.GetRepository(ctx, connect.NewRequest(&relicv1.GetRepositoryRequest{
+	_, err := im.relic.repositories.GetRepository(ctx, &relicv1.GetRepositoryRequest{
 		Name: r.GetName(),
-	}))
+	})
 
 	exists, err := found(err)
 	if err != nil {
@@ -125,13 +134,13 @@ func (im *importer) putRepository(ctx context.Context, r *relicv1.Repository) er
 	}
 
 	if exists {
-		_, err = im.relic.repositories.UpdateRepository(ctx, connect.NewRequest(&relicv1.UpdateRepositoryRequest{
+		_, err = im.relic.repositories.UpdateRepository(ctx, &relicv1.UpdateRepositoryRequest{
 			Repository: r,
-		}))
+		})
 	} else {
-		_, err = im.relic.repositories.CreateRepository(ctx, connect.NewRequest(&relicv1.CreateRepositoryRequest{
+		_, err = im.relic.repositories.CreateRepository(ctx, &relicv1.CreateRepositoryRequest{
 			Repository: r,
-		}))
+		})
 	}
 
 	if err != nil {
@@ -144,9 +153,9 @@ func (im *importer) putRepository(ctx context.Context, r *relicv1.Repository) er
 }
 
 func (im *importer) putPermission(ctx context.Context, p *relicv1.Permission) error {
-	_, err := im.relic.security.GetPermission(ctx, connect.NewRequest(&relicv1.GetPermissionRequest{
+	_, err := im.relic.security.GetPermission(ctx, &relicv1.GetPermissionRequest{
 		Name: p.GetName(),
-	}))
+	})
 
 	exists, err := found(err)
 	if err != nil {
@@ -157,9 +166,9 @@ func (im *importer) putPermission(ctx context.Context, p *relicv1.Permission) er
 		return nil
 	}
 
-	if _, err := im.relic.security.PutPermission(ctx, connect.NewRequest(&relicv1.PutPermissionRequest{
+	if _, err := im.relic.security.PutPermission(ctx, &relicv1.PutPermissionRequest{
 		Permission: p,
-	})); err != nil {
+	}); err != nil {
 		return err
 	}
 
@@ -173,19 +182,19 @@ func (im *importer) stored(ctx context.Context, f file) bool {
 		return false
 	}
 
-	resp, err := im.relic.artifacts.StatItem(ctx, connect.NewRequest(&relicv1.StatItemRequest{
+	resp, err := im.relic.artifacts.StatItem(ctx, &relicv1.StatItemRequest{
 		Repository: f.Repo,
 		Path:       f.fullPath(),
-	}))
+	})
 
-	return err == nil && strings.EqualFold(resp.Msg.GetItem().GetChecksums().GetSha256(), f.SHA256)
+	return err == nil && strings.EqualFold(resp.GetItem().GetChecksums().GetSha256(), f.SHA256)
 }
 
 func (im *importer) removeFile(ctx context.Context, f file) error {
-	_, err := im.relic.artifacts.DeleteItem(ctx, connect.NewRequest(&relicv1.DeleteItemRequest{
+	_, err := im.relic.artifacts.DeleteItem(ctx, &relicv1.DeleteItemRequest{
 		Repository: f.Repo,
 		Path:       f.fullPath(),
-	}))
+	})
 
 	return err
 }
@@ -202,11 +211,11 @@ func (im *importer) setProperties(ctx context.Context, f file, values map[string
 		}
 	}
 
-	_, err := im.relic.artifacts.SetProperties(ctx, connect.NewRequest(&relicv1.SetPropertiesRequest{
+	_, err := im.relic.artifacts.SetProperties(ctx, &relicv1.SetPropertiesRequest{
 		Repository: f.Repo,
 		Path:       f.fullPath(),
 		Properties: props,
-	}))
+	})
 
 	return err
 }

@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
-
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
 	"relic/internal/platform/database"
@@ -69,12 +67,12 @@ func deployWithFindings(
 func findingsTotal(t *testing.T, scans relicv1connect.ScanServiceClient, req *relicv1.ListFindingsRequest) int64 {
 	t.Helper()
 
-	resp, err := scans.ListFindings(t.Context(), connect.NewRequest(req))
+	resp, err := scans.ListFindings(t.Context(), req)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	return resp.Msg.GetTotal()
+	return resp.GetTotal()
 }
 
 func TestRelicAPIFindingsQueryIsALiteralSubstring(t *testing.T) {
@@ -107,7 +105,7 @@ func TestRelicAPIFindingsQueryIsALiteralSubstring(t *testing.T) {
 		},
 	})
 
-	scans := relicv1connect.NewScanServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	scans := relicv1connect.NewScanServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
 	for _, tt := range []struct {
 		query string
@@ -176,10 +174,10 @@ func TestRelicAPIDashboardCountsTheFindingsTheVulnerabilitiesPageLists(t *testin
 	})
 
 	admin := relicHTTP("admin", "password")
-	scans := relicv1connect.NewScanServiceClient(admin, srv.URL+"/api")
-	system := relicv1connect.NewSystemServiceClient(admin, srv.URL+"/api")
+	scans := relicv1connect.NewScanServiceClient(apiClient(admin, srv.URL))
+	system := relicv1connect.NewSystemServiceClient(apiClient(admin, srv.URL))
 
-	summary, err := system.GetDashboardSummary(t.Context(), connect.NewRequest(&relicv1.GetDashboardSummaryRequest{}))
+	summary, err := system.GetDashboardSummary(t.Context(), &relicv1.GetDashboardSummaryRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +202,7 @@ func TestRelicAPIDashboardCountsTheFindingsTheVulnerabilitiesPageLists(t *testin
 			Severity: tt.severity,
 			PageSize: 1,
 		})
-		counted := int64(summary.Msg.GetFindings()[tt.name])
+		counted := int64(summary.GetFindings()[tt.name])
 
 		if listed != tt.want || counted != tt.want {
 			t.Errorf("%s findings: the dashboard counts %d, the vulnerabilities page lists %d; want %d",

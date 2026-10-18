@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
@@ -40,10 +40,10 @@ func TestQuarantineAppliesAsSoonAsItIsTurnedOn(t *testing.T) {
 		},
 	}
 
-	repos := relicv1connect.NewRepositoryServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
-	if _, err := repos.CreateRepository(ctx, connect.NewRequest(&relicv1.CreateRepositoryRequest{
+	repos := relicv1connect.NewRepositoryServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
+	if _, err := repos.CreateRepository(ctx, &relicv1.CreateRepositoryRequest{
 		Repository: remote,
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -61,9 +61,9 @@ func TestQuarantineAppliesAsSoonAsItIsTurnedOn(t *testing.T) {
 	}
 
 	remote.Remote.Quarantine = true
-	if _, err := repos.UpdateRepository(ctx, connect.NewRequest(&relicv1.UpdateRepositoryRequest{
+	if _, err := repos.UpdateRepository(ctx, &relicv1.UpdateRepositoryRequest{
 		Repository: remote,
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -86,8 +86,8 @@ func TestReleaseBundleRefusesQuarantinedFiles(t *testing.T) {
 	}))
 	t.Cleanup(upstream.Close)
 
-	repos := relicv1connect.NewRepositoryServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
-	if _, err := repos.CreateRepository(ctx, connect.NewRequest(&relicv1.CreateRepositoryRequest{
+	repos := relicv1connect.NewRepositoryServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
+	if _, err := repos.CreateRepository(ctx, &relicv1.CreateRepositoryRequest{
 		Repository: &relicv1.Repository{
 			Name:   "bundled-remote",
 			Class:  relicv1.RepositoryClass_REPOSITORY_CLASS_REMOTE,
@@ -97,7 +97,7 @@ func TestReleaseBundleRefusesQuarantinedFiles(t *testing.T) {
 				Quarantine: true,
 			},
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -129,8 +129,8 @@ func TestQuarantine(t *testing.T) {
 	}))
 	t.Cleanup(upstream.Close)
 
-	repos := relicv1connect.NewRepositoryServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
-	if _, err := repos.CreateRepository(ctx, connect.NewRequest(&relicv1.CreateRepositoryRequest{
+	repos := relicv1connect.NewRepositoryServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
+	if _, err := repos.CreateRepository(ctx, &relicv1.CreateRepositoryRequest{
 		Repository: &relicv1.Repository{
 			Name:   "held-remote",
 			Class:  relicv1.RepositoryClass_REPOSITORY_CLASS_REMOTE,
@@ -140,7 +140,7 @@ func TestQuarantine(t *testing.T) {
 				Quarantine: true,
 			},
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -168,11 +168,11 @@ func TestQuarantine(t *testing.T) {
 		t.Errorf("a file Relic Scan does not scan = %d, want served", status)
 	}
 
-	quarantine := relicv1connect.NewQuarantineServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	quarantine := relicv1connect.NewQuarantineServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
-	list, err := quarantine.ListQuarantined(ctx, connect.NewRequest(&relicv1.ListQuarantinedRequest{}))
-	if err != nil || len(list.Msg.GetFiles()) != 4 ||
-		list.Msg.GetFiles()[0].GetState() != relicv1.QuarantineState_QUARANTINE_STATE_AWAITING_SCAN {
+	list, err := quarantine.ListQuarantined(ctx, &relicv1.ListQuarantinedRequest{})
+	if err != nil || len(list.GetFiles()) != 4 ||
+		list.GetFiles()[0].GetState() != relicv1.QuarantineState_QUARANTINE_STATE_AWAITING_SCAN {
 		t.Fatalf("quarantine = %v, %v", list, err)
 	}
 
@@ -188,15 +188,15 @@ func TestQuarantine(t *testing.T) {
 	}
 
 	sha := map[string]string{}
-	for _, f := range list.Msg.GetFiles() {
+	for _, f := range list.GetFiles() {
 		sha[f.GetPath()] = f.GetSha256()
 	}
 
-	if _, err := quarantine.ReleaseQuarantined(ctx, connect.NewRequest(&relicv1.ReleaseQuarantinedRequest{
+	if _, err := quarantine.ReleaseQuarantined(ctx, &relicv1.ReleaseQuarantinedRequest{
 		Repository: "held-remote",
 		Path:       "g/a/1.0/a-1.0.jar",
 		Reason:     "vetted",
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -250,8 +250,8 @@ func TestQuarantine(t *testing.T) {
 		t.Errorf("a file whose scan was skipped = %d %s, want held", status, body)
 	}
 
-	held, err := quarantine.ListQuarantined(ctx, connect.NewRequest(&relicv1.ListQuarantinedRequest{}))
-	if err != nil || !slices.ContainsFunc(held.Msg.GetFiles(), func(f *relicv1.QuarantinedFile) bool {
+	held, err := quarantine.ListQuarantined(ctx, &relicv1.ListQuarantinedRequest{})
+	if err != nil || !slices.ContainsFunc(held.GetFiles(), func(f *relicv1.QuarantinedFile) bool {
 		return f.GetPath() == "g/d/1.0/d-1.0.jar" &&
 			f.GetState() == relicv1.QuarantineState_QUARANTINE_STATE_SCAN_SKIPPED
 	}) {
@@ -265,11 +265,11 @@ func TestQuarantine(t *testing.T) {
 		t.Errorf("a malicious file = %d %s", status, body)
 	}
 
-	if _, err := quarantine.RejectQuarantined(ctx, connect.NewRequest(&relicv1.RejectQuarantinedRequest{
+	if _, err := quarantine.RejectQuarantined(ctx, &relicv1.RejectQuarantinedRequest{
 		Repository: "held-remote",
 		Path:       "g/b/1.0/b-1.0.jar",
 		Reason:     "license",
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -277,23 +277,23 @@ func TestQuarantine(t *testing.T) {
 		t.Errorf("a rejected file = %d %s", status, body)
 	}
 
-	if _, err := repos.CreateRepository(ctx, connect.NewRequest(&relicv1.CreateRepositoryRequest{
+	if _, err := repos.CreateRepository(ctx, &relicv1.CreateRepositoryRequest{
 		Repository: &relicv1.Repository{
 			Name:   "copies-local",
 			Class:  relicv1.RepositoryClass_REPOSITORY_CLASS_LOCAL,
 			Format: relicv1.Format_FORMAT_MAVEN,
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	artifacts := relicv1connect.NewArtifactServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
-	if _, err := artifacts.CopyItem(ctx, connect.NewRequest(&relicv1.CopyItemRequest{
+	artifacts := relicv1connect.NewArtifactServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
+	if _, err := artifacts.CopyItem(ctx, &relicv1.CopyItemRequest{
 		Repository:   "held-remote",
 		Path:         "g/c/1.0/c-1.0.jar",
 		ToRepository: "copies-local",
 		ToPath:       "g/c/1.0/c-1.0.jar",
-	})); code(err) != connect.CodePermissionDenied {
+	}); code(err) != connect.CodePermissionDenied {
 		t.Errorf("copying a malicious file out of quarantine through the Relic API = %v, want refused", err)
 	}
 
@@ -348,11 +348,11 @@ func TestQuarantine(t *testing.T) {
 		}
 	}
 
-	viewer := relicv1connect.NewQuarantineServiceClient(relicHTTP("nobody", "x"), srv.URL+"/api")
-	if _, err := viewer.ReleaseQuarantined(ctx, connect.NewRequest(&relicv1.ReleaseQuarantinedRequest{
+	viewer := relicv1connect.NewQuarantineServiceClient(apiClient(relicHTTP("nobody", "x"), srv.URL))
+	if _, err := viewer.ReleaseQuarantined(ctx, &relicv1.ReleaseQuarantinedRequest{
 		Repository: "held-remote",
 		Path:       "g/c/1.0/c-1.0.jar",
-	})); code(err) != connect.CodeUnauthenticated {
+	}); code(err) != connect.CodeUnauthenticated {
 		t.Errorf("an anonymous release = %v", err)
 	}
 }

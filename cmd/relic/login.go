@@ -12,7 +12,6 @@ import (
 	"time"
 	"uuid"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
@@ -153,7 +152,7 @@ func revokeContextToken(ctx context.Context, saved cliContext) error {
 	c := newClient(strings.TrimRight(saved.URL, "/"), saved.CertificateAuthority, credentials{
 		token: saved.Token,
 	})
-	if _, err := c.sessions.Logout(ctx, connect.NewRequest(&relicv1.LogoutRequest{})); err != nil {
+	if _, err := c.sessions.Logout(ctx, &relicv1.LogoutRequest{}); err != nil {
 		return fmt.Errorf("revoke the token of context %s on %s: %w", saved.Name, saved.URL, err)
 	}
 
@@ -179,15 +178,15 @@ func passwordLogin(
 }
 
 func cliToken(cmd *cobra.Command, c *client, expiresDays int32) (string, error) {
-	resp, err := c.security.CreateToken(cmd.Context(), connect.NewRequest(&relicv1.CreateTokenRequest{
+	resp, err := c.security.CreateToken(cmd.Context(), &relicv1.CreateTokenRequest{
 		Description: "relic CLI",
 		ExpiresDays: expiresDays,
-	}))
+	})
 	if err != nil {
 		return "", fmt.Errorf("sign in: %w", err)
 	}
 
-	return resp.Msg.GetAccessToken(), nil
+	return resp.GetAccessToken(), nil
 }
 
 // browserLogin has a signed-in user approve the sign-in in the browser,
@@ -196,9 +195,9 @@ func browserLogin(cmd *cobra.Command, server trustedServer, expiresDays int32) (
 	anon := server.client(credentials{})
 	session := uuid.New().String()
 
-	started, err := anon.sessions.StartWebLogin(cmd.Context(), connect.NewRequest(&relicv1.StartWebLoginRequest{
+	started, err := anon.sessions.StartWebLogin(cmd.Context(), &relicv1.StartWebLoginRequest{
 		Session: session,
-	}))
+	})
 	if err != nil {
 		return "", "", fmt.Errorf("start the sign-in: %w", err)
 	}
@@ -207,35 +206,35 @@ func browserLogin(cmd *cobra.Command, server trustedServer, expiresDays int32) (
 		cmd.ErrOrStderr(),
 		"Open %s%s in your browser, sign in, and approve the code %s.\n",
 		server.url,
-		started.Msg.GetApprovePath(),
-		started.Msg.GetCode(),
+		started.GetApprovePath(),
+		started.GetCode(),
 	)
 
 	ticker := time.NewTicker(webLoginPoll)
 	defer ticker.Stop()
 
 	for {
-		polled, err := anon.sessions.PollWebLogin(cmd.Context(), connect.NewRequest(&relicv1.PollWebLoginRequest{
+		polled, err := anon.sessions.PollWebLogin(cmd.Context(), &relicv1.PollWebLoginRequest{
 			Session:     session,
 			Description: "relic CLI sign-in",
-		}))
+		})
 		if err != nil {
 			return "", "", fmt.Errorf("wait for the approval: %w", err)
 		}
 
-		if polled.Msg.GetApproved() {
+		if polled.GetApproved() {
 			c := server.client(credentials{
-				token: polled.Msg.GetAccessToken(),
+				token: polled.GetAccessToken(),
 			})
 
-			me, err := c.sessions.GetCurrentUser(cmd.Context(), connect.NewRequest(&relicv1.GetCurrentUserRequest{}))
+			me, err := c.sessions.GetCurrentUser(cmd.Context(), &relicv1.GetCurrentUserRequest{})
 			if err != nil {
 				return "", "", fmt.Errorf("sign in: %w", err)
 			}
 
 			token, err := cliToken(cmd, c, expiresDays)
 
-			return token, me.Msg.GetPrincipal().GetUsername(), err
+			return token, me.GetPrincipal().GetUsername(), err
 		}
 
 		select {
@@ -265,16 +264,16 @@ func exchangeWorkloadToken(
 
 	resp, err := server.client(credentials{}).sessions.ExchangeWorkloadToken(
 		cmd.Context(),
-		connect.NewRequest(&relicv1.ExchangeWorkloadTokenRequest{
+		&relicv1.ExchangeWorkloadTokenRequest{
 			Identity: identity,
 			Token:    oidcToken,
-		}),
+		},
 	)
 	if err != nil {
 		return "", "", fmt.Errorf("exchange the OIDC token: %w", err)
 	}
 
-	return resp.Msg.GetAccessToken(), resp.Msg.GetUsername(), nil
+	return resp.GetAccessToken(), resp.GetUsername(), nil
 }
 
 func readPassword(cmd *cobra.Command, fromStdin bool) (string, error) {

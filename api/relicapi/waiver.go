@@ -3,7 +3,6 @@ package relicapi
 import (
 	"context"
 
-	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -39,43 +38,43 @@ func waiverMessage(w policy.Waiver) *relicv1.Waiver {
 
 func (s *waiverServer) RequestWaiver(
 	ctx context.Context,
-	req *connect.Request[relicv1.RequestWaiverRequest],
-) (*connect.Response[relicv1.RequestWaiverResponse], error) {
+	req *relicv1.RequestWaiverRequest,
+) (*relicv1.RequestWaiverResponse, error) {
 	w, err := s.d.ScanPolicies.RequestWaiver(
 		ctx,
-		ignoreRuleOf(req.Msg.GetRule()),
-		req.Msg.GetReason(),
+		ignoreRuleOf(req.GetRule()),
+		req.GetReason(),
 		auth.FromContext(ctx).Name(),
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.RequestWaiverResponse{
+	return &relicv1.RequestWaiverResponse{
 		Waiver: waiverMessage(w),
-	}), nil
+	}, nil
 }
 
 func (s *waiverServer) ListWaivers(
 	ctx context.Context,
-	req *connect.Request[relicv1.ListWaiversRequest],
-) (*connect.Response[relicv1.ListWaiversResponse], error) {
+	req *relicv1.ListWaiversRequest,
+) (*relicv1.ListWaiversResponse, error) {
 	p := auth.FromContext(ctx)
 
 	requestedBy := ""
-	if req.Msg.GetMine() || (!p.Admin && !p.Viewer) {
+	if req.GetMine() || (!p.Admin && !p.Viewer) {
 		requestedBy = p.Name()
 	}
 
 	status := policy.WaiverStatus("")
 
 	for st, m := range waiverStatuses {
-		if m == req.Msg.GetStatus() {
+		if m == req.GetStatus() {
 			status = st
 		}
 	}
 
-	n, size := page(req.Msg.GetPage(), req.Msg.GetPageSize())
+	n, size := page(req.GetPage(), req.GetPageSize())
 
 	list, total, err := s.d.ScanPolicies.Waivers(ctx, policy.WaiverQuery{
 		RequestedBy: requestedBy,
@@ -95,25 +94,25 @@ func (s *waiverServer) ListWaivers(
 		out.Waivers = append(out.Waivers, waiverMessage(w))
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func (s *waiverServer) WithdrawWaiver(
 	ctx context.Context,
-	req *connect.Request[relicv1.WithdrawWaiverRequest],
-) (*connect.Response[relicv1.WithdrawWaiverResponse], error) {
-	if err := s.d.ScanPolicies.WithdrawWaiver(ctx, req.Msg.GetId(), auth.FromContext(ctx).Name()); err != nil {
+	req *relicv1.WithdrawWaiverRequest,
+) (*relicv1.WithdrawWaiverResponse, error) {
+	if err := s.d.ScanPolicies.WithdrawWaiver(ctx, req.GetId(), auth.FromContext(ctx).Name()); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.WithdrawWaiverResponse{}), nil
+	return &relicv1.WithdrawWaiverResponse{}, nil
 }
 
 func (s *waiverServer) ApproveWaiver(
 	ctx context.Context,
-	req *connect.Request[relicv1.ApproveWaiverRequest],
-) (*connect.Response[relicv1.ApproveWaiverResponse], error) {
-	m := req.Msg
+	req *relicv1.ApproveWaiverRequest,
+) (*relicv1.ApproveWaiverResponse, error) {
+	m := req
 
 	w, err := s.d.ScanPolicies.ApproveWaiver(
 		ctx,
@@ -126,21 +125,21 @@ func (s *waiverServer) ApproveWaiver(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.ApproveWaiverResponse{
+	return &relicv1.ApproveWaiverResponse{
 		Waiver: waiverMessage(w),
-	}), nil
+	}, nil
 }
 
 func (s *waiverServer) RejectWaiver(
 	ctx context.Context,
-	req *connect.Request[relicv1.RejectWaiverRequest],
-) (*connect.Response[relicv1.RejectWaiverResponse], error) {
-	w, err := s.d.ScanPolicies.RejectWaiver(ctx, req.Msg.GetId(), req.Msg.GetNote(), auth.FromContext(ctx).Name())
+	req *relicv1.RejectWaiverRequest,
+) (*relicv1.RejectWaiverResponse, error) {
+	w, err := s.d.ScanPolicies.RejectWaiver(ctx, req.GetId(), req.GetNote(), auth.FromContext(ctx).Name())
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.RejectWaiverResponse{
+	return &relicv1.RejectWaiverResponse{
 		Waiver: waiverMessage(w),
-	}), nil
+	}, nil
 }

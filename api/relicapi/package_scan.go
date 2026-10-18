@@ -4,11 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"slices"
 	"uuid"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	packageurl "github.com/package-url/packageurl-go"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -29,23 +28,23 @@ type packageScanScope struct {
 
 func (s *scanServer) ScanPackages(
 	ctx context.Context,
-	req *connect.Request[relicv1.ScanPackagesRequest],
-) (*connect.Response[relicv1.ScanPackagesResponse], error) {
-	m := req.Msg
+	req *relicv1.ScanPackagesRequest,
+) (*relicv1.ScanPackagesResponse, error) {
+	m := req
 
 	purls := slices.Compact(slices.Sorted(slices.Values(m.GetPurls())))
 	if len(purls) == 0 || len(purls) > maxScanPackages {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("give 1 to 10000 package URLs"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, "give 1 to 10000 package URLs")
 	}
 
 	for _, p := range purls {
 		if _, err := packageurl.FromString(p); err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid package URL: "+p))
+			return nil, connect.NewError(connect.CodeInvalidArgument, "invalid package URL: "+p)
 		}
 	}
 
 	if s.d.Scans == nil || s.d.QueueGraphScan == nil {
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("scanning is not available"))
+		return nil, connect.NewError(connect.CodeUnavailable, "scanning is not available")
 	}
 
 	if err := s.existingScope(ctx, m.GetWatches(), m.GetRepository()); err != nil {
@@ -74,16 +73,16 @@ func (s *scanServer) ScanPackages(
 		return nil, errors.Join(err, s.d.Scans.FailGraph(context.WithoutCancel(ctx), id, err))
 	}
 
-	return connect.NewResponse(&relicv1.ScanPackagesResponse{
+	return &relicv1.ScanPackagesResponse{
 		Id: id.String(),
-	}), nil
+	}, nil
 }
 
 func (s *scanServer) existingScope(ctx context.Context, watches []string, repo string) error {
 	for _, name := range watches {
 		_, err := s.d.ScanPolicies.Watch(ctx, name)
 		if errors.Is(err, policy.ErrNotFound) {
-			return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("watch %q does not exist", name))
+			return connect.Errorf(connect.CodeInvalidArgument, "watch %q does not exist", name)
 		}
 
 		if err != nil {
@@ -95,7 +94,7 @@ func (s *scanServer) existingScope(ctx context.Context, watches []string, repo s
 		return nil
 	}
 
-	missing := connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("repository %q does not exist", repo))
+	missing := connect.Errorf(connect.CodeInvalidArgument, "repository %q does not exist", repo)
 
 	r, err := s.d.Repositories.GetRepository(ctx, repo)
 	if errors.Is(err, repository.ErrRepositoryNotFound) {
@@ -122,9 +121,9 @@ func (s *scanServer) existingScope(ctx context.Context, watches []string, repo s
 
 func (s *scanServer) GetPackagesScan(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetPackagesScanRequest],
-) (*connect.Response[relicv1.GetPackagesScanResponse], error) {
-	id, err := uuid.Parse(req.Msg.GetId())
+	req *relicv1.GetPackagesScanRequest,
+) (*relicv1.GetPackagesScanResponse, error) {
+	id, err := uuid.Parse(req.GetId())
 	if err != nil {
 		return nil, scan.ErrNoScan
 	}
@@ -153,10 +152,10 @@ func (s *scanServer) GetPackagesScan(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.GetPackagesScanResponse{
+	return &relicv1.GetPackagesScanResponse{
 		Scan:          res.scan,
 		Violations:    res.violations,
 		FailBuild:     res.failBuild,
 		BlockDownload: res.blockDownload,
-	}), nil
+	}, nil
 }

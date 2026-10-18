@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
-
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/gen/relic/v1/relicv1connect"
 )
@@ -58,13 +56,13 @@ func TestSBOMExportAndImport(t *testing.T) {
 		t.Fatalf("import = %d %s", resp.StatusCode, body)
 	}
 
-	scans := relicv1connect.NewScanServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	scans := relicv1connect.NewScanServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
-	sbom, err := scans.GetItemSbom(ctx, connect.NewRequest(&relicv1.GetItemSbomRequest{
+	sbom, err := scans.GetItemSbom(ctx, &relicv1.GetItemSbomRequest{
 		Repository: "sbom-local",
 		Path:       "app/app.jar",
-	}))
-	if err != nil || len(sbom.Msg.GetComponents()) != 1 || sbom.Msg.GetComponents()[0].GetName() != "log4j-core" {
+	})
+	if err != nil || len(sbom.GetComponents()) != 1 || sbom.GetComponents()[0].GetName() != "log4j-core" {
 		t.Fatalf("components after the import = %v, %v", sbom, err)
 	}
 
@@ -104,19 +102,19 @@ func TestSBOMExportAndImport(t *testing.T) {
 		}
 	}
 
-	security := relicv1connect.NewSecurityServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	security := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 	//nolint:gosec // G101: a test user's password
-	if _, err := security.PutUser(ctx, connect.NewRequest(&relicv1.PutUserRequest{
+	if _, err := security.PutUser(ctx, &relicv1.PutUserRequest{
 		User: &relicv1.User{
 			Name:     "reader",
 			Email:    "reader@example.com",
 			Password: "Reader-pw-1",
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := security.PutPermission(ctx, connect.NewRequest(&relicv1.PutPermissionRequest{
+	if _, err := security.PutPermission(ctx, &relicv1.PutPermissionRequest{
 		Permission: &relicv1.Permission{
 			Name: "sbom-read",
 			Rules: []*relicv1.PermissionRule{
@@ -143,7 +141,7 @@ func TestSBOMExportAndImport(t *testing.T) {
 				},
 			},
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -215,19 +213,19 @@ func TestSBOMImportNeedsDeployOnEveryCopyOfTheContent(t *testing.T) {
 		t.Fatalf("an administrator imports = %d %s", resp.StatusCode, body)
 	}
 
-	security := relicv1connect.NewSecurityServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	security := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 	//nolint:gosec // G101: a test user's password
-	if _, err := security.PutUser(ctx, connect.NewRequest(&relicv1.PutUserRequest{
+	if _, err := security.PutUser(ctx, &relicv1.PutUserRequest{
 		User: &relicv1.User{
 			Name:     "deployer",
 			Email:    "deployer@example.com",
 			Password: "Deployer-pw-1",
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := security.PutPermission(ctx, connect.NewRequest(&relicv1.PutPermissionRequest{
+	if _, err := security.PutPermission(ctx, &relicv1.PutPermissionRequest{
 		Permission: &relicv1.Permission{
 			Name: "sbom-mine-deploy",
 			Rules: []*relicv1.PermissionRule{
@@ -255,7 +253,7 @@ func TestSBOMImportNeedsDeployOnEveryCopyOfTheContent(t *testing.T) {
 				},
 			},
 		},
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -290,28 +288,28 @@ func TestSBOMImportNeedsDeployOnEveryCopyOfTheContent(t *testing.T) {
 		}
 	}
 
-	scans := relicv1connect.NewScanServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	scans := relicv1connect.NewScanServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
-	sbom, err := scans.GetItemSbom(ctx, connect.NewRequest(&relicv1.GetItemSbomRequest{
+	sbom, err := scans.GetItemSbom(ctx, &relicv1.GetItemSbomRequest{
 		Repository: "sbom-theirs",
 		Path:       "prod/app.jar",
-	}))
-	if err != nil || len(sbom.Msg.GetComponents()) != 1 {
+	})
+	if err != nil || len(sbom.GetComponents()) != 1 {
 		t.Errorf("components of the copy the deployer may not deploy to = %v, %v", sbom, err)
 	}
 
-	audits := relicv1connect.NewAuditServiceClient(relicHTTP("admin", "password"), srv.URL+"/api")
+	audits := relicv1connect.NewAuditServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
-	events, err := audits.ListAuditEvents(ctx, connect.NewRequest(&relicv1.ListAuditEventsRequest{
+	events, err := audits.ListAuditEvents(ctx, &relicv1.ListAuditEventsRequest{
 		Actor:  "deployer",
 		Action: "sbom.import",
-	}))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	outcomes := map[string]relicv1.AuditOutcome{}
-	for _, e := range events.Msg.GetEvents() {
+	for _, e := range events.GetEvents() {
 		outcomes[e.GetTarget()] = e.GetOutcome()
 	}
 

@@ -2,13 +2,12 @@ package relicapi
 
 import (
 	"context"
-	"errors"
 	"math"
 	"time"
 
 	"relic/internal/artifacts/usage"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -22,19 +21,18 @@ type systemServer struct {
 }
 
 func (s *systemServer) GetVersion(
-	context.Context,
-	*connect.Request[relicv1.GetVersionRequest],
-) (*connect.Response[relicv1.GetVersionResponse], error) {
-	return connect.NewResponse(&relicv1.GetVersionResponse{
+	context.Context, *relicv1.GetVersionRequest,
+) (*relicv1.GetVersionResponse, error) {
+	return &relicv1.GetVersionResponse{
 		Version:  s.d.Version,
 		Revision: s.d.Revision,
-	}), nil
+	}, nil
 }
 
 func (s *systemServer) GetSystemStatus(
 	ctx context.Context,
-	_ *connect.Request[relicv1.GetSystemStatusRequest],
-) (*connect.Response[relicv1.GetSystemStatusResponse], error) {
+	_ *relicv1.GetSystemStatusRequest,
+) (*relicv1.GetSystemStatusResponse, error) {
 	if s.d.SystemStatus == nil || s.d.ScanResults == nil {
 		return nil, unimplemented("system status")
 	}
@@ -120,19 +118,19 @@ func (s *systemServer) GetSystemStatus(
 		out.Scanner.VulnerabilityDatabaseBuilt = timestamppb.New(built)
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 // ListBackgroundJobs returns recent jobs with their errors in full.
 func (s *systemServer) ListBackgroundJobs(
 	ctx context.Context,
-	req *connect.Request[relicv1.ListBackgroundJobsRequest],
-) (*connect.Response[relicv1.ListBackgroundJobsResponse], error) {
+	req *relicv1.ListBackgroundJobsRequest,
+) (*relicv1.ListBackgroundJobsResponse, error) {
 	if s.d.SystemStatus == nil {
 		return nil, unimplemented("background jobs")
 	}
 
-	jobs, err := s.d.SystemStatus.ListJobs(ctx, req.Msg.GetKind(), req.Msg.GetState(), req.Msg.GetLimit())
+	jobs, err := s.d.SystemStatus.ListJobs(ctx, req.GetKind(), req.GetState(), req.GetLimit())
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +175,7 @@ func (s *systemServer) ListBackgroundJobs(
 		out.Jobs = append(out.Jobs, m)
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func tsValue(t time.Time) *timestamppb.Timestamp {
@@ -209,10 +207,10 @@ func runCheck(ctx context.Context, c HealthCheck) *relicv1.HealthCheck {
 
 func (s *systemServer) CheckStorage(
 	ctx context.Context,
-	_ *connect.Request[relicv1.CheckStorageRequest],
-) (*connect.Response[relicv1.CheckStorageResponse], error) {
+	_ *relicv1.CheckStorageRequest,
+) (*relicv1.CheckStorageResponse, error) {
 	if s.d.QueueStorageCheck == nil {
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("no job queue"))
+		return nil, connect.NewError(connect.CodeUnavailable, "no job queue")
 	}
 
 	id, err := s.d.QueueStorageCheck(ctx)
@@ -220,24 +218,24 @@ func (s *systemServer) CheckStorage(
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.CheckStorageResponse{
+	return &relicv1.CheckStorageResponse{
 		JobId: id,
-	}), nil
+	}, nil
 }
 
 func (s *systemServer) CollectGarbage(
 	ctx context.Context,
-	_ *connect.Request[relicv1.CollectGarbageRequest],
-) (*connect.Response[relicv1.CollectGarbageResponse], error) {
+	_ *relicv1.CollectGarbageRequest,
+) (*relicv1.CollectGarbageResponse, error) {
 	if s.d.QueueGarbageCollection == nil {
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("no job queue"))
+		return nil, connect.NewError(connect.CodeUnavailable, "no job queue")
 	}
 
 	if err := s.d.QueueGarbageCollection(ctx); err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&relicv1.CollectGarbageResponse{}), nil
+	return &relicv1.CollectGarbageResponse{}, nil
 }
 
 func ts(t *time.Time) *timestamppb.Timestamp {
@@ -249,7 +247,7 @@ func ts(t *time.Time) *timestamppb.Timestamp {
 }
 
 func unimplemented(what string) error {
-	return connect.NewError(connect.CodeUnimplemented, errors.New(what+" is not available on this server"))
+	return connect.NewError(connect.CodeUnimplemented, what+" is not available on this server")
 }
 
 func counts[K ~string](in map[K]int64) map[string]int32 {
@@ -263,8 +261,8 @@ func counts[K ~string](in map[K]int64) map[string]int32 {
 
 func (s *systemServer) GetDashboardSummary(
 	ctx context.Context,
-	_ *connect.Request[relicv1.GetDashboardSummaryRequest],
-) (*connect.Response[relicv1.GetDashboardSummaryResponse], error) {
+	_ *relicv1.GetDashboardSummaryRequest,
+) (*relicv1.GetDashboardSummaryResponse, error) {
 	out := &relicv1.GetDashboardSummaryResponse{
 		Repositories: map[string]int32{},
 	}
@@ -325,7 +323,7 @@ func (s *systemServer) GetDashboardSummary(
 		out.VulnerabilityDatabaseBuilt = timestamppb.New(built)
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 const (
@@ -348,9 +346,9 @@ func userUsageMessages(list []usage.UserUsage) []*relicv1.UserUsage {
 
 func (s *systemServer) GetUsageReport(
 	ctx context.Context,
-	req *connect.Request[relicv1.GetUsageReportRequest],
-) (*connect.Response[relicv1.GetUsageReportResponse], error) {
-	days := int(req.Msg.GetDays())
+	req *relicv1.GetUsageReportRequest,
+) (*relicv1.GetUsageReportResponse, error) {
+	days := int(req.GetDays())
 	if days <= 0 {
 		days = defaultUsageDays
 	}
@@ -398,5 +396,5 @@ func (s *systemServer) GetUsageReport(
 		})
 	}
 
-	return connect.NewResponse(out), nil
+	return out, nil
 }

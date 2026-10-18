@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -26,7 +25,7 @@ func completeTargets(g *globals) cobra.CompletionFunc {
 		if !found {
 			r, err := c.repositories.ListRepositories(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.ListRepositoriesRequest{}),
+				&relicv1.ListRepositoriesRequest{},
 			)
 			if err != nil {
 				return nil, cobra.ShellCompDirectiveNoFileComp
@@ -34,7 +33,7 @@ func completeTargets(g *globals) cobra.CompletionFunc {
 
 			var out []string
 
-			for _, r := range r.Msg.GetRepositories() {
+			for _, r := range r.GetRepositories() {
 				out = append(out, r.GetName()+"/")
 			}
 
@@ -48,10 +47,10 @@ func completeTargets(g *globals) cobra.CompletionFunc {
 
 		r, err := c.artifacts.ListChildren(
 			cmd.Context(),
-			connect.NewRequest(&relicv1.ListChildrenRequest{
+			&relicv1.ListChildrenRequest{
 				Repository: repo,
 				Path:       dir,
-			}),
+			},
 		)
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
@@ -59,7 +58,7 @@ func completeTargets(g *globals) cobra.CompletionFunc {
 
 		var out []string
 
-		for _, it := range r.Msg.GetItems() {
+		for _, it := range r.GetItems() {
 			s := repo + "/" + it.GetPath()
 			if it.GetFolder() {
 				s += "/"
@@ -178,24 +177,24 @@ func copyMoveCmd(g *globals, move bool) *cobra.Command {
 				if move {
 					_, err = c.artifacts.MoveItem(
 						cmd.Context(),
-						connect.NewRequest(&relicv1.MoveItemRequest{
+						&relicv1.MoveItemRequest{
 							Repository:   t.fromRepo,
 							Path:         t.from,
 							ToRepository: t.toRepo,
 							ToPath:       t.to,
 							DryRun:       dryRun,
-						}),
+						},
 					)
 				} else {
 					_, err = c.artifacts.CopyItem(
 						cmd.Context(),
-						connect.NewRequest(&relicv1.CopyItemRequest{
+						&relicv1.CopyItemRequest{
 							Repository:   t.fromRepo,
 							Path:         t.from,
 							ToRepository: t.toRepo,
 							ToPath:       t.to,
 							DryRun:       dryRun,
-						}),
+						},
 					)
 				}
 
@@ -255,10 +254,10 @@ func removeCmd(g *globals) *cobra.Command {
 
 				_, err = c.artifacts.DeleteItem(
 					cmd.Context(),
-					connect.NewRequest(&relicv1.DeleteItemRequest{
+					&relicv1.DeleteItemRequest{
 						Repository: repo,
 						Path:       p,
-					}),
+					},
 				)
 				if isNotFound(err) && ignoreNotFound {
 					continue
@@ -318,18 +317,18 @@ func propsGetCmd(g *globals) *cobra.Command {
 
 			r, err := c.artifacts.GetProperties(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.GetPropertiesRequest{
+				&relicv1.GetPropertiesRequest{
 					Repository: repo,
 					Path:       p,
-				}),
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("props get %s/%s: %w", repo, p, err)
 			}
 
-			props := r.Msg.GetProperties()
+			props := r.GetProperties()
 
-			return printMessage(cmd.OutOrStdout(), output, r.Msg, func(w io.Writer) error {
+			return printMessage(cmd.OutOrStdout(), output, r, func(w io.Writer) error {
 				table := terminal.Table{
 					Headers: []string{
 						"KEY",
@@ -404,12 +403,12 @@ func propsSetCmd(g *globals) *cobra.Command {
 
 			if _, err := c.artifacts.SetProperties(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.SetPropertiesRequest{
+				&relicv1.SetPropertiesRequest{
 					Repository: repo,
 					Path:       p,
 					Properties: props,
 					Recursive:  recursive,
-				}),
+				},
 			); err != nil {
 				return fmt.Errorf("props set %s/%s: %w", repo, p, err)
 			}
@@ -446,12 +445,12 @@ func propsDeleteCmd(g *globals) *cobra.Command {
 
 			if _, err := c.artifacts.DeleteProperties(
 				cmd.Context(),
-				connect.NewRequest(&relicv1.DeletePropertiesRequest{
+				&relicv1.DeletePropertiesRequest{
 					Repository: repo,
 					Path:       p,
 					Keys:       args[1:],
 					Recursive:  recursive,
-				}),
+				},
 			); err != nil {
 				return fmt.Errorf("props delete %s/%s: %w", repo, p, err)
 			}
