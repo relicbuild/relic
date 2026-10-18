@@ -69,3 +69,4 @@ storage-storm
 mvnw
 gradle
 native-rpm
+native-ai-agents
