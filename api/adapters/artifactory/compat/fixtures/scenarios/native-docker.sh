@@ -67,7 +67,7 @@ docker manifest inspect "${REGISTRY_INSECURE[@]}" "$reg/$LOCAL/native/busybox:mu
 step "crane: auth, catalog, tags, digest, copy, config, delete"
 export CRANE="crane ${REGISTRY_INSECURE[*]}"
 crane auth login "$reg" -u "$SCENARIO_USER" -p "$SCENARIO_PASSWORD"
-$CRANE catalog "$reg" | grep -q "^$LOCAL/native/app$"
+$CRANE catalog "$reg" | grep -x "$LOCAL/native/app" >/dev/null
 $CRANE ls "$reg/$LOCAL/native/busybox" | sort | tr '\n' ' ' | grep -q "amd64 arm64 multi"
 [[ "$($CRANE digest "$image:1.0")" == "${pushed#*@}" ]]
 $CRANE copy "$reg/$LOCAL/native/busybox:multi" "$reg/$COPY/mirrored/busybox:1"
