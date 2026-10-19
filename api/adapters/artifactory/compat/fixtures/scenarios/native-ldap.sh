@@ -77,6 +77,15 @@ cn: ldap-devs
 uniqueMember: uid=alice,ou=people,dc=example,dc=org
 LDIF
 docker cp "$WORK/seed.ldif" "$box:/tmp/seed.ldif"
+# Seeding while the image adds its own bootstrap schemas can fail that
+# step, which stops the container: seed only after its first start.
+for i in $(seq 120); do
+  docker logs "$box" 2>&1 | grep -q "First start is done" && break
+  if [[ $(docker inspect -f '{{.State.Running}}' "$box") != true ]] || (( i == 120 )); then
+    echo "the OpenLDAP server did not start" >&2; docker logs "$box" 2>&1 | tail -20 >&2; exit 1
+  fi
+  sleep 0.5
+done
 for _ in $(seq 60); do
   seeded=0
   docker exec "$box" ldapadd -c -x -H ldap://localhost -D cn=admin,dc=example,dc=org -w admin-pass -f /tmp/seed.ldif >/dev/null 2>&1 || seeded=$?
