@@ -62,6 +62,7 @@ func TestReleasesNeedAnExistingProject(t *testing.T) {
 
 	other := newReleaseFixture(t)
 	other.releases.SetProjects(project.New(other.db))
+	other.trustReleasesOf(t, f)
 
 	if _, err := other.releases.Import(
 		t.Context(),
@@ -71,7 +72,7 @@ func TestReleasesNeedAnExistingProject(t *testing.T) {
 	); !errors.Is(
 		err,
 		ErrInvalid,
-	) {
+	) || errors.Is(err, ErrUntrustedKey) {
 		t.Errorf("Import into a server without the archive's project = %v; want ErrInvalid", err)
 	}
 }

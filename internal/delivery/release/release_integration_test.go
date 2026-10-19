@@ -16,6 +16,7 @@ import (
 
 	"relic/internal/artifacts/repository"
 	"relic/internal/artifacts/signingkey"
+	"relic/internal/delivery/evidence"
 	"relic/internal/platform/database"
 	"relic/internal/platform/database/databasetest"
 	"relic/internal/platform/objectstore"
@@ -70,6 +71,24 @@ func newReleaseFixture(t *testing.T) releaseFixture {
 	f.deploy(t, "libs", "other.bin", "other")
 
 	return f
+}
+
+// trustReleasesOf adds the release key of the server behind exporter to
+// f's trusted keys, so f imports its archives.
+func (f releaseFixture) trustReleasesOf(t *testing.T, exporter releaseFixture) {
+	t.Helper()
+
+	_, publicKey, err := exporter.releases.keys.RSA(t.Context(), SigningKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	trusted := evidence.New(f.db, f.repos, slog.New(slog.DiscardHandler))
+	f.releases.SetEvidence(trusted)
+
+	if _, err := trusted.AddTrustedKey(t.Context(), "exporter", publicKey, "admin"); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func (f releaseFixture) deploy(t *testing.T, repo, path, body string) repository.Item {

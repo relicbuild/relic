@@ -32,6 +32,10 @@ var (
 	ErrExists   = errors.New("release version already exists")
 	ErrInvalid  = errors.New("invalid release request")
 	ErrNotDraft = errors.New("release version is not a draft")
+
+	// ErrUntrustedKey is an archive signed by a key that is neither this
+	// server's release key nor one of its trusted keys.
+	ErrUntrustedKey = fmt.Errorf("%w: the archive's signing key is not trusted", ErrInvalid)
 	// ErrGateNotFound and ErrInvalidGate are the promotion gates' own.
 	ErrGateNotFound = errors.New("promotion gate not found")
 	ErrInvalidGate  = errors.New("invalid promotion gate")
