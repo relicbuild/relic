@@ -3,13 +3,13 @@
 package main
 
 import (
-	"crypto/sha256"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"relic/internal/delivery/evidence"
 )
 
 func TestReleaseCommands(t *testing.T) {
@@ -201,7 +201,31 @@ spec: {class: local, format: generic, environments: [PROD]}
 		t.Fatal(err)
 	}
 
-	keyLine := fmt.Sprintf("signing key sha256 %x\n", sha256.Sum256([]byte(key.PublicKey)))
+	publicKey, _, err := evidence.ParsePublicKey(key.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fingerprint, err := evidence.Fingerprint(publicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	keyLine := "signing key fingerprint " + fingerprint + "\n"
+
+	if out, err := relic(t, config, "", "release", "public-key"); err != nil || out != key.PublicKey {
+		t.Errorf("release public-key = %q %v; want the release-bundles public key", out, err)
+	}
+
+	keyFile := filepath.Join(dir, "release-key.pem")
+	if err := os.WriteFile(keyFile, []byte(key.PublicKey), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if out, err := relic(t, config, "", "release", "trust-key", "self", keyFile); err != nil ||
+		out != "trusted as self (fingerprint "+fingerprint+")\n" {
+		t.Errorf("release trust-key = %q %v", out, err)
+	}
 
 	archive := filepath.Join(dir, "app-1.0.zip")
 	if out, err := relic(t, config, "", "release", "export", "app", "1.0", "--file", archive); err != nil ||

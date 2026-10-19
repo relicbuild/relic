@@ -3,8 +3,6 @@ package main
 import (
 	"archive/zip"
 	"cmp"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +22,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	relicv1 "relic/api/gen/relic/v1"
+	"relic/internal/delivery/evidence"
 
 	"relic/internal/platform/terminal"
 )
@@ -46,6 +45,8 @@ func releaseCmd(g *globals) *cobra.Command {
 		releaseTagCmd(g),
 		releaseExportCmd(g),
 		releaseImportCmd(g),
+		releasePublicKeyCmd(g),
+		releaseTrustKeyCmd(g),
 		releaseDeleteCmd(g),
 	)
 
@@ -705,14 +706,14 @@ func releaseExportCmd(g *globals) *cobra.Command {
 				return fmt.Errorf("release export: %w", err)
 			}
 
-			fingerprint, err := archiveKeySHA256(file)
+			fingerprint, err := archiveKeyFingerprint(file)
 			if err != nil {
 				return fmt.Errorf("release export: %w", err)
 			}
 
 			_, _ = fmt.Fprintf(
 				cmd.OutOrStdout(),
-				"%s/%s exported to %s\nsigning key sha256 %s\n",
+				"%s/%s exported to %s\nsigning key fingerprint %s\n",
 				args[0],
 				args[1],
 				file,
@@ -769,12 +770,14 @@ func writeFileAtomic(name string, r io.Reader, mode fs.FileMode) error {
 
 func releaseImportCmd(g *globals) *cobra.Command {
 	return &cobra.Command{
-		Use:     "import <archive>",
-		Short:   "Import a release archive written by release export (administrators)",
+		Use:   "import <archive>",
+		Short: "Import a release archive written by release export (administrators)",
+		Long: "The archive's manifest must be signed by this server's release key or by a trusted key: " +
+			"trust the exporting server's key first with release trust-key.",
 		Example: "  relic release import app-1.4.0.zip",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fingerprint, err := archiveKeySHA256(args[0])
+			fingerprint, err := archiveKeyFingerprint(args[0])
 			if err != nil {
 				return fmt.Errorf("release import: %w", err)
 			}
@@ -834,7 +837,7 @@ func releaseImportCmd(g *globals) *cobra.Command {
 
 			_, _ = fmt.Fprintf(
 				cmd.OutOrStdout(),
-				"%s/%s imported\nsigning key sha256 %s\n",
+				"%s/%s imported\nsigning key fingerprint %s\n",
 				got.GetRelease().GetName(),
 				got.GetRelease().GetVersion(),
 				fingerprint,
@@ -846,13 +849,14 @@ func releaseImportCmd(g *globals) *cobra.Command {
 }
 
 const (
+	releaseSigningKey    = "release-bundles"
 	releaseArchiveKey    = "signing-key.pem"
 	maxReleaseArchiveKey = 1 << 20
 )
 
-// archiveKeySHA256 is the hex SHA-256 of the signing key's PEM text that a
-// release archive carries, the key the importing server verifies it with.
-func archiveKeySHA256(name string) (string, error) {
+// archiveKeyFingerprint is the fingerprint of the signing key a release
+// archive carries, as the server's trusted keys list it.
+func archiveKeyFingerprint(name string) (string, error) {
 	zr, err := zip.OpenReader(name)
 	if err != nil {
 		return "", fmt.Errorf("not a release archive: %w", err)
@@ -889,12 +893,91 @@ func archiveKeySHA256(name string) (string, error) {
 		_ = rc.Close()
 	}()
 
-	sum := sha256.New()
-	if _, err := io.Copy(sum, io.LimitReader(rc, maxReleaseArchiveKey)); err != nil {
+	pemText, err := io.ReadAll(io.LimitReader(rc, maxReleaseArchiveKey))
+	if err != nil {
 		return "", fmt.Errorf("%s: %w", releaseArchiveKey, err)
 	}
 
-	return hex.EncodeToString(sum.Sum(nil)), nil
+	publicKey, _, err := evidence.ParsePublicKey(string(pemText))
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", releaseArchiveKey, err)
+	}
+
+	return evidence.Fingerprint(publicKey)
+}
+
+func releasePublicKeyCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "public-key",
+		Short: "Print the public key this server signs release manifests with",
+		Long: "Give the key to the servers that import this server's release archives; " +
+			"an administrator there trusts it with release trust-key.",
+		Example: "  relic release public-key >release-key.pem",
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c, err := g.dial()
+			if err != nil {
+				return err
+			}
+
+			r, err := c.signingKeys.GetPublicKey(
+				cmd.Context(),
+				&relicv1.GetPublicKeyRequest{
+					Name: releaseSigningKey,
+				},
+			)
+			if err != nil {
+				return fmt.Errorf("release public-key: %w", err)
+			}
+
+			_, _ = io.WriteString(cmd.OutOrStdout(), r.GetPublicKey())
+
+			return nil
+		},
+	}
+}
+
+func releaseTrustKeyCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "trust-key <alias> <public-key-file>",
+		Short: "Trust another server's release key, so its release archives import (administrators)",
+		Long: "Adds the PEM public key to the server's trusted keys, which also verify evidence. " +
+			"Get the key with release public-key on the exporting server, and compare its " +
+			"fingerprint with the one release import reports.",
+		Example: "  relic release trust-key build-server release-key.pem",
+		Args:    cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pemText, err := os.ReadFile(args[1])
+			if err != nil {
+				return fmt.Errorf("release trust-key: %w", err)
+			}
+
+			c, err := g.dial()
+			if err != nil {
+				return err
+			}
+
+			r, err := c.evidence.AddTrustedKey(
+				cmd.Context(),
+				&relicv1.AddTrustedKeyRequest{
+					Alias:     args[0],
+					PublicKey: string(pemText),
+				},
+			)
+			if err != nil {
+				return fmt.Errorf("release trust-key: %w", err)
+			}
+
+			_, _ = fmt.Fprintf(
+				cmd.OutOrStdout(),
+				"trusted as %s (fingerprint %s)\n",
+				r.GetKey().GetAlias(),
+				r.GetKey().GetFingerprint(),
+			)
+
+			return nil
+		},
+	}
 }
 
 func releaseDeleteCmd(g *globals) *cobra.Command {
