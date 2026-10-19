@@ -34,6 +34,7 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/jfrog/build-info-go v1.13.1-0.20260902120316-b325d342b210
 	github.com/klauspost/compress v1.20.3
+	github.com/moby/moby/api v1.56.1
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/package-url/packageurl-go v0.1.7
 	github.com/pierrec/lz4/v4 v4.1.33
@@ -172,7 +173,6 @@ require (
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/go-archive v0.3.3 // indirect
-	github.com/moby/moby/api v1.56.1 // indirect
 	github.com/moby/moby/client v0.6.2 // indirect
 	github.com/moby/patternmatcher v0.6.1 // indirect
 	github.com/moby/sys/sequential v0.7.0 // indirect

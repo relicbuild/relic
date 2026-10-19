@@ -10,7 +10,7 @@
     "typecheck": "nuxt typecheck && nuxt typecheck site",
     "gen:api": "cd .. && web/node_modules/.bin/buf generate --template buf.gen.web.yaml",
     "test": "vitest run",
-    "test:e2e": "e2e/run.sh",
+    "test:e2e": "cd .. && go test -tags e2e -count=1 -v -timeout 90m ./test/e2e -run TestStack/suites/ui -tier core",
     "dev:site": "nuxt dev site",
     "generate:site": "NUXT_SITE_URL=https://relic.build NUXT_PUBLIC_RELIC_VERSION=\"$(scripts/release-version.sh)\" nuxt generate site"
   },

@@ -214,7 +214,7 @@ tasks:
       - RELIC_TEST_DATABASE=sqlite go test -p {{.TEST_PACKAGE_PARALLELISM}} -race -tags=integration $(test/database-packages.sh)
 
   test:core:
-    desc: "Tier 1: the integration suite, then the core scenarios, the SDK suite and the UI e2e on the single binary"
+    desc: "Tier 1: the integration suite, then the core scenarios, the SDK suite and the UI tests on the single binary"
     cmds:
       - task: test:integration
       - task: e2e:core
@@ -222,17 +222,17 @@ tasks:
   e2e:core:
     internal: true
     cmds:
-      - test/tier.sh core
+      - go test -tags e2e -count=1 -v -timeout 90m ./test/e2e -run TestStack -tier core
 
   test:platform:
     desc: "Tier 2: the platform scenarios on the Compose stack (PostgreSQL, SeaweedFS, a separate worker)"
     cmds:
-      - test/tier.sh platform
+      - go test -tags e2e -count=1 -v -timeout 90m ./test/e2e -run TestStack -tier platform
 
   test:k8s:
     desc: "The k8s tier: one kind cluster, the Helm chart, Kubernetes pulls, a rolling restart and an upgrade, HA, and the restore drill"
     cmds:
-      - test/tier.sh k8s
+      - go test -tags e2e -count=1 -v -timeout 120m ./test/e2e -run TestKubernetes -tier k8s
 
   test:all:
     desc: "The full gate before a merge request: the integration suite with the race detector, then tiers 1 and 2 at once"
@@ -247,9 +247,9 @@ tasks:
       - test:platform
 
   e2e:
-    desc: Package client end-to-end scenarios
+    desc: "Some scenarios of a tier: task e2e -- -tier platform -scenarios 'npm maven'"
     cmds:
-      - RELIC_PORT=28090 api/adapters/artifactory/compat/e2e/run.sh {{.CLI_ARGS}}
+      - go test -tags e2e -count=1 -v -timeout 90m ./test/e2e -run TestStack {{.CLI_ARGS}}
 
   release:snapshot:
     desc: Build every release archive into dist/ without publishing

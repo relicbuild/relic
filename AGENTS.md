@@ -37,7 +37,7 @@ api/
                         (repoconfig, permissions, ldapsettings, xraypolicy, buildjson, wire),
                         quartz/ (cron expressions), transfer/ (relic import artifactory),
                         integration/ (its integration tests), relic-indexer/, and
-    compat/             the compatibility suite: e2e/ (runner, required.txt), fixtures/
+    compat/             the compatibility suite: e2e/ (required.txt), fixtures/
                         (jf scenarios), sdk/ (jfrog-client-go suite and payloads/, own
                         module), upstream/, load/, inventory/, routes/ (route inventory),
                         jf.sh, docs/ (inventory, matrix)
@@ -78,11 +78,14 @@ deploy/                 docker-compose dev stack (PostgreSQL, SeaweedFS; profile
 helm/relic/             the Helm chart; PostgreSQL (cnpg/cluster with the bundled CloudNativePG
                         operator, CRDs in crds/), SeaweedFS and the optional monitoring stack
                         (monitoringStack.enabled) come from their official charts via Chart.lock
-test/                   tier.sh (runs one test tier on its own stack), database-packages.sh (the SQLite pass)
+test/                   database-packages.sh (the SQLite pass)
+  e2e/                  the e2e suites in one Go package (build tag e2e, testcontainers): the
+                        Compose stacks of a tier, the scenarios in the client image (client/), the
+                        jfrog-client-go suite, the UI tests, and with -tier k8s one kind cluster
+                        for everything Kubernetes-specific (k8s.sh)
   compose/              the plain-HTTP overrides of the Compose stacks the tests start, and checks of their settings
   helm/                 chart render tests (no cluster)
   install/              tests of install.sh
-  k8s/                  the k8s tier: one kind cluster for everything Kubernetes-specific
 tools/                  protogen (buf and plugins, own module), dashgen, metricsdoc, sqlitebridge,
                         thirdpartynotices (the license texts shipped in the image and the
                         release archives; web/scripts/third-party-notices.ts adds the web UI's)
@@ -327,7 +330,7 @@ go tool unfold -changed                         # no inlined literals, struct ty
 (cd web && pnpm lint && pnpm typecheck && pnpm test)
 task test:core                                  # tier 1 (needs Docker): integration on both engines, then on the single binary the core scenarios, the SDK suite, the UI e2e and a storage check
 task test:platform                              # tier 2: the platform scenarios and a storage check on the Compose stack (PostgreSQL, SeaweedFS, a separate worker)
-task test:k8s                                   # the k8s tier: one kind cluster, the chart, Kubernetes pulls, restart, upgrade, HA and the restore drill (test/k8s/run.sh)
+task test:k8s                                   # the k8s tier: one kind cluster, the chart, Kubernetes pulls, restart, upgrade, HA and the restore drill (test/e2e/k8s.sh)
 ```
 
 The tiers split the long checks so nothing runs
@@ -336,7 +339,7 @@ jf or package-manager compatibility (anything under `api/adapters`, auth,
 storage, or formats) and before a merge request; `task test:all` runs the
 integration suite with the race detector, then tiers 1 and 2 at once. The
 k8s tier runs for changes to `helm/`, `deploy/` or the Docker registry, and
-before a release; anything Kubernetes-specific goes into `test/k8s/run.sh`,
+before a release; anything Kubernetes-specific goes into `test/e2e/k8s.sh`,
 against its one cluster. The SQLite passes run only the packages whose tests use a test
 database (`test/database-packages.sh`).
 
@@ -344,18 +347,17 @@ A scenario is added to `api/adapters/artifactory/compat/e2e/required.txt` in
 the change that makes it pass, and is never removed. A scenario is in the
 core tier unless a `# tier:` line under its `# covers:` line puts it in
 `platform` (it needs the separate worker, S3 or PostgreSQL), with the reason; `TestEveryRequiredScenarioHasATier` checks the
-line. `test/tier.sh <tier> [scenarios]` runs one tier, or the named scenarios
-of it.
+line. `go test -tags e2e ./test/e2e -run TestStack -tier <tier>` runs one
+tier, and `-scenarios 'npm maven'` the named scenarios of it (`task e2e`);
+`-url https://…` runs them against a running server instead of a stack.
 
-The e2e scenarios run in parallel (`api/adapters/artifactory/compat/e2e/harness`, Go subtests driving the
-real clients), so a run takes about as long as its slowest scenario;
-`E2E_PARALLEL` sets the width and `RELIC_E2E_PROJECT` gives a run its own Compose
-project, so two runs can go at once. The tiers publish host ports from 28091 up
-(`test/tier.sh`); when another program holds one, the tier stops at once, and
-`RELIC_E2E_PORT_BASE` (default 28090) moves them. A scenario must be independent: it uses
-`$REPO`, `$REPO2` and `$BUILD` from `lib.sh` (unique per scenario in the
-harness) or names of its own, and leaves global settings as it found them. One
-that cannot goes in `harness.Serial` with the reason.
+The e2e scenarios run in parallel, each a Go subtest running its script in
+the client container, so a run takes about as long as its slowest scenario;
+`-parallel` sets the width. Every tier has its own Compose project and Docker
+picks the published ports, so tiers run at once. A scenario must be
+independent: it uses `$REPO`, `$REPO2` and `$BUILD` from `lib.sh` (unique per
+scenario) or names of its own, and leaves global settings as it found them.
+One that cannot goes in `e2e.Serial` with the reason.
 
 ## Skills to load
 

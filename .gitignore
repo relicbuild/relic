@@ -40,7 +40,7 @@ web/.cache/
 
 
 # E2E results
-api/adapters/artifactory/compat/e2e/results/
+test/e2e/results/
 api/adapters/artifactory/compat/upstream/results/
 
 # A stray `go build` in the indexer module
