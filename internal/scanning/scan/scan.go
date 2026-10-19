@@ -349,6 +349,10 @@ func (s Syft) Catalog(ctx context.Context, source string) ([]byte, error) {
 	return s.run(ctx, args...)
 }
 
+// ErrInvalidDB is an installed vulnerability database that fails Grype's
+// checksum, such as one a crash left half written.
+var ErrInvalidDB = errors.New("scan: the vulnerability database is invalid")
+
 // Grype is the subprocess Matcher.
 type Grype struct {
 	Exec
@@ -381,6 +385,10 @@ func (g Grype) Match(ctx context.Context, sbomPath string) (Report, error) {
 
 	out, err := e.run(ctx, "sbom:"+sbomPath, "-o", "json", "-q")
 	if err != nil {
+		if _, dbErr := g.DBBuilt(ctx); errors.Is(dbErr, ErrInvalidDB) {
+			return Report{}, dbErr
+		}
+
 		return Report{}, err
 	}
 
@@ -407,7 +415,40 @@ func (g Grype) UpdateDB(ctx context.Context) error {
 	return err
 }
 
-// DBBuilt reports when the installed database was built.
+// ReplaceInvalidDB deletes an installed database that fails Grype's
+// checksum and downloads a new one, which `grype db update` alone never
+// does while the invalid one is the latest; it reports whether it did.
+// Offline, it returns the ErrInvalidDB error instead.
+func (g Grype) ReplaceInvalidDB(ctx context.Context) (bool, error) {
+	if !g.HasDB() {
+		return false, nil
+	}
+
+	_, err := g.DBBuilt(ctx)
+	if !errors.Is(err, ErrInvalidDB) {
+		return false, nil
+	}
+
+	if g.Offline {
+		return false, fmt.Errorf("%w; import a new one", err)
+	}
+
+	e := g.Exec
+	e.Env = g.env()
+
+	if _, err := e.run(ctx, "db", "delete"); err != nil {
+		return false, fmt.Errorf("delete the invalid vulnerability database: %w", err)
+	}
+
+	if _, err := e.run(ctx, "db", "update"); err != nil {
+		return true, fmt.Errorf("download a vulnerability database to replace the invalid one: %w", err)
+	}
+
+	return true, nil
+}
+
+// DBBuilt reports when the installed database was built; an installed
+// database that fails its checksum is ErrInvalidDB.
 func (g Grype) DBBuilt(ctx context.Context) (time.Time, error) {
 	e := g.Exec
 	e.Env = g.env()
@@ -419,9 +460,15 @@ func (g Grype) DBBuilt(ctx context.Context) (time.Time, error) {
 
 	var st struct {
 		Built time.Time `json:"built"`
+		Valid *bool     `json:"valid"`
+		Error string    `json:"error"`
 	}
 	if err := json.Unmarshal(out, &st); err != nil {
 		return time.Time{}, fmt.Errorf("grype db status: unexpected output: %w", err)
+	}
+
+	if st.Valid != nil && !*st.Valid {
+		return time.Time{}, fmt.Errorf("%w: %s", ErrInvalidDB, st.Error)
 	}
 
 	if st.Built.IsZero() {

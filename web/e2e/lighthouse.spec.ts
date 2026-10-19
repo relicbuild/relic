@@ -9,9 +9,10 @@ const thresholds = {
   'best-practices': 0.9
 }
 
-// The docs page scores 0.54 to 0.65 for performance on CI runners.
+// On CI runners the docs page scores 0.54 to 0.65 for performance, and the security page 0.59 and up.
 const pageThresholds: Record<string, Partial<typeof thresholds>> = {
-  '/docs': { performance: 0.5 }
+  '/docs': { performance: 0.5 },
+  '/security': { performance: 0.5 }
 }
 
 const pages = [
