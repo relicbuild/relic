@@ -139,8 +139,8 @@ func TestWorkloadTokenExchange(t *testing.T) {
 		relicHTTP("ci-bot", workloadToken),
 		srv.URL,
 	)).CreateToken(ctx, &relicv1.CreateTokenRequest{
-		Description: "outlives the job",
-		ExpiresDays: 30,
+		Description:      "outlives the job",
+		ExpiresInSeconds: 30 * 24 * 60 * 60,
 	})
 	if err != nil || minted.GetExpiresIn() <= 0 || minted.GetExpiresIn() > 3600 {
 		t.Errorf("a token minted with a workload token = %v, %v; want it to expire within the hour", minted, err)

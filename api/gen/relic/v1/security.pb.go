@@ -1868,15 +1868,21 @@ func (x *TokenScope) GetGroups() []string {
 type CreateTokenRequest struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Description string                 `protobuf:"bytes,1,opt,name=description,proto3" json:"description,omitempty"`
-	// expires_days is the token's lifetime, at most 3650; 0 never expires for an
-	// administrator. Other users' tokens expire within 365 days.
-	ExpiresDays int32 `protobuf:"varint,2,opt,name=expires_days,json=expiresDays,proto3" json:"expires_days,omitempty"`
+	// expires_in_seconds is the token's lifetime, at most 3650 days; 0 never
+	// expires for an administrator. Other users' tokens expire within 365 days.
+	ExpiresInSeconds int64 `protobuf:"varint,2,opt,name=expires_in_seconds,json=expiresInSeconds,proto3" json:"expires_in_seconds,omitempty"`
 	// scope is the user's own rights when unset. Only administrators may ask
 	// for an admin scope or groups they are not in.
 	Scope *TokenScope `protobuf:"bytes,3,opt,name=scope,proto3" json:"scope,omitempty"`
 	// project is a label recorded on the token: a project the caller can see.
 	// It does not limit what the token can do; the scope does.
-	Project       string `protobuf:"bytes,4,opt,name=project,proto3" json:"project,omitempty"`
+	Project string `protobuf:"bytes,4,opt,name=project,proto3" json:"project,omitempty"`
+	// username is the user the token acts as: the caller when unset. Only
+	// administrators may name another user.
+	Username string `protobuf:"bytes,5,opt,name=username,proto3" json:"username,omitempty"`
+	// refreshable also issues a refresh token, which exchanges the access token
+	// for a new one when it expires.
+	Refreshable   bool `protobuf:"varint,6,opt,name=refreshable,proto3" json:"refreshable,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1918,9 +1924,9 @@ func (x *CreateTokenRequest) GetDescription() string {
 	return ""
 }
 
-func (x *CreateTokenRequest) GetExpiresDays() int32 {
+func (x *CreateTokenRequest) GetExpiresInSeconds() int64 {
 	if x != nil {
-		return x.ExpiresDays
+		return x.ExpiresInSeconds
 	}
 	return 0
 }
@@ -1939,12 +1945,28 @@ func (x *CreateTokenRequest) GetProject() string {
 	return ""
 }
 
+func (x *CreateTokenRequest) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *CreateTokenRequest) GetRefreshable() bool {
+	if x != nil {
+		return x.Refreshable
+	}
+	return false
+}
+
 type CreateTokenResponse struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	AccessToken string                 `protobuf:"bytes,1,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`
 	// expires_in is in seconds; 0 never expires.
-	ExpiresIn     int64       `protobuf:"varint,2,opt,name=expires_in,json=expiresIn,proto3" json:"expires_in,omitempty"`
-	Scope         *TokenScope `protobuf:"bytes,3,opt,name=scope,proto3" json:"scope,omitempty"`
+	ExpiresIn int64       `protobuf:"varint,2,opt,name=expires_in,json=expiresIn,proto3" json:"expires_in,omitempty"`
+	Scope     *TokenScope `protobuf:"bytes,3,opt,name=scope,proto3" json:"scope,omitempty"`
+	// refresh_token is set for a refreshable token.
+	RefreshToken  string `protobuf:"bytes,4,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1998,6 +2020,13 @@ func (x *CreateTokenResponse) GetScope() *TokenScope {
 		return x.Scope
 	}
 	return nil
+}
+
+func (x *CreateTokenResponse) GetRefreshToken() string {
+	if x != nil {
+		return x.RefreshToken
+	}
+	return ""
 }
 
 // AccessToken is an issued token, without its secret.
@@ -2381,17 +2410,20 @@ const file_relic_v1_security_proto_rawDesc = "" +
 	"\n" +
 	"TokenScope\x12,\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x18.relic.v1.TokenScopeKindR\x04kind\x12\x16\n" +
-	"\x06groups\x18\x02 \x03(\tR\x06groups\"\x9f\x01\n" +
+	"\x06groups\x18\x02 \x03(\tR\x06groups\"\xe8\x01\n" +
 	"\x12CreateTokenRequest\x12 \n" +
-	"\vdescription\x18\x01 \x01(\tR\vdescription\x12!\n" +
-	"\fexpires_days\x18\x02 \x01(\x05R\vexpiresDays\x12*\n" +
+	"\vdescription\x18\x01 \x01(\tR\vdescription\x12,\n" +
+	"\x12expires_in_seconds\x18\x02 \x01(\x03R\x10expiresInSeconds\x12*\n" +
 	"\x05scope\x18\x03 \x01(\v2\x14.relic.v1.TokenScopeR\x05scope\x12\x18\n" +
-	"\aproject\x18\x04 \x01(\tR\aproject\"\x83\x01\n" +
+	"\aproject\x18\x04 \x01(\tR\aproject\x12\x1a\n" +
+	"\busername\x18\x05 \x01(\tR\busername\x12 \n" +
+	"\vrefreshable\x18\x06 \x01(\bR\vrefreshable\"\xa8\x01\n" +
 	"\x13CreateTokenResponse\x12!\n" +
 	"\faccess_token\x18\x01 \x01(\tR\vaccessToken\x12\x1d\n" +
 	"\n" +
 	"expires_in\x18\x02 \x01(\x03R\texpiresIn\x12*\n" +
-	"\x05scope\x18\x03 \x01(\v2\x14.relic.v1.TokenScopeR\x05scope\"\xc9\x02\n" +
+	"\x05scope\x18\x03 \x01(\v2\x14.relic.v1.TokenScopeR\x05scope\x12#\n" +
+	"\rrefresh_token\x18\x04 \x01(\tR\frefreshToken\"\xc9\x02\n" +
 	"\vAccessToken\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12*\n" +
