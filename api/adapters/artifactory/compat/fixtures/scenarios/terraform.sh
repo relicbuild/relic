@@ -26,7 +26,7 @@ jf rt s "$LOCAL/acme/network/aws/v1.0.0.zip" | expect_count 1
 step "terraform init consumes the module from Relic's registry"
 host="${SCENARIO_TLS_URL#https://}"
 token=$(curl -sf -u "$SCENARIO_USER:$SCENARIO_PASSWORD" -H 'Content-Type: application/json' \
-  -d '{"description":"terraform e2e","expiresDays":1}' "$SCENARIO_TLS_URL/api/relic.v1.SecurityService/CreateToken" | jq -r .accessToken)
+  -d '{"description":"terraform e2e","expiresInSeconds":"86400"}' "$SCENARIO_TLS_URL/api/relic.v1.SecurityService/CreateToken" | jq -r .accessToken)
 # TF_TOKEN_<host>: dots become underscores, dashes double underscores.
 export "TF_TOKEN_$(echo "$host" | sed 's/-/__/g; s/\./_/g')=$token"
 mkdir app && cd app

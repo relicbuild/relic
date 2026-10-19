@@ -417,7 +417,7 @@ func (s *securityServer) DeletePermission(
 	return &relicv1.DeletePermissionResponse{}, nil
 }
 
-const maxTokenDays = 3650
+const maxTokenLifetime = 3650 * 24 * time.Hour
 
 func (s *securityServer) CreateToken(
 	ctx context.Context,
@@ -427,15 +427,28 @@ func (s *securityServer) CreateToken(
 		return nil, unimplemented("tokens")
 	}
 
-	days := req.GetExpiresDays()
-	if days < 0 || days > maxTokenDays {
+	seconds := req.GetExpiresInSeconds()
+	if seconds < 0 || seconds > int64(maxTokenLifetime/time.Second) {
 		return nil, connect.Errorf(
 			connect.CodeInvalidArgument,
-			"expires_days must be 0 to %d", maxTokenDays,
+			"expires_in_seconds must be 0 to %d", int64(maxTokenLifetime/time.Second),
 		)
 	}
 
 	caller := auth.FromContext(ctx)
+
+	username := caller.Name()
+	if name := req.GetUsername(); name != "" && name != username {
+		if !caller.Admin {
+			return nil, connect.NewError(
+				connect.CodePermissionDenied,
+				"only administrators can create tokens for other users",
+			)
+		}
+
+		username = name
+	}
+
 	scope := auth.UserScope
 
 	if sm := req.GetScope(); sm != nil {
@@ -468,19 +481,25 @@ func (s *securityServer) CreateToken(
 	}
 
 	tok, err := s.d.Tokens.Issue(ctx, caller.LimitIssue(auth.IssueParams{
-		Username:    caller.Name(),
+		Username:    username,
 		Scope:       scope,
-		ExpiresIn:   time.Duration(days) * 24 * time.Hour,
+		ExpiresIn:   time.Duration(seconds) * time.Second,
+		Refreshable: req.GetRefreshable(),
 		Description: req.GetDescription(),
 		Project:     req.GetProject(),
 	}, time.Now()))
+	if errors.Is(err, auth.ErrUnknownUser) {
+		return nil, connect.NewError(connect.CodeNotFound, err.Error())
+	}
+
 	if err != nil {
 		return nil, err
 	}
 
 	return &relicv1.CreateTokenResponse{
-		AccessToken: tok.AccessToken,
-		ExpiresIn:   int64(tok.ExpiresIn / time.Second),
+		AccessToken:  tok.AccessToken,
+		ExpiresIn:    int64(tok.ExpiresIn / time.Second),
+		RefreshToken: tok.RefreshToken,
 		Scope: &relicv1.TokenScope{
 			Kind:   fromDomain[relicv1.TokenScopeKind](tok.Scope.Kind),
 			Groups: tok.Scope.Groups,

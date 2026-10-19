@@ -1047,15 +1047,15 @@ func TestRelicAPISecurity(t *testing.T) {
 	if _, err := ann.CreateToken(
 		ctx,
 		&relicv1.CreateTokenRequest{
-			ExpiresDays: 9999,
+			ExpiresInSeconds: 9999 * 24 * 60 * 60,
 		},
 	); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("token too long: %v", err)
 	}
 
 	tok, err := ann.CreateToken(ctx, &relicv1.CreateTokenRequest{
-		Description: "ci",
-		ExpiresDays: 1,
+		Description:      "ci",
+		ExpiresInSeconds: 24 * 60 * 60,
 	})
 	if err != nil || tok.GetAccessToken() == "" || tok.GetExpiresIn() != 86400 {
 		t.Fatalf("token = %v %v", tok, err)
@@ -1075,6 +1075,50 @@ func TestRelicAPISecurity(t *testing.T) {
 	)
 	if resp.StatusCode != 200 {
 		t.Errorf("token on the Artifactory API = %d", resp.StatusCode)
+	}
+
+	if _, err := ann.CreateToken(
+		ctx,
+		&relicv1.CreateTokenRequest{
+			Username: "admin",
+		},
+	); code(err) != connect.CodePermissionDenied {
+		t.Errorf("a non-admin's token for another user = %v, want PermissionDenied", err)
+	}
+
+	forAnn, err := sec.CreateToken(ctx, &relicv1.CreateTokenRequest{
+		Description:      "short-lived for ann",
+		ExpiresInSeconds: 600,
+		Username:         "ann",
+		Refreshable:      true,
+	})
+	if err != nil || forAnn.GetExpiresIn() != 600 || forAnn.GetRefreshToken() == "" {
+		t.Fatalf("an administrator's refreshable 10-minute token for ann = %v %v", forAnn, err)
+	}
+
+	annTokens, err := sec.ListTokens(ctx, &relicv1.ListTokensRequest{
+		Username: "ann",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, at := range annTokens.GetTokens() {
+		found = found || at.GetDescription() == "short-lived for ann" && at.GetRefreshable()
+	}
+
+	if !found {
+		t.Errorf("ann's tokens %v lack the refreshable one the administrator created", annTokens.GetTokens())
+	}
+
+	if _, err := sec.CreateToken(
+		ctx,
+		&relicv1.CreateTokenRequest{
+			Username: "no-such-user",
+		},
+	); code(err) != connect.CodeNotFound {
+		t.Errorf("a token for an unknown user = %v, want NotFound", err)
 	}
 
 	if _, err := ann.CreateToken(
@@ -1128,8 +1172,8 @@ func TestRelicAPISecurity(t *testing.T) {
 		if _, err := ann.CreateToken(
 			ctx,
 			&relicv1.CreateTokenRequest{
-				ExpiresDays: 1,
-				Project:     key,
+				ExpiresInSeconds: 24 * 60 * 60,
+				Project:          key,
 			},
 		); code(err) != connect.CodeNotFound {
 			t.Errorf("token labelled with %s = %v, want NotFound", name, err)
@@ -1139,8 +1183,8 @@ func TestRelicAPISecurity(t *testing.T) {
 	if _, err := sec.CreateToken(
 		ctx,
 		&relicv1.CreateTokenRequest{
-			ExpiresDays: 1,
-			Project:     "tokens",
+			ExpiresInSeconds: 24 * 60 * 60,
+			Project:          "tokens",
 		},
 	); err != nil {
 		t.Errorf("token labelled with a project an administrator sees = %v", err)
@@ -1154,8 +1198,8 @@ func TestRelicAPISecurity(t *testing.T) {
 	}
 
 	scoped, err := ann.CreateToken(ctx, &relicv1.CreateTokenRequest{
-		Description: "devs",
-		ExpiresDays: 1,
+		Description:      "devs",
+		ExpiresInSeconds: 24 * 60 * 60,
 		Scope: &relicv1.TokenScope{
 			Kind: relicv1.TokenScopeKind_TOKEN_SCOPE_KIND_GROUPS,
 			Groups: []string{
@@ -1172,8 +1216,8 @@ func TestRelicAPISecurity(t *testing.T) {
 	minted, err := viaScoped.CreateToken(
 		ctx,
 		&relicv1.CreateTokenRequest{
-			Description: "wider",
-			ExpiresDays: 1,
+			Description:      "wider",
+			ExpiresInSeconds: 24 * 60 * 60,
 		},
 	)
 	if err != nil || minted.GetScope().GetKind() != relicv1.TokenScopeKind_TOKEN_SCOPE_KIND_GROUPS ||

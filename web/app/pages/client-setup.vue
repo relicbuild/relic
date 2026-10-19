@@ -7,6 +7,7 @@ import { ConfirmModal } from '#components'
 definePageMeta({ layout: 'dashboard' })
 
 const relic = useRelic()
+const secondsPerDay = 86_400n
 const toast = useToast()
 const { me } = useSession()
 const { data: repos, error: reposError, refresh: refreshRepos } = await useAsyncData('client-setup:repositories', async () => (await relic.repositories.listRepositories({})).repositories)
@@ -27,7 +28,7 @@ const creating = ref(false)
 async function createToken(event: FormSubmitEvent<TokenSchema>) {
   creating.value = true
   try {
-    const res = await relic.security.createToken({ description: event.data.description, expiresDays: event.data.expiresDays })
+    const res = await relic.security.createToken({ description: event.data.description, expiresInSeconds: BigInt(event.data.expiresDays) * secondsPerDay })
     token.value = res.accessToken
     await refreshTokens()
   } catch (err) {

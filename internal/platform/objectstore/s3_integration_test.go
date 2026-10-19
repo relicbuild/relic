@@ -244,8 +244,8 @@ func TestPutMemory(t *testing.T) { //nolint:paralleltest // measures the process
 		t.Fatal(err)
 	}
 
-	if held := (peak.Load() - base.HeapInuse) >> 20; held > 40 {
-		t.Errorf("a 64 MiB upload held %d MiB of heap at its peak, want at most 40", held)
+	if held := (peak.Load() - base.HeapInuse) >> 20; held > maxUploadHeapMiB {
+		t.Errorf("a 64 MiB upload held %d MiB of heap at its peak, want at most %d", held, maxUploadHeapMiB)
 	}
 }
 

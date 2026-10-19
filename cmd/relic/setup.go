@@ -1080,8 +1080,8 @@ func setupEnvFor(cmd *cobra.Command, g *globals, c *client, client setupClient, 
 // signing out revoke.
 func clientToken(cmd *cobra.Command, c *client, clientName, repo string, expiresDays int32) (string, error) {
 	resp, err := c.security.CreateToken(cmd.Context(), &relicv1.CreateTokenRequest{
-		Description: "relic package setup " + clientName + " " + repo,
-		ExpiresDays: expiresDays,
+		Description:      "relic package setup " + clientName + " " + repo,
+		ExpiresInSeconds: int64(expiresDays) * secondsPerDay,
 	})
 	if err != nil {
 		return "", fmt.Errorf("setup: issue a token for %s: %w", clientName, err)

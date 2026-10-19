@@ -179,8 +179,8 @@ func passwordLogin(
 
 func cliToken(cmd *cobra.Command, c *client, expiresDays int32) (string, error) {
 	resp, err := c.security.CreateToken(cmd.Context(), &relicv1.CreateTokenRequest{
-		Description: "relic CLI",
-		ExpiresDays: expiresDays,
+		Description:      "relic CLI",
+		ExpiresInSeconds: int64(expiresDays) * secondsPerDay,
 	})
 	if err != nil {
 		return "", fmt.Errorf("sign in: %w", err)

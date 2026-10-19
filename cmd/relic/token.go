@@ -32,10 +32,15 @@ func tokenCmd(g *globals) *cobra.Command {
 	return cmd
 }
 
+const secondsPerDay = 24 * 60 * 60
+
 func tokenCreateCmd(g *globals) *cobra.Command {
 	var (
 		description string
 		expiresDays int32
+		expiresIn   time.Duration
+		username    string
+		refreshable bool
 		scope       string
 		groups      []string
 		project     string
@@ -44,11 +49,13 @@ func tokenCreateCmd(g *globals) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "create",
-		Short: "Create an access token for yourself",
+		Short: "Create an access token for yourself, or as an administrator for another user",
 		Long: "Creates an access token and prints it (only now: Relic keeps no copy). " +
 			"The token works with the Relic API, the relic CLI and every package manager client. " +
-			"--scope groups limits it to the groups named with --group; only administrators may create admin tokens.",
+			"--scope groups limits it to the groups named with --group; only administrators may create admin " +
+			"tokens or tokens for another --user. With --refreshable the refresh token is printed to stderr.",
 		Example: "  export RELIC_TOKEN=$(relic auth token create --description ci --expires-days 30)\n" +
+			"  relic auth token create --user ci-bot --expires-in 10m --refreshable\n" +
 			"  relic auth token create --scope groups --group deployers -o json",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -61,6 +68,16 @@ func tokenCreateCmd(g *globals) *cobra.Command {
 				kind = relicv1.TokenScopeKind_TOKEN_SCOPE_KIND_GROUPS
 			}
 
+			lifetime := int64(expiresDays) * secondsPerDay
+
+			if cmd.Flags().Changed("expires-in") {
+				if expiresIn < time.Second || expiresIn%time.Second != 0 {
+					return fmt.Errorf("--expires-in %s: use whole seconds, at least 1s", expiresIn)
+				}
+
+				lifetime = int64(expiresIn / time.Second)
+			}
+
 			c, err := g.dial()
 			if err != nil {
 				return err
@@ -69,13 +86,15 @@ func tokenCreateCmd(g *globals) *cobra.Command {
 			r, err := c.security.CreateToken(
 				cmd.Context(),
 				&relicv1.CreateTokenRequest{
-					Description: description,
-					ExpiresDays: expiresDays,
+					Description:      description,
+					ExpiresInSeconds: lifetime,
 					Scope: &relicv1.TokenScope{
 						Kind:   kind,
 						Groups: groups,
 					},
-					Project: project,
+					Project:     project,
+					Username:    username,
+					Refreshable: refreshable,
 				},
 			)
 			if err != nil {
@@ -83,6 +102,10 @@ func tokenCreateCmd(g *globals) *cobra.Command {
 			}
 
 			return printMessage(cmd.OutOrStdout(), output, r, func(w io.Writer) error {
+				if r.GetRefreshToken() != "" {
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "refresh token:", r.GetRefreshToken())
+				}
+
 				_, err := fmt.Fprintln(w, r.GetAccessToken())
 
 				return err
@@ -92,6 +115,10 @@ func tokenCreateCmd(g *globals) *cobra.Command {
 	cmd.Flags().StringVar(&description, "description", "", "what the token is for")
 	cmd.Flags().
 		Int32Var(&expiresDays, "expires-days", 0, "lifetime in days, at most 3650 (0: never expires for administrators; other users' tokens expire within 365)")
+	cmd.Flags().DurationVar(&expiresIn, "expires-in", 0, "lifetime such as 10m or 12h, instead of --expires-days")
+	cmd.MarkFlagsMutuallyExclusive("expires-days", "expires-in")
+	cmd.Flags().StringVar(&username, "user", "", "the user the token acts as (administrators; default: you)")
+	cmd.Flags().BoolVar(&refreshable, "refreshable", false, "also issue a refresh token")
 	cmd.Flags().StringVar(&scope, "scope", "user", "what the token acts as: user, groups or admin")
 	cmd.Flags().StringSliceVar(&groups, "group", nil, "group the token acts with (implies --scope groups; repeatable)")
 	cmd.Flags().

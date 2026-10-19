@@ -334,15 +334,21 @@ message TokenScope {
 
 message CreateTokenRequest {
   string description = 1;
-  // expires_days is the token's lifetime, at most 3650; 0 never expires for an
-  // administrator. Other users' tokens expire within 365 days.
-  int32 expires_days = 2;
+  // expires_in_seconds is the token's lifetime, at most 3650 days; 0 never
+  // expires for an administrator. Other users' tokens expire within 365 days.
+  int64 expires_in_seconds = 2;
   // scope is the user's own rights when unset. Only administrators may ask
   // for an admin scope or groups they are not in.
   TokenScope scope = 3;
   // project is a label recorded on the token: a project the caller can see.
   // It does not limit what the token can do; the scope does.
   string project = 4;
+  // username is the user the token acts as: the caller when unset. Only
+  // administrators may name another user.
+  string username = 5;
+  // refreshable also issues a refresh token, which exchanges the access token
+  // for a new one when it expires.
+  bool refreshable = 6;
 }
 
 message CreateTokenResponse {
@@ -350,6 +356,8 @@ message CreateTokenResponse {
   // expires_in is in seconds; 0 never expires.
   int64 expires_in = 2;
   TokenScope scope = 3;
+  // refresh_token is set for a refreshable token.
+  string refresh_token = 4;
 }
 
 // AccessToken is an issued token, without its secret.

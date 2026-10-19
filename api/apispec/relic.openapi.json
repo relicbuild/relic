@@ -1359,11 +1359,11 @@
             "type": "string",
             "title": "description"
           },
-          "expiresDays": {
-            "type": "integer",
-            "title": "expires_days",
-            "format": "int32",
-            "description": "expires_days is the token's lifetime, at most 3650; 0 never expires for an\n administrator. Other users' tokens expire within 365 days."
+          "expiresInSeconds": {
+            "type": "string",
+            "title": "expires_in_seconds",
+            "format": "int64",
+            "description": "expires_in_seconds is the token's lifetime, at most 3650 days; 0 never\n expires for an administrator. Other users' tokens expire within 365 days."
           },
           "scope": {
             "allOf": [
@@ -1378,6 +1378,16 @@
             "type": "string",
             "title": "project",
             "description": "project is a label recorded on the token: a project the caller can see.\n It does not limit what the token can do; the scope does."
+          },
+          "username": {
+            "type": "string",
+            "title": "username",
+            "description": "username is the user the token acts as: the caller when unset. Only\n administrators may name another user."
+          },
+          "refreshable": {
+            "type": "boolean",
+            "title": "refreshable",
+            "description": "refreshable also issues a refresh token, which exchanges the access token\n for a new one when it expires."
           }
         },
         "title": "CreateTokenRequest",
@@ -1403,6 +1413,11 @@
               }
             ],
             "title": "scope"
+          },
+          "refreshToken": {
+            "type": "string",
+            "title": "refresh_token",
+            "description": "refresh_token is set for a refreshable token."
           }
         },
         "title": "CreateTokenResponse",
