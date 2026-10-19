@@ -611,3 +611,53 @@ func TestRemoteFetchStallsAndSlowDownloads(t *testing.T) {
 		})
 	}
 }
+
+func TestRemoteThatDisablesTheCacheKeepsNothing(t *testing.T) {
+	t.Parallel()
+	s, _, _ := newTestService(t)
+	srv, hits := upstream(t, map[string]string{
+		"a/lib.jar": "jar-bytes",
+	})
+	createRepo(
+		t,
+		s,
+		remoteRepo(
+			"libs-nocache",
+			RemoteConfig{
+				URL:                 srv.URL + "/libs",
+				Username:            "user",
+				Password:            "pw",
+				TimeoutMilliseconds: 5000,
+				DisableCache:        true,
+			},
+		),
+	)
+
+	for range 2 {
+		it, err := s.Resolve(t.Context(), "libs-nocache", "a/lib.jar")
+		if err != nil {
+			t.Fatalf("resolve: %v", err)
+		}
+
+		if readItem(t, s, it) != "jar-bytes" {
+			t.Errorf("served %+v, want the upstream's bytes", it)
+		}
+	}
+
+	if n := hits.Load(); n != 2 {
+		t.Errorf("upstream hits = %d, want 2 (nothing served from a cache)", n)
+	}
+
+	for _, path := range []string{
+		"a/lib.jar",
+		"a",
+	} {
+		if it, err := s.Stat(t.Context(), "libs-nocache", path); !errors.Is(err, ErrNotFound) {
+			t.Errorf("Stat(%s) after the fetches = %+v, %v; want ErrNotFound", path, it.Name, err)
+		}
+	}
+
+	if _, err := s.Resolve(t.Context(), "libs-nocache", "nope.jar"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Resolve of a missing file = %v, want ErrNotFound", err)
+	}
+}

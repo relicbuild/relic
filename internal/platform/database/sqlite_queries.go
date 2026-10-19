@@ -293,6 +293,11 @@ const sqliteDeleteDeletingBlobs = `-- name: DeleteDeletingBlobs :execrows
 DELETE FROM blobs
 WHERE sha256 IN (SELECT value FROM json_each(CAST(@sha256s AS TEXT))) AND deleting AND refcount = 0;`
 
+const sqliteDeleteEmptyFolder = `-- name: DeleteEmptyFolder :execrows
+DELETE FROM items
+WHERE items.repo_key = @repo_key AND items.path = @path AND items.name = @name AND items.type = 'folder'
+  AND NOT EXISTS (SELECT 1 FROM items children WHERE children.repo_key = @repo_key AND children.path = @full_path);`
+
 const sqliteDeleteEndOfLifeData = `-- name: DeleteEndOfLifeData :exec
 DELETE FROM end_of_life_products;`
 
@@ -2436,6 +2441,15 @@ func (q *sqliteQueries) DeleteCleanupPolicy(ctx context.Context, arg string) (in
 
 func (q *sqliteQueries) DeleteDeletingBlobs(ctx context.Context, arg []string) (int64, error) {
 	res, err := q.db.ExecContext(ctx, sqliteDeleteDeletingBlobs, sql.Named("sha256s", sqliteJSON(arg)))
+	if err != nil {
+		return 0, err
+	}
+
+	return res.RowsAffected()
+}
+
+func (q *sqliteQueries) DeleteEmptyFolder(ctx context.Context, arg DeleteEmptyFolderParams) (int64, error) {
+	res, err := q.db.ExecContext(ctx, sqliteDeleteEmptyFolder, sql.Named("repo_key", arg.RepoKey), sql.Named("path", arg.Path), sql.Named("name", arg.Name), sql.Named("full_path", arg.FullPath))
 	if err != nil {
 		return 0, err
 	}

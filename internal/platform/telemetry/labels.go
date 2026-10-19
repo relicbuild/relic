@@ -198,6 +198,7 @@ var Results = []string{
 	"stale",
 	"absent",
 	"skipped",
+	"uncached",
 }
 
 func result(r string) string {

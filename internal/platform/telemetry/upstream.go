@@ -32,7 +32,7 @@ var (
 	//   / sum by (format) (rate(relic_remote_cache_total[5m]))           (cache hit ratio)
 	remoteCache = repoCounterVec(
 		"remote_cache_total",
-		"Remote repository lookups: hit (served from the cache), miss (fetched), stale (cached metadata served because the upstream failed), absent (an upstream 404 remembered), error.",
+		"Remote repository lookups: hit (served from the cache), miss (fetched), stale (cached metadata served because the upstream failed), absent (an upstream 404 remembered), uncached (fetched for a repository that keeps nothing), error.",
 		"format",
 		"result",
 	)

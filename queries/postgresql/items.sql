@@ -49,6 +49,11 @@ WHERE repo_key = @repo_key
   AND ((path = @path AND name = @name) OR path = @full_path OR path LIKE @prefix::text ESCAPE '\')
 RETURNING sha256;
 
+-- name: DeleteEmptyFolder :execrows
+DELETE FROM items
+WHERE items.repo_key = @repo_key AND items.path = @path AND items.name = @name AND items.type = 'folder'
+  AND NOT EXISTS (SELECT 1 FROM items children WHERE children.repo_key = @repo_key AND children.path = @full_path);
+
 -- name: DeleteRepositoryItems :many
 DELETE FROM items WHERE repo_key = @repo_key RETURNING sha256;
 

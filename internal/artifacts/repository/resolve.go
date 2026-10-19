@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"relic/internal/platform/database"
 	"relic/internal/platform/telemetry"
 )
 
@@ -123,6 +124,10 @@ func (s *Service) resolveCached(
 	cfg RemoteConfig,
 	upstreamURL, path string,
 ) (Item, error) {
+	if cfg.DisableCache {
+		return s.fetchUncached(ctx, r, cfg, upstreamURL, path)
+	}
+
 	cached, err := s.Stat(ctx, r.Name, path)
 	if err == nil {
 		period := cfg.CachePeriod()
@@ -199,6 +204,72 @@ func (s *Service) fetchShared(
 
 		return item, err
 	})
+}
+
+// fetchUncached fetches path for a remote repository that keeps nothing:
+// its cache row is removed once the content is stored, so this request is
+// served and garbage collection reclaims the content later.
+func (s *Service) fetchUncached(
+	ctx context.Context,
+	r Repository,
+	cfg RemoteConfig,
+	upstreamURL, path string,
+) (Item, error) {
+	item, err := s.fetches.Do(ctx, r.Name+"\x00"+path, func(ctx context.Context) (Item, error) {
+		item, err := s.fetchRemote(ctx, r, cfg, upstreamURL, path)
+		if err != nil {
+			return Item{}, err
+		}
+
+		if err := s.db.WithTx(ctx, func(q database.Querier) error {
+			if _, err := deleteItem(ctx, q, item); err != nil {
+				return err
+			}
+
+			return deleteEmptyParents(ctx, q, r.Name, item.Parent)
+		}); err != nil {
+			return Item{}, fmt.Errorf("drop the uncached %s/%s: %w", r.Name, path, err)
+		}
+
+		return item, nil
+	})
+
+	switch {
+	case err == nil:
+		telemetry.RemoteCache(r.Name, string(r.Format), "uncached")
+	case errors.Is(err, errUpstreamAbsent), errors.Is(err, ErrNotFound):
+		telemetry.RemoteCache(r.Name, string(r.Format), "miss")
+	default:
+		telemetry.RemoteCache(r.Name, string(r.Format), "error")
+	}
+
+	return item, err
+}
+
+// deleteEmptyParents deletes folder and the folders above it, up to the
+// first that still holds something.
+func deleteEmptyParents(ctx context.Context, q database.Querier, repoKey, folder string) error {
+	for folder != RootPath && folder != "" {
+		parent, name := SplitPath(folder)
+
+		n, err := q.DeleteEmptyFolder(ctx, database.DeleteEmptyFolderParams{
+			RepoKey:  repoKey,
+			Path:     parent,
+			Name:     name,
+			FullPath: folder,
+		})
+		if err != nil {
+			return fmt.Errorf("delete the empty folder %s/%s: %w", repoKey, folder, err)
+		}
+
+		if n == 0 {
+			return nil
+		}
+
+		folder = parent
+	}
+
+	return nil
 }
 
 const upstreamAttempts = 3
