@@ -3,7 +3,10 @@ package databasetest
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,6 +16,7 @@ import (
 	"testing"
 
 	"relic/internal/platform/database"
+	"relic/migrations"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/testcontainers/testcontainers-go"
@@ -21,6 +25,12 @@ import (
 
 // Image is the PostgreSQL image used for tests (matches deploy/).
 const Image = "postgres:18-alpine"
+
+// SharedServer is the environment variable naming a PostgreSQL server
+// (an admin URL, user and password relic) that every test process shares
+// instead of starting its own container; its databases share one template
+// per migration set.
+const SharedServer = "RELIC_TEST_POSTGRESQL_URL"
 
 const (
 	templateDatabase = "relic_template"
@@ -31,6 +41,7 @@ var (
 	once      sync.Once
 	container *postgres.PostgresContainer
 	adminURL  string
+	template  string
 	startErr  error
 	counter   atomic.Int64
 
@@ -99,11 +110,11 @@ func newDB(t *testing.T, version int64) *database.DB {
 		t.Fatalf("start postgres: %v", startErr)
 	}
 
-	name := fmt.Sprintf("test_%d", counter.Add(1))
+	name := fmt.Sprintf("test_%d_%d", os.Getpid(), counter.Add(1))
 
 	create := "CREATE DATABASE " + name
 	if version == 0 {
-		create += " TEMPLATE " + templateDatabase
+		create += " TEMPLATE " + template
 	}
 
 	if err := adminExec(ctx, create); err != nil {
@@ -136,6 +147,12 @@ func newDB(t *testing.T, version int64) *database.DB {
 }
 
 func startPostgreSQL(ctx context.Context) error {
+	if shared := os.Getenv(SharedServer); shared != "" {
+		adminURL = shared
+
+		return sharedTemplate(ctx)
+	}
+
 	var err error
 
 	container, err = postgres.Run(
@@ -156,11 +173,76 @@ func startPostgreSQL(ctx context.Context) error {
 		return err
 	}
 
-	if err := adminExec(ctx, "CREATE DATABASE "+templateDatabase); err != nil {
+	template = templateDatabase
+
+	return createTemplate(ctx, template)
+}
+
+// sharedTemplate names the template of the current migrations on the shared
+// server, creating it when no process has: under an advisory lock, so one
+// process migrates it and the others wait.
+func sharedTemplate(ctx context.Context) error {
+	sum := sha256.New()
+
+	if err := fs.WalkDir(migrations.PostgreSQL, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+
+		b, err := fs.ReadFile(migrations.PostgreSQL, p)
+		if err != nil {
+			return err
+		}
+
+		sum.Write([]byte(p))
+		sum.Write(b)
+
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	template = templateDatabase + "_" + hex.EncodeToString(sum.Sum(nil))[:16]
+
+	admin, err := pgx.Connect(ctx, adminURL)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		_ = admin.Close(context.WithoutCancel(ctx))
+	}()
+
+	if _, err := admin.Exec(ctx, "SELECT pg_advisory_lock(hashtext($1))", template); err != nil {
+		return err
+	}
+
+	var exists bool
+	if err := admin.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)", template).
+		Scan(&exists); err != nil {
+		return err
+	}
+
+	if !exists {
+		if err := createTemplate(ctx, template); err != nil {
+			_ = adminExec(context.WithoutCancel(ctx), "DROP DATABASE IF EXISTS "+template)
+
+			return err
+		}
+	}
+
+	_, err = admin.Exec(ctx, "SELECT pg_advisory_unlock(hashtext($1))", template)
+
+	return err
+}
+
+// createTemplate creates the database name with every migration applied.
+func createTemplate(ctx context.Context, name string) error {
+	if err := adminExec(ctx, "CREATE DATABASE "+name); err != nil {
 		return fmt.Errorf("create template: %w", err)
 	}
 
-	url, err := databaseURL(templateDatabase)
+	url, err := databaseURL(name)
 	if err != nil {
 		return err
 	}

@@ -190,7 +190,7 @@ tasks:
   test:integration:postgresql:
     internal: true
     cmds:
-      - go test -p {{.TEST_PACKAGE_PARALLELISM}} -tags=integration ./...
+      - RELIC_TEST_POSTGRESQL_URL="$(test/postgresql.sh)" go test -p {{.TEST_PACKAGE_PARALLELISM}} -tags=integration ./...
 
   test:integration:sqlite:
     internal: true
@@ -206,7 +206,7 @@ tasks:
   test:race:postgresql:
     internal: true
     cmds:
-      - go test -p {{.TEST_PACKAGE_PARALLELISM}} -race -tags=integration ./...
+      - RELIC_TEST_POSTGRESQL_URL="$(test/postgresql.sh)" go test -p {{.TEST_PACKAGE_PARALLELISM}} -race -tags=integration ./...
 
   test:race:sqlite:
     internal: true
