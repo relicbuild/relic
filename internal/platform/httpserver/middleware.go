@@ -27,12 +27,13 @@ func RequestID(ctx context.Context) string {
 var secretQuery = regexp.MustCompile(`(?i)((?:access_)?token|password|api_?key|sig)=[^&]*`)
 
 // Observe assigns a request ID, recovers panics, logs one line per request,
-// and fails a response write that makes no progress for writeStallTimeout.
+// warns of a request still running after slowRequestAfter, and fails a
+// response write that makes no progress for writeStallTimeout.
 func Observe(log *slog.Logger, next http.Handler) http.Handler {
-	return observe(log, next, writeStallTimeout)
+	return observe(log, next, writeStallTimeout, slowRequestAfter)
 }
 
-func observe(log *slog.Logger, next http.Handler, stall time.Duration) http.Handler {
+func observe(log *slog.Logger, next http.Handler, stall, slow time.Duration) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
@@ -68,6 +69,18 @@ func observe(log *slog.Logger, next http.Handler, stall time.Duration) http.Hand
 			req.Body = body
 		}
 		defer telemetry.HTTPStarted(r.URL.Path)()
+
+		slowWarning := time.AfterFunc(slow, func() {
+			telemetry.HTTPSlow(r.URL.Path)
+			log.WarnContext(ctx, "slow request",
+				"request_id", id,
+				"method", r.Method,
+				"path", r.URL.Path,
+				"elapsed_ms", time.Since(start).Milliseconds(),
+				"remote_addr", r.RemoteAddr,
+			)
+		})
+		defer slowWarning.Stop()
 
 		defer func() {
 			if v := recover(); v != nil {

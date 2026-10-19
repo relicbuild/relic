@@ -32,6 +32,13 @@ var (
 	// PromQL: sum by (family) (relic_http_requests_in_flight)
 	httpInFlight = gaugeVec("http_requests_in_flight", "Requests being served, by API family.", "family")
 
+	// PromQL: sum by (family) (increase(relic_http_slow_requests_total[1h]))
+	httpSlowRequests = counterVec(
+		"http_slow_requests_total",
+		"Requests still being served 10 seconds after they arrived, by API family.",
+		"family",
+	)
+
 	// PromQL: histogram_quantile(0.9, sum by (le, family) (rate(relic_http_request_size_bytes_bucket[5m])))
 	httpRequestSize = histogramVec(
 		"http_request_size_bytes",
@@ -65,6 +72,11 @@ func HTTPStarted(path string) (done func()) {
 	g.Inc()
 
 	return g.Dec
+}
+
+// HTTPSlow counts a request still being served after the slow-request threshold.
+func HTTPSlow(path string) {
+	httpSlowRequests.WithLabelValues(Family(path)).Inc()
 }
 
 // ObserveHTTP records a served request.

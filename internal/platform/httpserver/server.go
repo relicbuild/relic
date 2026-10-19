@@ -16,6 +16,7 @@ const (
 	maxHeaderBytes    = 64 << 10
 	idleTimeout       = 2 * time.Minute
 	writeStallTimeout = 2 * time.Minute
+	slowRequestAfter  = 10 * time.Second
 )
 
 // shutdownTimeout ends within the chart's 120-second termination grace period, which includes a 5-second preStop sleep.

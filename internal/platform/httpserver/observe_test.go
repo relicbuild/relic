@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -196,6 +198,7 @@ func TestObserveFailsAWriteToAReaderThatStalls(t *testing.T) {
 			}
 		}),
 		200*time.Millisecond,
+		time.Minute,
 	))
 	t.Cleanup(srv.Close)
 
@@ -221,5 +224,76 @@ func TestObserveFailsAWriteToAReaderThatStalls(t *testing.T) {
 		}
 	case <-time.After(30 * time.Second):
 		t.Fatal("a write to a client that reads nothing never failed")
+	}
+}
+
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.buf.String()
+}
+
+func TestObserveWarnsOfASlowRequestWhileItRuns(t *testing.T) {
+	t.Parallel()
+
+	var logs lockedBuffer
+
+	slowCount := func() float64 {
+		return telemetrytest.Value(
+			t,
+			"relic_http_slow_requests_total",
+			map[string]string{
+				"family": "ui",
+			},
+		)
+	}
+	before := slowCount()
+
+	h := observe(
+		slog.New(slog.NewJSONHandler(&logs, nil)),
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/slow" {
+				for !strings.Contains(logs.String(), `"msg":"slow request"`) {
+					time.Sleep(10 * time.Millisecond)
+				}
+			}
+
+			w.WriteHeader(http.StatusNoContent)
+		}),
+		time.Minute,
+		50*time.Millisecond,
+	)
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/slow", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/fast", nil))
+
+	var warnings []string
+
+	for line := range strings.Lines(logs.String()) {
+		if strings.Contains(line, `"msg":"slow request"`) {
+			warnings = append(warnings, line)
+		}
+	}
+
+	if len(warnings) != 1 || !strings.Contains(warnings[0], `"path":"/slow"`) ||
+		!strings.Contains(warnings[0], `"level":"WARN"`) || !strings.Contains(warnings[0], `"request_id"`) {
+		t.Errorf("slow request warnings %q, want one for /slow", warnings)
+	}
+
+	if got := slowCount() - before; got != 1 {
+		t.Errorf("slow requests counted %v times, want 1", got)
 	}
 }
