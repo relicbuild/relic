@@ -65,6 +65,7 @@ type Querier interface {
 	DeleteCleanupPolicy(ctx context.Context, name string) (int64, error)
 	// Deletes the rows still marked: a deploy that took one back cleared it.
 	DeleteDeletingBlobs(ctx context.Context, sha256s []string) (int64, error)
+	DeleteEmptyFolder(ctx context.Context, arg DeleteEmptyFolderParams) (int64, error)
 	DeleteEndOfLifeData(ctx context.Context) error
 	DeleteExpiredSsoRequests(ctx context.Context, before time.Time) error
 	DeleteExpiredWebLoginSessions(ctx context.Context, before time.Time) error

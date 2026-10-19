@@ -29,6 +29,32 @@ func (q *Queries) AddItemProperties(ctx context.Context, arg AddItemPropertiesPa
 	return err
 }
 
+const deleteEmptyFolder = `-- name: DeleteEmptyFolder :execrows
+DELETE FROM items
+WHERE items.repo_key = $1 AND items.path = $2 AND items.name = $3 AND items.type = 'folder'
+  AND NOT EXISTS (SELECT 1 FROM items children WHERE children.repo_key = $1 AND children.path = $4)
+`
+
+type DeleteEmptyFolderParams struct {
+	RepoKey  string
+	Path     string
+	Name     string
+	FullPath string
+}
+
+func (q *Queries) DeleteEmptyFolder(ctx context.Context, arg DeleteEmptyFolderParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteEmptyFolder,
+		arg.RepoKey,
+		arg.Path,
+		arg.Name,
+		arg.FullPath,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteItemProperties = `-- name: DeleteItemProperties :exec
 DELETE FROM item_properties WHERE item_id = $1
 `
