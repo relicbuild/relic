@@ -156,6 +156,40 @@ func TestTokenCommands(t *testing.T) {
 		t.Errorf("token create -o json = %q %v", out, err)
 	}
 
+	out, err = relic(
+		t,
+		config,
+		"",
+		"auth",
+		"token",
+		"create",
+		"--user",
+		"admin",
+		"--expires-in",
+		"10m",
+		"--refreshable",
+		"-o",
+		"json",
+	)
+	if err != nil || !strings.Contains(out, `"expiresIn": "600"`) || !strings.Contains(out, `"refreshToken"`) {
+		t.Errorf("token create --expires-in 10m --refreshable = %q %v", out, err)
+	}
+
+	if _, err := relic(
+		t,
+		config,
+		"",
+		"auth",
+		"token",
+		"create",
+		"--expires-in",
+		"10m",
+		"--expires-days",
+		"1",
+	); err == nil {
+		t.Error("--expires-in and --expires-days were accepted together")
+	}
+
 	if _, err := relic(t, config, "", "auth", "token", "create", "--scope", "root"); err == nil {
 		t.Error("an unknown scope was accepted")
 	}
