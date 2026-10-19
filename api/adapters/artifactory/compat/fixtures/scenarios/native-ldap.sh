@@ -37,9 +37,6 @@ for u in alice bob carol; do admin -X DELETE "$A/api/security/users/$u" >/dev/nu
 delete_repo "$REPO"; delete_repo "$DREPO"
 
 step "an OpenLDAP server with people and groups"
-# slapd sizes tables by the open-file limit, which is huge in recent Docker.
-docker run -d --name "$box" --ulimit nofile=1024:1024 -p "$LDAP_PORT:389" -e LDAP_DOMAIN=example.org -e LDAP_ADMIN_PASSWORD=admin-pass \
-  -e LDAP_TLS=false osixia/openldap:1.5.0 >/dev/null
 cat >"$WORK/seed.ldif" <<'LDIF'
 dn: ou=people,dc=example,dc=org
 objectClass: organizationalUnit
@@ -76,16 +73,25 @@ objectClass: groupOfUniqueNames
 cn: ldap-devs
 uniqueMember: uid=alice,ou=people,dc=example,dc=org
 LDIF
-docker cp "$WORK/seed.ldif" "$box:/tmp/seed.ldif"
-# Seeding while the image adds its own bootstrap schemas can fail that
-# step, which stops the container: seed only after its first start.
-for i in $(seq 120); do
-  docker logs "$box" 2>&1 | grep -q "First start is done" && break
-  if [[ $(docker inspect -f '{{.State.Running}}' "$box") != true ]] || (( i == 120 )); then
-    echo "the OpenLDAP server did not start" >&2; docker logs "$box" 2>&1 | tail -20 >&2; exit 1
-  fi
-  sleep 0.5
+# The image's first start sometimes fails adding its bootstrap schemas on a
+# busy host and stops the container; start it again when it does.
+started=false
+for attempt in 1 2 3; do
+  docker rm -f "$box" >/dev/null 2>&1 || true
+  # slapd sizes tables by the open-file limit, which is huge in recent Docker.
+  docker run -d --name "$box" --ulimit nofile=1024:1024 -p "$LDAP_PORT:389" -e LDAP_DOMAIN=example.org -e LDAP_ADMIN_PASSWORD=admin-pass \
+    -e LDAP_TLS=false osixia/openldap:1.5.0 >/dev/null
+  for _ in $(seq 120); do
+    docker logs "$box" 2>&1 | grep -q "First start is done" && { started=true; break; }
+    [[ $(docker inspect -f '{{.State.Running}}' "$box") == true ]] || break
+    sleep 0.5
+  done
+  $started && break
+  echo "the OpenLDAP server did not start (attempt $attempt)" >&2
+  docker logs "$box" 2>&1 | tail -5 >&2
 done
+$started || exit 1
+docker cp "$WORK/seed.ldif" "$box:/tmp/seed.ldif"
 for _ in $(seq 60); do
   seeded=0
   docker exec "$box" ldapadd -c -x -H ldap://localhost -D cn=admin,dc=example,dc=org -w admin-pass -f /tmp/seed.ldif >/dev/null 2>&1 || seeded=$?
