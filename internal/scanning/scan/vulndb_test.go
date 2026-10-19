@@ -152,3 +152,97 @@ func TestDatabaseImports(t *testing.T) {
 		t.Error("a discarded archive is still in object storage")
 	}
 }
+
+// invalidDBGrype is a Grype whose installed database fails its checksum
+// until it is deleted and downloaded again; scans fail while it is invalid.
+func invalidDBGrype(t *testing.T) (Grype, string) {
+	t.Helper()
+
+	dir := t.TempDir()
+	log := filepath.Join(dir, "calls")
+	script := filepath.Join(dir, "grype")
+	db := filepath.Join(dir, "db", "6")
+
+	if err := os.MkdirAll(db, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(db, "import.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	scripttest.Write(t, script, `#!/bin/sh
+echo "$*" >>"`+log+`"
+db="$GRYPE_DB_CACHE_DIR/6"
+case "$1 $2" in
+"db status")
+  if [ -e "$db/fresh" ]; then echo '{"built":"2026-10-18T06:27:17Z","valid":true}'
+  else echo '{"built":"2026-10-18T06:27:17Z","valid":false,"error":"bad db checksum"}'; fi ;;
+"db delete") rm -rf "$db" ;;
+"db update")
+  if [ -e "$db/import.json" ]; then echo "No vulnerability database update available"
+  else mkdir -p "$db" && echo '{}' >"$db/import.json" && touch "$db/fresh"; fi ;;
+*) if [ -e "$db/fresh" ]; then echo '{"matches":[]}'; else echo "ERROR bad db checksum" >&2; exit 1; fi ;;
+esac
+`)
+
+	return Grype{
+		Exec: Exec{
+			Path: script,
+		},
+		DatabaseDir: filepath.Join(dir, "db"),
+	}, log
+}
+
+//nolint:paralleltest // see TestGrypeUpdateDB
+func TestGrypeReplacesAnInvalidDB(t *testing.T) {
+	g, log := invalidDBGrype(t)
+
+	if _, err := g.DBBuilt(t.Context()); !errors.Is(err, ErrInvalidDB) {
+		t.Fatalf("DBBuilt of an invalid database = %v, want ErrInvalidDB", err)
+	}
+
+	if _, err := g.Match(t.Context(), "sbom.json"); !errors.Is(err, ErrInvalidDB) {
+		t.Fatalf("Match with an invalid database = %v, want ErrInvalidDB", err)
+	}
+
+	replaced, err := g.ReplaceInvalidDB(t.Context())
+	if err != nil || !replaced {
+		t.Fatalf("ReplaceInvalidDB = %v, %v; calls %q", replaced, err, calls(t, log))
+	}
+
+	if _, err := g.DBBuilt(t.Context()); err != nil {
+		t.Fatalf("DBBuilt after the replacement: %v", err)
+	}
+
+	if _, err := g.Match(t.Context(), "sbom.json"); err != nil {
+		t.Fatalf("Match after the replacement: %v", err)
+	}
+
+	if err := os.Truncate(log, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	if replaced, err := g.ReplaceInvalidDB(t.Context()); err != nil || replaced {
+		t.Errorf("ReplaceInvalidDB of a valid database = %v, %v", replaced, err)
+	}
+
+	if got := calls(t, log); got != "db status -o json\n" {
+		t.Errorf("a valid database ran %q, want only its status", got)
+	}
+}
+
+//nolint:paralleltest // see TestGrypeUpdateDB
+func TestGrypeKeepsAnInvalidDBOffline(t *testing.T) {
+	g, log := invalidDBGrype(t)
+	g.Offline = true
+
+	replaced, err := g.ReplaceInvalidDB(t.Context())
+	if !errors.Is(err, ErrInvalidDB) || replaced {
+		t.Errorf("offline ReplaceInvalidDB = %v, %v; want ErrInvalidDB", replaced, err)
+	}
+
+	if got := calls(t, log); strings.Contains(got, "db delete") || strings.Contains(got, "db update") {
+		t.Errorf("offline, the invalid database was replaced: %q", got)
+	}
+}

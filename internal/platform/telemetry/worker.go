@@ -353,6 +353,11 @@ var (
 		"scanner_db_age_seconds",
 		"Age of the scanner's vulnerability database (from its build time).",
 	)
+	// PromQL: sum(increase(relic_scanner_db_replacements_total[1d]))
+	scannerDBReplacements = counterVec(
+		"scanner_db_replacements_total",
+		"Vulnerability databases deleted for failing their checksum and downloaded again.",
+	)
 	// PromQL: max(relic_inventory_timestamp_seconds)
 	inventoryTime = gaugeVec("inventory_timestamp_seconds", "When the inventory series were last computed (Unix time).")
 )
@@ -410,6 +415,11 @@ var (
 	scannerBuiltMu sync.Mutex
 	scannerBuilt   time.Time
 )
+
+// ScannerDBReplaced counts an invalid vulnerability database replaced.
+func ScannerDBReplaced() {
+	scannerDBReplacements.WithLabelValues().Inc()
+}
 
 // ScannerDBBuilt records the vulnerability database's build time.
 func ScannerDBBuilt(built time.Time, now time.Time) {

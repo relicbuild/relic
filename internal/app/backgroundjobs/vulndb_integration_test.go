@@ -282,3 +282,105 @@ func TestVulnerabilityDatabaseImportDiscardsTheArchiveAfterItsLastAttempt(t *tes
 		time.Sleep(100 * time.Millisecond)
 	}
 }
+
+func TestVulnerabilityDatabaseUpdateReplacesAnInvalidDatabase(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db := databasetest.NewDB(t)
+	log := slog.New(slog.DiscardHandler)
+	blobs := objectstoretest.NewMemory()
+	repos := repository.NewService(db, blobs, log)
+	dir := t.TempDir()
+	calls := filepath.Join(dir, "calls")
+	installed := filepath.Join(dir, "db", "6")
+
+	if err := os.MkdirAll(installed, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(installed, "import.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	grypePath := filepath.Join(dir, "grype")
+
+	//nolint:gosec // a test script
+	if err := os.WriteFile(grypePath, []byte(`#!/bin/sh
+echo "$*" >>"`+calls+`"
+db="$GRYPE_DB_CACHE_DIR/6"
+case "$1 $2" in
+"db status")
+  if [ -e "$db/fresh" ]; then echo '{"built":"2026-10-18T06:27:17Z","valid":true}'
+  else echo '{"built":"2026-10-18T06:27:17Z","valid":false,"error":"bad db checksum"}'; fi ;;
+"db delete") rm -rf "$db" ;;
+"db update")
+  if [ -e "$db/import.json" ]; then echo "No vulnerability database update available"
+  else mkdir -p "$db" && echo '{}' >"$db/import.json" && touch "$db/fresh"; fi ;;
+*) exit 1 ;;
+esac
+`), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	grype := scan.Grype{
+		Exec: scan.Exec{
+			Path: grypePath,
+		},
+		DatabaseDir: filepath.Join(dir, "db"),
+	}
+
+	worker, err := backgroundjobs.NewWorkerClient(
+		db,
+		repos,
+		replication.NewPusher(db, repos, nil, log),
+		&backgroundjobs.Scanning{
+			Service: scan.NewService(db, blobs, nil, grype, scan.Limits{}, log),
+			Grype:   grype,
+			Imports: scan.NewDatabaseImports(blobs, log),
+		},
+		nil,
+		config.GarbageCollection{
+			Interval:    time.Hour,
+			GracePeriod: time.Hour,
+		},
+		config.Trash{
+			Retention: time.Hour,
+		},
+		config.Audit{},
+		log,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := worker.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+
+		_ = worker.Stop(stopCtx)
+	})
+
+	deadline := time.Now().Add(30 * time.Second)
+
+	for {
+		if _, err := os.Stat(filepath.Join(installed, "fresh")); err == nil {
+			break
+		}
+
+		if time.Now().After(deadline) {
+			b, _ := os.ReadFile(calls)
+			t.Fatalf("the invalid database was not replaced in 30s; grype calls:\n%s", b)
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	if _, err := grype.DBBuilt(ctx); err != nil {
+		t.Errorf("the replaced database: %v", err)
+	}
+}

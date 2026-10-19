@@ -189,6 +189,20 @@ func waitForDB(hasDB func() bool) error {
 	return nil
 }
 
+// replaceInvalidDB queues the database job, which replaces an invalid
+// database, and snoozes the job that found one; other errors pass through.
+func replaceInvalidDB(ctx context.Context, err error) error {
+	if !errors.Is(err, scan.ErrInvalidDB) {
+		return err
+	}
+
+	if _, insertErr := database.JobInserterFromContext(ctx).Insert(ctx, ScanDBArgs{}, nil); insertErr != nil {
+		return errors.Join(err, fmt.Errorf("queue the vulnerability database update: %w", insertErr))
+	}
+
+	return river.JobSnooze(dbWait)
+}
+
 type scanArtifactWorker struct {
 	river.WorkerDefaults[ScanArtifactArgs]
 	scans *scan.Service
@@ -200,7 +214,7 @@ func (w *scanArtifactWorker) Work(ctx context.Context, job *river.Job[ScanArtifa
 		return err
 	}
 
-	return w.scans.ScanArtifact(ctx, job.Args.SHA256, job.Args.FileName)
+	return replaceInvalidDB(ctx, w.scans.ScanArtifact(ctx, job.Args.SHA256, job.Args.FileName))
 }
 
 // Timeout implements river.Worker.
@@ -225,6 +239,16 @@ func (w *scanDBWorker) Work(ctx context.Context, job *river.Job[ScanDBArgs]) err
 		} else if _, err := database.JobInserterFromContext(ctx).Insert(ctx, ReachabilityArgs{}, nil); err != nil {
 			goErr = fmt.Errorf("queue the reachability check: %w", err)
 		}
+	}
+
+	replaced, err := w.grype.ReplaceInvalidDB(ctx)
+	if replaced {
+		telemetry.ScannerDBReplaced()
+		w.log.WarnContext(ctx, "replaced an invalid vulnerability database")
+	}
+
+	if err != nil {
+		return errors.Join(goErr, err)
 	}
 
 	if err := w.grype.UpdateDB(ctx); err != nil {
@@ -344,7 +368,7 @@ func (w *rematchWorker) Work(ctx context.Context, job *river.Job[RematchArgs]) e
 		return err
 	}
 
-	return w.scans.Rematch(ctx, job.Args.SHA256)
+	return replaceInvalidDB(ctx, w.scans.Rematch(ctx, job.Args.SHA256))
 }
 
 type graphScanWorker struct {
@@ -358,7 +382,7 @@ func (w *graphScanWorker) Work(ctx context.Context, job *river.Job[GraphScanArgs
 		return err
 	}
 
-	return w.scans.RunGraph(ctx, job.Args.ID, job.Attempt >= job.MaxAttempts)
+	return replaceInvalidDB(ctx, w.scans.RunGraph(ctx, job.Args.ID, job.Attempt >= job.MaxAttempts))
 }
 
 // Scanning configures the scan jobs; nil disables them.
