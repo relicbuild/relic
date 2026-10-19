@@ -318,18 +318,45 @@ func TestReleaseBundles(t *testing.T) {
 	})
 
 	other := server(t)
+	importArchive := call{
+		method: "POST",
+		path:   "/artifactory/api/release/import/",
+		body:   archive,
+		headers: map[string]string{
+			"Content-Type": "application/octet-stream",
+		},
+	}
+
+	if resp, body := do(t, other, importArchive); resp.StatusCode != 400 || !strings.Contains(body, "not trusted") {
+		t.Fatalf("import signed by an untrusted key = %d %s; want 400", resp.StatusCode, body)
+	}
+
+	_, sourceKey := do(t, srv, call{
+		method: "GET",
+		path:   "/artifactory/api/security/keypair/release-bundles/public",
+	})
+
+	trustBody, err := json.Marshal(map[string]string{
+		"alias": "source",
+		"key":   sourceKey,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	if resp, body := do(
 		t,
 		other,
 		call{
 			method: "POST",
-			path:   "/artifactory/api/release/import/",
-			body:   archive,
-			headers: map[string]string{
-				"Content-Type": "application/octet-stream",
-			},
+			path:   "/artifactory/api/security/keys/trusted",
+			body:   string(trustBody),
 		},
-	); resp.StatusCode != 202 {
+	); resp.StatusCode != 201 {
+		t.Fatalf("trust the source's key = %d %s", resp.StatusCode, body)
+	}
+
+	if resp, body := do(t, other, importArchive); resp.StatusCode != 202 {
 		t.Fatalf("import = %d %s", resp.StatusCode, body)
 	}
 

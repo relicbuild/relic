@@ -4,8 +4,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -346,8 +344,8 @@ func readZipJSON(f *zip.File, v any) error {
 }
 
 // verifyManifest checks that the archive's manifest is signed by the key the
-// archive carries and names exactly the index's release, its creation and its
-// artifacts.
+// archive carries, that this server trusts that key, and that the manifest
+// names exactly the index's release, its creation and its artifacts.
 func (s *Service) verifyManifest(ctx context.Context, entries map[string]*zip.File, idx archiveIndexDoc) error {
 	if entries[s.layout.ManifestName] == nil {
 		return fmt.Errorf("%w: archive has no %s", ErrInvalid, s.layout.ManifestName)
@@ -372,6 +370,15 @@ func (s *Service) verifyManifest(ctx context.Context, entries map[string]*zip.Fi
 		return fmt.Errorf("%w: the manifest's signature does not verify with the archive's key", ErrInvalid)
 	}
 
+	fingerprint, err := evidence.Fingerprint(key)
+	if err != nil {
+		return fmt.Errorf("%w: %s: %w", ErrInvalid, archiveKey, err)
+	}
+
+	if err := s.checkTrusted(ctx, fingerprint); err != nil {
+		return err
+	}
+
 	statement, err := parseStatement(env)
 	if err != nil {
 		return err
@@ -387,11 +394,48 @@ func (s *Service) verifyManifest(ctx context.Context, entries map[string]*zip.Fi
 		return fmt.Errorf("%w: the archive's index does not match its signed manifest", ErrInvalid)
 	}
 
-	fingerprint := sha256.Sum256(pemText)
 	s.log.InfoContext(ctx, "release archive signature verified", "name", idx.Name, "version", idx.Version,
-		"key_sha256", hex.EncodeToString(fingerprint[:]))
+		"key_fingerprint", fingerprint)
 
 	return nil
+}
+
+// checkTrusted accepts the fingerprint of this server's release key or of a
+// trusted key; anything else is ErrUntrustedKey.
+func (s *Service) checkTrusted(ctx context.Context, fingerprint string) error {
+	_, ownPEM, err := s.keys.RSA(ctx, SigningKey)
+	if err != nil {
+		return fmt.Errorf("signing key: %w", err)
+	}
+
+	own, _, err := evidence.ParsePublicKey(ownPEM)
+	if err != nil {
+		return fmt.Errorf("signing key: %w", err)
+	}
+
+	if ownFingerprint, err := evidence.Fingerprint(own); err == nil && ownFingerprint == fingerprint {
+		return nil
+	}
+
+	if s.evidence != nil {
+		trusted, err := s.evidence.TrustedKeys(ctx)
+		if err != nil {
+			return err
+		}
+
+		for _, k := range trusted {
+			if k.Fingerprint == fingerprint {
+				return nil
+			}
+		}
+	}
+
+	return fmt.Errorf(
+		"%w: its fingerprint is %s; add the exporting server's %s public key as a trusted key to import it",
+		ErrUntrustedKey,
+		fingerprint,
+		SigningKey,
+	)
 }
 
 func readZipFile(f *zip.File) ([]byte, error) {
