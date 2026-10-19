@@ -57,7 +57,10 @@ test('the search lists a repository created after the dashboard opened', async (
   const name = unique('ui-search')
   await page.goto('/repositories')
   await page.getByRole('button', { name: /search/i }).first().click()
+  // Escape closes the palette only once it has opened.
+  await expect(page.getByRole('dialog')).toBeVisible()
   await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toBeHidden()
 
   await api(request, 'RepositoryService/CreateRepository', { repository: { name, class: 'REPOSITORY_CLASS_LOCAL', format: 'FORMAT_GENERIC' } })
 
