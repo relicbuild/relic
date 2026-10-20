@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -67,6 +69,53 @@ func TestSQLiteWritesTakeTurnsWithABulkImport(t *testing.T) {
 
 	if slowest > 2*time.Second {
 		t.Errorf("a write waited %s for the bulk import; it should wait for one of its transactions at most", slowest)
+	}
+}
+
+func TestSQLiteDeletesAWithdrawnAdvisoryThroughAnIndex(t *testing.T) {
+	t.Parallel()
+
+	db, err := database.Open(t.Context(), "sqlite://"+filepath.Join(t.TempDir(), "relic.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(db.Close)
+
+	if err := db.Migrate(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := db.Query(t.Context(), "EXPLAIN QUERY PLAN DELETE FROM malicious_packages WHERE id = ?", "MAL-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer rows.Close()
+
+	var plan []string
+
+	for rows.Next() {
+		var (
+			id, parent, unused int
+			step               string
+		)
+
+		if err := rows.Scan(&id, &parent, &unused, &step); err != nil {
+			t.Fatal(err)
+		}
+
+		plan = append(plan, step)
+	}
+
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	if !slices.ContainsFunc(plan, func(step string) bool {
+		return strings.Contains(step, "USING INDEX")
+	}) {
+		t.Errorf("deleting an advisory scans the table: %q", plan)
 	}
 }
 
