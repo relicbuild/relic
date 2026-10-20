@@ -22,7 +22,7 @@ trap 'for r in "${ALL[@]}"; do delete_repo "$r"; done
 export JFROG_CLI_HOME_DIR="${JFROG_CLI_HOME_DIR:-$HOME/.jfrog}"
 export HOME="$WORK/home"
 mkdir -p "$HOME"
-bundle=/etc/ssl/certs/ca-certificates.crt # holds the e2e CA (run-in-container.sh)
+bundle=/etc/ssl/certs/ca-certificates.crt # holds the e2e CA (test/e2e/client/setup.sh)
 export SSL_CERT_FILE="$bundle" REQUESTS_CA_BUNDLE="$bundle" PIP_DISABLE_PIP_VERSION_CHECK=1 \
   PIP_CACHE_DIR="$WORK/pip-cache" UV_CACHE_DIR="$WORK/uv-cache" POETRY_CACHE_DIR="$WORK/poetry-cache" \
   POETRY_VIRTUALENVS_IN_PROJECT=true
