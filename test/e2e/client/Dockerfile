@@ -1,8 +1,7 @@
-# The relic CLI comes from the server image the stack runs (compose builds it
-# as relic-relic-server before this image).
-ARG RELIC_IMAGE=relic-relic-server:latest
-FROM ${RELIC_IMAGE} AS relic
-
+# The client the e2e scenarios run in: every package manager they drive.
+# The relic CLI is not in it: the tests mount the one of the server image
+# under test at /usr/local/bin/relic, so this image does not change with
+# Relic and builds from cache.
 FROM debian:trixie-slim
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl git jq zip unzip xz-utils openjdk-21-jdk-headless maven golang-go python3 python3-venv python3-pip twine \
@@ -109,7 +108,7 @@ RUN curl -fsSL -o /tmp/tofu.tgz "https://github.com/opentofu/opentofu/releases/d
 # mvn reads the plugins a build uses from a read-only tail of its local
 # repository, so scenarios fetch only what they test through Relic
 # (commons-lang3 3.14.0, which they depend on, is left out).
-COPY api/adapters/artifactory/compat/e2e/maven-seed/ /tmp/maven-seed/
+COPY test/e2e/client/maven-seed/ /tmp/maven-seed/
 RUN cd /tmp/maven-seed \
  && mvn -B -q -Dmaven.repo.local=/opt/m2-seed deploy -DaltDeploymentRepository=seed::file:///tmp/maven-seed/deployed \
  && mvn -B -q -Dmaven.repo.local=/opt/m2-seed dependency:resolve dependency:get -Dartifact=relic.seed:seed:1.0.0 \
@@ -124,6 +123,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends rpm && rm -rf /
 ENV JF=/usr/local/bin/jf CI=true JFROG_CLI_REPORT_USAGE=false NODE_USE_SYSTEM_CA=1 \
     DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
-COPY api/adapters/artifactory/compat/e2e/run-in-container.sh /run.sh
-COPY --from=relic /relic /usr/local/bin/relic
-ENTRYPOINT ["/run.sh"]
+COPY test/e2e/client/setup.sh test/e2e/client/scenario.sh /e2e/
+CMD ["sleep", "infinity"]

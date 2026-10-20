@@ -4,7 +4,8 @@ export default defineConfig({
   testDir: '.',
   outputDir: 'results',
   fullyParallel: false,
-  workers: 1,
+  // Files run three at a time; the tests in a file run in order.
+  workers: 3,
   retries: 0,
   reporter: [['list']],
   timeout: 60_000,

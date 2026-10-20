@@ -17,7 +17,8 @@ test('items are deleted permanently from the trash can, and the trash is emptied
 
   await page.getByRole('button', { name: 'Empty trash' }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Empty' }).click()
-  await toast(page, /empt/i)
+  // Emptying takes the whole trash, which other tests and scenarios fill meanwhile.
+  await toast(page, /empt/i, 30_000)
   await expect(page.getByRole('row').filter({ hasText: repo })).toHaveCount(0)
   await api(request, 'RepositoryService/DeleteRepository', { name: repo })
 })

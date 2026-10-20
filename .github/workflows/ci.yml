@@ -3,6 +3,9 @@ name: ci
 on:
   pull_request:
     branches: [main]
+  schedule:
+    # Nightly: the integration suite with the race detector, and the k8s tier.
+    - cron: "23 2 * * *"
   workflow_dispatch:
     inputs:
       base:
@@ -99,7 +102,14 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - run: go test -race -tags integration ${{ matrix.database == 'sqlite' && '$(test/database-packages.sh)' || './...' }}
+      - name: one PostgreSQL for every package
+        if: matrix.database == 'postgresql'
+        run: echo "RELIC_TEST_POSTGRESQL_URL=$(test/postgresql.sh)" >>"$GITHUB_ENV"
+      # The race detector doubles the suite's time; pull requests run it on the
+      # unit tests, the nightly run on these too.
+      - run: >-
+          go test ${{ github.event_name == 'schedule' && '-race' || '' }} -tags integration
+          ${{ matrix.database == 'sqlite' && '$(test/database-packages.sh)' || './...' }}
 
   web-check:
     name: web:check
@@ -153,7 +163,7 @@ jobs:
           promtool check rules relic-rules.yaml
           promtool test rules relic-rules.test.yaml
 
-  e2e-tier:
+  e2e:
     name: e2e:${{ matrix.tier }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -162,12 +172,14 @@ jobs:
       matrix:
         tier: [core, platform]
     steps:
-      - name: free disk
+      - name: docker on the larger disk
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
-            /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell
-          docker system prune -af >/dev/null
-          df -h /
+          cfg=/etc/docker/daemon.json
+          [ -f "$cfg" ] || echo '{}' | sudo tee "$cfg" >/dev/null
+          sudo jq '. + {"data-root": "/mnt/docker"}' "$cfg" | sudo tee "$cfg.new" >/dev/null
+          sudo mv "$cfg.new" "$cfg"
+          sudo systemctl restart docker
+          df -h / /mnt
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
@@ -185,32 +197,53 @@ jobs:
       - run: pnpm install --frozen-lockfile
         if: matrix.tier == 'core'
         working-directory: web
-      - run: test/tier.sh ${{ matrix.tier }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # The client image changes only with its Dockerfile: from the cache.
+      # The server image is built by the tests, while their daemons start.
+      - name: client image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: test/e2e/client/Dockerfile
+          tags: relic-e2e-client:ci
+          load: true
+          cache-from: type=gha,scope=e2e-client
+          cache-to: type=gha,scope=e2e-client,mode=max
+      - run: go test -tags e2e -count=1 -v -timeout 80m ./test/e2e -run TestStack -tier ${{ matrix.tier }}
+        env:
+          RELIC_E2E_CLIENT_IMAGE: relic-e2e-client:ci
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: e2e-results-${{ matrix.tier }}
           path: |
-            api/adapters/artifactory/compat/e2e/results/
+            test/e2e/results/
             web/e2e/results/
 
   e2e-k8s:
     name: e2e:k8s
-    if: inputs.k8s
+    if: inputs.k8s || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
-      - name: free disk
+      - name: docker on the larger disk
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
-            /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell
-          docker system prune -af >/dev/null
-          df -h /
+          cfg=/etc/docker/daemon.json
+          [ -f "$cfg" ] || echo '{}' | sudo tee "$cfg" >/dev/null
+          sudo jq '. + {"data-root": "/mnt/docker"}' "$cfg" | sudo tee "$cfg.new" >/dev/null
+          sudo mv "$cfg.new" "$cfg"
+          sudo systemctl restart docker
+          df -h / /mnt
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - run: test/tier.sh k8s
+      - run: go test -tags e2e -count=1 -v -timeout 110m ./test/e2e -run TestKubernetes -tier k8s
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: e2e-results-k8s
+          path: test/e2e/results/
 
   image-build:
     name: image:build
@@ -218,4 +251,10 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
-      - run: docker build -t relic:${{ github.sha }} .
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          tags: relic:${{ github.sha }}
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,scope=server,mode=max

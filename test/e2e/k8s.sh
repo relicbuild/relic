@@ -12,7 +12,7 @@
 #      cluster
 #   7. HA: server pods SIGKILLed during parallel uploads
 #   8. the backup and restore drill
-# test/tier.sh k8s runs it in the e2e client image (relic, helm, kind, skopeo),
+# TestKubernetes (go test -tags e2e ./test/e2e -tier k8s) runs it in the client image (relic, helm, kind, skopeo),
 # against the host's Docker daemon, with the chart mounted at /chart and the
 # images to load into kind (relic:k8s and the tools) as archives in /images.
 # KEEP=1 leaves the cluster running;

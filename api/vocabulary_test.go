@@ -12,6 +12,7 @@ import (
 
 var jfrogAllowed = []string{
 	"api/adapters/artifactory/",
+	"test/e2e/",
 	"web/layers/site/content/",
 	"docs/",
 	"README.md",

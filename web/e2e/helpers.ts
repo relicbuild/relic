@@ -19,9 +19,9 @@ export async function upload(request: APIRequestContext, repository: string, pat
   expect(res.ok(), await res.text()).toBeTruthy()
 }
 
-// toast waits for a toast whose text matches.
-export async function toast(page: Page, text: string | RegExp) {
-  await expect(page.locator('[data-sonner-toast], ol li').filter({ hasText: text }).first()).toBeVisible()
+// toast waits for a toast whose text matches, for timeout milliseconds when given.
+export async function toast(page: Page, text: string | RegExp, timeout?: number) {
+  await expect(page.locator('[data-sonner-toast], ol li').filter({ hasText: text }).first()).toBeVisible({ timeout })
 }
 
 // unique names what a spec creates.
