@@ -1,4 +1,4 @@
-# Relic
+# <img src="web/layers/site/public/favicon.svg" width="32" height="32" alt=""> Relic
 
 Relic is a self-hosted artifact repository and security platform.
 One binary keeps your packages and images in S3-compatible storage and scans everything it stores.
