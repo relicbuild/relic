@@ -24,3 +24,9 @@ test('a storage check is queued and its report shows in the job details', async 
     await expect(panel.getByText('"verifiedBytes"').first()).toBeVisible({ timeout: 2000 })
   }).toPass({ timeout: 60_000 })
 })
+
+test('the sidebar shows the server version', async ({ page, request }) => {
+  const { version } = await (await request.get('/api/v1/version')).json()
+  await page.goto('/dashboard')
+  await expect(page.getByText(version, { exact: true })).toBeVisible()
+})

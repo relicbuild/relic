@@ -76,7 +76,8 @@ const mainItems = computed<NavigationMenuItem[][]>(() => [
     ]] satisfies NavigationMenuItem[][])
 ])
 
-const { artifacts } = useRelic()
+const { artifacts, system } = useRelic()
+const { data: serverVersion } = useAsyncData('server:version', () => system.getVersion({}), { server: false, lazy: true })
 const searchTerm = ref('')
 const term = useDebounced(searchTerm)
 const { data: searchRepos, refresh: refreshSearchRepos } = useAsyncData('search:repositories', listRepoRows, { server: false, lazy: true, default: () => [] })
@@ -132,6 +133,12 @@ const searchGroups = computed(() => [{
           <UIcon name="i-lucide-package" class="size-6 shrink-0 text-primary" />
           <span v-if="!collapsed" class="text-lg font-bold text-highlighted">Relic</span>
         </NuxtLink>
+        <UTooltip
+          v-if="!collapsed && serverVersion?.version"
+          :text="serverVersion.revision ? `${serverVersion.version}, revision ${serverVersion.revision.slice(0, 12)}` : serverVersion.version"
+        >
+          <span class="ms-auto min-w-0 truncate font-mono text-xs text-muted">{{ serverVersion.version }}</span>
+        </UTooltip>
       </template>
 
       <template #default="{ collapsed }">
