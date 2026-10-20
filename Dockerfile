@@ -3,11 +3,12 @@
 ARG INDEXER_PLATFORMS="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64"
 
 FROM --platform=$BUILDPLATFORM node:24-alpine3.24 AS web
+ARG VERSION=dev
 WORKDIR /src/web
 RUN corepack enable
 COPY web/ ./
 RUN --mount=type=cache,id=relic-pnpm-store,target=/pnpm/store \
-    pnpm install --frozen-lockfile --store-dir /pnpm/store && pnpm generate \
+    pnpm install --frozen-lockfile --store-dir /pnpm/store && NUXT_PUBLIC_RELIC_VERSION=$VERSION pnpm generate \
  && node scripts/third-party-notices.ts > /src/web-notices.txt
 
 FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine3.24 AS build
