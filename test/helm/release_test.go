@@ -8,83 +8,88 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-
-	"go.yaml.in/yaml/v3"
-	"golang.org/x/mod/semver"
 )
 
-func TestChartImageIsNotOlderThanTheLatestRelease(t *testing.T) {
+func TestUnpublishedChartNeedsAnImageTag(t *testing.T) {
 	t.Parallel()
 
-	out, err := exec.CommandContext(t.Context(), "git", "describe", "--tags", "--abbrev=0", "--match", "v*").Output()
+	_, stderr := render(t, "--set", "image.tag=")
+	if !strings.Contains(stderr, "image.tag is required") {
+		t.Errorf("rendering the chart from the repository without image.tag: %q, want it refused", stderr)
+	}
+}
+
+func TestPublishedChartPullsItsReleaseImage(t *testing.T) {
+	t.Parallel()
+
+	render(t)
+
+	dir := t.TempDir()
+
+	out, err := exec.CommandContext(
+		t.Context(),
+		"helm",
+		"package",
+		chart,
+		"--version",
+		"1.2.3-beta.4",
+		"--app-version",
+		"1.2.3-beta.4",
+		"--destination",
+		dir,
+	).CombinedOutput()
 	if err != nil {
-		t.Skip("no release tag in this checkout")
+		t.Fatalf("helm package: %v\n%s", err, out)
 	}
 
-	latest := strings.TrimSpace(string(out))
+	out, err = exec.CommandContext(
+		t.Context(),
+		"helm",
+		"template",
+		"r",
+		filepath.Join(dir, "relic-1.2.3-beta.4.tgz"),
+		"--set",
+		"credentials.encryptionKey="+testEncryptionKey,
+		"--set",
+		"credentials.adminPassword="+testAdminPassword,
+	).CombinedOutput()
+	if err != nil {
+		t.Fatalf("helm template: %v\n%s", err, out)
+	}
 
-	appVersion := chartAppVersion(t)
-
-	if semver.Compare("v"+appVersion, latest) < 0 {
-		t.Errorf(
-			"appVersion %q is older than the release %s, so the default image is not the release's",
-			appVersion,
-			latest,
-		)
+	if !strings.Contains(string(out), "image: ghcr.io/relicbuild/relic:v1.2.3-beta.4") {
+		t.Error("the published chart does not pull its release's image")
 	}
 }
 
 var imageReference = regexp.MustCompile(`relicbuild/relic:([^\s"'` + "`" + `]+)`)
 
-func TestImageReferencesNameTheChartRelease(t *testing.T) {
+func TestDocsPullTheReleasePlaceholder(t *testing.T) {
 	t.Parallel()
 
-	want := "v" + chartAppVersion(t)
-
-	files := []string{
-		"../../deploy/cloudflare/Dockerfile",
-	}
-
 	err := filepath.WalkDir("../../web/layers/site/content", func(path string, entry fs.DirEntry, err error) error {
-		if err == nil && !entry.IsDir() && filepath.Ext(path) == ".md" {
-			files = append(files, path)
+		if err != nil || entry.IsDir() || filepath.Ext(path) != ".md" {
+			return err
 		}
 
-		return err
+		raw, err := os.ReadFile(path) //nolint:gosec // the repository's own docs
+		if err != nil {
+			return err
+		}
+
+		for _, match := range imageReference.FindAllStringSubmatch(string(raw), -1) {
+			if match[1] != "vX.Y.Z" {
+				t.Errorf(
+					"%s pulls relicbuild/relic:%s, want vX.Y.Z, which the docs show as the latest release",
+					path,
+					match[1],
+				)
+			}
+		}
+
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	for _, file := range files {
-		raw, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		for _, match := range imageReference.FindAllStringSubmatch(string(raw), -1) {
-			if match[1] != want {
-				t.Errorf("%s pulls relicbuild/relic:%s, want %s, the chart's release", file, match[1], want)
-			}
-		}
-	}
-}
-
-func chartAppVersion(t *testing.T) string {
-	t.Helper()
-
-	raw, err := os.ReadFile(chart + "/Chart.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var meta struct {
-		AppVersion string `yaml:"appVersion"`
-	}
-
-	if err := yaml.Unmarshal(raw, &meta); err != nil {
-		t.Fatal(err)
-	}
-
-	return meta.AppVersion
 }

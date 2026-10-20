@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io"
 	"os/exec"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -17,6 +16,9 @@ import (
 )
 
 const chart = "../../helm/relic"
+
+// testImageTag stands in for the release a published chart names.
+const testImageTag = "v1.2.3"
 
 var cnpg = []string{
 	"--api-versions",
@@ -175,6 +177,8 @@ func render(t *testing.T, args ...string) ([]object, string) {
 		"credentials.encryptionKey=" + testEncryptionKey,
 		"--set",
 		"credentials.adminPassword=" + testAdminPassword,
+		"--set",
+		"image.tag=" + testImageTag,
 	}, args...)...)
 
 	cmd.Stdout, cmd.Stderr = &out, &stderr
@@ -396,8 +400,6 @@ var singleNode = []string{
 	"server.replicas=1",
 }
 
-var releaseImage = regexp.MustCompile(`^ghcr\.io/relicbuild/relic:v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$`)
-
 func TestChartSingleNode(t *testing.T) {
 	t.Parallel()
 
@@ -439,8 +441,8 @@ func TestChartSingleNode(t *testing.T) {
 		t.Errorf("args = %v", c.Args)
 	}
 
-	if !releaseImage.MatchString(c.Image) {
-		t.Errorf("image = %q, want a tag the release publishes (v<appVersion>)", c.Image)
+	if c.Image != "ghcr.io/relicbuild/relic:"+testImageTag {
+		t.Errorf("image = %q", c.Image)
 	}
 
 	for name, want := range map[string]string{

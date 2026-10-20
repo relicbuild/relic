@@ -384,3 +384,8 @@ that cannot goes in `harness.Serial` with the reason.
   logs.
 - Browser automation never types passwords; ask a person to sign in.
 - One merge request at a time: land the open one before starting another.
+- Versions come from the release tag, never from a file: `helm/relic/Chart.yaml`
+  stays at `0.0.0`, and the release workflow stamps the binaries, the image,
+  the embedded UI and the chart it publishes to `oci://ghcr.io/relicbuild/charts/relic`.
+  The docs write Relic's release as `vX.Y.Z` (a chart version as `X.Y.Z`); the
+  site shows the newest release there, and a server's UI its own.

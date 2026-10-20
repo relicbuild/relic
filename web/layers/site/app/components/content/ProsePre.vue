@@ -4,13 +4,13 @@ import UProsePre from '@nuxt/ui/components/prose/Pre.vue'
 
 const props = defineProps<{ code?: string }>()
 const slots = defineSlots<{ default?: () => VNode[] }>()
-const server = useServerAddress()
+const placeholders = useCodePlaceholders()
 
-const Highlighted = () => server.vnodes(slots.default?.() ?? [])
+const Highlighted = () => placeholders.vnodes(slots.default?.() ?? [])
 </script>
 
 <template>
-  <UProsePre :code="props.code === undefined ? undefined : server.text(props.code)">
+  <UProsePre :code="props.code === undefined ? undefined : placeholders.text(props.code)">
     <Highlighted />
   </UProsePre>
 </template>

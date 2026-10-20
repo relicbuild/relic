@@ -3,9 +3,9 @@ import type { VNode } from 'vue'
 import UProseCode from '@nuxt/ui/components/prose/Code.vue'
 
 const slots = defineSlots<{ default?: () => VNode[] }>()
-const server = useServerAddress()
+const placeholders = useCodePlaceholders()
 
-const Content = () => server.vnodes(slots.default?.() ?? [])
+const Content = () => placeholders.vnodes(slots.default?.() ?? [])
 </script>
 
 <template>

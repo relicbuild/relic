@@ -37,7 +37,14 @@ app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 
 {{- define "relic.image" -}}
-{{- printf "%s:%s" .Values.image.repository (default (printf "v%s" .Chart.AppVersion) .Values.image.tag) -}}
+{{- $tag := .Values.image.tag -}}
+{{- if not $tag -}}
+{{- if eq .Chart.AppVersion "0.0.0" -}}
+{{- fail "image.tag is required: this chart is not a published release; install oci://ghcr.io/relicbuild/charts/relic, or set image.tag" -}}
+{{- end -}}
+{{- $tag = printf "v%s" .Chart.AppVersion -}}
+{{- end -}}
+{{- printf "%s:%s" .Values.image.repository $tag -}}
 {{- end -}}
 
 {{- define "relic.singleNode" -}}

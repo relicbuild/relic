@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/relicbuild/relic
-  tag: ""            # defaults to v<appVersion>, the release's image tag
+  tag: ""            # defaults to the published chart's release, v<appVersion>
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 

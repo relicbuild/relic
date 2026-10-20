@@ -4,7 +4,7 @@ project_name: relic
 
 before:
   hooks:
-    - sh -c "cd web && pnpm install --frozen-lockfile && pnpm generate"
+    - sh -c "cd web && pnpm install --frozen-lockfile && NUXT_PUBLIC_RELIC_VERSION={{ .Tag }} pnpm generate"
     - sh -c "find internal/app/ui/dist -mindepth 1 ! -name .gitkeep -delete && cp -r web/.output/public/. internal/app/ui/dist/"
     - sh -c "mkdir -p bin && cd web && node scripts/third-party-notices.ts > ../bin/web-notices.txt"
     - go run ./tools/thirdpartynotices -output bin/THIRD_PARTY_NOTICES -platforms linux/amd64,linux/arm64,darwin/amd64,darwin/arm64,windows/amd64 -include bin/web-notices.txt ./cmd/relic

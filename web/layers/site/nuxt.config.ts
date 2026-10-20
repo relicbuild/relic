@@ -39,6 +39,13 @@ export default defineNuxtConfig({
     fonts: false
   },
 
+  runtimeConfig: {
+    public: {
+      // The release the docs' code shows; builds set it with NUXT_PUBLIC_RELIC_VERSION.
+      relicVersion: ''
+    }
+  },
+
   routeRules: {
     '/docs': { redirect: '/docs/overview/introduction' }
   },
