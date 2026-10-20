@@ -29,19 +29,14 @@ const links: ButtonProps[] = [
       :ui="{ title: 'text-4xl sm:text-5xl font-medium tracking-tight text-highlighted text-pretty', container: 'lg:py-6', headline: 'lg:mb-3', description: 'lg:mt-4', footer: 'lg:mt-7' }"
     >
       <template #headline>
-        <div class="flex flex-col gap-6 lg:gap-4">
-          <span class="inline-flex items-center gap-4 text-6xl sm:text-7xl font-semibold tracking-tight text-highlighted">
-            <UIcon name="i-lucide-package" class="size-14 sm:size-16 shrink-0 text-primary" />
-            Relic
-          </span>
-          <span class="font-mono text-xs uppercase tracking-[0.22em] text-muted">Self-hosted artifact repository</span>
-        </div>
+        <span class="inline-flex items-center gap-4 text-6xl sm:text-7xl font-semibold tracking-tight text-highlighted">
+          <UIcon name="i-lucide-package" class="size-14 sm:size-16 shrink-0 text-primary" />
+          Relic
+        </span>
       </template>
 
       <template #title>
-        Artifact repository<br>
-        on <LandingRotatingWord :words="['S3', 'filesystem']" class="text-primary" />
-        and <LandingRotatingWord :words="['PostgreSQL', 'SQLite']" :delay="300" class="text-primary" />
+        Self-hosted artifact registry
       </template>
 
       <template #footer>
