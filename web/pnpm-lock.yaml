@@ -184,6 +184,9 @@ importers:
       '@nuxt/ui':
         specifier: ^4.12.0
         version: 4.12.0(661253b989b11de1ca2aa51c603ddd8a)
+      '@vueuse/core':
+        specifier: ^15.0.0
+        version: 15.0.0(vue@3.5.44(typescript@6.0.3))
       docus:
         specifier: 5.15.0
         version: 5.15.0(patch_hash=bcff759cbd8b9f04f856ed510415cd8bd55afb2eb5661156c29bb3e4b1d4cf68)(be38145e23344a07e37e34400faaa6e8)

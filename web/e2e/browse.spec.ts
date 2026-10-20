@@ -39,3 +39,30 @@ test('browse walks every repository as a tree, with a chevron on each folder', a
   await api(request, 'RepositoryService/DeleteRepository', { name: virtual })
   await api(request, 'RepositoryService/DeleteRepository', { name: local })
 })
+
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 } })
+
+  test('a file opens its details in a slideover', async ({ page, request }) => {
+    const local = unique('ui-browse-phone')
+    await api(request, 'RepositoryService/CreateRepository', { repository: { name: local, class: 'REPOSITORY_CLASS_LOCAL', format: 'FORMAT_GENERIC' } })
+    await upload(request, local, 'app/hello.txt', 'hello')
+
+    await page.goto('/browse')
+    await page.getByPlaceholder('Filter repositories').fill(local)
+    await page.getByRole('treeitem', { name: new RegExp(`^${local}`) }).click()
+    await page.getByRole('treeitem', { name: 'app', exact: true }).click()
+    const file = page.getByRole('treeitem', { name: 'hello.txt', exact: true })
+    await file.click()
+
+    const details = page.getByRole('dialog')
+    await expect(details.getByRole('heading', { name: 'hello.txt' })).toBeVisible()
+    await expect(details.getByText('app/hello.txt', { exact: true })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(details).toBeHidden()
+    await file.click()
+    await expect(details).toBeVisible()
+
+    await api(request, 'RepositoryService/DeleteRepository', { name: local })
+  })
+})

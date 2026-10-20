@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TreeItem } from '@nuxt/ui'
+import { breakpointsTailwind, useBreakpoints } from '@vueuse/core'
 import type { Item } from '~/gen/relic/v1/artifact_pb'
 
 definePageMeta({ layout: 'dashboard' })
@@ -133,9 +134,21 @@ watch([expanded, roots], async () => {
 
 const selectedNode = computed(() => selectedRepo.value ? find(roots.value ?? undefined, keyOf(selectedRepo.value, selectedPath.value)) : undefined)
 
+const isMobile = useBreakpoints(breakpointsTailwind).smaller('lg')
+const detailsOpen = ref(false)
+
 function onSelect(node: Node) {
   router.replace({ query: { repo: node.repo, path: node.path || undefined } })
+  if (isMobile.value && !node.folder) {
+    detailsOpen.value = true
+  }
 }
+
+watch(selectedNode, (node) => {
+  if (isMobile.value && node && !node.folder) {
+    detailsOpen.value = true
+  }
+}, { immediate: true })
 
 const refreshing = ref(false)
 const detailKey = ref(0)
@@ -255,7 +268,34 @@ const breadcrumb = computed(() => {
     </template>
   </UDashboardPanel>
 
-  <UDashboardPanel id="browse-item">
+  <USlideover
+    v-if="isMobile"
+    v-model:open="detailsOpen"
+    :title="selectedPath.split('/').pop() || selectedRepo"
+    :description="selectedPath ? `${selectedRepo}/${selectedPath}` : undefined"
+  >
+    <template #body>
+      <ArtifactDetailPanel
+        v-if="selectedRepo"
+        :key="detailKey"
+        :repo="selectedRepo"
+        :path="selectedPath"
+        @deleted="detailsOpen = false; reload()"
+      />
+    </template>
+    <template #footer>
+      <UButton
+        icon="i-lucide-external-link"
+        color="neutral"
+        variant="outline"
+        label="Open repository"
+        block
+        :to="{ path: `/repositories/${selectedRepo}`, query: { path: selectedPath || undefined } }"
+      />
+    </template>
+  </USlideover>
+
+  <UDashboardPanel v-else id="browse-item">
     <template #header>
       <UDashboardNavbar>
         <template #left>
