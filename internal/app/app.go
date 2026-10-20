@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -1391,8 +1392,15 @@ func relicVersion() (version, revision string) {
 		}
 	}
 
+	if m := describedCommit.FindStringSubmatch(version); revision == "" && m != nil {
+		revision = m[1]
+	}
+
 	return version, revision
 }
+
+// describedCommit is the commit git describe --long appends to a version: v1.2.3-4-gabc1234.
+var describedCommit = regexp.MustCompile(`-g([0-9a-f]{7,40})$`)
 
 func newRepositories(db *database.DB, blobs objectstore.Store, log *slog.Logger) *repository.Service {
 	repos := repository.NewService(db, blobs, log)

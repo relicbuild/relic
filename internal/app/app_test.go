@@ -345,6 +345,18 @@ func TestRelicVersionIsTheStampedRelease(t *testing.T) {
 	}
 }
 
+func TestRelicRevisionComesFromADescribedVersion(t *testing.T) {
+	Version = "v0.2.0-beta.3-2-gf84fd3cb"
+
+	t.Cleanup(func() {
+		Version = ""
+	})
+
+	if _, r := relicVersion(); r != "f84fd3cb" {
+		t.Errorf("revision = %q", r)
+	}
+}
+
 func TestOutboundClientsRefusePrivateAddresses(t *testing.T) {
 	t.Parallel()
 

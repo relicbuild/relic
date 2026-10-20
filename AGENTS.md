@@ -53,7 +53,8 @@ web/                    Nuxt + Nuxt UI single-page app, embedded in the binary a
   layers/site/          everything that works without a server: landing page, docs
                         (content/docs), API reference, install.sh
   site/                 relic.build: layers/site alone, prerendered (pnpm generate:site) and served
-                        by a Cloudflare Worker (wrangler.jsonc, deployed with wrangler deploy)
+                        by a Cloudflare Worker (wrangler.jsonc) that Workers Builds deploys from
+                        main when web/ changes
 deploy/                 Compose stacks (docker-compose.yml with PostgreSQL and SeaweedFS and an
                         observability profile; docker-compose.single-node.yml), cloudflare/,
                         observability/ (dashboards, alert rules and their tests)
