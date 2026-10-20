@@ -138,7 +138,9 @@ var publishedPorts = sync.OnceValue(func() []string {
 			panic(fmt.Sprintf("pick a free port: %v", err))
 		}
 
-		defer ln.Close()
+		defer func() {
+			_ = ln.Close()
+		}()
 
 		ports = append(ports, strconv.Itoa(int(netip.MustParseAddrPort(ln.Addr().String()).Port())))
 	}
