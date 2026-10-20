@@ -2,7 +2,7 @@
 import type { ButtonProps } from '@nuxt/ui'
 
 useSeoMeta({
-  description: 'Relic: a self-hosted artifact repository powered by S3.'
+  description: 'Relic: a self-hosted artifact repository in one binary, backed by S3 or a local directory and PostgreSQL or SQLite.'
 })
 
 const copy = useCopy()
@@ -24,7 +24,7 @@ const links: ButtonProps[] = [
 <template>
   <UMain class="flex flex-col justify-center lg:min-h-0 lg:flex-1">
     <UPageHero
-      description="Relic keeps your packages and images in any S3-compatible storage and scans everything it stores with Relic Scan: npm, Maven, PyPI, Go, NuGet, Docker, Helm and more, from one binary and one PostgreSQL. MIT licensed."
+      description="One self-hosted binary for your packages and images. Files go to S3 or a local directory, metadata to PostgreSQL or SQLite. MIT licensed."
       orientation="horizontal"
       :ui="{ title: 'text-4xl sm:text-5xl font-medium tracking-tight text-highlighted text-pretty', container: 'lg:py-6', headline: 'lg:mb-3', description: 'lg:mt-4', footer: 'lg:mt-7' }"
     >
@@ -39,7 +39,9 @@ const links: ButtonProps[] = [
       </template>
 
       <template #title>
-        Artifact repository powered by <span class="text-primary">S3</span>
+        Artifact repository<br>
+        on <LandingRotatingWord :words="['S3', 'filesystem']" class="text-primary" />
+        and <LandingRotatingWord :words="['PostgreSQL', 'SQLite']" :delay="300" class="text-primary" />
       </template>
 
       <template #footer>
