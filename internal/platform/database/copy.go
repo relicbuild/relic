@@ -133,7 +133,7 @@ func Backup(ctx context.Context, db *DB, path string) error {
 		return fmt.Errorf("backup %s: %w", path, err)
 	}
 
-	if _, err := e.db.ExecContext(ctx, "VACUUM INTO ?", path); err != nil {
+	if _, err := e.writer.ExecContext(ctx, "VACUUM INTO ?", path); err != nil {
 		return errors.Join(fmt.Errorf("backup %s: %w", path, err), os.Remove(path))
 	}
 
@@ -173,7 +173,7 @@ WHERE c.relkind = 'r'`)
 			}
 		}
 	case *sqliteEngine:
-		rows, err := e.db.QueryContext(ctx, `
+		rows, err := e.writer.QueryContext(ctx, `
 SELECT m.name, coalesce(f."table", '')
 FROM sqlite_schema m
 LEFT JOIN pragma_foreign_key_list(m.name) f
@@ -275,7 +275,7 @@ ORDER BY ordinal_position`, table)
 			})
 		}
 	case *sqliteEngine:
-		rows, err := e.db.QueryContext(ctx, `SELECT name, type FROM pragma_table_info(?) ORDER BY cid`, table)
+		rows, err := e.writer.QueryContext(ctx, `SELECT name, type FROM pragma_table_info(?) ORDER BY cid`, table)
 		if err != nil {
 			return nil, fmt.Errorf("columns of %s: %w", table, err)
 		}
@@ -485,7 +485,7 @@ func (db *DB) copyTx(
 
 		return tx.Commit(ctx)
 	case *sqliteEngine:
-		tx, beginErr := e.db.BeginTx(ctx, nil)
+		tx, beginErr := e.writer.BeginTx(ctx, nil)
 		if beginErr != nil {
 			return fmt.Errorf("begin: %w", beginErr)
 		}

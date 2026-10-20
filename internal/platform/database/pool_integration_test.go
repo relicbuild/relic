@@ -68,7 +68,10 @@ func TestSQLitePoolSeriesCountOnlyTheAppPool(t *testing.T) {
 
 	t.Cleanup(db.Close)
 
-	if added := telemetrytest.Value(t, "relic_db_pool_max", nil) - before; added != 8 {
-		t.Errorf("opening a SQLite database added %v to relic_db_pool_max, want its 8 app connections", added)
+	if added := telemetrytest.Value(t, "relic_db_pool_max", nil) - before; added != 9 {
+		t.Errorf(
+			"opening a SQLite database added %v to relic_db_pool_max, want its 8 read connections and 1 write connection",
+			added,
+		)
 	}
 }

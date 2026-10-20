@@ -61,7 +61,7 @@ func ConnectionsInUse(db *DB) int {
 	case *postgresEngine:
 		return int(e.pool.Stat().AcquiredConns())
 	case *sqliteEngine:
-		return e.db.Stats().InUse
+		return e.reader.Stats().InUse + e.writer.Stats().InUse
 	default:
 		return -1
 	}
