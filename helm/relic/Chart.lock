@@ -20,5 +20,5 @@ dependencies:
 - name: alloy
   repository: https://grafana.github.io/helm-charts
   version: 1.13.1
-digest: sha256:4911b2002f2b16498d61d82862ef1d99228b92f7421831ef46a31f9138c764d1
-generated: "2026-10-18T12:59:19.801843+04:00"
+digest: sha256:66e8e604caea3e7826ee667b9e9da898fb26cd887afe1640138caf9da80906a1
+generated: "2026-10-20T11:23:06.584417+04:00"

@@ -1,8 +1,8 @@
 Relic is starting. The server applies database migrations before it reports ready.
-{{- if .Values.postgresql.enabled }}
-PostgreSQL runs as the CloudNativePG cluster {{ include "relic.dependencyName" (dict "root" . "chart" "postgresql") }}{{ if index .Values "postgresql-operator" "enabled" }} (with the operator this release installed){{ end }}; the server
+{{- if .Values.cluster.enabled }}
+PostgreSQL runs as the CloudNativePG cluster {{ include "relic.dependencyName" (dict "root" . "chart" "cluster") }}{{ if index .Values "cloudnative-pg" "enabled" }} (with the operator this release installed){{ end }}; the server
 pods restart until it accepts connections:
-  kubectl -n {{ .Release.Namespace }} get cluster {{ include "relic.dependencyName" (dict "root" . "chart" "postgresql") }}
+  kubectl -n {{ .Release.Namespace }} get cluster {{ include "relic.dependencyName" (dict "root" . "chart" "cluster") }}
 {{- end }}
 
 The admin password:
