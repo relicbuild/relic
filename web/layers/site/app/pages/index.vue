@@ -16,13 +16,13 @@ const connectCommands = [
 ]
 
 const links: ButtonProps[] = [
-  { label: 'Read the docs', to: '/docs', size: 'lg', color: 'neutral', variant: 'subtle', icon: 'i-lucide-book-open' },
-  { label: 'API reference', to: '/api-reference', target: '_blank', size: 'lg', color: 'neutral', variant: 'subtle', icon: 'i-lucide-braces', trailingIcon: 'i-lucide-external-link' }
+  { label: 'Docs', to: '/docs', size: 'lg', color: 'neutral', variant: 'subtle', icon: 'i-lucide-book-open' },
+  { label: 'API', to: '/api-reference', target: '_blank', size: 'lg', color: 'neutral', variant: 'subtle', icon: 'i-lucide-braces', trailingIcon: 'i-lucide-external-link' }
 ]
 </script>
 
 <template>
-  <UMain class="flex flex-col justify-center lg:min-h-0 lg:flex-1">
+  <UMain class="flex flex-col justify-center overflow-x-clip lg:min-h-0 lg:flex-1">
     <UPageHero
       description="One self-hosted binary for your packages and images. Files go to S3 or a local directory, metadata to PostgreSQL or SQLite. MIT licensed."
       orientation="horizontal"
