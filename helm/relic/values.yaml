@@ -8,7 +8,7 @@ imagePullSecrets: []
 # `credentials`.
 existingCredentialsSecret: ""
 credentials:
-  databaseURL: ""    # RELIC_DATABASE_URL when postgresql.enabled is false, e.g. postgres://relic:pw@db:5432/relic?sslmode=require
+  databaseURL: ""    # RELIC_DATABASE_URL when cluster.enabled is false, e.g. postgres://relic:pw@db:5432/relic?sslmode=require
   objectStorageAccessKey: ""    # RELIC_OBJECT_STORAGE_ACCESS_KEY when seaweedfs.enabled is false
   objectStorageSecretKey: ""    # RELIC_OBJECT_STORAGE_SECRET_KEY when seaweedfs.enabled is false
   objectStorageAzureConnectionString: ""  # RELIC_OBJECT_STORAGE_AZURE_CONNECTION_STRING for objectStorage.type azure
@@ -20,11 +20,8 @@ credentials:
   encryptionKey: ""
 
 # The CloudNativePG operator (its official chart), installed with Relic.
-postgresql-operator:
+cloudnative-pg:
   enabled: true
-  # The alias would rename the chart, and with it the label
-  # app.kubernetes.io/name the operator finds its own Deployment by.
-  nameOverride: cloudnative-pg
   crds:
     create: false
   webhook:
@@ -38,10 +35,9 @@ postgresql-operator:
 
 # PostgreSQL: a CloudNativePG Cluster from the official cnpg/cluster chart
 # (https://github.com/cloudnative-pg/charts).
-postgresql:
+cluster:
   enabled: true
-  # The Cluster is <release>-postgresql, its Secret <release>-postgresql-app.
-  nameOverride: postgresql
+  # The Cluster is <release>-cluster, its Secret <release>-cluster-app.
   version:
     postgresql: "18"
   cluster:

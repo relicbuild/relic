@@ -53,12 +53,13 @@ fi
 encryption_key=$(openssl rand -base64 32)
 admin_password=$(openssl rand -hex 12)
 credentials=(--set credentials.encryptionKey="$encryption_key" --set credentials.adminPassword="$admin_password")
-helm lint chart "${credentials[@]}" >/dev/null
-helm lint chart "${credentials[@]}" --set postgresql.enabled=false \
-  --set postgresql-operator.enabled=false --set credentials.databaseURL=postgres://lint >/dev/null
-if helm template r chart >/dev/null 2>&1; then echo "the chart rendered without an encryption key" >&2; exit 1; fi
+chart_image=(--set image.tag=k8s)
+helm lint chart "${credentials[@]}" "${chart_image[@]}" >/dev/null
+helm lint chart "${credentials[@]}" "${chart_image[@]}" --set cluster.enabled=false \
+  --set cloudnative-pg.enabled=false --set credentials.databaseURL=postgres://lint >/dev/null
+if helm template r chart "${chart_image[@]}" >/dev/null 2>&1; then echo "the chart rendered without an encryption key" >&2; exit 1; fi
 # Not piped into grep -q: helm would die on the closed pipe (pipefail).
-rendered=$(helm template r chart "${credentials[@]}")
+rendered=$(helm template r chart "${credentials[@]}" "${chart_image[@]}")
 [[ "$rendered" == *"kind: Cluster"* && "$rendered" == *"name: r-cloudnative-pg"* ]]
 
 step "the server's certificate: ECDSA P-384 from the tier's own certificate authority"
@@ -114,12 +115,12 @@ helm install relic chart --wait --timeout 10m \
   --set tls.existingSecret=relic-tls \
   "${credentials[@]}" \
   --set image.repository=relic --set image.tag=k8s --set image.pullPolicy=Never \
-  --set postgresql.cluster.instances=1 --set postgresql.cluster.storage.size=1Gi \
+  --set cluster.cluster.instances=1 --set cluster.cluster.storage.size=1Gi \
   --set server.replicas=1 --set worker.vulnerabilityDatabase.persistence=false \
   --set service.type=NodePort --set service.nodePort="$port"
 kubectl wait --for=condition=Ready pods --all --timeout=300s >/dev/null
-kubectl wait --for=condition=Ready cluster/relic-postgresql --timeout=300s >/dev/null
-cluster_uid=$(kubectl get cluster relic-postgresql -o jsonpath='{.metadata.uid}')
+kubectl wait --for=condition=Ready cluster/relic-cluster --timeout=300s >/dev/null
+cluster_uid=$(kubectl get cluster relic-cluster -o jsonpath='{.metadata.uid}')
 secret() { kubectl get secret relic-credentials -o "jsonpath={.data.$1}" | base64 -d; }
 password=$(secret adminPassword)
 secrets_key=$(secret encryptionKey)
@@ -204,7 +205,7 @@ helm upgrade relic chart --wait --timeout 10m --reuse-values --set server.replic
 kubectl rollout status deploy/relic-server --timeout=300s >/dev/null
 [[ "$(kubectl get deploy relic-server -o jsonpath='{.status.readyReplicas}')" == 2 ]]
 [[ "$(secret adminPassword)" == "$password" && "$(secret encryptionKey)" == "$secrets_key" ]]
-[[ "$(kubectl get cluster relic-postgresql -o jsonpath='{.metadata.uid}')" == "$cluster_uid" ]]
+[[ "$(kubectl get cluster relic-cluster -o jsonpath='{.metadata.uid}')" == "$cluster_uid" ]]
 ready
 fetched
 docker rmi -f "$image" >/dev/null
@@ -301,7 +302,7 @@ YAML
   kubectl wait --for=jsonpath='{.status.phase}'=Succeeded "pod/$name" --timeout=300s >/dev/null || { kubectl logs "$name" >&2; return 1; }
 }
 s3="aws configure set default.s3.addressing_style path && aws --endpoint-url http://relic-seaweedfs-s3:8333 s3"
-psql() { kubectl exec -i relic-postgresql-1 -c postgres -- "$@"; }
+psql() { kubectl exec -i relic-cluster-1 -c postgres -- "$@"; }
 kubectl apply -f - >/dev/null <<'YAML'
 apiVersion: v1
 kind: PersistentVolumeClaim

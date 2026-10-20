@@ -253,9 +253,9 @@ func count(objs []object, kind string) int {
 
 var external = []string{
 	"--set",
-	"postgresql.enabled=false",
+	"cluster.enabled=false",
 	"--set",
-	"postgresql-operator.enabled=false",
+	"cloudnative-pg.enabled=false",
 	"--set",
 	"seaweedfs.enabled=false",
 	"--set",
@@ -280,7 +280,7 @@ func TestChartNeedsStorage(t *testing.T) {
 			"no CloudNativePG operator and none bundled",
 			[]string{
 				"--set",
-				"postgresql-operator.enabled=false",
+				"cloudnative-pg.enabled=false",
 			},
 			"CloudNativePG operator",
 		},
@@ -304,7 +304,7 @@ func TestChartNeedsStorage(t *testing.T) {
 			"no database",
 			[]string{
 				"--set",
-				"postgresql.enabled=false",
+				"cluster.enabled=false",
 			},
 			"credentials.databaseURL",
 		},
@@ -314,7 +314,7 @@ func TestChartNeedsStorage(t *testing.T) {
 				"--set",
 				"database.engine=sqlite",
 			},
-			"database.engine sqlite needs postgresql.enabled=false",
+			"database.engine sqlite needs cluster.enabled=false",
 		},
 		{
 			"the filesystem store with the bundled SeaweedFS",
@@ -362,7 +362,7 @@ func TestChartNeedsStorage(t *testing.T) {
 			"no S3 endpoint",
 			[]string{
 				"--set",
-				"postgresql.enabled=false",
+				"cluster.enabled=false",
 				"--set",
 				"seaweedfs.enabled=false",
 				"--set",
@@ -391,9 +391,9 @@ var singleNode = []string{
 	"--set",
 	"objectStorage.type=filesystem",
 	"--set",
-	"postgresql.enabled=false",
+	"cluster.enabled=false",
 	"--set",
-	"postgresql-operator.enabled=false",
+	"cloudnative-pg.enabled=false",
 	"--set",
 	"seaweedfs.enabled=false",
 	"--set",
@@ -627,9 +627,9 @@ func TestChartDependencies(t *testing.T) {
 		t.Fatal(stderr)
 	}
 
-	cluster := find(objs, "Cluster", "r-postgresql")
+	cluster := find(objs, "Cluster", "r-cluster")
 	if cluster == nil {
-		t.Fatal("no CloudNativePG Cluster r-postgresql")
+		t.Fatal("no CloudNativePG Cluster r-cluster")
 	}
 
 	if spec, _ := cluster.raw["spec"].(map[string]any); spec["postgresql"] == nil {
@@ -678,7 +678,7 @@ func TestChartDependencies(t *testing.T) {
 
 		c := pod.Containers[0]
 		for env, want := range map[string]string{ //nolint:gosec // G101: Secret names and keys, not credentials
-			"RELIC_DATABASE_URL":              "r-postgresql-app/uri",
+			"RELIC_DATABASE_URL":              "r-cluster-app/uri",
 			"RELIC_OBJECT_STORAGE_ACCESS_KEY": "r-seaweedfs-s3-secret/admin_access_key_id",
 			"RELIC_OBJECT_STORAGE_SECRET_KEY": "r-seaweedfs-s3-secret/admin_secret_access_key",
 		} {
@@ -793,7 +793,7 @@ func TestChartExistingSecret(t *testing.T) {
 		"--set",
 		"objectStorage.endpoint=http://s3:8333",
 		"--set",
-		"postgresql.enabled=false",
+		"cluster.enabled=false",
 		"--set",
 		"seaweedfs.enabled=false",
 	)

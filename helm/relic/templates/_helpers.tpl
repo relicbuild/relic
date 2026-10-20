@@ -56,8 +56,8 @@ app.kubernetes.io/component: {{ .component }}
 {{- if not (has $storage (list "s3" "azure" "gcs" "filesystem")) -}}
 {{- fail (printf "objectStorage.type is %q: s3, azure, gcs or filesystem" $storage) -}}
 {{- end -}}
-{{- if and (eq $engine "sqlite") .Values.postgresql.enabled -}}
-{{- fail "database.engine sqlite needs postgresql.enabled=false (and postgresql-operator.enabled=false)" -}}
+{{- if and (eq $engine "sqlite") .Values.cluster.enabled -}}
+{{- fail "database.engine sqlite needs cluster.enabled=false (and cloudnative-pg.enabled=false)" -}}
 {{- end -}}
 {{- if and (ne $storage "s3") .Values.seaweedfs.enabled -}}
 {{- fail (printf "objectStorage.type %s needs seaweedfs.enabled=false" $storage) -}}
@@ -103,9 +103,9 @@ true
 {{- if eq .Values.database.engine "sqlite" }}
 - name: RELIC_DATABASE_URL
   value: sqlite:///var/lib/relic/data/relic.db
-{{- else if .Values.postgresql.enabled }}
+{{- else if .Values.cluster.enabled }}
 - name: RELIC_DATABASE_URL
-  valueFrom: {secretKeyRef: {name: {{ include "relic.dependencyName" (dict "root" . "chart" "postgresql") }}-app, key: uri}}
+  valueFrom: {secretKeyRef: {name: {{ include "relic.dependencyName" (dict "root" . "chart" "cluster") }}-app, key: uri}}
 {{- else }}
 - name: RELIC_DATABASE_URL
   valueFrom: {secretKeyRef: {name: {{ include "relic.credentialsSecretName" . }}, key: databaseURL}}

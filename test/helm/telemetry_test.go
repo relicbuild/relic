@@ -77,8 +77,8 @@ func TestChartBundledOperator(t *testing.T) {
 	objs := mustRender(t)
 
 	op := find(objs, "Deployment", "r-cloudnative-pg")
-	if op == nil || find(objs, "Cluster", "r-postgresql") == nil {
-		t.Fatal("no operator Deployment r-cloudnative-pg or Cluster r-postgresql")
+	if op == nil || find(objs, "Cluster", "r-cluster") == nil {
+		t.Fatal("no operator Deployment r-cloudnative-pg or Cluster r-cluster")
 	}
 
 	if got := dig(op.raw, "metadata", "labels", "app.kubernetes.io/name"); got != "cloudnative-pg" {
@@ -114,10 +114,10 @@ func TestChartBundledOperator(t *testing.T) {
 
 	objs = mustRender(t, append([]string{
 		"--set",
-		"postgresql-operator.enabled=false",
+		"cloudnative-pg.enabled=false",
 	}, cnpg...)...)
-	if find(objs, "Deployment", "r-cloudnative-pg") != nil || find(objs, "Cluster", "r-postgresql") == nil {
-		t.Error("postgresql-operator.enabled=false: operator rendered, or no Cluster")
+	if find(objs, "Deployment", "r-cloudnative-pg") != nil || find(objs, "Cluster", "r-cluster") == nil {
+		t.Error("cloudnative-pg.enabled=false: operator rendered, or no Cluster")
 	}
 }
 

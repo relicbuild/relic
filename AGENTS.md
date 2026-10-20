@@ -132,11 +132,16 @@ tests fail when they are stale.
 
 ### Naming
 
-Names say what a thing is without their surroundings: `postgresql.enabled`,
-not `cluster.enabled`; `RELIC_OBJECT_STORAGE_ENDPOINT`, not `RELIC_S3_ENDPOINT`;
-`GetBuildRun`, not `GetRun`. This holds for Helm values, environment variables,
-packages, exported identifiers, protos, routes and web files. Relic has no
-production users yet: rename outright, without aliases.
+Names say what a thing is without their surroundings:
+`RELIC_OBJECT_STORAGE_ENDPOINT`, not `RELIC_S3_ENDPOINT`; `GetBuildRun`, not
+`GetRun`; `platform/objectstore`, not `platform/blob`. This holds for Helm
+values, environment variables, packages, exported identifiers, protos, routes
+and web files. Relic has no production users yet: rename outright, without
+aliases.
+
+Outside projects keep their own names: a chart dependency's values key is its
+chart name (`cloudnative-pg`, `cluster`, `seaweedfs`), with no `alias`,
+`nameOverride` or `fullnameOverride`.
 
 - A noun phrase for what a function returns, a plain verb for what it does:
   `domainRepository`, `parseActions`, `runHealthCheck`.
