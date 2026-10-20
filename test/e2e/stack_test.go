@@ -8,10 +8,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -109,17 +113,38 @@ func (s stack) compose(ctx context.Context, args ...string) ([]byte, error) {
 }
 
 // environment configures the Compose files for the tests: every published
-// port is picked by Docker, so stacks never collide on the host, and traces
-// go to the collector the tests start.
+// port is a free one, so stacks never collide on the host, and traces go to
+// the collector the tests start.
 func (s stack) environment() []string {
+	ports := publishedPorts()
+
 	return []string{
-		"RELIC_PORT=0",
-		"RELIC_POSTGRESQL_PORT=0",
-		"RELIC_OBJECT_STORAGE_PORT=0",
+		"RELIC_PORT=" + ports[0],
+		"RELIC_POSTGRESQL_PORT=" + ports[1],
+		"RELIC_OBJECT_STORAGE_PORT=" + ports[2],
 		"RELIC_OTLP_ENDPOINT=http://relic-e2e-otel:4318",
 		"RELIC_FAILED_SIGN_INS_BEFORE_BACKOFF=1000",
 	}
 }
+
+// publishedPorts are three free ports on 127.0.0.1, chosen once per run by
+// the kernel: Docker Engine's own choice for port 0 can be a port in use.
+var publishedPorts = sync.OnceValue(func() []string {
+	ports := make([]string, 0, 3)
+
+	for range 3 {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			panic(fmt.Sprintf("pick a free port: %v", err))
+		}
+
+		defer ln.Close()
+
+		ports = append(ports, strconv.Itoa(int(netip.MustParseAddrPort(ln.Addr().String()).Port())))
+	}
+
+	return ports
+})
 
 // up starts the tier's services from the server image, which images built.
 func (s stack) up(ctx context.Context) error {
