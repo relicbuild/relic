@@ -1,3 +1,4 @@
-# The image Wrangler pushes to Cloudflare's registry; pin a release tag here.
-FROM ghcr.io/relicbuild/relic:v0.2.0-beta.1
+# The image Wrangler pushes to Cloudflare's registry; wrangler.jsonc sets RELIC_VERSION.
+ARG RELIC_VERSION=latest
+FROM ghcr.io/relicbuild/relic:${RELIC_VERSION}
 CMD ["server", "start", "--worker", "--no-tls"]
