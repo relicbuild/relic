@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
 	"relic/internal/platform/localdisk"
@@ -24,13 +26,15 @@ import (
 
 type sqliteEngine struct {
 	path       string
-	db         *sql.DB
+	reader     *sql.DB
+	writer     *sql.DB
 	jobs       *sql.DB
 	traced     sqliteDBTX
 	unregister func()
 }
 
-const sqliteMaxConnections = 8
+// sqliteReadConnections is the size of the read pool; writes have one connection of their own.
+const sqliteReadConnections = 8
 
 const sqliteBusyTimeout = 10 * time.Second
 
@@ -55,25 +59,34 @@ func openSQLite(ctx context.Context, path string, mustExist bool) (*sqliteEngine
 		return nil, nil, fmt.Errorf("create database: %w", err)
 	}
 
-	dsn := sqliteDSN(path)
-
-	db, err := sql.Open("sqlite", dsn)
+	writer, err := sql.Open("sqlite", sqliteDSN(path))
 	if err != nil {
 		return nil, nil, fmt.Errorf("open database: %w", err)
 	}
 
-	db.SetMaxOpenConns(sqliteMaxConnections)
+	writer.SetMaxOpenConns(1)
 
-	jobs, err := sql.Open("sqlite", dsn)
+	reader, err := sql.Open("sqlite", sqliteDSN(path, "query_only(1)"))
 	if err != nil {
-		_ = db.Close()
+		_ = writer.Close()
+
+		return nil, nil, fmt.Errorf("open database: %w", err)
+	}
+
+	reader.SetMaxOpenConns(sqliteReadConnections)
+
+	jobs, err := sql.Open("sqlite", sqliteDSN(path))
+	if err != nil {
+		_ = reader.Close()
+		_ = writer.Close()
 
 		return nil, nil, fmt.Errorf("open database: %w", err)
 	}
 
 	jobs.SetMaxOpenConns(1)
 
-	acquired, unregisterDB := telemetry.RegisterSQLDB(db)
+	readAcquired, unregisterReader := telemetry.RegisterSQLDB(reader)
+	writeAcquired, unregisterWriter := telemetry.RegisterSQLDB(writer)
 	unregisterDisk := telemetry.RegisterDisk(
 		telemetry.VolumeDatabase,
 		func() (uint64, uint64, error) {
@@ -85,15 +98,23 @@ func openSQLite(ctx context.Context, path string, mustExist bool) (*sqliteEngine
 	)
 
 	e := &sqliteEngine{
-		path: path,
-		db:   db,
-		jobs: jobs,
-		traced: tracedSQLite{
-			db:       db,
-			acquired: acquired,
+		path:   path,
+		reader: reader,
+		writer: writer,
+		jobs:   jobs,
+		traced: sqliteConnections{
+			read: tracedSQLite{
+				db:       reader,
+				acquired: readAcquired,
+			},
+			write: tracedSQLite{
+				db:       writer,
+				acquired: writeAcquired,
+			},
 		},
 		unregister: func() {
-			unregisterDB()
+			unregisterReader()
+			unregisterWriter()
 			unregisterDisk()
 		},
 	}
@@ -137,15 +158,16 @@ func fileSizes(paths ...string) (int64, error) {
 	return n, nil
 }
 
-func sqliteDSN(path string) string {
+// sqliteDSN is the connection string for path, with pragmas added to the ones every connection gets.
+func sqliteDSN(path string, pragmas ...string) string {
 	q := url.Values{}
-	for _, p := range []string{
+	for _, p := range append([]string{
 		"foreign_keys(1)",
 		"journal_mode(WAL)",
 		"synchronous(FULL)",
 		fmt.Sprintf("busy_timeout(%d)", sqliteBusyTimeout.Milliseconds()),
 		"case_sensitive_like(1)",
-	} {
+	}, pragmas...) {
 		q.Add("_pragma", p)
 	}
 
@@ -161,15 +183,20 @@ func sqliteDSN(path string) string {
 func (e *sqliteEngine) close() {
 	e.unregister()
 	_ = e.jobs.Close()
-	_ = e.db.Close()
+	_ = e.reader.Close()
+	_ = e.writer.Close()
 }
 
 func (e *sqliteEngine) ping(ctx context.Context) error {
-	return e.db.PingContext(ctx)
+	if err := e.writer.PingContext(ctx); err != nil {
+		return err
+	}
+
+	return e.reader.PingContext(ctx)
 }
 
 func (e *sqliteEngine) withTx(ctx context.Context, fn func(q Querier) error) (err error) {
-	tx, err := e.db.BeginTx(ctx, nil)
+	tx, err := e.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin: %w", err)
 	}
@@ -215,6 +242,57 @@ func (e *sqliteEngine) query(ctx context.Context, query string, args ...any) (Ro
 	return sqliteRows{
 		rows,
 	}, nil
+}
+
+// sqliteConnections sends reads to the read pool and every other statement to
+// the one write connection, so writers wait their turn in the process instead
+// of retrying SQLite's write lock, which favours whoever asks again first.
+type sqliteConnections struct {
+	read  sqliteDBTX
+	write sqliteDBTX
+}
+
+func (c sqliteConnections) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return c.write.ExecContext(ctx, query, args...)
+}
+
+func (c sqliteConnections) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	if readOnlyStatement(query) {
+		return c.read.QueryContext(ctx, query, args...)
+	}
+
+	return c.write.QueryContext(ctx, query, args...)
+}
+
+// writeKeyword is a keyword that makes a statement change the database.
+var writeKeyword = regexp.MustCompile(`(?i)\b(INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|VACUUM|PRAGMA)\b`)
+
+// readOnlyStatement reports whether query, after its leading comments, is a
+// SELECT, or a WITH that changes nothing; anything else goes to the writer.
+func readOnlyStatement(query string) bool {
+	var body []string
+
+	for line := range strings.SplitSeq(query, "\n") {
+		if t := strings.TrimSpace(line); t != "" && !strings.HasPrefix(t, "--") {
+			body = append(body, line)
+		}
+	}
+
+	statement := strings.Join(body, "\n")
+
+	words := strings.Fields(statement)
+	if len(words) == 0 {
+		return false
+	}
+
+	switch strings.ToUpper(words[0]) {
+	case "SELECT":
+		return true
+	case "WITH":
+		return !writeKeyword.MatchString(statement)
+	default:
+		return false
+	}
 }
 
 type tracedSQLite struct {
@@ -283,7 +361,7 @@ func (e *sqliteEngine) migrateTo(ctx context.Context, version int64) error {
 	}
 	defer unlock()
 
-	provider, err := goose.NewProvider(goose.DialectSQLite3, e.db, migrations.SQLite)
+	provider, err := goose.NewProvider(goose.DialectSQLite3, e.writer, migrations.SQLite)
 	if err != nil {
 		return fmt.Errorf("migrations: %w", err)
 	}
