@@ -2,7 +2,7 @@
 import type { ButtonProps } from '@nuxt/ui'
 
 useSeoMeta({
-  description: 'Relic: a self-hosted artifact repository powered by S3.'
+  description: 'Relic: a self-hosted artifact repository in one binary, backed by S3 or a local directory and PostgreSQL or SQLite.'
 })
 
 const copy = useCopy()
@@ -16,30 +16,27 @@ const connectCommands = [
 ]
 
 const links: ButtonProps[] = [
-  { label: 'Read the docs', to: '/docs', size: 'lg', color: 'neutral', variant: 'subtle', icon: 'i-lucide-book-open' },
-  { label: 'API reference', to: '/api-reference', target: '_blank', size: 'lg', color: 'neutral', variant: 'subtle', icon: 'i-lucide-braces', trailingIcon: 'i-lucide-external-link' }
+  { label: 'Docs', to: '/docs', size: 'lg', color: 'neutral', variant: 'subtle', icon: 'i-lucide-book-open' },
+  { label: 'API', to: '/api-reference', target: '_blank', size: 'lg', color: 'neutral', variant: 'subtle', icon: 'i-lucide-braces', trailingIcon: 'i-lucide-external-link' }
 ]
 </script>
 
 <template>
-  <UMain class="flex flex-col justify-center lg:min-h-0 lg:flex-1">
+  <UMain class="flex flex-col justify-center overflow-x-clip lg:min-h-0 lg:flex-1">
     <UPageHero
-      description="Relic keeps your packages and images in any S3-compatible storage and scans everything it stores with Relic Scan: npm, Maven, PyPI, Go, NuGet, Docker, Helm and more, from one binary and one PostgreSQL. MIT licensed."
+      description="One self-hosted binary for your packages and images. Files go to S3 or a local directory, metadata to PostgreSQL or SQLite. MIT licensed."
       orientation="horizontal"
       :ui="{ title: 'text-4xl sm:text-5xl font-medium tracking-tight text-highlighted text-pretty', container: 'lg:py-6', headline: 'lg:mb-3', description: 'lg:mt-4', footer: 'lg:mt-7' }"
     >
       <template #headline>
-        <div class="flex flex-col gap-6 lg:gap-4">
-          <span class="inline-flex items-center gap-4 text-6xl sm:text-7xl font-semibold tracking-tight text-highlighted">
-            <UIcon name="i-lucide-package" class="size-14 sm:size-16 shrink-0 text-primary" />
-            Relic
-          </span>
-          <span class="font-mono text-xs uppercase tracking-[0.22em] text-muted">Self-hosted artifact repository</span>
-        </div>
+        <span class="inline-flex items-center gap-4 text-6xl sm:text-7xl font-semibold tracking-tight text-highlighted">
+          <UIcon name="i-lucide-package" class="size-14 sm:size-16 shrink-0 text-primary" />
+          Relic
+        </span>
       </template>
 
       <template #title>
-        Artifact repository powered by <span class="text-primary">S3</span>
+        Self-hosted artifact registry
       </template>
 
       <template #footer>

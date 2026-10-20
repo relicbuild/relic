@@ -2,6 +2,7 @@
 defineProps<{ subtitle?: string, search?: boolean }>()
 
 const route = useRoute()
+const onLandingPage = computed(() => route.path === '/')
 </script>
 
 <template>
@@ -13,28 +14,35 @@ const route = useRoute()
     </template>
 
     <template #right>
-      <UContentSearchButton v-if="search" :collapsed="false" class="w-56" />
-      <UButton
-        to="/docs"
-        color="neutral"
-        variant="ghost"
-        icon="i-lucide-book-open"
-        label="Docs"
-      />
-      <UButton
-        v-if="route.path !== '/api-reference'"
-        to="/api-reference"
-        target="_blank"
-        color="neutral"
-        variant="ghost"
-        icon="i-lucide-braces"
-        trailing-icon="i-lucide-external-link"
-        label="API"
-      />
-      <SiteAccountButton
-        color="neutral"
-        variant="ghost"
-      />
+      <template v-if="search">
+        <UContentSearchButton :collapsed="false" class="hidden w-56 sm:flex" />
+        <UContentSearchButton class="sm:hidden" />
+      </template>
+      <template v-if="!onLandingPage">
+        <UButton
+          to="/docs"
+          class="hidden sm:inline-flex"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-book-open"
+          label="Docs"
+        />
+        <UButton
+          v-if="route.path !== '/api-reference'"
+          to="/api-reference"
+          class="hidden sm:inline-flex"
+          target="_blank"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-braces"
+          trailing-icon="i-lucide-external-link"
+          label="API"
+        />
+        <SiteAccountButton
+          color="neutral"
+          variant="ghost"
+        />
+      </template>
       <UButton
         to="https://github.com/relicbuild/relic"
         target="_blank"
