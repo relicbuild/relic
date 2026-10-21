@@ -51,7 +51,7 @@ func archive(t *testing.T, name, version string) []byte {
 	return b.Bytes()
 }
 
-func releaseServer(t *testing.T, latest string, corrupt bool) *httptest.Server {
+func releaseServer(t *testing.T, latest string, corrupt, prereleaseOnly bool) *httptest.Server {
 	t.Helper()
 
 	files := map[string][]byte{}
@@ -60,6 +60,10 @@ func releaseServer(t *testing.T, latest string, corrupt bool) *httptest.Server {
 		"v1.0.0",
 		latest,
 	} {
+		if version == "" {
+			continue
+		}
+
 		name := fmt.Sprintf("relic_%s_%s_%s", version, runtime.GOOS, runtime.GOARCH)
 		tgz := archive(t, name, version)
 		sum := sha256.Sum256(tgz)
@@ -75,7 +79,25 @@ func releaseServer(t *testing.T, latest string, corrupt bool) *httptest.Server {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/releases/latest" {
+			if prereleaseOnly {
+				http.Redirect(w, r, "/releases", http.StatusFound)
+
+				return
+			}
+
 			http.Redirect(w, r, "/releases/tag/"+latest, http.StatusFound)
+
+			return
+		}
+
+		if r.URL.Path == "/releases" {
+			if latest == "" {
+				w.WriteHeader(http.StatusOK)
+
+				return
+			}
+
+			fmt.Fprintf(w, `<a href="/releases/tag/%s">%s</a>`, latest, latest)
 
 			return
 		}
@@ -139,6 +161,8 @@ func TestInstallScript(t *testing.T) {
 		version        string
 		corrupt        bool
 		noChecksumTool bool
+		prereleaseOnly bool
+		noReleases     bool
 		want           string
 		failure        string
 	}{
@@ -147,9 +171,20 @@ func TestInstallScript(t *testing.T) {
 			want: "relic version v1.2.3",
 		},
 		{
+			name:           "prerelease fallback",
+			prereleaseOnly: true,
+			want:           "relic version v1.2.3-beta.1",
+		},
+		{
 			name:    "pinned release",
 			version: "v1.0.0",
 			want:    "relic version v1.0.0",
+		},
+		{
+			name:           "no release found",
+			prereleaseOnly: true,
+			noReleases:     true,
+			failure:        "no release found at",
 		},
 		{
 			name:    "checksum mismatch",
@@ -167,7 +202,15 @@ func TestInstallScript(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			srv := releaseServer(t, "v1.2.3", tt.corrupt)
+			latest := "v1.2.3"
+			if tt.prereleaseOnly {
+				latest = "v1.2.3-beta.1"
+			}
+			if tt.noReleases {
+				latest = ""
+			}
+
+			srv := releaseServer(t, latest, tt.corrupt, tt.prereleaseOnly)
 			dir := filepath.Join(t.TempDir(), "bin")
 
 			cmd := exec.CommandContext(t.Context(), "sh", script)
