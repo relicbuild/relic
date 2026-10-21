@@ -35,7 +35,16 @@ if [ -z "$version" ]; then
   version=${latest##*/}
   case $version in
     v*) ;;
-    *) fail "no release found at $repository/releases" ;;
+    *)
+      # When a repository has only pre-releases, GitHub redirects
+      # /releases/latest to /releases. Fall back to the newest release on that page.
+      version=$(curl -fsSL "$repository/releases" |
+        awk -F'/releases/tag/' 'NF > 1 { split($2, a, "[\"/]"); if (a[1] ~ /^v/ && !found) { found = a[1] } } END { if (found) print found }')
+      case $version in
+        v*) ;;
+        *) fail "no release found at $repository/releases" ;;
+      esac
+      ;;
   esac
 fi
 
