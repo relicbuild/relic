@@ -97,7 +97,7 @@ func releaseServer(t *testing.T, latest string, corrupt, prereleaseOnly bool) *h
 				return
 			}
 
-			fmt.Fprintf(w, `<a href="/releases/tag/%s">%s</a>`, latest, latest)
+			_, _ = fmt.Fprintf(w, `<a href="/releases/tag/%s">%s</a>`, latest, latest)
 
 			return
 		}
@@ -206,6 +206,7 @@ func TestInstallScript(t *testing.T) {
 			if tt.prereleaseOnly {
 				latest = "v1.2.3-beta.1"
 			}
+
 			if tt.noReleases {
 				latest = ""
 			}

@@ -2,7 +2,7 @@ module relic/api/adapters/artifactory/relic-indexer
 
 go 1.27.0
 
-toolchain go1.27.2
+toolchain go1.27.3
 
 require (
 	github.com/anchore/syft v1.54.1
