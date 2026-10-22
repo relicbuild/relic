@@ -724,7 +724,7 @@ func releaseExportCmd(g *globals) *cobra.Command {
 		},
 	}
 	ref.register(cmd)
-	cmd.Flags().StringVar(&file, "file", "", "where to write the archive")
+	cmd.Flags().StringVarP(&file, "file", "o", "", "where to write the archive")
 
 	return cmd
 }

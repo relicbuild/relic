@@ -42,6 +42,8 @@ web/.cache/
 # E2E results
 test/e2e/results/
 api/adapters/artifactory/compat/upstream/results/
+api/adapters/artifactory/compat/e2e/results/
+web/e2e/results/
 
 # A stray `go build` in the indexer module
 /api/adapters/artifactory/relic-indexer/relic-indexer

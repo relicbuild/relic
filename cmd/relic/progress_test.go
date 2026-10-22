@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/spf13/cobra"
 )
 
 func TestProgressModel(t *testing.T) {
@@ -109,4 +110,32 @@ func TestProgressOutputWritesStraightThroughWithoutAProgram(t *testing.T) {
 	var none *commandProgress
 
 	none.describe("nothing")
+}
+
+func TestProgressSkipsProgramWhenOutputIsNotATerminal(t *testing.T) {
+	t.Parallel()
+
+	file, err := os.Create(filepath.Join(t.TempDir(), "output"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_ = file.Close()
+	})
+
+	var g globals
+
+	ran := false
+	if err := g.runWithProgress(&cobra.Command{}, func() error {
+		ran = true
+
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if !ran {
+		t.Error("runWithProgress did not execute run")
+	}
 }

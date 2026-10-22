@@ -836,3 +836,27 @@ func TestMachineSetupRefusesAListenAddressWithoutAPort(t *testing.T) {
 		t.Errorf("setup went ahead: wrote %v, ran %v", entries, *ran)
 	}
 }
+
+func TestMachineSetupSkipsLingerWhenAlreadyEnabled(t *testing.T) {
+	t.Parallel()
+
+	m, ran, _ := testMachineSetup(t, "")
+	m.yes = true
+	m.query = func(_ context.Context, name string, args ...string) (string, error) {
+		if name == "loginctl" && len(args) >= 3 && args[0] == "show-user" {
+			return "yes\n", nil
+		}
+
+		return "", nil
+	}
+
+	if err := m.runSetup(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, cmd := range *ran {
+		if strings.Contains(cmd, "enable-linger") {
+			t.Errorf("ran %q when linger was already enabled", cmd)
+		}
+	}
+}

@@ -303,6 +303,19 @@ func (m *machineSetup) userServiceActions(ctx context.Context) ([]machineAction,
 		dir.state = "unchanged"
 	}
 
+	linger := machineAction{
+		what:  "keep it running without a session, and start it at boot",
+		state: "unchanged",
+	}
+	if !m.hasLinger(ctx) {
+		linger.command = []string{
+			"loginctl",
+			"enable-linger",
+			m.username,
+		}
+		linger.state = "run"
+	}
+
 	return []machineAction{
 		dir,
 		env,
@@ -330,15 +343,7 @@ func (m *machineSetup) userServiceActions(ctx context.Context) ([]machineAction,
 			"systemctl",
 			"--user",
 		}, m.executable, env, unit),
-		{
-			what: "keep it running without a session, and start it at boot",
-			command: []string{
-				"loginctl",
-				"enable-linger",
-				m.username,
-			},
-			state: "run",
-		},
+		linger,
 	}, nil
 }
 
@@ -516,6 +521,19 @@ func (m *machineSetup) runsAnotherBinary(ctx context.Context, systemctl []string
 	onDisk, err := os.Stat(binary)
 
 	return err == nil && !os.SameFile(running, onDisk)
+}
+
+func (m *machineSetup) hasLinger(ctx context.Context) bool {
+	out, err := m.query(ctx, "loginctl", "show-user", m.username, "--property=Linger", "--value")
+	if err == nil && strings.TrimSpace(out) == "yes" {
+		return true
+	}
+
+	if _, err := os.Stat(filepath.Join(m.root, "var", "lib", "systemd", "linger", m.username)); err == nil {
+		return true
+	}
+
+	return false
 }
 
 func serviceUnit(executable, settings, user string) string {
