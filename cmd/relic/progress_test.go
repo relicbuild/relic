@@ -127,6 +127,7 @@ func TestProgressSkipsProgramWhenOutputIsNotATerminal(t *testing.T) {
 	var g globals
 
 	ran := false
+
 	if err := g.runWithProgress(&cobra.Command{}, func() error {
 		ran = true
 

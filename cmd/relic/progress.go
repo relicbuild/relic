@@ -230,7 +230,8 @@ func (g *globals) runWithProgress(cmd *cobra.Command, run func() error) error {
 	standardOutput, isOutputFile := cmd.OutOrStdout().(*os.File)
 	standardError, isErrorFile := cmd.ErrOrStderr().(*os.File)
 
-	if !isOutputFile || !isErrorFile || !term.IsTerminal(int(standardOutput.Fd())) || !term.IsTerminal(int(standardError.Fd())) {
+	if !isOutputFile || !isErrorFile || !term.IsTerminal(int(standardOutput.Fd())) ||
+		!term.IsTerminal(int(standardError.Fd())) {
 		return run()
 	}
 
