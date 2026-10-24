@@ -215,6 +215,8 @@ func buildCmd(g *globals) *cobra.Command {
 			"Runs in progress live in $RELIC_BUILD_DIR (default: builds/ beside the config file).",
 	}
 	cmd.AddCommand(
+		buildListCmd(g),
+		buildGetCmd(g),
 		buildCollectEnvCmd(g),
 		buildAddGitCmd(g),
 		buildAddDependenciesCmd(g),
@@ -228,6 +230,166 @@ func buildCmd(g *globals) *cobra.Command {
 	)
 
 	return cmd
+}
+
+func buildListCmd(g *globals) *cobra.Command {
+	var (
+		project string
+		output  string
+	)
+
+	cmd := &cobra.Command{
+		Use:     "list [<name>]",
+		Short:   "List published builds, or one build's runs, newest first",
+		Example: "  relic build list\n  relic build list app -o json",
+		Args:    cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := g.dial()
+			if err != nil {
+				return err
+			}
+
+			if len(args) == 0 {
+				r, err := c.builds.ListBuilds(cmd.Context(), &relicv1.ListBuildsRequest{
+					Project: project,
+				})
+				if err != nil {
+					return fmt.Errorf("build list: %w", err)
+				}
+
+				return printMessage(cmd.OutOrStdout(), output, r, func(w io.Writer) error {
+					table := terminal.Table{
+						Headers: []string{
+							"NAME",
+							"LAST STARTED",
+						},
+					}
+
+					for _, b := range r.GetBuilds() {
+						table.Rows = append(table.Rows, []string{
+							b.GetName(),
+							localTime(b.GetLastStarted(), time.DateTime),
+						})
+					}
+
+					return table.Print(w)
+				})
+			}
+
+			r, err := c.builds.ListBuildRuns(cmd.Context(), &relicv1.ListBuildRunsRequest{
+				Project: project,
+				Name:    args[0],
+			})
+			if err != nil {
+				return fmt.Errorf("build list %s: %w", args[0], err)
+			}
+
+			return printMessage(cmd.OutOrStdout(), output, r, func(w io.Writer) error {
+				table := terminal.Table{
+					Headers: []string{
+						"NUMBER",
+						"STARTED",
+					},
+				}
+
+				for _, run := range r.GetRuns() {
+					table.Rows = append(table.Rows, []string{
+						run.GetNumber(),
+						localTime(run.GetStarted(), time.DateTime),
+					})
+				}
+
+				return table.Print(w)
+			})
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "project the builds belong to")
+	outputFlag(cmd, &output)
+
+	return cmd
+}
+
+func buildGetCmd(g *globals) *cobra.Command {
+	var (
+		project string
+		output  string
+	)
+
+	cmd := &cobra.Command{
+		Use:     "get <name> <number>",
+		Short:   "Show a published build run: its sources, artifacts and dependencies",
+		Example: "  relic build get app 42\n  relic build get app 42 -o yaml",
+		Args:    cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := g.dial()
+			if err != nil {
+				return err
+			}
+
+			r, err := c.builds.GetBuildRun(cmd.Context(), &relicv1.GetBuildRunRequest{
+				Project: project,
+				Name:    args[0],
+				Number:  args[1],
+			})
+			if err != nil {
+				return fmt.Errorf("build get %s/%s: %w", args[0], args[1], err)
+			}
+
+			return printMessage(cmd.OutOrStdout(), output, r, func(w io.Writer) error {
+				printBuildRun(w, r)
+
+				table := terminal.Table{
+					Headers: []string{
+						"MODULE",
+						"KIND",
+						"NAME",
+					},
+				}
+
+				for _, m := range r.GetModules() {
+					module := m.GetId()
+					if m.GetType() != "" {
+						module += " (" + m.GetType() + ")"
+					}
+
+					for _, a := range m.GetArtifacts() {
+						table.Rows = append(table.Rows, []string{
+							module,
+							"artifact",
+							cmp.Or(a.GetPath(), a.GetName()),
+						})
+					}
+
+					for _, d := range m.GetDependencies() {
+						table.Rows = append(table.Rows, []string{
+							module,
+							"dependency",
+							d.GetId(),
+						})
+					}
+				}
+
+				return table.Print(w)
+			})
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "project the build belongs to")
+	outputFlag(cmd, &output)
+
+	return cmd
+}
+
+func printBuildRun(w io.Writer, r *relicv1.GetBuildRunResponse) {
+	line := r.GetName() + "/" + r.GetNumber() + " started " + localTime(r.GetStarted(), time.DateTime)
+	if r.GetAgent() != "" {
+		line += " by " + r.GetAgent()
+	}
+
+	_, _ = fmt.Fprintf(w, "%s, %d modules\n", line, len(r.GetModules()))
+
+	for _, v := range r.GetVcs() {
+		_, _ = fmt.Fprintln(w, "source", strings.TrimSpace(v.GetUrl()+" "+v.GetBranch()+" "+v.GetRevision()))
+	}
 }
 
 var secretEnv = []string{
