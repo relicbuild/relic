@@ -15,9 +15,9 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
-	"slices"
-	"strconv"
+	"runtime"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -27,6 +27,7 @@ import (
 type machineSetup struct {
 	home       string
 	root       string
+	goos       string
 	shell      string
 	listen     string
 	listenSet  bool
@@ -55,19 +56,18 @@ type machineAction struct {
 	command []string
 	dir     bool
 	state   string
+	// done, when set, reports whether the command's effect has taken hold;
+	// apply waits up to settleTimeout for it.
+	done func(ctx context.Context) bool
 }
 
-const (
-	systemUser       = "relic"
-	systemBinary     = "/usr/local/bin/relic"
-	systemDataDir    = "/var/lib/relic"
-	systemTLSDir     = "/etc/relic/tls"
-	systemSettings   = "/etc/relic/relic.env"
-	systemUnit       = "/etc/systemd/system/relic.service"
-	systemCompletion = "/usr/share/bash-completion/completions/relic"
-)
+const settleTimeout = 10 * time.Second
 
 func (m *machineSetup) runSetup(ctx context.Context) error {
+	if _, err := m.serviceManager(); err != nil {
+		return fmt.Errorf("setup: %w", err)
+	}
+
 	if !m.system && m.home == "" {
 		return errors.New("setup: no home directory: set HOME or pass --home")
 	}
@@ -133,8 +133,8 @@ func (m *machineSetup) findCommands(actions []machineAction) error {
 
 		if _, err := m.lookPath(a.command[0]); err != nil {
 			return fmt.Errorf(
-				"%s is not on PATH: relic server setup runs the server as a systemd service; "+
-					"without systemd (macOS, Windows), run relic server start by hand",
+				"%s is not on PATH: relic server setup needs it to run the server as a service; "+
+					"without it, run relic server start by hand",
 				a.command[0],
 			)
 		}
@@ -162,6 +162,11 @@ func (m *machineSetup) ask(question string, def bool) (bool, error) {
 }
 
 func (m *machineSetup) plan(ctx context.Context) ([]machineAction, error) {
+	svc, err := m.serviceManager()
+	if err != nil {
+		return nil, err
+	}
+
 	var actions []machineAction
 
 	if !m.system {
@@ -173,16 +178,7 @@ func (m *machineSetup) plan(ctx context.Context) ([]machineAction, error) {
 		actions = append(actions, a...)
 	}
 
-	var (
-		a   []machineAction
-		err error
-	)
-	if m.system {
-		a, err = m.systemServiceActions(ctx)
-	} else {
-		a, err = m.userServiceActions(ctx)
-	}
-
+	a, err := svc.installActions(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -274,293 +270,6 @@ func (m *machineSetup) userActions() ([]machineAction, error) {
 	}
 
 	return actions, nil
-}
-
-func (m *machineSetup) userServiceActions(ctx context.Context) ([]machineAction, error) {
-	settings := filepath.Join(m.configDir(), "server.env")
-	data := m.dataDir()
-
-	env, err := m.settings("server settings, with secrets", settings, data, filepath.Join(m.configDir(), "tls"), 0o600)
-	if err != nil {
-		return nil, err
-	}
-
-	unit := m.file(
-		"systemd user unit",
-		filepath.Join(m.xdg("XDG_CONFIG_HOME", ".config"), "systemd", "user", "relic.service"),
-		[]byte(serviceUnit(m.executable, settings, "")),
-		0o644,
-	)
-
-	dir := machineAction{
-		what:  "the server's database and files",
-		path:  data,
-		mode:  0o700,
-		dir:   true,
-		state: "create",
-	}
-	if fi, err := os.Stat(data); err == nil && fi.IsDir() {
-		dir.state = "unchanged"
-	}
-
-	linger := machineAction{
-		what:  "keep it running without a session, and start it at boot",
-		state: "unchanged",
-	}
-	if !m.hasLinger(ctx) {
-		linger.command = []string{
-			"loginctl",
-			"enable-linger",
-			m.username,
-		}
-		linger.state = "run"
-	}
-
-	return []machineAction{
-		dir,
-		env,
-		unit,
-		{
-			what: "systemd",
-			command: []string{
-				"systemctl",
-				"--user",
-				"daemon-reload",
-			},
-			state: "run",
-		},
-		{
-			what: "start at login",
-			command: []string{
-				"systemctl",
-				"--user",
-				"enable",
-				"relic.service",
-			},
-			state: "run",
-		},
-		m.startAction(ctx, []string{
-			"systemctl",
-			"--user",
-		}, m.executable, env, unit),
-		linger,
-	}, nil
-}
-
-func (m *machineSetup) systemServiceActions(ctx context.Context) ([]machineAction, error) {
-	var actions []machineAction
-
-	binary := machineAction{
-		state: "unchanged",
-	}
-
-	if !m.hasUser(systemUser) {
-		actions = append(actions, machineAction{
-			what: "system user owning the data",
-			command: []string{
-				"useradd",
-				"--system",
-				"--user-group",
-				"--create-home",
-				"--home-dir",
-				systemDataDir,
-				"--shell",
-				"/usr/sbin/nologin",
-				systemUser,
-			},
-			state: "run",
-		})
-	} else if _, err := os.Stat(filepath.Join(m.root, systemDataDir)); errors.Is(err, fs.ErrNotExist) {
-		actions = append(actions, machineAction{
-			what: "the server's database and files",
-			command: []string{
-				"install",
-				"-d",
-				"-o",
-				systemUser,
-				"-g",
-				systemUser,
-				"-m",
-				"0700",
-				systemDataDir,
-			},
-			state: "run",
-		})
-	}
-
-	if m.executable != filepath.Join(m.root, systemBinary) {
-		b, err := os.ReadFile(m.executable)
-		if err != nil {
-			return nil, fmt.Errorf("setup: read this binary: %w", err)
-		}
-
-		binary = m.file("relic binary", filepath.Join(m.root, systemBinary), b, 0o755)
-		actions = append(actions, binary)
-	}
-
-	env, err := m.settings(
-		"server settings, with secrets",
-		filepath.Join(m.root, systemSettings),
-		systemDataDir,
-		systemTLSDir,
-		0o640,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	unit := m.file(
-		"systemd unit",
-		filepath.Join(m.root, systemUnit),
-		[]byte(serviceUnit(systemBinary, systemSettings, systemUser)),
-		0o644,
-	)
-
-	script, err := m.completion("bash")
-	if err != nil {
-		return nil, fmt.Errorf("setup: completion: %w", err)
-	}
-
-	return append(actions,
-		env,
-		machineAction{
-			what: "the relic group reads the settings",
-			command: []string{
-				"chown",
-				"root:" + systemUser,
-				filepath.Join(m.root, systemSettings),
-			},
-			state: "run",
-		},
-		machineAction{
-			what: "the server's TLS certificates",
-			command: []string{
-				"install",
-				"-d",
-				"-o",
-				systemUser,
-				"-g",
-				systemUser,
-				"-m",
-				"0750",
-				systemTLSDir,
-			},
-			state: "run",
-		},
-		unit,
-		m.file("bash completion for every user", filepath.Join(m.root, systemCompletion), []byte(script), 0o644),
-		machineAction{
-			what: "systemd",
-			command: []string{
-				"systemctl",
-				"daemon-reload",
-			},
-			state: "run",
-		},
-		machineAction{
-			what: "start at boot",
-			command: []string{
-				"systemctl",
-				"enable",
-				"relic.service",
-			},
-			state: "run",
-		},
-		m.startAction(ctx, []string{
-			"systemctl",
-		}, filepath.Join(m.root, systemBinary), env, unit, binary),
-	), nil
-}
-
-func (m *machineSetup) startAction(
-	ctx context.Context,
-	systemctl []string,
-	binary string,
-	changed ...machineAction,
-) machineAction {
-	verb := "start"
-
-	for _, a := range changed {
-		if a.state != "unchanged" {
-			verb = "restart"
-		}
-	}
-
-	if verb == "start" && m.runsAnotherBinary(ctx, systemctl, binary) {
-		verb = "restart"
-	}
-
-	return machineAction{
-		what:    verb + " the server",
-		command: append(slices.Clone(systemctl), verb, "relic.service"),
-		state:   "run",
-	}
-}
-
-func (m *machineSetup) runsAnotherBinary(ctx context.Context, systemctl []string, binary string) bool {
-	out, err := m.query(ctx, systemctl[0], append(slices.Clone(systemctl[1:]),
-		"show",
-		"relic.service",
-		"--property=MainPID",
-		"--value",
-	)...)
-	if err != nil {
-		return false
-	}
-
-	pid, err := strconv.Atoi(strings.TrimSpace(out))
-	if err != nil || pid <= 0 {
-		return false
-	}
-
-	running, err := os.Stat(filepath.Join(m.proc, strconv.Itoa(pid), "exe"))
-	if err != nil {
-		return false
-	}
-
-	onDisk, err := os.Stat(binary)
-
-	return err == nil && !os.SameFile(running, onDisk)
-}
-
-func (m *machineSetup) hasLinger(ctx context.Context) bool {
-	out, err := m.query(ctx, "loginctl", "show-user", m.username, "--property=Linger", "--value")
-	if err == nil && strings.TrimSpace(out) == "yes" {
-		return true
-	}
-
-	if _, err := os.Stat(filepath.Join(m.root, "var", "lib", "systemd", "linger", m.username)); err == nil {
-		return true
-	}
-
-	return false
-}
-
-func serviceUnit(executable, settings, user string) string {
-	var b strings.Builder
-
-	b.WriteString("# Written by relic server setup; relic server setup rewrites it.\n")
-	b.WriteString("[Unit]\nDescription=Relic artifact repository\n")
-
-	if user != "" {
-		b.WriteString("After=network-online.target\nWants=network-online.target\n")
-	}
-
-	b.WriteString("\n[Service]\n")
-	_, _ = fmt.Fprintf(&b, "ExecStart=%s server start --worker\n", executable)
-	_, _ = fmt.Fprintf(&b, "EnvironmentFile=%s\n", settings)
-	b.WriteString("Restart=always\nRestartSec=3\nLimitNOFILE=65536\n")
-
-	if user != "" {
-		_, _ = fmt.Fprintf(&b, "User=%s\nGroup=%s\n", user, user)
-		b.WriteString("NoNewPrivileges=true\nPrivateTmp=true\nProtectSystem=strict\nProtectHome=true\n")
-		_, _ = fmt.Fprintf(&b, "ReadWritePaths=%s %s\n", systemDataDir, systemTLSDir)
-		b.WriteString("\n[Install]\nWantedBy=multi-user.target\n")
-	} else {
-		b.WriteString("\n[Install]\nWantedBy=default.target\n")
-	}
-
-	return b.String()
 }
 
 // Settings already in it stay as they are (the encryption key must never change under existing secrets).
@@ -697,6 +406,21 @@ func (m *machineSetup) file(what, path string, content []byte, mode fs.FileMode)
 	return a
 }
 
+func (m *machineSetup) directory(what, path string, mode fs.FileMode) machineAction {
+	a := machineAction{
+		what:  what,
+		path:  path,
+		mode:  mode,
+		dir:   true,
+		state: "create",
+	}
+	if fi, err := os.Stat(path); err == nil && fi.IsDir() {
+		a.state = "unchanged"
+	}
+
+	return a
+}
+
 func (m *machineSetup) block(what, path, content string) (machineAction, error) {
 	old, err := os.ReadFile(path) //nolint:gosec // the user's shell rc file
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -746,6 +470,12 @@ func (m *machineSetup) apply(ctx context.Context, a machineAction) error {
 	if a.command != nil {
 		if err := m.run(ctx, a.command[0], a.command[1:]...); err != nil {
 			return fmt.Errorf("setup: %s: %w", strings.Join(a.command, " "), err)
+		}
+
+		if a.done != nil {
+			if err := m.settle(ctx, a); err != nil {
+				return fmt.Errorf("setup: %w", err)
+			}
 		}
 
 		return nil
@@ -808,16 +538,29 @@ func (m *machineSetup) apply(ctx context.Context, a machineAction) error {
 	return nil
 }
 
-func (m *machineSetup) printNext() {
-	settings := filepath.Join(m.configDir(), "server.env")
-	status := "systemctl --user status relic"
-	logs := "journalctl --user -u relic -f"
+func (m *machineSetup) settle(ctx context.Context, a machineAction) error {
+	ctx, cancel := context.WithTimeout(ctx, settleTimeout)
+	defer cancel()
 
-	if m.system {
-		settings = systemSettings
-		status = "systemctl status relic"
-		logs = "journalctl -u relic -f"
+	for !a.done(ctx) {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%s: %s did not take effect within %s", strings.Join(a.command, " "), a.what,
+				settleTimeout)
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
+
+	return nil
+}
+
+func (m *machineSetup) printNext() {
+	svc, err := m.serviceManager()
+	if err != nil {
+		return
+	}
+
+	settings, status, logs := svc.settingsPath(), svc.statusCommand(), svc.logsCommand()
 
 	listen := m.listenSetting()
 
@@ -888,6 +631,7 @@ func newMachineSetup(cmd *cobra.Command, g *globals, home, root string) (*machin
 	return &machineSetup{
 		home:       home,
 		root:       root,
+		goos:       runtime.GOOS,
 		shell:      shell,
 		configPath: configPath,
 		username:   username,
@@ -911,14 +655,15 @@ func newMachineSetup(cmd *cobra.Command, g *globals, home, root string) (*machin
 			return b.String(), err
 		},
 		run: func(ctx context.Context, name string, args ...string) error {
-			//nolint:gosec // G204: systemctl, loginctl, useradd and chown with arguments relic server setup builds
+			//nolint:gosec // G204: systemctl, launchctl, loginctl, useradd and chown with arguments relic server setup builds
 			c := exec.CommandContext(ctx, name, args...)
 			c.Stdout, c.Stderr = cmd.ErrOrStderr(), cmd.ErrOrStderr()
 
 			return c.Run()
 		},
 		query: func(ctx context.Context, name string, args ...string) (string, error) {
-			b, err := exec.CommandContext(ctx, name, args...).Output() //nolint:gosec // G204: systemctl show
+			//nolint:gosec // G204: systemctl show, launchctl print and ps
+			b, err := exec.CommandContext(ctx, name, args...).Output()
 
 			return string(b), err
 		},

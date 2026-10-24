@@ -27,9 +27,10 @@ func uninstallCmd(g *globals) *cobra.Command {
 			progressAnnotation: "off",
 		},
 		Short: "Remove what relic server setup installed on this machine, keeping the server's data",
-		Long: "Stops and removes the systemd service, the shell completion and the relic binary that relic server setup " +
-			"installed. The server's data, its settings (which hold the encryption key), its certificate authority and " +
-			"the client config stay, unless --purge, whose question defaults to no.",
+		Long: "Stops and removes the service (systemd on Linux, launchd on macOS), the shell completion and the " +
+			"relic binary that relic server setup installed. The server's data, its settings (which hold the " +
+			"encryption key), its certificate authority and the client config stay, unless --purge, whose question " +
+			"defaults to no.",
 		Example: "  relic server uninstall\n" +
 			"  sudo relic server uninstall --system\n" +
 			"  relic server uninstall --purge --yes",
@@ -57,11 +58,19 @@ func uninstallCmd(g *globals) *cobra.Command {
 }
 
 func (m *machineSetup) runUninstall(ctx context.Context, purge bool) error {
+	if _, err := m.serviceManager(); err != nil {
+		return fmt.Errorf("uninstall: %w", err)
+	}
+
 	if m.system && m.euid != 0 {
 		return errors.New("uninstall: --system removes files under /etc and /usr: run it with sudo")
 	}
 
-	remove, keep := m.uninstallPlan()
+	remove, keep, err := m.uninstallPlan(ctx)
+	if err != nil {
+		return err
+	}
+
 	if purge {
 		remove = append(remove, keep...)
 		keep = nil
@@ -104,38 +113,15 @@ func (m *machineSetup) runUninstall(ctx context.Context, purge bool) error {
 	return nil
 }
 
-func (m *machineSetup) uninstallPlan() (remove, keep []machineAction) {
-	if m.system {
-		return m.systemUninstallPlan()
+func (m *machineSetup) uninstallPlan(ctx context.Context) (remove, keep []machineAction, err error) {
+	svc, err := m.serviceManager()
+	if err != nil {
+		return nil, nil, fmt.Errorf("uninstall: %w", err)
 	}
 
-	var actions []machineAction
-
-	unit := filepath.Join(m.xdg("XDG_CONFIG_HOME", ".config"), "systemd", "user", "relic.service")
-	if exists(unit) {
-		actions = append(actions,
-			machineAction{
-				what: "stop the server",
-				command: []string{
-					"systemctl",
-					"--user",
-					"disable",
-					"--now",
-					"relic.service",
-				},
-				state: "run",
-			},
-			removal("systemd user unit", unit),
-			machineAction{
-				what: "systemd",
-				command: []string{
-					"systemctl",
-					"--user",
-					"daemon-reload",
-				},
-				state: "run",
-			},
-		)
+	actions, serviceKeep := svc.uninstallActions(ctx)
+	if m.system {
+		return actions, serviceKeep, nil
 	}
 
 	for _, rc := range []string{
@@ -161,64 +147,12 @@ func (m *machineSetup) uninstallPlan() (remove, keep []machineAction) {
 		actions = append(actions, existing(removal("relic binary", m.executable))...)
 	}
 
-	return actions, existing(
+	return actions, append(existing(
 		removal("client config: contexts and tokens", m.configPath),
 		removal("server settings, with the encryption key", filepath.Join(m.configDir(), "server.env")),
 		removal("the server's certificate authority and certificate", filepath.Join(m.configDir(), "tls")),
 		removal("the server's database and files", m.dataDir()),
-	)
-}
-
-func (m *machineSetup) systemUninstallPlan() (remove, keep []machineAction) {
-	var actions []machineAction
-
-	if unit := filepath.Join(m.root, systemUnit); exists(unit) {
-		actions = append(actions,
-			machineAction{
-				what: "stop the server",
-				command: []string{
-					"systemctl",
-					"disable",
-					"--now",
-					"relic.service",
-				},
-				state: "run",
-			},
-			removal("systemd unit", unit),
-			machineAction{
-				what: "systemd",
-				command: []string{
-					"systemctl",
-					"daemon-reload",
-				},
-				state: "run",
-			},
-		)
-	}
-
-	actions = append(actions, existing(
-		removal("relic binary", filepath.Join(m.root, systemBinary)),
-		removal("bash completion for every user", filepath.Join(m.root, systemCompletion)),
-	)...)
-
-	keep = existing(
-		removal("server settings, with the encryption key", filepath.Join(m.root, systemSettings)),
-		removal("the server's certificate authority and certificate", filepath.Join(m.root, systemTLSDir)),
-		removal("the server's database and files", filepath.Join(m.root, systemDataDir)),
-	)
-
-	if m.hasUser(systemUser) {
-		keep = append(keep, machineAction{
-			what: "system user owning the data",
-			command: []string{
-				"userdel",
-				systemUser,
-			},
-			state: "run",
-		})
-	}
-
-	return actions, keep
+	), serviceKeep...), nil
 }
 
 func (m *machineSetup) withoutCompletionBlock(rc string) (machineAction, bool) {

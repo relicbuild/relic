@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/spf13/cobra"
 
 	"relic/internal/app"
@@ -175,7 +178,10 @@ func serviceCmd(use, process string, getenv func(string) string) *cobra.Command 
 		"migrate": "Apply database migrations and exit",
 	}[process]
 
-	var withWorker, withoutTLS bool
+	var (
+		withWorker, withoutTLS bool
+		settings               string
+	)
 
 	cmd := &cobra.Command{
 		Use:   use,
@@ -185,6 +191,12 @@ func serviceCmd(use, process string, getenv func(string) string) *cobra.Command 
 			progressAnnotation: "off",
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if settings != "" {
+				if err := loadSettings(settings); err != nil {
+					return err
+				}
+			}
+
 			args := []string{
 				process,
 			}
@@ -217,7 +229,28 @@ func serviceCmd(use, process string, getenv func(string) string) *cobra.Command 
 			false,
 			"serve plain HTTP instead of HTTPS (behind a proxy that terminates TLS)",
 		)
+		cmd.Flags().StringVar(
+			&settings,
+			"settings",
+			"",
+			"a file of KEY=value lines to set in the environment first, over the variables already set",
+		)
 	}
 
 	return cmd
+}
+
+func loadSettings(path string) error {
+	b, err := os.ReadFile(path) //nolint:gosec // the settings file the operator names
+	if err != nil {
+		return fmt.Errorf("settings: %w", err)
+	}
+
+	for key, value := range keyValues(string(b), "=") {
+		if err := os.Setenv(key, value); err != nil {
+			return fmt.Errorf("settings: %s: %w", key, err)
+		}
+	}
+
+	return nil
 }
