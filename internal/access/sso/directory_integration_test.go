@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"testing"
 
@@ -221,6 +222,96 @@ func TestDirectoryKeepsTheLastEnabledAdministrator(t *testing.T) {
 
 			if after, err := dir.User(ctx, u.ID); err != nil || !after.Active {
 				t.Errorf("administrator after a refused change = %+v %v, want it active", after, err)
+			}
+		})
+	}
+}
+
+func TestSavingAGroupKeepsProvisionedMembers(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		// saved are the members an administrator saves after provisioning.
+		saved []string
+		// deprovision removes Sam through the directory after the save.
+		deprovision bool
+		want        []string
+	}{
+		{
+			name: "an exported group saved back, then Sam deprovisioned",
+			saved: []string{
+				"Sam.Smith",
+				"alice",
+			},
+			deprovision: true,
+			want: []string{
+				"alice",
+			},
+		},
+		{
+			name: "an administrator's list leaves Sam alone",
+			saved: []string{
+				"alice",
+			},
+			want: []string{
+				"Sam.Smith",
+				"alice",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			db := databasetest.NewDB(t)
+			sec := security.NewService(db, slog.New(slog.DiscardHandler))
+			dir := NewDirectory(db, sec)
+
+			sam, err := dir.CreateUser(ctx, DirectoryUser{
+				UserName: "Sam.Smith",
+				Active:   true,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if err := sec.CreateUser(ctx, security.User{
+				Name:     "alice",
+				Email:    "alice@example.com",
+				Password: "Alice-password-1",
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := dir.CreateGroup(ctx, "eng", []string{
+				sam.ID,
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := sec.PutGroup(ctx, security.Group{
+				Name: "eng",
+			}, tt.saved); err != nil {
+				t.Fatal(err)
+			}
+
+			if tt.deprovision {
+				if err := dir.ChangeMembers(ctx, "eng", nil, []string{
+					sam.ID,
+				}, false); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			g, err := sec.GetGroup(ctx, "eng", true)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if !slices.Equal(g.Members, tt.want) {
+				t.Errorf("members = %v, want %v", g.Members, tt.want)
 			}
 		})
 	}
