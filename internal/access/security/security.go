@@ -482,7 +482,7 @@ func (s *Service) putGroup(ctx context.Context, g Group, members []string, creat
 			return nil
 		}
 
-		if err := q.ClearGroupMembers(ctx, g.Name); err != nil {
+		if err := q.ClearInternalGroupMembers(ctx, g.Name); err != nil {
 			return err
 		}
 

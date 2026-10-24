@@ -19,8 +19,9 @@ DELETE FROM groups WHERE name = @name;
 -- name: GroupMembers :many
 SELECT username FROM group_members WHERE group_name = @group_name ORDER BY username;
 
--- name: ClearGroupMembers :exec
-DELETE FROM group_members WHERE group_name = @group_name;
+-- name: ClearInternalGroupMembers :exec
+-- The members an administrator set; identity providers and LDAP keep theirs.
+DELETE FROM group_members WHERE group_name = @group_name AND source = 'internal';
 
 -- name: ListPermissions :many
 SELECT * FROM permissions ORDER BY name;
