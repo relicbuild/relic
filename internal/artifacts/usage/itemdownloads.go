@@ -1,5 +1,4 @@
-// Package downloadstats counts artifact downloads.
-package downloadstats
+package usage
 
 import (
 	"context"
@@ -22,8 +21,8 @@ type pending struct {
 	by    string
 }
 
-// Recorder aggregates downloads.
-type Recorder struct {
+// ItemDownloads counts the downloads of each item.
+type ItemDownloads struct {
 	db  *database.DB
 	log *slog.Logger
 	now func() time.Time
@@ -35,11 +34,11 @@ type Recorder struct {
 }
 
 // SetUsage makes every download also counted by fn, by repository and user.
-func (r *Recorder) SetUsage(fn func(repository, user string)) { r.usage = fn }
+func (r *ItemDownloads) SetUsage(fn func(repository, user string)) { r.usage = fn }
 
-// NewRecorder returns a Recorder writing to db.
-func NewRecorder(db *database.DB, log *slog.Logger) *Recorder {
-	return &Recorder{
+// NewItemDownloads returns an ItemDownloads writing to db.
+func NewItemDownloads(db *database.DB, log *slog.Logger) *ItemDownloads {
+	return &ItemDownloads{
 		db:      db,
 		log:     log,
 		now:     time.Now,
@@ -48,7 +47,7 @@ func NewRecorder(db *database.DB, log *slog.Logger) *Recorder {
 }
 
 // Download counts one download of item, stored in repository, by user.
-func (r *Recorder) Download(item uuid.UUID, repository, user string) {
+func (r *ItemDownloads) Download(item uuid.UUID, repository, user string) {
 	if r == nil {
 		return
 	}
@@ -72,7 +71,7 @@ func (r *Recorder) Download(item uuid.UUID, repository, user string) {
 }
 
 // Flush writes the counts gathered so far.
-func (r *Recorder) Flush(ctx context.Context) error {
+func (r *ItemDownloads) Flush(ctx context.Context) error {
 	if r == nil {
 		return nil
 	}
@@ -115,7 +114,7 @@ func (r *Recorder) Flush(ctx context.Context) error {
 }
 
 // Run flushes every FlushInterval until ctx ends, then flushes once more.
-func (r *Recorder) Run(ctx context.Context) {
+func (r *ItemDownloads) Run(ctx context.Context) {
 	t := time.NewTicker(FlushInterval)
 	defer t.Stop()
 
@@ -147,7 +146,7 @@ type Totals struct {
 
 // Of returns the downloads recorded for item; zero Totals when there are
 // none, or without a recorder.
-func (r *Recorder) Of(ctx context.Context, item uuid.UUID) (Totals, error) {
+func (r *ItemDownloads) Of(ctx context.Context, item uuid.UUID) (Totals, error) {
 	if r == nil {
 		return Totals{}, nil
 	}

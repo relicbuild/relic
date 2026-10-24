@@ -26,7 +26,6 @@ import (
 	"relic/internal/access/sso"
 	"relic/internal/access/workload"
 	"relic/internal/artifacts/cleanup"
-	"relic/internal/artifacts/downloadstats"
 	"relic/internal/artifacts/formats/agentregistry"
 	"relic/internal/artifacts/formats/docker"
 	"relic/internal/artifacts/formats/helm"
@@ -94,7 +93,7 @@ type Dependencies struct {
 	EndOfLifeData          *endoflife.Refresher
 	HelmCharts             *helm.Service
 	DownloadBlocker        *blocking.Blocker
-	DownloadStats          *downloadstats.Recorder
+	DownloadStats          *usage.ItemDownloads
 	SystemStatus           *systemstatus.Service
 	HealthChecks           []HealthCheck
 	ClientEndpoints        func(origin string, r repository.Repository) (packageManager, containerRegistry string)

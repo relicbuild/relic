@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"relic/api/adapters/artifactory/quartz"
 	"relic/api/adapters/artifactory/wire"
 	"relic/internal/artifacts/repository"
 	"relic/internal/delivery/replication"
@@ -73,13 +72,13 @@ func replicationFromArtifactory(repository string, c replicationConfig) (replica
 		Proxy:                    c.Proxy,
 	}
 	if c.CronExp != "" {
-		schedule, err := quartz.ToStandard(c.CronExp)
+		schedule, err := cronFromQuartz(c.CronExp)
 		if err != nil {
 			return replication.Config{}, fmt.Errorf("%w: %w", replication.ErrInvalid, err)
 		}
 
 		out.Schedule = schedule
-		if quartz.FromStandard(schedule) != c.CronExp {
+		if quartzFromCron(schedule) != c.CronExp {
 			extras.CronExp = c.CronExp
 		}
 	}
@@ -123,8 +122,8 @@ func replicationToArtifactory(c replication.Config) replicationConfig {
 		Proxy:                    extras.Proxy,
 	}
 	if c.Schedule != "" {
-		out.CronExp = quartz.FromStandard(c.Schedule)
-		if s, err := quartz.ToStandard(extras.CronExp); extras.CronExp != "" && err == nil && s == c.Schedule {
+		out.CronExp = quartzFromCron(c.Schedule)
+		if s, err := cronFromQuartz(extras.CronExp); extras.CronExp != "" && err == nil && s == c.Schedule {
 			out.CronExp = extras.CronExp
 		}
 	}

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"relic/api/adapters/artifactory/access"
-	"relic/api/adapters/artifactory/permissions"
 	"relic/api/adapters/artifactory/wire"
 	"relic/internal/access/auth"
 	"relic/internal/access/security"
@@ -510,7 +509,7 @@ func (h *Handler) getPermissionTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	doc, err := permissions.ToArtifactory(pt)
+	doc, err := access.PermissionToArtifactory(pt)
 	if err != nil {
 		h.writeError(w, r, err)
 		return
@@ -556,7 +555,7 @@ func (h *Handler) readPermissionTarget(w http.ResponseWriter, r *http.Request) (
 		return security.Permission{}, false
 	}
 
-	pt, err := permissions.FromArtifactory(r.PathValue("name"), body)
+	pt, err := access.PermissionFromArtifactory(r.PathValue("name"), body)
 	if err != nil {
 		h.writeError(w, r, err)
 		return security.Permission{}, false

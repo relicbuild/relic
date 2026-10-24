@@ -1,6 +1,6 @@
 //go:build integration
 
-package downloadstats_test
+package usage_test
 
 import (
 	"context"
@@ -8,13 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"relic/internal/artifacts/downloadstats"
 	"relic/internal/artifacts/repository"
+	"relic/internal/artifacts/usage"
 	"relic/internal/platform/database/databasetest"
 	"relic/internal/platform/objectstore/objectstoretest"
 )
-
-func TestMain(m *testing.M) { databasetest.Main(m) }
 
 func TestFlushKeepsAFailedBatch(t *testing.T) {
 	t.Parallel()
@@ -42,7 +40,7 @@ func TestFlushKeepsAFailedBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rec := downloadstats.NewRecorder(db, log)
+	rec := usage.NewItemDownloads(db, log)
 	rec.Download(item.ID, "libs", "alice")
 	rec.Download(item.ID, "libs", "bob")
 

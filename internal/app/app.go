@@ -44,7 +44,6 @@ import (
 	"relic/internal/app/openapi"
 	"relic/internal/app/ui"
 	"relic/internal/artifacts/cleanup"
-	"relic/internal/artifacts/downloadstats"
 	"relic/internal/artifacts/formats/agentregistry"
 	"relic/internal/artifacts/formats/alpine"
 	"relic/internal/artifacts/formats/cargo"
@@ -311,9 +310,9 @@ func runServer(ctx context.Context, getenv func(string) string, mode serverMode,
 	}
 
 	usageRecorder := usagestats.NewRecorder(db, log)
-	go usageRecorder.Run(ctx, downloadstats.FlushInterval)
+	go usageRecorder.Run(ctx, usagestats.FlushInterval)
 
-	downloads := downloadstats.NewRecorder(db, log)
+	downloads := usagestats.NewItemDownloads(db, log)
 	downloads.SetUsage(usageRecorder.Download)
 
 	go downloads.Run(ctx)
@@ -811,7 +810,7 @@ type Options struct {
 	// MaxUploadSize caps every upload in bytes; 0 for no limit.
 	MaxUploadSize int64
 	// Downloads counts downloads; nil counts nothing (tests).
-	Downloads *downloadstats.Recorder
+	Downloads *usagestats.ItemDownloads
 	// Usage counts downloads and deploys by day; nil counts nothing (tests).
 	Usage *usagestats.Recorder
 	// DisableTrash makes user deletes permanent (RELIC_TRASH_ENABLED=false).

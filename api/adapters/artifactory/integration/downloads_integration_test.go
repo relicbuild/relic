@@ -13,7 +13,7 @@ import (
 	"relic/api/gen/relic/v1/relicv1connect"
 	"relic/internal/access/auth"
 	"relic/internal/app"
-	"relic/internal/artifacts/downloadstats"
+	"relic/internal/artifacts/usage"
 	"relic/internal/platform/database/databasetest"
 	"relic/internal/platform/objectstore/objectstoretest"
 )
@@ -32,7 +32,7 @@ func TestDownloadStats(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rec := downloadstats.NewRecorder(db, log)
+	rec := usage.NewItemDownloads(db, log)
 	srv := httptest.NewServer(
 		app.NewHandler(db, objectstoretest.NewMemory(), tokens, nil, app.Options{
 			Downloads: rec,

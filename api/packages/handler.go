@@ -14,7 +14,6 @@ import (
 
 	"relic/internal/access/auth"
 	"relic/internal/access/security"
-	"relic/internal/artifacts/downloadstats"
 	"relic/internal/artifacts/formats/alpine"
 	"relic/internal/artifacts/formats/cargo"
 	"relic/internal/artifacts/formats/conan"
@@ -32,6 +31,7 @@ import (
 	"relic/internal/artifacts/formats/rpm"
 	"relic/internal/artifacts/formats/terraform"
 	"relic/internal/artifacts/repository"
+	"relic/internal/artifacts/usage"
 	"relic/internal/platform/httperror"
 	"relic/internal/platform/httpserver"
 	"relic/internal/platform/objectstore"
@@ -61,7 +61,7 @@ type Dependencies struct {
 	Nix                *nix.Service
 	TerraformProviders *terraform.Service
 	Blocker            *blocking.Blocker
-	Downloads          *downloadstats.Recorder
+	Downloads          *usage.ItemDownloads
 	Log                *slog.Logger
 }
 
@@ -88,7 +88,7 @@ type Handler struct {
 	nix         *nix.Service
 	tfProviders *terraform.Service
 	blocker     *blocking.Blocker
-	downloads   *downloadstats.Recorder
+	downloads   *usage.ItemDownloads
 	log         *slog.Logger
 }
 

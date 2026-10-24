@@ -1,4 +1,4 @@
-package ldapsettings
+package access
 
 import (
 	"encoding/json"
@@ -19,28 +19,28 @@ const (
 		"description_attribute":"description","strategy":"static"}`
 )
 
-func TestRoundTrip(t *testing.T) {
+func TestLDAPSettingsRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	var s Settings
+	var s ldapSettings
 	if err := json.Unmarshal([]byte(settingsDoc), &s); err != nil {
 		t.Fatal(err)
 	}
 
-	stored, err := json.Marshal(FromArtifactory(s))
+	stored, err := json.Marshal(ldapFromArtifactory(s))
 	if err != nil || strings.Contains(string(stored), `"ldap_url"`) ||
 		!strings.Contains(string(stored), `"url":"ldaps://ldap.example.com:636/dc=example,dc=com"`) {
 		t.Fatalf("stored = %s (%v), want Relic's keys", stored, err)
 	}
 
-	checkSame(t, ToArtifactory(FromArtifactory(s)), settingsDoc)
+	checkSame(t, ldapToArtifactory(ldapFromArtifactory(s)), settingsDoc)
 
-	var g GroupSettings
+	var g ldapGroupSettings
 	if err := json.Unmarshal([]byte(groupDoc), &g); err != nil {
 		t.Fatal(err)
 	}
 
-	checkSame(t, GroupToArtifactory(GroupFromArtifactory(g)), groupDoc)
+	checkSame(t, ldapGroupToArtifactory(ldapGroupFromArtifactory(g)), groupDoc)
 }
 
 func checkSame(t *testing.T, got any, want string) {
@@ -65,7 +65,7 @@ func checkSame(t *testing.T, got any, want string) {
 	}
 }
 
-func TestStrategies(t *testing.T) {
+func TestLDAPGroupStrategies(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -93,31 +93,31 @@ func TestStrategies(t *testing.T) {
 		t.Run(tt.sent, func(t *testing.T) {
 			t.Parallel()
 
-			m := GroupFromArtifactory(GroupSettings{
+			m := ldapGroupFromArtifactory(ldapGroupSettings{
 				Name:     "g",
 				Strategy: tt.sent,
 			})
-			if m.Strategy != tt.want || GroupToArtifactory(m).Strategy != tt.rendered {
-				t.Errorf("%q reads as %q and renders as %q", tt.sent, m.Strategy, GroupToArtifactory(m).Strategy)
+			if m.Strategy != tt.want || ldapGroupToArtifactory(m).Strategy != tt.rendered {
+				t.Errorf("%q reads as %q and renders as %q", tt.sent, m.Strategy, ldapGroupToArtifactory(m).Strategy)
 			}
 		})
 	}
 }
 
-func TestExtension(t *testing.T) {
+func TestLDAPSettingsExtension(t *testing.T) {
 	t.Parallel()
 
-	d := FromArtifactory(Settings{
+	d := ldapFromArtifactory(ldapSettings{
 		Key:                      "corp",
 		AllowUserToAccessProfile: true,
 	})
 
 	const want = `{"ldap_position_protection":false,"allow_user_to_access_profile":true,"paging_support_enabled":false}`
-	if string(d.Extensions[Extension]) != want {
-		t.Errorf("extension = %s", d.Extensions[Extension])
+	if string(d.Extensions[ldapExtension]) != want {
+		t.Errorf("extension = %s", d.Extensions[ldapExtension])
 	}
 
-	if len(FromArtifactory(Settings{
+	if len(ldapFromArtifactory(ldapSettings{
 		Key: "corp",
 	}).Extensions) != 0 {
 		t.Error("an extension without settings")

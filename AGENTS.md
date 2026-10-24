@@ -40,7 +40,7 @@ internal/               the domain, in modules:
   access/               who may do what: auth, security (users, groups, permissions), ldap, sso,
                         workload (workload identities), project, audit
   artifacts/            repositories and their content: repository, formats/<format>, itemquery,
-                        archive, downloadstats, signingkey, cleanup, usage
+                        archive, signingkey, cleanup, usage
   scanning/             scan (scanners, policies, blocking), cvecatalog, endoflife, malicious
   delivery/             buildinfo, release, evidence, replication, webhook
   systemstatus/         health, storage and background job status

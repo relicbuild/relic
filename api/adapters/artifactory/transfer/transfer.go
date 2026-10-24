@@ -16,7 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"relic/api/adapters/artifactory/permissions"
+	"relic/api/adapters/artifactory/access"
 	"relic/api/adapters/artifactory/repoconfig"
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/api/relicapi"
@@ -444,7 +444,7 @@ func (im *importer) copyPermissions(ctx context.Context) {
 			continue
 		}
 
-		perm, err := permissions.FromArtifactory(p.Name, doc)
+		perm, err := access.PermissionFromArtifactory(p.Name, doc)
 		if err != nil {
 			im.fail("permission %s: %v", p.Name, err)
 
