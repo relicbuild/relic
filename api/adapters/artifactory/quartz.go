@@ -1,7 +1,4 @@
-// Package quartz converts between the Quartz cron expressions of the
-// adapter's replication API and the standard 5-field cron expressions Relic
-// schedules with.
-package quartz
+package artifactory
 
 import (
 	"errors"
@@ -11,29 +8,29 @@ import (
 	"strings"
 )
 
-// ErrUnsupported is a Quartz expression with no standard equivalent: finer
+// errUnsupportedQuartz is a Quartz expression with no standard equivalent: finer
 // than a minute, or using L, W or #.
-var ErrUnsupported = errors.New("unsupported Quartz cron expression")
+var errUnsupportedQuartz = errors.New("unsupported Quartz cron expression")
 
 var lastDay = regexp.MustCompile(`(^|[^A-Z])L`)
 
-// ToStandard converts a Quartz expression.
-func ToStandard(q string) (string, error) {
+// cronFromQuartz converts a Quartz expression.
+func cronFromQuartz(q string) (string, error) {
 	f := strings.Fields(q)
 	if len(f) == 7 {
 		f = f[:6]
 	}
 
 	if len(f) != 6 {
-		return "", fmt.Errorf("%w: %q needs 6 or 7 fields", ErrUnsupported, q)
+		return "", fmt.Errorf("%w: %q needs 6 or 7 fields", errUnsupportedQuartz, q)
 	}
 
 	if _, err := strconv.Atoi(f[0]); err != nil {
-		return "", fmt.Errorf("%w: %q runs more than once a minute", ErrUnsupported, q)
+		return "", fmt.Errorf("%w: %q runs more than once a minute", errUnsupportedQuartz, q)
 	}
 
 	if strings.ContainsAny(f[3], "LW") || strings.Contains(f[5], "#") || lastDay.MatchString(f[5]) {
-		return "", fmt.Errorf("%w: %q uses L, W or #", ErrUnsupported, q)
+		return "", fmt.Errorf("%w: %q uses L, W or #", errUnsupportedQuartz, q)
 	}
 
 	dom, dow := unused(f[3]), unused(f[5])
@@ -47,10 +44,10 @@ func ToStandard(q string) (string, error) {
 	}, " "), nil
 }
 
-// FromStandard converts a standard expression (or a descriptor such as
+// quartzFromCron converts a standard expression (or a descriptor such as
 // @daily) to Quartz, dropping the day of the week when both day fields are
 // set, which Quartz cannot express.
-func FromStandard(s string) string {
+func quartzFromCron(s string) string {
 	switch s {
 	case "@yearly", "@annually":
 		s = "0 0 1 1 *"

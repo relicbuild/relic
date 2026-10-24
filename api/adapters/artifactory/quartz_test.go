@@ -1,11 +1,11 @@
-package quartz
+package artifactory
 
 import (
 	"errors"
 	"testing"
 )
 
-func TestToStandard(t *testing.T) {
+func TestCronFromQuartz(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -56,15 +56,15 @@ func TestToStandard(t *testing.T) {
 		t.Run(tt.quartz, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := ToStandard(tt.quartz)
+			got, err := cronFromQuartz(tt.quartz)
 			if err != nil || got != tt.standard {
-				t.Errorf("ToStandard(%q) = %q, %v; want %q", tt.quartz, got, err, tt.standard)
+				t.Errorf("cronFromQuartz(%q) = %q, %v; want %q", tt.quartz, got, err, tt.standard)
 			}
 		})
 	}
 }
 
-func TestToStandardRefuses(t *testing.T) {
+func TestCronFromQuartzRefuses(t *testing.T) {
 	t.Parallel()
 
 	for _, q := range []string{
@@ -76,13 +76,13 @@ func TestToStandardRefuses(t *testing.T) {
 		"0 0 12 15W * ?",
 		"0 0 12 ? * 5L",
 	} {
-		if _, err := ToStandard(q); !errors.Is(err, ErrUnsupported) {
-			t.Errorf("ToStandard(%q) = %v, want ErrUnsupported", q, err)
+		if _, err := cronFromQuartz(q); !errors.Is(err, errUnsupportedQuartz) {
+			t.Errorf("cronFromQuartz(%q) = %v, want errUnsupportedQuartz", q, err)
 		}
 	}
 }
 
-func TestFromStandard(t *testing.T) {
+func TestQuartzFromCron(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -121,14 +121,14 @@ func TestFromStandard(t *testing.T) {
 		t.Run(tt.standard, func(t *testing.T) {
 			t.Parallel()
 
-			if got := FromStandard(tt.standard); got != tt.quartz {
-				t.Errorf("FromStandard(%q) = %q, want %q", tt.standard, got, tt.quartz)
+			if got := quartzFromCron(tt.standard); got != tt.quartz {
+				t.Errorf("quartzFromCron(%q) = %q, want %q", tt.standard, got, tt.quartz)
 			}
 		})
 	}
 }
 
-func TestRoundTrip(t *testing.T) {
+func TestQuartzRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	for _, q := range []string{
@@ -137,9 +137,9 @@ func TestRoundTrip(t *testing.T) {
 		"0 */15 * * * ?",
 		"0 0 0 1 * ?",
 	} {
-		s, err := ToStandard(q)
-		if err != nil || FromStandard(s) != q {
-			t.Errorf("%q -> %q (%v) -> %q", q, s, err, FromStandard(s))
+		s, err := cronFromQuartz(q)
+		if err != nil || quartzFromCron(s) != q {
+			t.Errorf("%q -> %q (%v) -> %q", q, s, err, quartzFromCron(s))
 		}
 	}
 }
