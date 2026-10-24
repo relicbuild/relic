@@ -877,6 +877,7 @@ func newRouter(
 	projects.SetRepositoryProjects(repos.Projects)
 	projects.SetChanged(sec.Invalidate)
 	sec.SetProjectPermissions(projects.Permissions)
+	sec.SetOwnRepositories(repos.OwnRepositories)
 	sec.RegisterPrincipalRemovalHook(projects.RemoveMemberships)
 	repos.SetProjectQuota(projects.Quota)
 

@@ -36,7 +36,10 @@ type Service struct {
 	adminOnly []string
 	// projectPermissions adds the projects' roles to the stored permissions.
 	projectPermissions func(context.Context) ([]auth.Permission, error)
-	removalHooks       []PrincipalRemovalHook
+	// ownRepositories names Relic's own repositories, which repository sets
+	// never select.
+	ownRepositories func(context.Context) ([]string, error)
+	removalHooks    []PrincipalRemovalHook
 
 	mu       sync.Mutex
 	perms    auth.Permissions
@@ -628,6 +631,15 @@ func (s *Service) Permissions(ctx context.Context) (auth.Permissions, error) {
 		perms.All = append(perms.All, projects...)
 	}
 
+	if s.ownRepositories != nil {
+		own, err := s.ownRepositories(ctx)
+		if err != nil {
+			return auth.Permissions{}, fmt.Errorf("load own repositories: %w", err)
+		}
+
+		perms.OwnRepositories = own
+	}
+
 	s.perms, s.loadedAt = perms, time.Now()
 
 	return perms, nil
@@ -637,6 +649,12 @@ func (s *Service) Permissions(ctx context.Context) (auth.Permissions, error) {
 // roles, to the stored ones.
 func (s *Service) SetProjectPermissions(fn func(context.Context) ([]auth.Permission, error)) {
 	s.projectPermissions = fn
+}
+
+// SetOwnRepositories names Relic's own repositories with fn; permissions
+// reach them only by name.
+func (s *Service) SetOwnRepositories(fn func(context.Context) ([]string, error)) {
+	s.ownRepositories = fn
 }
 
 // PrincipalRemovalHook drops what refers to a user, or a group, by name, in
