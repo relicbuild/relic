@@ -293,6 +293,30 @@ func TestBuildCommands(t *testing.T) {
 		t.Fatalf("publish = %q %v", result.out, result.err)
 	}
 
+	if out, err := relic(t, config, "", "build", "list"); err != nil || !hasTableRowWith(out, "app") {
+		t.Errorf("build list = %q %v", out, err)
+	}
+
+	if out, err := relic(t, config, "", "build", "list", "app"); err != nil || !hasTableRowWith(out, "7") {
+		t.Errorf("build list app = %q %v", out, err)
+	}
+
+	if out, err := relic(t, config, "", "build", "get", "app", "7"); err != nil ||
+		!strings.HasPrefix(out, "app/7 ") ||
+		!hasTableRowWith(out, "artifact", "b-dev/org/app/1.0/app.jar") ||
+		!hasTableRowWith(out, "web (npm)", "dependency", "lodash:4.17.15") {
+		t.Errorf("build get = %q %v", out, err)
+	}
+
+	if out, err := relic(t, config, "", "build", "get", "app", "7", "-o", "json"); err != nil ||
+		!strings.Contains(out, `"number": "7"`) {
+		t.Errorf("build get -o json = %q %v", out, err)
+	}
+
+	if _, err := relic(t, config, "", "build", "get", "app", "8"); err == nil {
+		t.Error("build get of a run that was never published succeeded")
+	}
+
 	if out, _ := relic(
 		t,
 		config,
