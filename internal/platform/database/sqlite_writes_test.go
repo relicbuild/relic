@@ -29,11 +29,16 @@ func TestSQLiteWritesTakeTurnsWithABulkImport(t *testing.T) {
 
 	ctx, stop := context.WithCancel(t.Context())
 
-	var importer sync.WaitGroup
+	var (
+		importer    sync.WaitGroup
+		longestTurn time.Duration
+	)
 
 	importer.Go(func() {
 		for batch := 0; ctx.Err() == nil; batch++ {
-			_ = db.WithTx(ctx, func(q database.Querier) error {
+			start := time.Now()
+
+			err := db.WithTx(ctx, func(q database.Querier) error {
 				for i := range 1000 {
 					p := maliciousPackage(fmt.Sprintf("MAL-%d-%d", batch, i))
 					if err := q.UpsertMaliciousPackage(ctx, p); err != nil {
@@ -43,6 +48,9 @@ func TestSQLiteWritesTakeTurnsWithABulkImport(t *testing.T) {
 
 				return nil
 			})
+			if err == nil {
+				longestTurn = max(longestTurn, time.Since(start))
+			}
 		}
 	})
 
@@ -67,8 +75,15 @@ func TestSQLiteWritesTakeTurnsWithABulkImport(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	if slowest > 2*time.Second {
-		t.Errorf("a write waited %s for the bulk import; it should wait for one of its transactions at most", slowest)
+	stop()
+	importer.Wait()
+
+	if slowest > 2*longestTurn {
+		t.Errorf(
+			"a write waited %s for the bulk import, whose longest transaction took %s; it should wait for one at most",
+			slowest,
+			longestTurn,
+		)
 	}
 }
 
