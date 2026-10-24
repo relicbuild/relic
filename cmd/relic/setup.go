@@ -815,12 +815,12 @@ func serverSetupCmd(g *globals) *cobra.Command {
 		Annotations: map[string]string{
 			progressAnnotation: "off",
 		},
-		Short: "Install relic on this machine: config, shell completion and the server as a systemd service",
+		Short: "Install relic on this machine: config, shell completion and the server as a service",
 		Long: "Shows the client's config file, writes shell completion and loads it from ~/.bashrc (or ~/.zshrc, " +
 			"or fish's completions directory), and runs the server (relic server start --worker on SQLite and the " +
-			"filesystem) as a systemd user service that starts at boot; with --system, as root, as a system service " +
-			"with its own user instead. It lists what it will change and asks first (--yes does not); running it " +
-			"again changes nothing.",
+			"filesystem) as a service: a systemd user service that starts at boot on Linux (with --system, as root, a " +
+			"system service with its own user), or a launch agent that starts at login on macOS. It lists what it " +
+			"will change and asks first (--yes does not); running it again changes nothing.",
 		Example: "  relic server setup\n" +
 			"  relic server setup --yes --listen 0.0.0.0:8090\n" +
 			"  sudo relic server setup --system",
@@ -844,7 +844,7 @@ func serverSetupCmd(g *globals) *cobra.Command {
 	cmd.Flags().StringVar(&home, "home", userHome(), "the home directory user files go under")
 	cmd.Flags().StringVar(&root, "root", "/", "the root directory system files go under")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask before changing anything")
-	cmd.Flags().BoolVar(&system, "system", false, "as root: run the server as a systemd system service")
+	cmd.Flags().BoolVar(&system, "system", false, "as root, on Linux: run the server as a systemd system service")
 	cmd.Flags().StringVar(&shell, "shell", "", "the shell to complete for (default from $SHELL)")
 	cmd.Flags().StringVar(&listen, "listen", "127.0.0.1:8090", "the address the service listens on")
 

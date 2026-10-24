@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -195,11 +196,23 @@ func TestServerConfigMasksSecrets(t *testing.T) {
 	t.Parallel()
 
 	home := t.TempDir()
-	unit := filepath.Join(home, ".config", "systemd", "user", "relic.service")
 	settings := filepath.Join(home, ".config", "relic", "server.env")
 
+	svc, err := (&machineSetup{
+		home: home,
+		goos: runtime.GOOS,
+		getenv: func(string) string {
+			return ""
+		},
+	}).serviceManager()
+	if err != nil {
+		t.Skip(err)
+	}
+
+	unit := svc.definition()
+
 	for p, content := range map[string]string{
-		unit:     "[Service]\n",
+		unit:     "",
 		settings: "RELIC_HTTP_LISTEN_ADDRESS=127.0.0.1:8090\nRELIC_ENCRYPTION_KEY=c2VjcmV0\nRELIC_ADMIN_PASSWORD=hunter2\n",
 	} {
 		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {

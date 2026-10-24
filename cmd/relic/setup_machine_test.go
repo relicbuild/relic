@@ -22,6 +22,7 @@ func testMachineSetup(t *testing.T, answers string) (*machineSetup, *[]string, *
 	return &machineSetup{
 		home:       home,
 		root:       t.TempDir(),
+		goos:       "linux",
 		shell:      "bash",
 		listen:     "127.0.0.1:8090",
 		configPath: filepath.Join(home, ".config", "relic", "config.yaml"),

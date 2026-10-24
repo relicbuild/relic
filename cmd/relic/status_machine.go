@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +23,7 @@ import (
 
 type machineStatus struct {
 	Service         string         `json:"service"`
+	Manager         string         `json:"manager"`
 	Unit            string         `json:"unit"`
 	State           string         `json:"state,omitempty"`
 	Enabled         string         `json:"enabled,omitempty"`
@@ -64,57 +64,25 @@ type storageStatus struct {
 }
 
 func (m *machineSetup) machineStatus(ctx context.Context) *machineStatus {
-	s := &machineStatus{
-		Service:  "user",
-		Unit:     filepath.Join(m.xdg("XDG_CONFIG_HOME", ".config"), "systemd", "user", "relic.service"),
-		Settings: filepath.Join(m.configDir(), "server.env"),
-	}
-	systemctl := []string{
-		"systemctl",
-		"--user",
-	}
-
-	if !exists(s.Unit) {
-		s.Service, s.Unit, s.Settings = "system", filepath.Join(
-			m.root,
-			systemUnit,
-		), filepath.Join(
-			m.root,
-			systemSettings,
-		)
-		systemctl = []string{
-			"systemctl",
-		}
-	}
-
-	if !exists(s.Unit) {
+	svc := m.installedService()
+	if svc == nil {
 		return nil
 	}
 
-	if unit, err := os.ReadFile(s.Unit); err == nil {
-		for l := range strings.Lines(string(unit)) {
-			if v, ok := strings.CutPrefix(strings.TrimSpace(l), "ExecStart="); ok {
-				s.Binary, _, _ = strings.Cut(v, " ")
-			}
-		}
+	s := &machineStatus{
+		Service:  svc.scope(),
+		Manager:  svc.initSystem(),
+		Unit:     svc.definition(),
+		Settings: svc.settingsPath(),
+		Binary:   svc.binary(),
 	}
 
-	if out, err := m.query(ctx, systemctl[0], append(systemctl[1:],
-		"show",
-		"relic.service",
-		"--property=ActiveState,SubState,UnitFileState,MainPID,NRestarts,ActiveEnterTimestamp",
-	)...); err == nil {
-		p := keyValues(out, "=")
-		s.State = p["ActiveState"]
-
-		if sub := p["SubState"]; sub != "" && sub != s.State {
-			s.State += " (" + sub + ")"
-		}
-
-		s.Enabled = p["UnitFileState"]
-		s.Since = p["ActiveEnterTimestamp"]
-		s.PID, _ = strconv.Atoi(p["MainPID"])
-		s.Restarts, _ = strconv.Atoi(p["NRestarts"])
+	if state, err := svc.status(ctx); err == nil {
+		s.State = state.String()
+		s.Enabled = state.enabled
+		s.Since = state.since
+		s.PID = state.pid
+		s.Restarts = state.restarts
 	}
 
 	for _, p := range []string{
@@ -318,7 +286,7 @@ func (m *machineSetup) machineRows(s *machineStatus) []panelRow {
 
 	switch {
 	case s.State == "":
-		state = styleWarn.Render("● unknown") + styleMuted.Render(" (systemctl gave no answer)")
+		state = styleWarn.Render("● unknown") + styleMuted.Render(" ("+s.Manager+" gave no answer)")
 	case strings.HasPrefix(s.State, "active"):
 		state = styleGood.Render("● " + s.State)
 	}

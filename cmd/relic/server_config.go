@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/url"
 	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -329,10 +328,15 @@ func (m *machineSetup) setServiceSetting(ctx context.Context, w io.Writer, path,
 		return fmt.Errorf("stat %s: %w", path, err)
 	}
 
+	svc, err := m.serviceManager()
+	if err != nil {
+		return err
+	}
+
 	if err := m.findCommands([]machineAction{
 		{
 			command: []string{
-				"systemctl",
+				svc.tool(),
 			},
 		},
 	}); err != nil {
@@ -353,24 +357,7 @@ func (m *machineSetup) setServiceSetting(ctx context.Context, w io.Writer, path,
 		return err
 	}
 
-	systemctl := []string{
-		"systemctl",
-		"--user",
-	}
-	if m.system {
-		systemctl = []string{
-			"systemctl",
-		}
-
-		if err := m.run(ctx, "chown", "root:"+systemUser, path); err != nil {
-			return fmt.Errorf("give the relic group the settings: %w", err)
-		}
-	}
-
-	if err := m.run(
-		ctx,
-		systemctl[0],
-		append(systemctl[1:], "restart", "relic.service")...); err != nil {
+	if err := svc.restart(ctx); err != nil {
 		return fmt.Errorf("restart the service: %w", err)
 	}
 
@@ -385,14 +372,8 @@ func serviceSettings(cmd *cobra.Command, g *globals) (string, *machineSetup, err
 		return "", nil, err
 	}
 
-	if exists(filepath.Join(m.xdg("XDG_CONFIG_HOME", ".config"), "systemd", "user", "relic.service")) {
-		return filepath.Join(m.configDir(), "server.env"), m, nil
-	}
-
-	if exists(filepath.Join(m.root, systemUnit)) {
-		m.system = true
-
-		return filepath.Join(m.root, systemSettings), m, nil
+	if svc := m.installedService(); svc != nil {
+		return svc.settingsPath(), m, nil
 	}
 
 	return "", nil, errors.New("no Relic service on this machine: install one with relic server setup")

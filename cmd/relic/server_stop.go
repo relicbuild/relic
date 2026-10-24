@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -19,9 +17,9 @@ func serverStopCmd(g *globals) *cobra.Command {
 			progressAnnotation: "off",
 		},
 		Short: "Stop the Relic service on this machine, after asking",
-		Long: "Stops the systemd service relic server setup installed. It names the service and asks first " +
-			"(--yes does not). The service stays enabled: it starts again at the next boot, or with " +
-			"systemctl start relic.service (--user for a user service).",
+		Long: "Stops the service relic server setup installed (systemd on Linux, launchd on macOS). It names " +
+			"the service and asks first (--yes does not). The service stays installed: it starts again at the " +
+			"next boot (at the next login for a launch agent), and the message names the command that starts it now.",
 		Example: "  relic server stop\n" +
 			"  relic server stop --yes\n" +
 			"  sudo relic server stop   # a system service",
@@ -43,45 +41,26 @@ func serverStopCmd(g *globals) *cobra.Command {
 }
 
 func (m *machineSetup) runStop(ctx context.Context) error {
-	service := "user"
-	systemctl := []string{
-		"systemctl",
-		"--user",
+	svc := m.installedService()
+	if svc == nil {
+		return errors.New("no Relic service on this machine: install one with relic server setup")
 	}
 
-	if !exists(filepath.Join(m.xdg("XDG_CONFIG_HOME", ".config"), "systemd", "user", "relic.service")) {
-		if !exists(filepath.Join(m.root, systemUnit)) {
-			return errors.New("no Relic service on this machine: install one with relic server setup")
-		}
-
-		service = "system"
-		systemctl = []string{
-			"systemctl",
-		}
-	}
-
-	out, err := m.query(ctx, systemctl[0], append(systemctl[1:],
-		"show",
-		"relic.service",
-		"--property=ActiveState,MainPID",
-	)...)
+	state, err := svc.status(ctx)
 	if err != nil {
-		return fmt.Errorf("stop: read the service's state from systemd: %w", err)
+		return fmt.Errorf("stop: read the service's state from %s: %w", svc.tool(), err)
 	}
 
-	p := keyValues(out, "=")
-
-	state := p["ActiveState"]
-	if state == "inactive" || state == "failed" {
-		_, _ = fmt.Fprintf(m.out, "The Relic %s service is not running (%s).\n", service, state)
+	if !state.running() {
+		_, _ = fmt.Fprintf(m.out, "The Relic %s service is not running (%s).\n", svc.scope(), state.active)
 
 		return nil
 	}
 
 	if !m.yes {
-		question := "Stop the Relic " + service + " service"
-		if pid := p["MainPID"]; pid != "" && pid != "0" {
-			question += " (pid " + pid + ")"
+		question := "Stop the Relic " + svc.scope() + " service"
+		if state.pid > 0 {
+			question += fmt.Sprintf(" (pid %d)", state.pid)
 		}
 
 		ok, err := m.ask(question+"? Clients cannot reach it until it starts again. [y/N] ", false)
@@ -94,12 +73,16 @@ func (m *machineSetup) runStop(ctx context.Context) error {
 		}
 	}
 
-	if err := m.run(ctx, systemctl[0], append(systemctl[1:], "stop", "relic.service")...); err != nil {
+	if err := svc.stop(ctx); err != nil {
 		return fmt.Errorf("stop the service: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(m.out, "Stopped the Relic %s service. Start it again with: %s start relic.service\n",
-		service, strings.Join(systemctl, " "))
+	_, _ = fmt.Fprintf(
+		m.out,
+		"Stopped the Relic %s service. Start it again with: %s\n",
+		svc.scope(),
+		svc.startCommand(),
+	)
 
 	return nil
 }
