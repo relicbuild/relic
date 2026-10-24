@@ -1,4 +1,4 @@
-package downloadstats
+package usage
 
 import (
 	"testing"
@@ -9,7 +9,7 @@ import (
 func TestRecorderAggregates(t *testing.T) {
 	t.Parallel()
 
-	r := NewRecorder(nil, nil)
+	r := NewItemDownloads(nil, nil)
 	clock := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
 	r.now = func() time.Time {
 		return clock
@@ -30,7 +30,7 @@ func TestRecorderAggregates(t *testing.T) {
 		t.Errorf("b = %+v", got)
 	}
 
-	var none *Recorder
+	var none *ItemDownloads
 	none.Download(a, "libs", "x")
 
 	if err := none.Flush(t.Context()); err != nil {

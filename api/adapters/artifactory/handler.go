@@ -12,11 +12,11 @@ import (
 	"relic/api/packages"
 	"relic/internal/access/auth"
 	"relic/internal/access/security"
-	"relic/internal/artifacts/downloadstats"
 	"relic/internal/artifacts/formats/docker"
 	"relic/internal/artifacts/itemquery"
 	"relic/internal/artifacts/repository"
 	"relic/internal/artifacts/signingkey"
+	"relic/internal/artifacts/usage"
 	"relic/internal/delivery/buildinfo"
 	"relic/internal/delivery/replication"
 	"relic/internal/platform/httperror"
@@ -36,7 +36,7 @@ type Handler struct {
 	secrets      *sealing.Box
 	replications *replication.Service
 	packages     *packages.Handler
-	downloads    *downloadstats.Recorder
+	downloads    *usage.ItemDownloads
 	docker       *docker.Service
 	keys         *signingkey.Service
 	aql          itemquery.Querier
@@ -69,7 +69,7 @@ func (h *Handler) SetPackages(p *packages.Handler, images *docker.Service, keys 
 }
 
 // SetDownloads wires the download counts storage answers report.
-func (h *Handler) SetDownloads(r *downloadstats.Recorder) { h.downloads = r }
+func (h *Handler) SetDownloads(r *usage.ItemDownloads) { h.downloads = r }
 
 // SetSecrets sets the box that seals stored credentials and the passwords
 // clients keep in place of their own.
