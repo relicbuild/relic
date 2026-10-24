@@ -6,8 +6,6 @@ import (
 	"io"
 	"net/http"
 
-	"relic/api/adapters/artifactory/ldapsettings"
-
 	"relic/api/adapters/artifactory/wire"
 	"relic/internal/access/auth"
 	"relic/internal/access/ldap"
@@ -31,8 +29,8 @@ func (h *Handler) registerLDAP(rt *httpserver.Router) {
 }
 
 // the manager password never leaves the server.
-func masked(s ldap.Server) ldapsettings.Settings {
-	out := ldapsettings.ToArtifactory(s)
+func masked(s ldap.Server) ldapSettings {
+	out := ldapToArtifactory(s)
 	out.Search.ManagerPassword = ""
 
 	return out
@@ -67,7 +65,7 @@ func (h *Handler) listLDAP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out := make([]ldapsettings.Settings, 0, len(all))
+	out := make([]ldapSettings, 0, len(all))
 	for _, s := range all {
 		out = append(out, masked(s))
 	}
@@ -86,12 +84,12 @@ func (h *Handler) getLDAP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) createLDAP(w http.ResponseWriter, r *http.Request) {
-	doc, ok := decode[ldapsettings.Settings](w, r)
+	doc, ok := decode[ldapSettings](w, r)
 	if !ok {
 		return
 	}
 
-	s := ldapsettings.FromArtifactory(doc)
+	s := ldapFromArtifactory(doc)
 
 	err := h.ldap.CreateLdapServer(r.Context(), s)
 	if errors.Is(err, ldap.ErrExists) {
@@ -108,12 +106,12 @@ func (h *Handler) createLDAP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) updateLDAP(w http.ResponseWriter, r *http.Request) {
-	doc, ok := decode[ldapsettings.Settings](w, r)
+	doc, ok := decode[ldapSettings](w, r)
 	if !ok {
 		return
 	}
 
-	s := ldapsettings.FromArtifactory(doc)
+	s := ldapFromArtifactory(doc)
 
 	key := r.PathValue("key")
 	if s.Name == "" {
@@ -154,9 +152,9 @@ func (h *Handler) listLDAPGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out := make([]ldapsettings.GroupSettings, 0, len(all))
+	out := make([]ldapGroupSettings, 0, len(all))
 	for _, g := range all {
-		out = append(out, ldapsettings.GroupToArtifactory(g))
+		out = append(out, ldapGroupToArtifactory(g))
 	}
 
 	wire.WriteJSON(w, http.StatusOK, out)
@@ -169,16 +167,16 @@ func (h *Handler) getLDAPGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wire.WriteJSON(w, http.StatusOK, ldapsettings.GroupToArtifactory(g))
+	wire.WriteJSON(w, http.StatusOK, ldapGroupToArtifactory(g))
 }
 
 func (h *Handler) createLDAPGroup(w http.ResponseWriter, r *http.Request) {
-	doc, ok := decode[ldapsettings.GroupSettings](w, r)
+	doc, ok := decode[ldapGroupSettings](w, r)
 	if !ok {
 		return
 	}
 
-	g := ldapsettings.GroupFromArtifactory(doc)
+	g := ldapGroupFromArtifactory(doc)
 
 	_, err := h.ldap.GroupMapping(r.Context(), g.Name)
 	if err == nil {
@@ -200,12 +198,12 @@ func (h *Handler) createLDAPGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) updateLDAPGroup(w http.ResponseWriter, r *http.Request) {
-	doc, ok := decode[ldapsettings.GroupSettings](w, r)
+	doc, ok := decode[ldapGroupSettings](w, r)
 	if !ok {
 		return
 	}
 
-	g := ldapsettings.GroupFromArtifactory(doc)
+	g := ldapGroupFromArtifactory(doc)
 
 	name := r.PathValue("name")
 	if g.Name == "" {

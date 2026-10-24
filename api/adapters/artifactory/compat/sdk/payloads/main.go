@@ -20,7 +20,7 @@ import (
 
 const (
 	repositoriesDir = "api/adapters/artifactory/repoconfig/testdata/sdk"
-	permissionsDir  = "api/adapters/artifactory/permissions/testdata/sdk"
+	permissionsDir  = "api/adapters/artifactory/access/testdata/sdk"
 	buildsDir       = "api/adapters/artifactory/buildjson/testdata/sdk"
 )
 

@@ -1,4 +1,4 @@
-package permissions
+package access
 
 import (
 	"encoding/json"
@@ -36,7 +36,7 @@ func TestRoundTripSDKPermissionTargets(t *testing.T) {
 
 			dropAction(want, "managedXrayMeta")
 
-			p, err := FromArtifactory(want.(map[string]any)["name"].(string), doc)
+			p, err := PermissionFromArtifactory(want.(map[string]any)["name"].(string), doc)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -53,7 +53,7 @@ func TestRoundTripSDKPermissionTargets(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			out, err := ToArtifactory(back)
+			out, err := PermissionToArtifactory(back)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -70,10 +70,10 @@ func TestRoundTripSDKPermissionTargets(t *testing.T) {
 	}
 }
 
-func TestFromArtifactory(t *testing.T) {
+func TestPermissionFromArtifactory(t *testing.T) {
 	t.Parallel()
 
-	got, err := FromArtifactory(
+	got, err := PermissionFromArtifactory(
 		"p",
 		[]byte(`{"name":"p","repo":{"repositories":["a"," b","a",""],"include-patterns":["**"],
 		"actions":{"users":{"u":["read"," write"]},"groups":{"g":["read"]}}},"build":{"repositories":["artifactory-build-info"]}}`),
@@ -132,20 +132,20 @@ func TestFromArtifactory(t *testing.T) {
 		"unknown action": `{"repo":{"repositories":["a"],"actions":{"users":{"u":["fly"]}}}}`,
 		"not json":       `{`,
 	} {
-		if _, err := FromArtifactory("p", []byte(doc)); !errors.Is(err, security.ErrInvalid) {
+		if _, err := PermissionFromArtifactory("p", []byte(doc)); !errors.Is(err, security.ErrInvalid) {
 			t.Errorf("%s: err = %v, want ErrInvalid", name, err)
 		}
 	}
 }
 
-func TestVocabulary(t *testing.T) {
+func TestPermissionVocabulary(t *testing.T) {
 	t.Parallel()
 
 	doc := `{"name":"p","repo":{"repositories":["ANY REMOTE","ANY LOCAL","libs"],"include-patterns":[],"exclude-patterns":[],
 		"actions":{"users":{"u":["read","managedXrayMeta"]}}},
 		"releaseBundle":{"repositories":["ANY"],"include-patterns":[],"exclude-patterns":[],"actions":{"groups":{"rel":["read","distribute"]}}}}`
 
-	p, err := FromArtifactory("p", []byte(doc))
+	p, err := PermissionFromArtifactory("p", []byte(doc))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestVocabulary(t *testing.T) {
 		t.Errorf("release rule = %+v", release)
 	}
 
-	out, err := ToArtifactory(p)
+	out, err := PermissionToArtifactory(p)
 	if err != nil {
 		t.Fatal(err)
 	}

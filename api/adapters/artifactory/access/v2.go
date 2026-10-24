@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 
-	"relic/api/adapters/artifactory/permissions"
 	"relic/internal/access/auth"
 	"relic/internal/access/security"
 	"relic/internal/platform/httpserver"
@@ -675,10 +674,10 @@ func convertActions(m map[string][]string, to func(string) (string, bool)) (map[
 	return out, nil
 }
 
-func toSection(res *v2Resource) (*permissions.Section, error) {
-	s := &permissions.Section{
+func toSection(res *v2Resource) (*Section, error) {
+	s := &Section{
 		Repositories: slices.Sorted(maps.Keys(res.Targets)),
-		Actions:      &permissions.Actions{},
+		Actions:      &Actions{},
 	}
 
 	for i, name := range s.Repositories {
@@ -714,7 +713,7 @@ func toSection(res *v2Resource) (*permissions.Section, error) {
 	return s, nil
 }
 
-func fromSection(s *permissions.Section) *v2Resource {
+func fromSection(s *Section) *v2Resource {
 	res := &v2Resource{
 		Targets: map[string]v2Target{},
 	}
@@ -744,7 +743,7 @@ func fromSection(s *permissions.Section) *v2Resource {
 	return res
 }
 
-func sectionOf(t *permissions.Target, resource string) **permissions.Section {
+func sectionOf(t *Target, resource string) **Section {
 	switch resource {
 	case "artifact":
 		return &t.Repo
@@ -757,8 +756,8 @@ func sectionOf(t *permissions.Target, resource string) **permissions.Section {
 	return nil
 }
 
-func toTarget(p v2Permission) (permissions.Target, error) {
-	t := permissions.Target{
+func toTarget(p v2Permission) (Target, error) {
+	t := Target{
 		Name: p.Name,
 	}
 
@@ -783,7 +782,7 @@ func toTarget(p v2Permission) (permissions.Target, error) {
 	return t, nil
 }
 
-func fromTarget(t permissions.Target) v2Permission {
+func fromTarget(t Target) v2Permission {
 	p := v2Permission{
 		Name:      t.Name,
 		Resources: map[string]*v2Resource{},
@@ -798,26 +797,26 @@ func fromTarget(t permissions.Target) v2Permission {
 	return p
 }
 
-func (h *Handler) loadPermission(w http.ResponseWriter, r *http.Request, name string) (permissions.Target, bool) {
+func (h *Handler) loadPermission(w http.ResponseWriter, r *http.Request, name string) (Target, bool) {
 	p, err := h.security.GetPermission(r.Context(), name)
 	if err != nil {
 		h.securityError(w, r, err)
 
-		return permissions.Target{}, false
+		return Target{}, false
 	}
 
-	doc, err := permissions.ToArtifactory(p)
+	doc, err := PermissionToArtifactory(p)
 	if err != nil {
 		h.securityError(w, r, err)
 
-		return permissions.Target{}, false
+		return Target{}, false
 	}
 
-	var t permissions.Target
+	var t Target
 	if err := json.Unmarshal(doc, &t); err != nil {
 		h.securityError(w, r, err)
 
-		return permissions.Target{}, false
+		return Target{}, false
 	}
 
 	t.Name = name
@@ -825,7 +824,7 @@ func (h *Handler) loadPermission(w http.ResponseWriter, r *http.Request, name st
 	return t, true
 }
 
-func (h *Handler) savePermission(w http.ResponseWriter, r *http.Request, t permissions.Target, create bool) bool {
+func (h *Handler) savePermission(w http.ResponseWriter, r *http.Request, t Target, create bool) bool {
 	doc, err := json.Marshal(t)
 	if err != nil {
 		h.securityError(w, r, err)
@@ -833,7 +832,7 @@ func (h *Handler) savePermission(w http.ResponseWriter, r *http.Request, t permi
 		return false
 	}
 
-	p, err := permissions.FromArtifactory(t.Name, doc)
+	p, err := PermissionFromArtifactory(t.Name, doc)
 	if err != nil {
 		accessError(w, http.StatusBadRequest, err.Error())
 
@@ -928,7 +927,7 @@ func (h *Handler) v2DeletePermission(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) permissionResource(
 	w http.ResponseWriter,
 	r *http.Request,
-) (*permissions.Target, **permissions.Section, bool) {
+) (*Target, **Section, bool) {
 	t, ok := h.loadPermission(w, r, r.PathValue("name"))
 	if !ok {
 		return nil, nil, false

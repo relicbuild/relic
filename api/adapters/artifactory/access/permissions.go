@@ -1,6 +1,4 @@
-// Package permissions translates the adapter's permission-target documents
-// to and from Relic's permissions.
-package permissions
+package access
 
 import (
 	"encoding/json"
@@ -52,8 +50,8 @@ var (
 
 const ignoredAction = "managedXrayMeta"
 
-// FromArtifactory reads a document sent for name.
-func FromArtifactory(name string, doc []byte) (security.Permission, error) {
+// PermissionFromArtifactory reads a document sent for name.
+func PermissionFromArtifactory(name string, doc []byte) (security.Permission, error) {
 	var t Target
 	if err := json.Unmarshal(doc, &t); err != nil {
 		return security.Permission{}, fmt.Errorf("%w: %w", security.ErrInvalid, err)
@@ -146,21 +144,21 @@ func actionsOf(names []string) []auth.Action {
 	return out
 }
 
-// ToArtifactory renders p as a permission-target document.
-func ToArtifactory(p security.Permission) ([]byte, error) {
+// PermissionToArtifactory renders p as a permission-target document.
+func PermissionToArtifactory(p security.Permission) ([]byte, error) {
 	t := Target{
 		Name: p.Name,
 	}
 	if r, ok := p.Rule(security.ResourceRepository); ok {
-		t.Repo = sectionOf(r)
+		t.Repo = wireSection(r)
 	}
 
 	if r, ok := p.Rule(security.ResourceBuild); ok {
-		t.Build = sectionOf(r)
+		t.Build = wireSection(r)
 	}
 
 	if r, ok := p.Rule(security.ResourceRelease); ok {
-		t.ReleaseBundle = sectionOf(r)
+		t.ReleaseBundle = wireSection(r)
 	}
 
 	b, err := json.Marshal(t)
@@ -171,7 +169,7 @@ func ToArtifactory(p security.Permission) ([]byte, error) {
 	return b, nil
 }
 
-func sectionOf(r security.Rule) *Section {
+func wireSection(r security.Rule) *Section {
 	sec := &Section{
 		Repositories:    []string{},
 		IncludePatterns: nonNil(r.Include),
@@ -213,12 +211,4 @@ func sectionOf(r security.Rule) *Section {
 	}
 
 	return sec
-}
-
-func nonNil(l []string) []string {
-	if l == nil {
-		return []string{}
-	}
-
-	return l
 }

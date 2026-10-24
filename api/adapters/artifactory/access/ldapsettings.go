@@ -1,7 +1,4 @@
-// Package ldapsettings translates the adapter's LDAP settings and LDAP
-// group settings documents to and from Relic's directories and group
-// mappings.
-package ldapsettings
+package access
 
 import (
 	"encoding/json"
@@ -10,12 +7,12 @@ import (
 	"relic/internal/access/ldap"
 )
 
-// Extension is the extension that holds the Access API settings Relic
+// ldapExtension is the extension that holds the Access API settings Relic
 // keeps but does not act on.
-const Extension = "artifactory"
+const ldapExtension = "artifactory"
 
-// Search is the search part of Settings.
-type Search struct {
+// ldapSearch is the search part of ldapSettings.
+type ldapSearch struct {
 	Filter          string `json:"search_filter"`
 	Base            string `json:"search_base"`
 	SubTree         bool   `json:"search_sub_tree"`
@@ -23,15 +20,15 @@ type Search struct {
 	ManagerPassword string `json:"manager_password"`
 }
 
-// Settings is an LDAP settings document.
-type Settings struct {
-	Key            string `json:"key"`
-	Enabled        bool   `json:"enabled"`
-	URL            string `json:"ldap_url"`
-	UserDNPattern  string `json:"user_dn_pattern"`
-	Search         Search `json:"search"`
-	AutoCreateUser bool   `json:"auto_create_user"`
-	EmailAttribute string `json:"email_attribute"`
+// ldapSettings is an LDAP settings document.
+type ldapSettings struct {
+	Key            string     `json:"key"`
+	Enabled        bool       `json:"enabled"`
+	URL            string     `json:"ldap_url"`
+	UserDNPattern  string     `json:"user_dn_pattern"`
+	Search         ldapSearch `json:"search"`
+	AutoCreateUser bool       `json:"auto_create_user"`
+	EmailAttribute string     `json:"email_attribute"`
 	settingsExtras
 	// UseStartTLS is a Relic extension: StartTLS on an ldap:// URL.
 	UseStartTLS bool `json:"use_start_tls"`
@@ -43,8 +40,8 @@ type settingsExtras struct {
 	PagingSupportEnabled     bool `json:"paging_support_enabled"`
 }
 
-// GroupSettings is an LDAP group settings document.
-type GroupSettings struct {
+// ldapGroupSettings is an LDAP group settings document.
+type ldapGroupSettings struct {
 	Name                 string `json:"name"`
 	EnabledLdap          string `json:"enabled_ldap"`
 	GroupBaseDN          string `json:"group_base_dn"`
@@ -65,8 +62,8 @@ var strategies = map[string]ldap.GroupStrategy{
 	"hierarchical": ldap.StrategyHierarchy,
 }
 
-// FromArtifactory reads a settings document.
-func FromArtifactory(s Settings) ldap.Server {
+// ldapFromArtifactory reads a settings document.
+func ldapFromArtifactory(s ldapSettings) ldap.Server {
 	return ldap.Server{
 		Name:           s.Key,
 		Enabled:        s.Enabled,
@@ -80,14 +77,14 @@ func FromArtifactory(s Settings) ldap.Server {
 	}
 }
 
-// ToArtifactory renders a directory as a settings document.
-func ToArtifactory(d ldap.Server) Settings {
-	s := Settings{
+// ldapToArtifactory renders a directory as a settings document.
+func ldapToArtifactory(d ldap.Server) ldapSettings {
+	s := ldapSettings{
 		Key:            d.Name,
 		Enabled:        d.Enabled,
 		URL:            d.URL,
 		UserDNPattern:  d.UserDNPattern,
-		Search:         Search(d.Search),
+		Search:         ldapSearch(d.Search),
 		AutoCreateUser: d.AutoCreateUser,
 		EmailAttribute: d.EmailAttribute,
 		UseStartTLS:    d.StartTLS,
@@ -97,8 +94,8 @@ func ToArtifactory(d ldap.Server) Settings {
 	return s
 }
 
-// GroupFromArtifactory reads a group settings document.
-func GroupFromArtifactory(g GroupSettings) ldap.GroupMapping {
+// ldapGroupFromArtifactory reads a group settings document.
+func ldapGroupFromArtifactory(g ldapGroupSettings) ldap.GroupMapping {
 	strategy := strings.ToLower(g.Strategy)
 
 	s, ok := strategies[strategy]
@@ -120,8 +117,8 @@ func GroupFromArtifactory(g GroupSettings) ldap.GroupMapping {
 	}
 }
 
-// GroupToArtifactory renders a group mapping as a group settings document.
-func GroupToArtifactory(m ldap.GroupMapping) GroupSettings {
+// ldapGroupToArtifactory renders a group mapping as a group settings document.
+func ldapGroupToArtifactory(m ldap.GroupMapping) ldapGroupSettings {
 	strategy := string(m.Strategy)
 	for name, s := range strategies {
 		if s == m.Strategy {
@@ -129,7 +126,7 @@ func GroupToArtifactory(m ldap.GroupMapping) GroupSettings {
 		}
 	}
 
-	g := GroupSettings{
+	g := ldapGroupSettings{
 		Name:                 m.Name,
 		EnabledLdap:          m.Server,
 		GroupBaseDN:          m.BaseDN,
@@ -157,12 +154,12 @@ func extension[T comparable](extras T) map[string]json.RawMessage {
 	}
 
 	return map[string]json.RawMessage{
-		Extension: raw,
+		ldapExtension: raw,
 	}
 }
 
 func readExtension[T any](ext map[string]json.RawMessage, extras *T) {
-	if raw := ext[Extension]; len(raw) > 0 {
+	if raw := ext[ldapExtension]; len(raw) > 0 {
 		_ = json.Unmarshal(raw, extras)
 	}
 }
