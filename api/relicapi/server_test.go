@@ -212,3 +212,62 @@ func TestRequestDecodedBeforeAccess(t *testing.T) {
 		})
 	}
 }
+
+// repeatedReader yields the byte b forever.
+type repeatedReader byte
+
+func (r repeatedReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = byte(r)
+	}
+
+	return len(p), nil
+}
+
+// oversizedName is a JSON body whose name field takes the body past
+// maxRequestBytes.
+func oversizedName() io.Reader {
+	return io.MultiReader(
+		strings.NewReader(`{"name":"`),
+		io.LimitReader(repeatedReader('x'), maxRequestBytes),
+		strings.NewReader(`"}`),
+	)
+}
+
+func TestOversizedRequestRefused(t *testing.T) {
+	t.Parallel()
+
+	h := Handler(Dependencies{
+		Log: slog.New(slog.DiscardHandler),
+	})
+
+	tests := []struct {
+		name, method, path string
+	}{
+		{
+			name:   "Connect",
+			method: http.MethodPost,
+			path:   "/api/relic.v1.SecurityService/DeleteUser",
+		},
+		{
+			name:   "REST",
+			method: http.MethodPut,
+			path:   "/api/v1/users/bob",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, oversizedName())
+			req.Header.Set("Content-Type", "application/json")
+
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			if rec.Code == http.StatusUnauthorized || rec.Code < http.StatusBadRequest {
+				t.Errorf("status = %d %s, want the body refused for its size", rec.Code, rec.Body)
+			}
+		})
+	}
+}
