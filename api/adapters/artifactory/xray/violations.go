@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"relic/api/adapters/artifactory/xray/xraymap"
-	"relic/api/adapters/artifactory/xraypolicy"
 	"relic/internal/access/auth"
 	"relic/internal/scanning/scan"
 	"relic/internal/scanning/scan/policy"
@@ -53,7 +52,7 @@ func violations(
 		is := policy.Issue{
 			ID:        v.vulnID,
 			Malicious: scan.IsMalicious(v.vulnID),
-			Severity:  xraypolicy.Severity(v.Severity),
+			Severity:  Severity(v.Severity),
 		}
 		for _, c := range v.CVEs {
 			is.CVEs = append(is.CVEs, c.CVE)

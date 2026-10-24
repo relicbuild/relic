@@ -1,4 +1,4 @@
-package xraypolicy
+package xray
 
 import (
 	"encoding/json"
@@ -23,7 +23,7 @@ const (
 		"ignore_filters":{"cves":["CVE-2021-44228"],"components":[{"name":"gav://org.apache:log4j","version":"2.14.1"}],"artifacts":[{"path":"libs/app/"}]}}`
 )
 
-func TestRoundTrip(t *testing.T) {
+func TestPolicyDocumentsRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	for name, doc := range map[string]string{

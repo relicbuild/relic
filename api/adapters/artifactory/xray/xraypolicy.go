@@ -1,7 +1,4 @@
-// Package xraypolicy translates the scan API's policy and watch documents
-// and ignore rules to and from Relic Scan's policies, watches and ignore
-// rules.
-package xraypolicy
+package xray
 
 import (
 	"encoding/json"

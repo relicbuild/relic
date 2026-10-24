@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"uuid"
 
-	"relic/api/adapters/artifactory/xraypolicy"
-
 	"relic/api/adapters/artifactory/wire"
 	"relic/internal/access/auth"
 	"relic/internal/scanning/scan/policy"
@@ -21,7 +19,7 @@ func (h *Handler) listPolicies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wire.WriteJSON(w, http.StatusOK, xraypolicy.Policies(list))
+	wire.WriteJSON(w, http.StatusOK, Policies(list))
 }
 
 func (h *Handler) getPolicy(w http.ResponseWriter, r *http.Request) {
@@ -31,17 +29,17 @@ func (h *Handler) getPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wire.WriteJSON(w, http.StatusOK, xraypolicy.PolicyToXray(p))
+	wire.WriteJSON(w, http.StatusOK, PolicyToXray(p))
 }
 
 func (h *Handler) putPolicy(w http.ResponseWriter, r *http.Request) {
-	var doc xraypolicy.Policy
+	var doc Policy
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&doc); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid policy JSON")
 		return
 	}
 
-	p := xraypolicy.PolicyFromXray(doc)
+	p := PolicyFromXray(doc)
 	if name := r.PathValue("name"); name != "" {
 		p.Name = name
 	}
@@ -53,7 +51,7 @@ func (h *Handler) putPolicy(w http.ResponseWriter, r *http.Request) {
 
 		switch {
 		case err == nil:
-			p = xraypolicy.KeepRelicCriteria(p, stored)
+			p = KeepRelicCriteria(p, stored)
 		case !errors.Is(err, policy.ErrNotFound):
 			h.adminError(w, r, err)
 
@@ -108,7 +106,7 @@ func (h *Handler) listWatches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wire.WriteJSON(w, http.StatusOK, xraypolicy.Watches(list, kinds))
+	wire.WriteJSON(w, http.StatusOK, Watches(list, kinds))
 }
 
 func (h *Handler) getWatch(w http.ResponseWriter, r *http.Request) {
@@ -124,7 +122,7 @@ func (h *Handler) getWatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wire.WriteJSON(w, http.StatusOK, xraypolicy.WatchToXray(wt, kinds))
+	wire.WriteJSON(w, http.StatusOK, WatchToXray(wt, kinds))
 }
 
 func (h *Handler) policyKinds(ctx context.Context) (map[string]policy.Kind, error) {
@@ -133,17 +131,17 @@ func (h *Handler) policyKinds(ctx context.Context) (map[string]policy.Kind, erro
 		return nil, err
 	}
 
-	return xraypolicy.Kinds(ps), nil
+	return Kinds(ps), nil
 }
 
 func (h *Handler) putWatch(w http.ResponseWriter, r *http.Request) {
-	var doc xraypolicy.Watch
+	var doc Watch
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&doc); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid watch JSON")
 		return
 	}
 
-	wt := xraypolicy.WatchFromXray(doc)
+	wt := WatchFromXray(doc)
 	if name := r.PathValue("name"); name != "" {
 		wt.Name = name
 	}
@@ -180,7 +178,7 @@ func (h *Handler) deleteWatch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) createIgnoreRule(w http.ResponseWriter, r *http.Request) {
-	var doc xraypolicy.IgnoreRule
+	var doc IgnoreRule
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&doc); err != nil {
 		if errors.Is(err, policy.ErrInvalid) {
 			h.adminError(w, r, err)
@@ -192,7 +190,7 @@ func (h *Handler) createIgnoreRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	native, err := xraypolicy.IgnoreRuleFromXray(doc)
+	native, err := IgnoreRuleFromXray(doc)
 	if err != nil {
 		h.adminError(w, r, err)
 		return
@@ -221,7 +219,7 @@ func (h *Handler) listIgnoreRules(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wire.WriteJSON(w, http.StatusOK, map[string]any{
-		"data":        xraypolicy.IgnoreRules(list),
+		"data":        IgnoreRules(list),
 		"total_count": len(list),
 	})
 }
@@ -239,7 +237,7 @@ func (h *Handler) getIgnoreRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wire.WriteJSON(w, http.StatusOK, xraypolicy.IgnoreRuleToXray(rule))
+	wire.WriteJSON(w, http.StatusOK, IgnoreRuleToXray(rule))
 }
 
 func (h *Handler) deleteIgnoreRule(w http.ResponseWriter, r *http.Request) {
