@@ -241,12 +241,7 @@ var setupClients = map[string]setupClient{
 		},
 		steps: func(e setupEnv) ([]setupStep, error) {
 			steps := []setupStep{
-				{
-					file:    ".netrc",
-					block:   true,
-					mode:    0o600,
-					content: "machine " + hostOnly(e.host) + " login " + e.user + " password " + e.token + "\n",
-				},
+				netrcStep(e),
 				{
 					command: []string{
 						"go",
@@ -849,11 +844,19 @@ func pipSteps(e setupEnv) ([]setupStep, error) {
 }
 
 func netrcStep(e setupEnv) setupStep {
+	// The go command matches host:port; curl and Python's netrc match the host alone.
+	credentials := " login " + e.user + " password " + e.token + "\n"
+
+	content := "machine " + hostOnly(e.host) + credentials
+	if e.host != hostOnly(e.host) {
+		content = "machine " + e.host + credentials + content
+	}
+
 	return setupStep{
 		file:    ".netrc",
 		block:   true,
 		mode:    0o600,
-		content: "machine " + hostOnly(e.host) + " login " + e.user + " password " + e.token + "\n",
+		content: content,
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -568,6 +569,80 @@ func TestApkSetupWritesKeysUnderTheKeysFolderOnly(t *testing.T) {
 
 			if err != nil || len(steps) != 2 || steps[1].file != "etc/apk/keys/relic-rsa.rsa.pub" {
 				t.Errorf("apk setup = %v, %v", steps, err)
+			}
+		})
+	}
+}
+
+func TestNetrcNamesTheHostAsEachClientMatchesIt(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name, client, host string
+		want, wantNot      []string
+	}{
+		{
+			name:   "go on a server with a port",
+			client: "go",
+			host:   "127.0.0.1:8090",
+			want: []string{
+				"machine 127.0.0.1:8090 login ci password secret\n",
+				"machine 127.0.0.1 login ci password secret\n",
+			},
+		},
+		{
+			name:   "pip on a server with a port",
+			client: "pip",
+			host:   "127.0.0.1:8090",
+			want: []string{
+				"machine 127.0.0.1:8090 login ci password secret\n",
+				"machine 127.0.0.1 login ci password secret\n",
+			},
+		},
+		{
+			name:   "go on the default port",
+			client: "go",
+			host:   "relic.example.com",
+			want: []string{
+				"machine relic.example.com login ci password secret\n",
+			},
+			wantNot: []string{
+				"machine relic.example.com:",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			steps, err := setupClients[tc.client].steps(setupEnv{
+				repo:  "repo",
+				url:   "https://" + tc.host + "/repo/",
+				host:  tc.host,
+				user:  "ci",
+				token: "secret",
+				home:  t.TempDir(),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			i := slices.IndexFunc(steps, func(s setupStep) bool {
+				return s.file == ".netrc"
+			})
+			if i < 0 {
+				t.Fatalf("no .netrc step in %+v", steps)
+			}
+
+			for _, line := range tc.want {
+				if !strings.Contains(steps[i].content, line) {
+					t.Errorf(".netrc = %q, want %q", steps[i].content, line)
+				}
+			}
+
+			for _, line := range tc.wantNot {
+				if strings.Contains(steps[i].content, line) {
+					t.Errorf(".netrc = %q, want no %q", steps[i].content, line)
+				}
 			}
 		})
 	}
