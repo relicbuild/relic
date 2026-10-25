@@ -627,6 +627,103 @@ func TestPoetrySetupAvoidsPoetrysReservedName(t *testing.T) {
 	}
 }
 
+func TestSetupTrustsTheContextsCertificateAuthority(t *testing.T) {
+	t.Parallel()
+
+	const authority = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+
+	configured := map[string]string{
+		"pip":    "cert = ",
+		"twine":  "ca_cert = ",
+		"poetry": "certificates.",
+		"helm":   "--ca-file",
+		"podman": ".config/containers/certs.d/relic.example.com:8443/ca.crt",
+		"apt":    "::CaInfo \"",
+		"dnf":    "sslcacert=",
+	}
+
+	for name, client := range setupClients {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			e := setupEnv{
+				repo:     "repo",
+				url:      "https://relic.example.com:8443/repo/",
+				registry: "relic.example.com:8443",
+				host:     "relic.example.com:8443",
+				user:     "ci",
+				token:    "secret",
+				home:     t.TempDir(),
+				root:     t.TempDir(),
+				flags: map[string]string{
+					"branch":       "v3.21",
+					"distribution": "bookworm",
+				},
+			}
+
+			plain, err := clientSteps(withAuthority(e, client), client)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			own, _ := client.steps(e)
+			if len(plain) != len(own) || trustNote(withAuthority(e, client), client) != "" {
+				t.Errorf(
+					"without an authority: %d steps, want the client's %d, and no trust note",
+					len(plain),
+					len(own),
+				)
+			}
+
+			e.certificateAuthority = authority
+			e = withAuthority(e, client)
+
+			steps, err := clientSteps(e, client)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			written := stepPath(e, client, steps[0].file)
+			if client.system {
+				written = "/" + steps[0].file
+			}
+
+			if steps[0].content != authority || written != e.authorityFile || !steps[0].owned {
+				t.Errorf(
+					"first step writes %q to %s, want the authority at %s",
+					steps[0].content,
+					written,
+					e.authorityFile,
+				)
+			}
+
+			var configuration strings.Builder
+			for _, s := range steps[1:] {
+				configuration.WriteString(s.file + "\n" + s.content + "\n" + strings.Join(s.command, " ") + "\n")
+			}
+
+			note := trustNote(e, client)
+
+			if want, ok := configured[name]; ok {
+				if !strings.Contains(configuration.String(), want) || note != "" {
+					t.Errorf(
+						"steps = %q, want %q in them and no trust note, got %q",
+						configuration.String(),
+						want,
+						note,
+					)
+				}
+
+				return
+			}
+
+			if !strings.Contains(note, e.authorityFile) {
+				t.Errorf("trust note = %q, want it to name %s", note, e.authorityFile)
+			}
+		})
+	}
+}
+
 func TestNetrcNamesTheHostAsEachClientMatchesIt(t *testing.T) {
 	t.Parallel()
 

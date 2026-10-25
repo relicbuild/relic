@@ -34,14 +34,16 @@ type setupEnv struct {
 	user     string
 	token    string
 	// contextToken reports whether token is the saved context's own, which only the CLI holds.
-	contextToken bool
-	home, root   string
-	goos         string
-	getenv       func(string) string
-	class        relicv1.RepositoryClass
-	depth        int32
-	signingKeys  []signingKey
-	flags        map[string]string
+	contextToken         bool
+	certificateAuthority string
+	authorityFile        string
+	home, root           string
+	goos                 string
+	getenv               func(string) string
+	class                relicv1.RepositoryClass
+	depth                int32
+	signingKeys          []signingKey
+	flags                map[string]string
 }
 
 type signingKey struct {
@@ -63,7 +65,8 @@ type setupStep struct {
 	env          []string
 	argumentFile []string
 	// undo removes what an earlier setup made, so it may find nothing to remove.
-	undo bool
+	undo  bool
+	owned bool
 }
 
 type setupClient struct {
@@ -74,6 +77,7 @@ type setupClient struct {
 	flags      map[string]string
 	steps      func(e setupEnv) ([]setupStep, error)
 	notes      func(e setupEnv) string
+	trust      func(e setupEnv) string
 	system     bool
 }
 
@@ -151,6 +155,7 @@ var setupClients = map[string]setupClient{
 		},
 		short: "~/.npmrc: the registry and a token for it",
 		steps: npmSteps,
+		trust: nodeTrust,
 	},
 	"pnpm": {
 		packageURL: "pkg:npm/lodash@4.17.21",
@@ -159,6 +164,7 @@ var setupClients = map[string]setupClient{
 		},
 		short: "~/.npmrc, which pnpm reads",
 		steps: npmSteps,
+		trust: nodeTrust,
 	},
 	"yarn": {
 		packageURL: "pkg:npm/lodash@4.17.21",
@@ -178,6 +184,7 @@ var setupClients = map[string]setupClient{
 				content:   "npmRegistryServer: \"" + e.url + "\"\nnpmAlwaysAuth: true\nnpmAuthToken: \"" + e.token + "\"\n",
 			}), nil
 		},
+		trust: nodeTrust,
 	},
 	"maven": {
 		packageURL: "pkg:maven/org.apache.commons/commons-lang3@3.14.0",
@@ -203,6 +210,7 @@ var setupClients = map[string]setupClient{
 		notes: func(e setupEnv) string {
 			return "To deploy, point distributionManagement at " + e.url + " with the server id " + e.repo + "."
 		},
+		trust: javaTrust,
 	},
 	"gradle": {
 		packageURL: "pkg:maven/org.apache.commons/commons-lang3@3.14.0",
@@ -229,6 +237,7 @@ var setupClients = map[string]setupClient{
 				"password = providers.gradleProperty(\"relicToken\").get() }\n" +
 				"  } } }"
 		},
+		trust: javaTrust,
 	},
 	"go": {
 		packageURL: "pkg:golang/github.com/google/uuid@v1.6.0",
@@ -267,6 +276,7 @@ var setupClients = map[string]setupClient{
 		notes: func(_ setupEnv) string {
 			return "Checksum verification stays on for public modules; name private module paths with --private."
 		},
+		trust: goTrust,
 	},
 	"pip": {
 		packageURL: "pkg:pypi/requests@2.32.3",
@@ -290,6 +300,9 @@ var setupClients = map[string]setupClient{
 		notes: func(e setupEnv) string {
 			return "In the Pipfile:\n  [[source]]\n  url = \"" + e.url + "\"\n  verify_ssl = true\n  name = \"" + e.repo + "\""
 		},
+		trust: func(e setupEnv) string {
+			return "export PIP_CERT=" + e.authorityFile + " REQUESTS_CA_BUNDLE=" + e.authorityFile
+		},
 	},
 	"poetry": {
 		packageURL: "pkg:pypi/requests@2.32.3",
@@ -298,7 +311,7 @@ var setupClients = map[string]setupClient{
 		},
 		short: "poetry config: the repository and its credentials",
 		steps: func(e setupEnv) ([]setupStep, error) {
-			return []setupStep{
+			steps := []setupStep{
 				{
 					command: []string{
 						"poetry",
@@ -316,7 +329,19 @@ var setupClients = map[string]setupClient{
 					},
 					stdin: e.token + "\n",
 				},
-			}, nil
+			}
+			if e.authorityFile != "" {
+				steps = append(steps, setupStep{
+					command: []string{
+						"poetry",
+						"config",
+						"certificates." + poetryRepository(e.repo) + ".cert",
+						e.authorityFile,
+					},
+				})
+			}
+
+			return steps, nil
 		},
 		notes: func(e setupEnv) string {
 			name := poetryRepository(e.repo)
@@ -339,7 +364,10 @@ var setupClients = map[string]setupClient{
 						strings.TrimSuffix(
 							e.url,
 							"/simple",
-						) + "\nusername = " + e.user + "\npassword = " + e.token + "\n",
+						) + "\nusername = " + e.user + "\npassword = " + e.token + "\n" + optionalLine(
+						"ca_cert = ",
+						e.authorityFile,
+					),
 				},
 			}, nil
 		},
@@ -358,6 +386,11 @@ var setupClients = map[string]setupClient{
 		notes: func(e setupEnv) string {
 			return "Images are " + e.registry + "/<image>:<tag>."
 		},
+		trust: func(e setupEnv) string {
+			return "Docker trusts the authority as /etc/docker/certs.d/" + hostOnlyWithPort(e.registry) +
+				"/ca.crt (on Docker Desktop, ~/.docker/certs.d/" + hostOnlyWithPort(e.registry) + "/ca.crt): copy " +
+				e.authorityFile + " there."
+		},
 	},
 	"podman": {
 		packageURL: "pkg:docker/library/nginx@1.27.0",
@@ -366,7 +399,21 @@ var setupClients = map[string]setupClient{
 			relicv1.Format_FORMAT_OCI,
 		},
 		short: "podman login to the registry",
-		steps: loginSteps("podman"),
+		steps: func(e setupEnv) ([]setupStep, error) {
+			steps, _ := loginSteps("podman")(e)
+			if e.certificateAuthority == "" {
+				return steps, nil
+			}
+
+			return append([]setupStep{
+				{
+					file:    ".config/containers/certs.d/" + hostOnlyWithPort(e.registry) + "/ca.crt",
+					mode:    0o644,
+					content: e.certificateAuthority,
+					owned:   true,
+				},
+			}, steps...), nil
+		},
 		notes: func(e setupEnv) string {
 			return "Images are " + e.registry + "/<image>:<tag>."
 		},
@@ -409,6 +456,7 @@ var setupClients = map[string]setupClient{
 				},
 			}, nil
 		},
+		trust: systemTrust,
 	},
 	"conan": {
 		packageURL: "pkg:conan/zlib@1.3.1",
@@ -441,6 +489,9 @@ var setupClients = map[string]setupClient{
 					},
 				},
 			}, nil
+		},
+		trust: func(e setupEnv) string {
+			return "In Conan's global.conf: core.net.http:cacert_path=" + e.authorityFile
 		},
 	},
 	"ruby": {
@@ -482,6 +533,10 @@ var setupClients = map[string]setupClient{
 			return "For gem: gem sources --add " + u.Scheme + "://" + url.User(e.user).String() + ":<token>@" +
 				u.Host + u.EscapedPath()
 		},
+		trust: func(e setupEnv) string {
+			return "bundle config set --global ssl_ca_cert " + e.authorityFile + "\nFor gem, in ~/.gemrc: :ssl_ca_cert: " +
+				e.authorityFile
+		},
 	},
 	"terraform": {
 		formats: []relicv1.Format{
@@ -503,6 +558,7 @@ var setupClients = map[string]setupClient{
 			return "Modules: source = \"" + e.host + "/" + e.repo + "__<namespace>/<name>/<provider>\"; " +
 				"publish them with relic package publish terraform."
 		},
+		trust: goTrust,
 	},
 	"helm": {
 		formats: []relicv1.Format{
@@ -511,10 +567,18 @@ var setupClients = map[string]setupClient{
 		},
 		short: "helm repo add (or helm registry login for OCI charts)",
 		steps: func(e setupEnv) ([]setupStep, error) {
+			var caFile []string
+			if e.authorityFile != "" {
+				caFile = []string{
+					"--ca-file",
+					e.authorityFile,
+				}
+			}
+
 			if e.format == relicv1.Format_FORMAT_HELM_OCI {
 				return []setupStep{
 					{
-						command: []string{
+						command: append([]string{
 							"helm",
 							"registry",
 							"login",
@@ -522,7 +586,7 @@ var setupClients = map[string]setupClient{
 							"--username",
 							e.user,
 							"--password-stdin",
-						},
+						}, caFile...),
 						stdin: e.token,
 					},
 				}, nil
@@ -530,7 +594,7 @@ var setupClients = map[string]setupClient{
 
 			return []setupStep{
 				{
-					command: []string{
+					command: append([]string{
 						"helm",
 						"repo",
 						"add",
@@ -540,7 +604,7 @@ var setupClients = map[string]setupClient{
 						"--username",
 						e.user,
 						"--password-stdin",
-					},
+					}, caFile...),
 					stdin: e.token,
 				},
 			}, nil
@@ -571,6 +635,9 @@ var setupClients = map[string]setupClient{
 		},
 		notes: func(e setupEnv) string {
 			return "Use it with --registry " + e.repo + ", or replace crates.io:\n  [source.crates-io]\n  replace-with = \"" + e.repo + "\""
+		},
+		trust: func(e setupEnv) string {
+			return "export CARGO_HTTP_CAINFO=" + e.authorityFile
 		},
 	},
 	"apk": {
@@ -628,6 +695,10 @@ var setupClients = map[string]setupClient{
 
 			return steps, nil
 		},
+		trust: func(e setupEnv) string {
+			return "apk trusts the system's authorities: copy " + e.authorityFile +
+				" to /usr/local/share/ca-certificates/ and run update-ca-certificates."
+		},
 	},
 	"apt": {
 		packageURL: "pkg:deb/debian/curl@7.88.1-10",
@@ -662,6 +733,14 @@ var setupClients = map[string]setupClient{
 					file:    "etc/apt/keyrings/relic-" + e.repo + ".asc",
 					mode:    0o644,
 					content: keyring,
+				})
+			}
+
+			if e.authorityFile != "" {
+				steps = append(steps, setupStep{
+					file:    "etc/apt/apt.conf.d/80relic-" + e.repo,
+					mode:    0o644,
+					content: "Acquire::https::" + hostOnly(e.host) + "::CaInfo \"" + e.authorityFile + "\";\n",
 				})
 			}
 
@@ -719,7 +798,10 @@ var setupClients = map[string]setupClient{
 				file: "etc/yum.repos.d/relic-" + e.repo + ".repo",
 				mode: 0o600,
 				content: "[relic-" + e.repo + "]\nname=Relic " + e.repo + "\nbaseurl=" + baseURL + "\nusername=" + e.user +
-					"\npassword=" + e.token + "\nenabled=1\ngpgcheck=0\n" + signature,
+					"\npassword=" + e.token + "\nenabled=1\ngpgcheck=0\n" + signature + optionalLine(
+					"sslcacert=",
+					e.authorityFile,
+				),
 			}), nil
 		},
 		notes: func(e setupEnv) string {
@@ -751,6 +833,10 @@ var setupClients = map[string]setupClient{
 		notes: func(_ setupEnv) string {
 			return "Add the cache's signing key to trusted-public-keys, or set require-sigs = false for unsigned caches."
 		},
+		trust: func(e setupEnv) string {
+			return "In nix.conf (the daemon's /etc/nix/nix.conf on a multi-user install): ssl-cert-file = " +
+				e.authorityFile
+		},
 	},
 	"huggingface": {
 		formats: []relicv1.Format{
@@ -769,7 +855,92 @@ var setupClients = map[string]setupClient{
 		notes: func(e setupEnv) string {
 			return "export HF_ENDPOINT=" + e.url + "\nor relic package huggingface upload|download, which need neither."
 		},
+		trust: func(e setupEnv) string {
+			return "export SSL_CERT_FILE=" + e.authorityFile + " REQUESTS_CA_BUNDLE=" + e.authorityFile
+		},
 	},
+}
+
+func nodeTrust(e setupEnv) string {
+	return "export NODE_EXTRA_CA_CERTS=" + e.authorityFile
+}
+
+func javaTrust(e setupEnv) string {
+	return "Java trusts the authority once it is in the JDK's trust store: keytool -importcert -cacerts -alias relic -file " +
+		e.authorityFile
+}
+
+func goTrust(e setupEnv) string {
+	return "export SSL_CERT_FILE=" + e.authorityFile + " (Linux); on macOS and Windows, add it to the system trust store."
+}
+
+func systemTrust(e setupEnv) string {
+	return "Add " + e.authorityFile + " to the system trust store."
+}
+
+func optionalLine(prefix, value string) string {
+	if value == "" {
+		return ""
+	}
+
+	return prefix + value + "\n"
+}
+
+func authorityStep(e setupEnv, client setupClient) setupStep {
+	return setupStep{
+		file:    authorityFileName(e, client),
+		mode:    0o644,
+		content: e.certificateAuthority,
+		owned:   true,
+	}
+}
+
+func authorityFileName(e setupEnv, client setupClient) string {
+	name := strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-' {
+			return r
+		}
+
+		return '_'
+	}, e.host)
+
+	if client.system {
+		return "etc/relic/certificate-authorities/" + name + ".crt"
+	}
+
+	return ".config/relic/certificate-authorities/" + name + ".crt"
+}
+
+func withAuthority(e setupEnv, client setupClient) setupEnv {
+	switch {
+	case e.certificateAuthority == "":
+		e.authorityFile = ""
+	case client.system:
+		e.authorityFile = "/" + authorityFileName(e, client)
+	default:
+		e.authorityFile = stepPath(e, client, authorityFileName(e, client))
+	}
+
+	return e
+}
+
+func clientSteps(e setupEnv, client setupClient) ([]setupStep, error) {
+	steps, err := client.steps(e)
+	if err != nil || e.authorityFile == "" {
+		return steps, err
+	}
+
+	return append([]setupStep{
+		authorityStep(e, client),
+	}, steps...), nil
+}
+
+func trustNote(e setupEnv, client setupClient) string {
+	if e.authorityFile == "" || client.trust == nil {
+		return ""
+	}
+
+	return "The server's certificate authority is in " + e.authorityFile + ".\n" + client.trust(e)
 }
 
 // homeEnvironment is e.getenv when e.home is the user's own home, and
@@ -848,7 +1019,7 @@ func pipSteps(e setupEnv) ([]setupStep, error) {
 		{
 			file:    pipConfigFile(e),
 			mode:    0o644,
-			content: "[global]\nindex-url = " + e.url + "\n",
+			content: "[global]\nindex-url = " + e.url + "\n" + optionalLine("cert = ", e.authorityFile),
 		},
 		netrcStep(e),
 	}, nil
@@ -1040,7 +1211,9 @@ func packageSetupCmd(g *globals) *cobra.Command {
 				}
 			}
 
-			steps, err := client.steps(e)
+			e = withAuthority(e, client)
+
+			steps, err := clientSteps(e, client)
 			if err != nil {
 				return err
 			}
@@ -1067,6 +1240,10 @@ func packageSetupCmd(g *globals) *cobra.Command {
 
 			if client.notes != nil && client.notes(e) != "" {
 				_, _ = fmt.Fprintf(out, "\n%s\n", client.notes(e))
+			}
+
+			if note := trustNote(e, client); note != "" {
+				_, _ = fmt.Fprintf(out, "\n%s\n", note)
 			}
 
 			return nil
@@ -1153,17 +1330,18 @@ func setupEnvFor(cmd *cobra.Command, g *globals, c *client, client setupClient, 
 	}
 
 	e := setupEnv{
-		repo:         repo,
-		format:       format,
-		url:          ep.GetPackageManager(),
-		registry:     ep.GetContainerRegistry(),
-		files:        ep.GetFiles(),
-		host:         u.Host,
-		user:         me.GetPrincipal().GetUsername(),
-		token:        target.token,
-		contextToken: target.contextToken,
-		class:        r.GetRepository().GetClass(),
-		depth:        r.GetRepository().GetMetadataDepth(),
+		repo:                 repo,
+		format:               format,
+		url:                  ep.GetPackageManager(),
+		registry:             ep.GetContainerRegistry(),
+		files:                ep.GetFiles(),
+		host:                 u.Host,
+		user:                 me.GetPrincipal().GetUsername(),
+		token:                target.token,
+		contextToken:         target.contextToken,
+		class:                r.GetRepository().GetClass(),
+		depth:                r.GetRepository().GetMetadataDepth(),
+		certificateAuthority: target.certificateAuthority,
 	}
 	if e.url == "" {
 		e.url = e.files
@@ -1543,7 +1721,7 @@ func applySetupStep(cmd *cobra.Command, e setupEnv, client setupClient, s setupS
 		if err != nil {
 			return fmt.Errorf("setup: %s: %w", path, err)
 		}
-	case err == nil && string(old) != s.content && !force:
+	case err == nil && string(old) != s.content && !force && !s.owned:
 		return fmt.Errorf(
 			"setup: %s exists; merge it by hand (relic package setup without --write prints it) or replace it with --force",
 			path,
