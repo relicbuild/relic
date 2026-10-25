@@ -108,7 +108,7 @@ func TestKubernetes(t *testing.T) {
 	})
 
 	t.Cleanup(func() {
-		stop(c)
+		stop(t, c)
 	})
 
 	if err != nil {

@@ -12,6 +12,7 @@ vars:
   DEV_KEY: cmVsaWMtZGV2LXNlY3JldHMta2V5LW5vdC1wcm9kISE=
   TEST_PACKAGE_PARALLELISM:
     sh: echo $(( ($(getconf _NPROCESSORS_ONLN) + 3) / 4 ))
+  E2E_PARALLELISM: '{{.E2E_PARALLELISM | default "4"}}'
 
 env:
   RYUK_RECONNECTION_TIMEOUT: 10m
@@ -224,12 +225,12 @@ tasks:
   e2e:core:
     internal: true
     cmds:
-      - go test -tags e2e -count=1 -v -timeout 90m ./test/e2e -run TestStack -tier core
+      - go test -tags e2e -count=1 -v -timeout 90m ./test/e2e -run TestStack -tier core -parallel {{.E2E_PARALLELISM}}
 
   test:platform:
     desc: "Tier 2: the platform scenarios on the Compose stack (PostgreSQL, SeaweedFS, a separate worker)"
     cmds:
-      - go test -tags e2e -count=1 -v -timeout 90m ./test/e2e -run TestStack -tier platform
+      - go test -tags e2e -count=1 -v -timeout 90m ./test/e2e -run TestStack -tier platform -parallel {{.E2E_PARALLELISM}}
 
   test:k8s:
     desc: "The k8s tier: one kind cluster, the Helm chart, Kubernetes pulls, a rolling restart and an upgrade, HA, and the restore drill"

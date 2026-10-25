@@ -67,6 +67,10 @@ func TestStack(t *testing.T) {
 
 		s.keepOutput(ctx)
 
+		for _, name := range s.outOfMemory(ctx) {
+			t.Errorf("%s ran out of memory", name)
+		}
+
 		if !*keepFlag {
 			s.down(ctx)
 		}
@@ -125,7 +129,7 @@ func TestStack(t *testing.T) {
 			uiContainer, uiErr = startUI(ctx, s, "ui", "--grep-invert", "Lighthouse")
 
 			t.Cleanup(func() {
-				stop(uiContainer)
+				stop(t, uiContainer)
 			})
 		}
 	}
@@ -143,7 +147,7 @@ func TestStack(t *testing.T) {
 	cl, err := client(ctx, s, clientImage, relic, s.clientEnvironment(names))
 
 	t.Cleanup(func() {
-		stop(cl)
+		stop(t, cl)
 	})
 
 	if err != nil {
@@ -230,7 +234,7 @@ func TestStack(t *testing.T) {
 			)
 
 			t.Cleanup(func() {
-				stop(c)
+				stop(t, c)
 			})
 
 			ui(t, s, "lighthouse", c, err)
@@ -381,7 +385,7 @@ func (s stack) startContainers(t *testing.T, names []string) *testContainers {
 		defer mu.Unlock()
 
 		for _, c := range started {
-			stop(c)
+			stop(t, c)
 		}
 	})
 

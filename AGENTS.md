@@ -263,7 +263,9 @@ task test:k8s        # one kind cluster: the chart, Kubernetes pulls, restart, u
   scenarios, `-keep` leaves the stack up, `-url https://…` runs against a
   running server. `-tier k8s` runs `TestKubernetes` (`test/e2e/k8s.sh`).
 - Each tier is its own Compose project on free host ports, so tiers run at
-  once. Scenarios run in parallel (`-parallel` sets the width).
+  once. Scenarios run in parallel (`-parallel` sets the width; the Taskfile
+  runs four at a time, `E2E_PARALLELISM` changes it). Every container has a
+  memory limit, and a run fails naming any container that ran out of memory.
 - A test leaves nothing behind: stacks, containers, networks and volumes go
   when it ends (`-keep` keeps the stack), and the shared PostgreSQL goes with
   the task that started it. What stays: the images the suite built (labelled

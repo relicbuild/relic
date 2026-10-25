@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 
 	"github.com/moby/moby/api/types/container"
@@ -63,6 +64,7 @@ func daemon(ctx context.Context, s stack, alias string, images []string) (testco
 			},
 			HostConfigModifier: func(hc *container.HostConfig) {
 				hc.Privileged = true
+				hc.Memory = daemonMemory
 			},
 			WaitingFor: wait.ForExec([]string{
 				"docker",
@@ -154,6 +156,8 @@ func copyImage(ctx context.Context, c testcontainers.Container, image string) er
 const (
 	pullAttempts = 3
 	pullTimeout  = 10 * time.Minute
+	daemonMemory = 1 << 30
+	clientMemory = 3 << 30
 )
 
 func pull(ctx context.Context, image string) error {
@@ -471,6 +475,7 @@ func client(
 					s.results+":/results",
 					relic+":/usr/local/bin/relic:ro",
 				)
+				hc.Memory = clientMemory
 			},
 		},
 		Started: true,
@@ -515,9 +520,17 @@ func hostUser() string {
 }
 
 // stop terminates c, if a start left one, even a typed nil.
-func stop(c testcontainers.Container) {
+func stop(t *testing.T, c testcontainers.Container) {
+	t.Helper()
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
+
+	if dc, ok := c.(*testcontainers.DockerContainer); ok && dc != nil {
+		if info, err := dc.Inspect(ctx); err == nil && info.State != nil && info.State.OOMKilled {
+			t.Errorf("%s ran out of memory", info.Name)
+		}
+	}
 
 	_ = testcontainers.TerminateContainer(c, testcontainers.StopContext(ctx))
 }

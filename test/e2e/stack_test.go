@@ -169,6 +169,34 @@ func (s stack) up(ctx context.Context) error {
 }
 
 // down removes the stack: its containers, networks and volumes.
+func (s stack) outOfMemory(ctx context.Context) []string {
+	ids, err := s.compose(ctx, "ps", "--all", "--quiet")
+	if err != nil || len(bytes.TrimSpace(ids)) == 0 {
+		return nil
+	}
+
+	args := append([]string{
+		"inspect",
+		"--format",
+		"{{.Name}} {{.State.OOMKilled}}",
+	}, strings.Fields(string(ids))...)
+
+	out, err := exec.CommandContext(ctx, "docker", args...).Output()
+	if err != nil {
+		return nil
+	}
+
+	var killed []string
+
+	for line := range strings.Lines(string(out)) {
+		if name, ok := strings.CutSuffix(strings.TrimSpace(line), " true"); ok {
+			killed = append(killed, name)
+		}
+	}
+
+	return killed
+}
+
 func (s stack) down(ctx context.Context) {
 	_, _ = s.compose(ctx, "down", "--volumes", "--remove-orphans")
 }
@@ -182,7 +210,7 @@ func (s stack) serveVulnerabilityDatabases(t *testing.T) error {
 	c, err := vulnerabilityMirror(t.Context(), s, dir)
 
 	t.Cleanup(func() {
-		stop(c)
+		stop(t, c)
 	})
 
 	return err
