@@ -3,6 +3,7 @@ package telemetry
 import (
 	"context"
 	"slices"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -52,7 +53,27 @@ var (
 		"Deploys satisfied by content Relic already stored (checksum deploys), by format.",
 		"format",
 	)
+
+	// PromQL: histogram_quantile(0.95, sum by (le) (rate(relic_move_batch_duration_seconds_bucket[5m])))
+	moveBatchDuration = histogramVec(
+		"move_batch_duration_seconds",
+		"Duration of each transaction that moves part of a large folder (a delete into the trash can).",
+		requestBuckets,
+	)
+
+	// PromQL: sum(rate(relic_move_batch_items_total[5m]))
+	moveBatchItems = counterVec(
+		"move_batch_items_total",
+		"Items moved by the transactions that move part of a large folder.",
+	)
 )
+
+// MoveBatch records one transaction of a large folder's move: the items it
+// moved and how long it took.
+func MoveBatch(ctx context.Context, items int, elapsed time.Duration) {
+	moveBatchItems.WithLabelValues().Add(float64(items))
+	observe(ctx, moveBatchDuration.WithLabelValues(), elapsed.Seconds())
+}
 
 // Tracer is the tracer of Relic's own spans.
 func Tracer() trace.Tracer { return otel.Tracer(tracerName) }
