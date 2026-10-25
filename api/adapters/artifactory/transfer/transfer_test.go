@@ -2,12 +2,15 @@ package transfer
 
 import (
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -166,6 +169,59 @@ func TestCommandRefuses(t *testing.T) {
 				t.Errorf("error = %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestCommandTrustsTheSourcesCertificateAuthority(t *testing.T) {
+	t.Parallel()
+
+	source := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/artifactory/api/repositories", "/artifactory/api/security/groups",
+			"/artifactory/api/v2/security/permissions":
+			_, _ = io.WriteString(w, `[]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(source.Close)
+
+	relic := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(relic.Close)
+
+	authority := filepath.Join(t.TempDir(), "ca.crt")
+	if err := os.WriteFile(authority, pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: source.Certificate().Raw,
+	}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	importSource := func(extra ...string) error {
+		cmd := Command(func() (Server, error) {
+			return Server{
+				URL:    relic.URL,
+				Client: relic.Client(),
+			}, nil
+		}, func(string) {})
+		cmd.SetArgs(append([]string{
+			source.URL,
+			"--token-stdin",
+			"--dry-run",
+		}, extra...))
+		cmd.SetIn(strings.NewReader("token\n"))
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+
+		return cmd.ExecuteContext(t.Context())
+	}
+
+	if err := importSource(); err == nil || !strings.Contains(err.Error(), "certificate") {
+		t.Errorf("import without --ca-file = %v, want a certificate error", err)
+	}
+
+	if err := importSource("--ca-file", authority); err != nil {
+		t.Errorf("import with --ca-file = %v", err)
 	}
 }
 
@@ -334,10 +390,15 @@ func TestSourceCredentialsStayOnTheSourceHost(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resp, err := client(credentials{
+	sourceClient, err := client(credentials{
 		host:  sourceURL.Host,
 		token: "source-token",
-	}).Do(req)
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := sourceClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
