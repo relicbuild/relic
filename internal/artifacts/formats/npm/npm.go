@@ -757,6 +757,64 @@ func (s *Service) DeleteTag(ctx context.Context, repoKey, name, tag string) erro
 	return nil
 }
 
+// Unpublish moves the versions of name that keep rejects (all of them when keep is nil) to the trash can.
+func (s *Service) Unpublish(ctx context.Context, repoKey, name, user string, keep func(version string) bool) error {
+	rows, err := s.db.ListNpmVersions(ctx, database.ListNpmVersionsParams{
+		RepoKey: repoKey,
+		Name:    name,
+	})
+	if err != nil {
+		return err
+	}
+
+	removed := map[string]bool{}
+
+	for _, row := range rows {
+		if keep != nil && keep(row.Version) {
+			continue
+		}
+
+		if err := s.repos.DeleteToTrash(
+			ctx,
+			repoKey,
+			repository.JoinPath(row.ItemPath, row.ItemName),
+			user,
+		); err != nil {
+			return fmt.Errorf("unpublish %s@%s: %w", name, row.Version, err)
+		}
+
+		removed[row.Version] = true
+	}
+
+	if len(removed) == 0 {
+		return ErrNotFound
+	}
+
+	tags, err := s.db.ListNpmDistTags(ctx, database.ListNpmDistTagsParams{
+		RepoKey: repoKey,
+		Name:    name,
+	})
+	if err != nil {
+		return err
+	}
+
+	for _, tag := range tags {
+		if !removed[tag.Version] {
+			continue
+		}
+
+		if _, err := s.db.DeleteNpmDistTag(ctx, database.DeleteNpmDistTagParams{
+			RepoKey: repoKey,
+			Name:    name,
+			Tag:     tag.Tag,
+		}); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // SearchResult is one npm search hit.
 type SearchResult struct {
 	Name        string

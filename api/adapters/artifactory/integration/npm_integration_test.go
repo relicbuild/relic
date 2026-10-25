@@ -373,6 +373,117 @@ func TestNpmRegistry(t *testing.T) {
 	}
 }
 
+func TestNpmUnpublish(t *testing.T) {
+	t.Parallel()
+
+	srv := server(t)
+	for _, r := range []struct {
+		name, config string
+	}{
+		{
+			name:   "npm-local",
+			config: `{"rclass":"local","packageType":"npm"}`,
+		},
+		{
+			name:   "npm",
+			config: `{"rclass":"virtual","packageType":"npm","repositories":["npm-local"],"defaultDeploymentRepo":"npm-local"}`,
+		},
+	} {
+		if resp, body := do(t, srv, call{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/" + r.name,
+			body:   r.config,
+		}); resp.StatusCode/100 != 2 {
+			t.Fatalf("create %s = %d %s", r.name, resp.StatusCode, body)
+		}
+	}
+
+	base := "/artifactory/api/npm/npm"
+	for _, version := range []string{
+		"1.0.0",
+		"1.1.0",
+	} {
+		if resp, body := do(t, srv, call{
+			method: "PUT",
+			path:   base + "/@acme%2fhello",
+			body:   publishDoc("@acme/hello", version, npmTarball(t, "@acme/hello", version)),
+		}); resp.StatusCode != 201 {
+			t.Fatalf("publish %s = %d %s", version, resp.StatusCode, body)
+		}
+	}
+
+	var doc packument
+	if code := getJSON(t, srv, base+"/@acme%2fhello", &doc); code != 200 {
+		t.Fatalf("packument = %d", code)
+	}
+
+	kept := map[string]any{
+		"name": "@acme/hello",
+		"dist-tags": map[string]string{
+			"latest": "1.0.0",
+		},
+		"versions": map[string]any{
+			"1.0.0": doc.Versions["1.0.0"],
+		},
+	}
+	body, _ := json.Marshal(kept)
+
+	steps := []struct {
+		name   string
+		call   call
+		status int
+	}{
+		{
+			name: "a packument update without versions",
+			call: call{
+				method: "PUT",
+				path:   base + "/@acme%2fhello/-rev/undefined",
+				body:   `{"name":"@acme/hello","versions":{}}`,
+			},
+			status: 400,
+		},
+		{
+			name: "the packument without 1.1.0",
+			call: call{
+				method: "PUT",
+				path:   base + "/@acme%2fhello/-rev/undefined",
+				body:   string(body),
+			},
+			status: 200,
+		},
+		{
+			name: "the tarball of 1.1.0, already gone",
+			call: call{
+				method: "DELETE",
+				path:   base + "/@acme/hello/-/@acme/hello-1.1.0.tgz/-rev/undefined",
+			},
+			status: 404,
+		},
+	}
+	for _, step := range steps {
+		if resp, body := do(t, srv, step.call); resp.StatusCode != step.status {
+			t.Fatalf("%s = %d %s, want %d", step.name, resp.StatusCode, body, step.status)
+		}
+	}
+
+	var after packument
+	if code := getJSON(t, srv, base+"/@acme%2fhello", &after); code != 200 || len(after.Versions) != 1 ||
+		after.DistTags["latest"] != "1.0.0" {
+		t.Errorf("after unpublishing 1.1.0 = %d %+v", code, after)
+	}
+
+	if resp, body := do(t, srv, call{
+		method: "DELETE",
+		path:   base + "/@acme%2fhello/-rev/undefined",
+	}); resp.StatusCode != 200 {
+		t.Fatalf("unpublish the package = %d %s", resp.StatusCode, body)
+	}
+
+	if code := getJSON(t, srv, base+"/@acme%2fhello", &after); code != 404 {
+		t.Errorf("an unpublished package = %d, want 404", code)
+	}
+}
+
 func TestNpmLogoutRevokesTheLoginToken(t *testing.T) {
 	t.Parallel()
 

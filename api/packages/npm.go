@@ -101,6 +101,11 @@ func (h *Handler) npmPackageRequest(w http.ResponseWriter, r *http.Request, req 
 		writeJSON(w, http.StatusOK, doc)
 	case tail == "" && r.Method == http.MethodPut:
 		h.npmPublish(w, r, req, name)
+	case strings.HasPrefix(tail, "-rev/") && (r.Method == http.MethodPut || r.Method == http.MethodDelete):
+		h.npmUnpublish(w, r, req, name)
+	case strings.HasPrefix(tail, "-/") && strings.Contains(tail, "/-rev/") && r.Method == http.MethodDelete:
+		file, _, _ := strings.Cut(strings.TrimPrefix(tail, "-/"), "/-rev/")
+		h.npmDeleteTarball(w, r, req, name, file)
 	case strings.HasPrefix(tail, "-/") && (r.Method == http.MethodGet || r.Method == http.MethodHead):
 		// Scoped local tarballs repeat the scope: @s/p/-/@s/p-1.0.0.tgz.
 		file, err := url.PathUnescape(strings.TrimPrefix(tail, "-/"))
@@ -176,6 +181,89 @@ func (h *Handler) npmPublish(w http.ResponseWriter, r *http.Request, req npmRequ
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"ok": true,
 		"id": name,
+	})
+}
+
+func (h *Handler) npmUnpublish(w http.ResponseWriter, r *http.Request, req npmRequest, name string) {
+	dest, err := h.repos.DeployTarget(r.Context(), req.repo)
+	if err != nil {
+		h.npmError(w, r, err)
+		return
+	}
+
+	if !h.RequireRepo(w, r, RepoCheck{
+		dest,
+		name,
+		auth.ActionDelete,
+	}) {
+		return
+	}
+
+	var (
+		doc  npm.PublishDocument
+		keep func(version string) bool
+	)
+
+	if r.Method == http.MethodPut {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxPublishBytes)).Decode(&doc); err != nil ||
+			doc.Name != name || len(doc.Versions) == 0 {
+			httperror.Write(w, r, http.StatusBadRequest, "the packument must name the package and keep a version")
+			return
+		}
+
+		keep = func(version string) bool {
+			_, kept := doc.Versions[version]
+			return kept
+		}
+	}
+
+	user := auth.FromContext(r.Context()).Name()
+	if err := h.npm.Unpublish(r.Context(), dest, name, user, keep); err != nil {
+		h.npmError(w, r, err)
+		return
+	}
+
+	for tag, version := range doc.DistTags {
+		if err := h.npm.SetTag(r.Context(), dest, name, tag, version); err != nil && !errors.Is(err, npm.ErrNotFound) {
+			h.npmError(w, r, err)
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{
+		"ok": true,
+	})
+}
+
+func (h *Handler) npmDeleteTarball(w http.ResponseWriter, r *http.Request, req npmRequest, name, escapedFile string) {
+	file, err := url.PathUnescape(escapedFile)
+	if err != nil || file == "" || strings.Contains(file, "..") {
+		httperror.Write(w, r, http.StatusBadRequest, "invalid tarball name")
+		return
+	}
+
+	dest, err := h.repos.DeployTarget(r.Context(), req.repo)
+	if err != nil {
+		h.npmError(w, r, err)
+		return
+	}
+
+	p := name + "/-/" + file
+	if !h.RequireRepo(w, r, RepoCheck{
+		dest,
+		p,
+		auth.ActionDelete,
+	}) {
+		return
+	}
+
+	if err := h.repos.DeleteToTrash(r.Context(), dest, p, auth.FromContext(r.Context()).Name()); err != nil {
+		h.npmError(w, r, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{
+		"ok": true,
 	})
 }
 
