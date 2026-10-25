@@ -39,6 +39,7 @@ type setupEnv struct {
 	goos         string
 	getenv       func(string) string
 	class        relicv1.RepositoryClass
+	depth        int32
 	signingKeys  []signingKey
 	flags        map[string]string
 }
@@ -689,7 +690,15 @@ var setupClients = map[string]setupClient{
 		},
 		short:  "a dnf and yum repository file with its credentials, and the repository's signing key (run as root)",
 		system: true,
+		flags: map[string]string{
+			"folder": "the folder whose repodata to use, in a repository with a metadataDepth (el9, f44)",
+		},
 		steps: func(e setupEnv) ([]setupStep, error) {
+			baseURL, err := dnfBaseURL(e)
+			if err != nil {
+				return nil, err
+			}
+
 			var steps []setupStep
 
 			signature := "repo_gpgcheck=0\n"
@@ -712,7 +721,7 @@ var setupClients = map[string]setupClient{
 			return append(steps, setupStep{
 				file: "etc/yum.repos.d/relic-" + e.repo + ".repo",
 				mode: 0o600,
-				content: "[relic-" + e.repo + "]\nname=Relic " + e.repo + "\nbaseurl=" + e.url + "\nusername=" + e.user +
+				content: "[relic-" + e.repo + "]\nname=Relic " + e.repo + "\nbaseurl=" + baseURL + "\nusername=" + e.user +
 					"\npassword=" + e.token + "\nenabled=1\ngpgcheck=0\n" + signature,
 			}), nil
 		},
@@ -1140,6 +1149,7 @@ func setupEnvFor(cmd *cobra.Command, g *globals, c *client, client setupClient, 
 		token:        target.token,
 		contextToken: target.contextToken,
 		class:        r.GetRepository().GetClass(),
+		depth:        r.GetRepository().GetMetadataDepth(),
 	}
 	if e.url == "" {
 		e.url = e.files
@@ -1171,6 +1181,30 @@ func setupEnvFor(cmd *cobra.Command, g *globals, c *client, client setupClient, 
 	}
 
 	return e, nil
+}
+
+func dnfBaseURL(e setupEnv) (string, error) {
+	folder := strings.Trim(e.flags["folder"], "/")
+	if e.depth == 0 {
+		if folder != "" {
+			return "", fmt.Errorf("dnf: %s serves its repodata at its root, so it takes no --folder", e.repo)
+		}
+
+		return e.url, nil
+	}
+
+	segments := strings.Split(folder, "/")
+	if folder == "" || len(segments) != int(e.depth) || slices.ContainsFunc(segments, func(segment string) bool {
+		return !plainFileName(segment)
+	}) {
+		return "", fmt.Errorf(
+			"dnf: %s has repodata %d folder(s) down: give the folder (--folder el9)",
+			e.repo,
+			e.depth,
+		)
+	}
+
+	return strings.TrimSuffix(e.url, "/") + "/" + folder, nil
 }
 
 // clientToken issues the token a client gets in place of the context's own, which signing in again and

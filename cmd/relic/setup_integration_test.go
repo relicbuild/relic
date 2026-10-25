@@ -77,6 +77,11 @@ spec: {class: remote, format: rpm, remote: {url: "https://rpm.example.org/fedora
 ---
 apiVersion: relic.build/v1
 kind: Repository
+metadata: {name: rpm-deep}
+spec: {class: local, format: rpm, metadataDepth: 1}
+---
+apiVersion: relic.build/v1
+kind: Repository
 metadata: {name: apk-rotating}
 spec: {class: local, format: alpine, signingKey: apk-old, secondarySigningKey: apk-new}
 ---
@@ -250,6 +255,23 @@ spec: {class: local, format: debian, signingKey: deb-old, secondarySigningKey: d
 	remoteRepo, _ := os.ReadFile(filepath.Join(root, "etc/yum.repos.d/relic-rpm-remote.repo"))
 	if !strings.Contains(string(remoteRepo), "repo_gpgcheck=0\n") || strings.Contains(string(remoteRepo), "gpgkey=") {
 		t.Errorf("dnf repository file of a remote = %q, want no check of Relic's signature", remoteRepo)
+	}
+
+	if _, err := setup("dnf", "rpm-deep", "--write"); err == nil || !strings.Contains(err.Error(), "--folder") {
+		t.Errorf("dnf for a repository with metadataDepth 1 and no folder = %v, want a --folder error", err)
+	}
+
+	if _, err := setup("dnf", "rpm-deep", "--folder", "f44", "--write"); err != nil {
+		t.Fatal(err)
+	}
+
+	deepRepo, _ := os.ReadFile(filepath.Join(root, "etc/yum.repos.d/relic-rpm-deep.repo"))
+	if !strings.Contains(string(deepRepo), "baseurl="+srv.URL+"/rpm/rpm-deep/f44\n") {
+		t.Errorf("dnf repository file of f44 = %q", deepRepo)
+	}
+
+	if _, err := setup("dnf", "rpm-local", "--folder", "f44"); err == nil {
+		t.Error("dnf took a folder for a repository with its repodata at its root")
 	}
 
 	out, err = setup("apk", "apk-local", "--branch", "v3.22", "--alpine-repositories", "main community")
