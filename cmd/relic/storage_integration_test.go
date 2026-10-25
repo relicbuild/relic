@@ -126,3 +126,58 @@ func TestStorageCheckCommand(t *testing.T) {
 		t.Errorf("report = %+v, want the one missing blob", report)
 	}
 }
+
+func TestStorageCheckWaitEndsWhenNoWorkerStartsTheCheck(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db := databasetest.NewDB(t)
+	log := slog.New(slog.DiscardHandler)
+
+	if err := app.BootstrapAdmin(ctx, db, "admin", "password", log); err != nil {
+		t.Fatal(err)
+	}
+
+	tokens, err := auth.NewTokens(ctx, db, nil, access.Format{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queue, err := backgroundjobs.NewInsertClient(db, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv := httptest.NewServer(app.NewHandler(db, objectstoretest.NewMemory(), tokens, queue, app.Options{}, log))
+	t.Cleanup(srv.Close)
+
+	cfg := filepath.Join(t.TempDir(), "config.yaml")
+	if _, err := relic(
+		t,
+		cfg,
+		"password\n",
+		"auth",
+		"login",
+		srv.URL,
+		"--user",
+		"admin",
+		"--password-stdin",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+
+	out, err := relic(t, cfg, "", "storage", "check", "--wait", "--timeout", "3s")
+	if err == nil || !strings.Contains(err.Error(), "no worker has started it") {
+		t.Fatalf(
+			"storage check --wait without a worker = %v, output %s; want the job reported as not started",
+			err,
+			out,
+		)
+	}
+
+	if elapsed := time.Since(start); elapsed > time.Minute {
+		t.Errorf("storage check --wait --timeout 3s returned after %s", elapsed)
+	}
+}
