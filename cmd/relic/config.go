@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
@@ -194,7 +196,10 @@ func (t serverTarget) credentials() credentials {
 }
 
 func (g *globals) target() (serverTarget, error) {
-	url, token := g.getenv("RELIC_URL"), g.getenv("RELIC_TOKEN")
+	url, token := g.getenv("RELIC_URL"), strings.TrimSpace(g.getenv("RELIC_TOKEN"))
+	if g.context != "" {
+		url, token = "", ""
+	}
 
 	var (
 		certificateAuthority string
@@ -232,7 +237,11 @@ func (g *globals) target() (serverTarget, error) {
 	}
 
 	if g.token != "" {
-		token, contextToken = g.token, false
+		token, contextToken = strings.TrimSpace(g.token), false
+	}
+
+	if strings.ContainsFunc(token, unicode.IsSpace) || strings.ContainsFunc(token, unicode.IsControl) {
+		return serverTarget{}, errors.New("the access token holds spaces or control characters")
 	}
 
 	if url == "" {
@@ -245,12 +254,25 @@ func (g *globals) target() (serverTarget, error) {
 		return serverTarget{}, errors.New("no Relic server: run relic auth login <url>, or set --url or RELIC_URL")
 	}
 
+	if err := checkServerURL(url); err != nil {
+		return serverTarget{}, err
+	}
+
 	return serverTarget{
 		url:                  strings.TrimRight(url, "/"),
 		token:                token,
 		contextToken:         contextToken && token != "",
 		certificateAuthority: certificateAuthority,
 	}, nil
+}
+
+func checkServerURL(raw string) error {
+	u, err := neturl.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+		return fmt.Errorf("%q is not an http(s) URL without credentials", raw)
+	}
+
+	return nil
 }
 
 func (g *globals) localServiceTarget() (serverTarget, bool) {
@@ -449,6 +471,10 @@ func logoutCmd(g *globals) *cobra.Command {
 					name = args[0]
 				}
 
+				if name == "" {
+					return errors.New("no current context to sign out of: name one (relic auth context list)")
+				}
+
 				saved, ok := c.find(name)
 				if !ok {
 					return fmt.Errorf("no context %q", name)
@@ -474,7 +500,11 @@ func logoutCmd(g *globals) *cobra.Command {
 					"relic: %v; the context is forgotten, but its token stays valid until it expires\n",
 					err,
 				)
+
+				return nil
 			}
+
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Signed out of %s (context %s).\n", forgotten.URL, forgotten.Name)
 
 			return nil
 		},

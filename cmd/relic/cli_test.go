@@ -723,12 +723,42 @@ func TestConfigAndTarget(t *testing.T) {
 			wantCertificateAuthority: "PEM-B",
 		},
 		{
-			name:    "a context's token and certificate authority stay with its server",
+			name:    "--context over the environment",
 			context: "b",
 			env: map[string]string{
-				"RELIC_URL": "https://e.example",
+				"RELIC_URL":   "https://e.example",
+				"RELIC_TOKEN": "te",
 			},
+			wantURL:                  "https://b.example",
+			wantToken:                "tb",
+			wantCertificateAuthority: "PEM-B",
+		},
+		{
+			name:    "a context's token and certificate authority stay with its server",
+			context: "b",
+			url:     "https://e.example",
 			wantURL: "https://e.example",
+		},
+		{
+			name: "a token with a final newline",
+			env: map[string]string{
+				"RELIC_URL":   "https://e.example",
+				"RELIC_TOKEN": " te\n",
+			},
+			wantURL:   "https://e.example",
+			wantToken: "te",
+		},
+		{
+			name:    "a token with a space inside",
+			url:     "https://e.example",
+			token:   "t e",
+			wantErr: true,
+		},
+		{
+			name:    "a URL without a scheme",
+			url:     "relic.example.com:8090",
+			token:   "tf",
+			wantErr: true,
 		},
 		{
 			name:                     "--url naming the context's own server",

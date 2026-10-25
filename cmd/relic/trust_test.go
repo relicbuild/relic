@@ -42,6 +42,13 @@ func TestTrustedAuthority(t *testing.T) {
 
 	authority := string(directory.Authority().CertificatePEM())
 
+	other, err := servertls.OpenDirectory(t.Context(), t.TempDir(), []string{
+		"127.0.0.1",
+	}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	authorityFile := filepath.Join(t.TempDir(), "ca.crt")
 	if err := os.WriteFile(authorityFile, []byte(authority), 0o600); err != nil {
 		t.Fatal(err)
@@ -51,6 +58,7 @@ func TestTrustedAuthority(t *testing.T) {
 		name                     string
 		serverURL                string
 		certificateAuthorityFile string
+		saved                    string
 		canAsk                   bool
 		answer                   string
 		want                     string
@@ -82,6 +90,18 @@ func TestTrustedAuthority(t *testing.T) {
 			want:                     authority,
 		},
 		{
+			name:      "the authority the context saved",
+			serverURL: srv.URL,
+			saved:     authority,
+			want:      authority,
+		},
+		{
+			name:      "a saved authority that no longer signs the server's certificate",
+			serverURL: srv.URL,
+			saved:     string(other.Authority().CertificatePEM()),
+			wantErr:   directory.Authority().Fingerprint(),
+		},
+		{
 			name:      "plain HTTP",
 			serverURL: "http://127.0.0.1:1",
 		},
@@ -101,7 +121,7 @@ func TestTrustedAuthority(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			got, err := trustedAuthority(cmd, server, tt.certificateAuthorityFile, tt.canAsk)
+			got, err := trustedAuthority(cmd, server, tt.certificateAuthorityFile, tt.saved, tt.canAsk)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Errorf("err = %v, want one containing %q", err, tt.wantErr)

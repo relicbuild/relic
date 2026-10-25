@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -189,6 +192,59 @@ func TestAuthContextShowAndLogout(t *testing.T) {
 
 	if _, err := runRelic(t, nil, "--config", path, "auth", "logout", "staging"); err == nil {
 		t.Error("logging out of a missing context succeeded")
+	}
+}
+
+func TestAuthLogoutSaysWhatItDid(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", r.Header.Get("Content-Type"))
+
+		if strings.Contains(r.Header.Get("Content-Type"), "json") {
+			_, _ = io.WriteString(w, "{}")
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+
+	var c cliConfig
+	c.set(cliContext{
+		Name:  "dev",
+		URL:   srv.URL,
+		Token: "dev-token",
+	})
+
+	if err := saveConfig(path, c); err != nil {
+		t.Fatal(err)
+	}
+
+	logout := func() (string, error) {
+		var errOut bytes.Buffer
+
+		root := newRootCmd(func(string) string {
+			return ""
+		})
+		root.SetOut(&bytes.Buffer{})
+		root.SetErr(&errOut)
+		root.SetArgs([]string{
+			"--config",
+			path,
+			"auth",
+			"logout",
+		})
+		err := root.ExecuteContext(t.Context())
+
+		return errOut.String(), err
+	}
+
+	if out, err := logout(); err != nil || !strings.Contains(out, "Signed out of "+srv.URL+" (context dev)") {
+		t.Errorf("logout = %q, %v", out, err)
+	}
+
+	if _, err := logout(); err == nil || !strings.Contains(err.Error(), "no current context") {
+		t.Errorf("logout without a current context = %v", err)
 	}
 }
 

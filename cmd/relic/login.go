@@ -59,7 +59,16 @@ func loginCmd(g *globals) *cobra.Command {
 
 			canAsk := !passwordStdin && oidcToken != "-" && stdinIsTerminal(cmd)
 
-			certificateAuthority, err := trustedAuthority(cmd, u, certificateAuthorityFile, canAsk)
+			if name == "" {
+				name = u.Host
+			}
+
+			saved, err := g.savedAuthority(name, base)
+			if err != nil {
+				return err
+			}
+
+			certificateAuthority, err := trustedAuthority(cmd, u, certificateAuthorityFile, saved, canAsk)
 			if err != nil {
 				return err
 			}
@@ -85,25 +94,27 @@ func loginCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			if name == "" {
-				name = u.Host
-			}
-
 			var previous cliContext
+
+			signedIn := cliContext{
+				Name:                 name,
+				URL:                  base,
+				User:                 who,
+				Token:                token,
+				CertificateAuthority: certificateAuthority,
+			}
 
 			if err := g.updateConfig(func(c *cliConfig) error {
 				previous, _ = c.find(name)
-				c.set(cliContext{
-					Name:                 name,
-					URL:                  base,
-					User:                 who,
-					Token:                token,
-					CertificateAuthority: certificateAuthority,
-				})
+				c.set(signedIn)
 
 				return nil
 			}); err != nil {
-				return err
+				if revokeErr := revokeContextToken(cmd.Context(), signedIn); revokeErr != nil {
+					return errors.Join(fmt.Errorf("save the context: %w", err), revokeErr)
+				}
+
+				return fmt.Errorf("save the context: %w; the new token is revoked", err)
 			}
 
 			if previous.Token != token {
@@ -133,6 +144,20 @@ func loginCmd(g *globals) *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("user", "oidc-token")
 
 	return cmd
+}
+
+func (g *globals) savedAuthority(name, base string) (string, error) {
+	c, _, err := g.loadConfig()
+	if err != nil {
+		return "", err
+	}
+
+	saved, ok := c.find(name)
+	if !ok || strings.TrimRight(saved.URL, "/") != base {
+		return "", nil
+	}
+
+	return saved.CertificateAuthority, nil
 }
 
 type trustedServer struct {
