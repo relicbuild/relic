@@ -484,6 +484,106 @@ func TestNpmRemoteAndVirtual(t *testing.T) {
 	}
 }
 
+func TestNpmSigningKeysAndAttestationsComeFromTheUpstream(t *testing.T) {
+	t.Parallel()
+
+	keys := `{"keys":[{"keyid":"SHA256:example","keytype":"ecdsa-sha2-nistp256","key":"MFkw"}]}`
+	attestations := `{"attestations":[{"predicateType":"https://slsa.dev/provenance/v1"}]}`
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.URL.EscapedPath() {
+		case "/-/npm/v1/keys":
+			_, _ = io.WriteString(w, keys)
+		case "/-/npm/v1/attestations/@acme%2Fsigned@1.0.0":
+			_, _ = io.WriteString(w, attestations)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(upstream.Close)
+
+	srv := server(t)
+	for _, r := range []struct {
+		name, config string
+	}{
+		{
+			name:   "npm-remote",
+			config: `{"rclass":"remote","packageType":"npm","url":"` + upstream.URL + `"}`,
+		},
+		{
+			name:   "npm-local",
+			config: `{"rclass":"local","packageType":"npm"}`,
+		},
+		{
+			name:   "npm",
+			config: `{"rclass":"virtual","packageType":"npm","repositories":["npm-local","npm-remote"]}`,
+		},
+	} {
+		if resp, body := do(t, srv, call{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/" + r.name,
+			body:   r.config,
+		}); resp.StatusCode/100 != 2 {
+			t.Fatalf("create %s = %d %s", r.name, resp.StatusCode, body)
+		}
+	}
+
+	tests := []struct {
+		name, path string
+		status     int
+		want       string
+	}{
+		{
+			name:   "keys through the virtual",
+			path:   "/artifactory/api/npm/npm/-/npm/v1/keys",
+			status: 200,
+			want:   keys,
+		},
+		{
+			name:   "keys of the remote",
+			path:   "/artifactory/api/npm/npm-remote/-/npm/v1/keys",
+			status: 200,
+			want:   keys,
+		},
+		{
+			name:   "attestations of a scoped package",
+			path:   "/artifactory/api/npm/npm/-/npm/v1/attestations/@acme%2fsigned@1.0.0",
+			status: 200,
+			want:   attestations,
+		},
+		{
+			name:   "attestations the upstream does not have",
+			path:   "/artifactory/api/npm/npm/-/npm/v1/attestations/unsigned@1.0.0",
+			status: 404,
+		},
+		{
+			name:   "attestations without a version",
+			path:   "/artifactory/api/npm/npm/-/npm/v1/attestations/unsigned",
+			status: 400,
+		},
+		{
+			name:   "keys of a local repository",
+			path:   "/artifactory/api/npm/npm-local/-/npm/v1/keys",
+			status: 404,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resp, body := do(t, srv, call{
+				method: "GET",
+				path:   tt.path,
+			})
+			if resp.StatusCode != tt.status || tt.want != "" && body != tt.want {
+				t.Errorf("GET %s = %d %s, want %d %s", tt.path, resp.StatusCode, body, tt.status, tt.want)
+			}
+		})
+	}
+}
+
 func TestRelicAPINpmPackage(t *testing.T) {
 	t.Parallel()
 	srv := server(t)

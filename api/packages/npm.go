@@ -60,6 +60,10 @@ func (h *Handler) npmAPI(w http.ResponseWriter, r *http.Request, m Mount) {
 		h.npmLogin(w, r)
 	case strings.HasPrefix(rest, "-/npm/v1/security/") && r.Method == http.MethodPost:
 		h.npmAudit(w, r, req, rest)
+	case rest == "-/npm/v1/keys" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
+		h.npmSigningKeys(w, r, req)
+	case strings.HasPrefix(rest, "-/npm/v1/attestations/") && (r.Method == http.MethodGet || r.Method == http.MethodHead):
+		h.npmAttestations(w, r, req, strings.TrimPrefix(rest, "-/npm/v1/attestations/"))
 	case rest == "-/v1/search" && r.Method == http.MethodGet:
 		h.npmSearch(w, r, req)
 	case strings.HasPrefix(rest, "-/package/"):
@@ -402,6 +406,69 @@ func (h *Handler) npmError(w http.ResponseWriter, r *http.Request, err error) {
 	default:
 		h.writeError(w, r, err)
 	}
+}
+
+func (h *Handler) npmSigningKeys(w http.ResponseWriter, r *http.Request, req npmRequest) {
+	if !h.RequireRepo(w, r, RepoCheck{
+		req.repo,
+		"",
+		auth.ActionRead,
+	}) {
+		return
+	}
+
+	rp, err := h.repos.GetRepository(r.Context(), req.repo)
+	if err != nil {
+		h.npmError(w, r, err)
+		return
+	}
+
+	keys, err := h.npm.SigningKeys(r.Context(), rp)
+	if err != nil {
+		h.npmError(w, r, err)
+		return
+	}
+
+	writeRegistryDocument(w, keys)
+}
+
+func (h *Handler) npmAttestations(w http.ResponseWriter, r *http.Request, req npmRequest, spec string) {
+	unescaped, err := url.PathUnescape(spec)
+	at := strings.LastIndex(unescaped, "@")
+
+	if err != nil || at <= 0 {
+		httperror.Write(w, r, http.StatusBadRequest, "invalid package version")
+		return
+	}
+
+	name, version := unescaped[:at], unescaped[at+1:]
+	if !h.RequireRepo(w, r, RepoCheck{
+		req.repo,
+		name,
+		auth.ActionRead,
+	}) {
+		return
+	}
+
+	rp, err := h.repos.GetRepository(r.Context(), req.repo)
+	if err != nil {
+		h.npmError(w, r, err)
+		return
+	}
+
+	attestations, err := h.npm.Attestations(r.Context(), rp, name, version)
+	if err != nil {
+		h.npmError(w, r, err)
+		return
+	}
+
+	writeRegistryDocument(w, attestations)
+}
+
+func writeRegistryDocument(w http.ResponseWriter, document []byte) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(document) //nolint:gosec // G705: the upstream registry's JSON, served as JSON
 }
 
 func (h *Handler) npmAudit(w http.ResponseWriter, r *http.Request, req npmRequest, apiPath string) {

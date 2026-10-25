@@ -948,7 +948,7 @@ func (s *Service) Audit(
 	body io.Reader,
 	header http.Header,
 ) (*http.Response, error) {
-	remote, ok := s.auditRemote(ctx, r, 0)
+	remote, ok := s.onlineRemote(ctx, r, 0)
 	if !ok {
 		return nil, ErrNoAuditSource
 	}
@@ -989,7 +989,7 @@ func (s *Service) Audit(
 	return resp, nil
 }
 
-func (s *Service) auditRemote(ctx context.Context, r repository.Repository, depth int) (repository.Repository, bool) {
+func (s *Service) onlineRemote(ctx context.Context, r repository.Repository, depth int) (repository.Repository, bool) {
 	switch {
 	case r.Class == "remote":
 		return r, !s.repos.UpstreamOf(r).Offline
@@ -999,13 +999,47 @@ func (s *Service) auditRemote(ctx context.Context, r repository.Repository, dept
 
 	for _, key := range r.Members() {
 		if m, err := s.repos.GetRepository(ctx, key); err == nil {
-			if remote, ok := s.auditRemote(ctx, m, depth+1); ok {
+			if remote, ok := s.onlineRemote(ctx, m, depth+1); ok {
 				return remote, true
 			}
 		}
 	}
 
 	return repository.Repository{}, false
+}
+
+const maxRegistryDocumentBytes = 16 << 20
+
+// SigningKeys returns the signing keys of the upstream registry of r's first online npm remote.
+func (s *Service) SigningKeys(ctx context.Context, r repository.Repository) ([]byte, error) {
+	return s.registryDocument(ctx, r, "-/npm/v1/keys")
+}
+
+// Attestations returns the provenance attestations of a version from the same upstream registry.
+func (s *Service) Attestations(ctx context.Context, r repository.Repository, name, version string) ([]byte, error) {
+	if !ValidName(name) || !validVersion.MatchString(version) {
+		return nil, fmt.Errorf("%w: invalid package version", ErrInvalid)
+	}
+
+	return s.registryDocument(ctx, r, "-/npm/v1/attestations/"+escapeName(name)+"@"+version)
+}
+
+var validVersion = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z.+-]*$`)
+
+func (s *Service) registryDocument(ctx context.Context, r repository.Repository, apiPath string) ([]byte, error) {
+	remote, ok := s.onlineRemote(ctx, r, 0)
+	if !ok {
+		return nil, ErrNotFound
+	}
+
+	upstream := strings.TrimSuffix(remote.Upstream().URL, "/")
+
+	body, err := s.repos.FetchUpstream(ctx, remote, upstream+"/"+apiPath, "application/json", maxRegistryDocumentBytes)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil, ErrNotFound
+	}
+
+	return body, err
 }
 
 // Offers reports whether repoKey's metadata for name offers version: a
