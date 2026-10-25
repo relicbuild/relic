@@ -303,7 +303,7 @@ var setupClients = map[string]setupClient{
 					command: []string{
 						"poetry",
 						"config",
-						"repositories." + e.repo,
+						"repositories." + poetryRepository(e.repo),
 						strings.TrimSuffix(e.url, "/simple"),
 					},
 				},
@@ -311,7 +311,7 @@ var setupClients = map[string]setupClient{
 					command: []string{
 						"poetry",
 						"config",
-						"http-basic." + e.repo,
+						"http-basic." + poetryRepository(e.repo),
 						e.user,
 					},
 					stdin: e.token + "\n",
@@ -319,7 +319,9 @@ var setupClients = map[string]setupClient{
 			}, nil
 		},
 		notes: func(e setupEnv) string {
-			return "For dependencies: poetry source add --priority=primary " + e.repo + " " + e.url
+			name := poetryRepository(e.repo)
+
+			return "For dependencies: poetry source add --priority=primary " + name + " " + e.url + "\nPublish with: poetry publish -r " + name
 		},
 	},
 	"twine": {
@@ -830,6 +832,15 @@ func terraformConfigFile(e setupEnv) string {
 	}
 
 	return ".terraformrc"
+}
+
+func poetryRepository(repo string) string {
+	// Poetry reserves pypi for PyPI, whose credentials poetry publish sends to upload.pypi.org.
+	if strings.EqualFold(repo, "pypi") {
+		return "relic-" + repo
+	}
+
+	return repo
 }
 
 func pipSteps(e setupEnv) ([]setupStep, error) {

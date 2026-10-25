@@ -574,6 +574,59 @@ func TestApkSetupWritesKeysUnderTheKeysFolderOnly(t *testing.T) {
 	}
 }
 
+func TestPoetrySetupAvoidsPoetrysReservedName(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		repo, want string
+	}{
+		{
+			repo: "pypi",
+			want: "relic-pypi",
+		},
+		{
+			repo: "PyPI",
+			want: "relic-PyPI",
+		},
+		{
+			repo: "pypi-virtual",
+			want: "pypi-virtual",
+		},
+	} {
+		t.Run(tc.repo, func(t *testing.T) {
+			t.Parallel()
+
+			e := setupEnv{
+				repo:  tc.repo,
+				url:   "https://relic.example.com/pypi/" + tc.repo + "/simple",
+				user:  "ci",
+				token: "secret",
+			}
+
+			steps, err := setupClients["poetry"].steps(e)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var configured []string
+			for _, s := range steps {
+				configured = append(configured, s.command[2])
+			}
+
+			if !slices.Equal(configured, []string{
+				"repositories." + tc.want,
+				"http-basic." + tc.want,
+			}) {
+				t.Errorf("poetry config keys = %q, want them named %s", configured, tc.want)
+			}
+
+			if note := setupClients["poetry"].notes(e); !strings.Contains(note, " "+tc.want+" "+e.url) {
+				t.Errorf("note = %q, want the source named %s", note, tc.want)
+			}
+		})
+	}
+}
+
 func TestNetrcNamesTheHostAsEachClientMatchesIt(t *testing.T) {
 	t.Parallel()
 
