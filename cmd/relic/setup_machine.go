@@ -92,6 +92,10 @@ func (m *machineSetup) runSetup(ctx context.Context) error {
 		)
 	}
 
+	if err := m.refuseAnotherScope(); err != nil {
+		return err
+	}
+
 	actions, err := m.plan(ctx)
 	if err != nil {
 		return err
@@ -123,6 +127,24 @@ func (m *machineSetup) runSetup(ctx context.Context) error {
 	m.printNext()
 
 	return nil
+}
+
+func (m *machineSetup) refuseAnotherScope() error {
+	if m.system || m.goos != "linux" {
+		return nil
+	}
+
+	svc, err := m.serviceManagerAt(true)
+	if err != nil || !exists(svc.definition()) {
+		return err
+	}
+
+	return fmt.Errorf(
+		"setup: the system service %s already runs a Relic server on this machine, and a user service "+
+			"would collide with it on the same ports; manage it with sudo, or remove it first with "+
+			"sudo relic server uninstall --system",
+		svc.definition(),
+	)
 }
 
 func (m *machineSetup) findCommands(actions []machineAction) error {

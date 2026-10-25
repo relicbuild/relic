@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -110,27 +111,15 @@ func (s *systemd) installActions(ctx context.Context) ([]machineAction, error) {
 	unit := m.file(
 		"systemd user unit",
 		s.definition(),
-		[]byte(systemdUnit(m.executable, s.settingsPath(), "")),
+		[]byte(systemdUnit(m.executable, s.settingsPath(), "", userServicePath(m.home, m.executable))),
 		0o644,
 	)
-
-	linger := machineAction{
-		what:  "keep it running without a session, and start it at boot",
-		state: "unchanged",
-	}
-	if !s.hasLinger(ctx) {
-		linger.command = []string{
-			"loginctl",
-			"enable-linger",
-			m.username,
-		}
-		linger.state = "run"
-	}
 
 	return []machineAction{
 		m.directory("the server's database and files", data, 0o700),
 		env,
 		unit,
+		s.lingerAction(ctx),
 		{
 			what:    "systemd",
 			command: s.systemctl("daemon-reload"),
@@ -142,8 +131,59 @@ func (s *systemd) installActions(ctx context.Context) ([]machineAction, error) {
 			state:   "run",
 		},
 		s.startAction(ctx, m.executable, env, unit),
-		linger,
 	}, nil
+}
+
+func (s *systemd) lingerAction(ctx context.Context) machineAction {
+	m := s.m
+	what := "keep it running without a session, and start it at boot"
+
+	if s.hasLinger(ctx) {
+		return machineAction{
+			what:  what,
+			path:  filepath.Join(m.root, "var", "lib", "systemd", "linger", m.username),
+			state: "unchanged",
+		}
+	}
+
+	return machineAction{
+		what: what,
+		command: []string{
+			"loginctl",
+			"enable-linger",
+			m.username,
+		},
+		state: "run",
+		done: func(ctx context.Context) bool {
+			command := s.systemctl("show-environment")
+			_, err := m.query(ctx, command[0], command[1:]...)
+
+			return err == nil
+		},
+	}
+}
+
+func userServicePath(home, executable string) string {
+	directories := []string{
+		filepath.Join(home, ".local", "bin"),
+		filepath.Dir(executable),
+		"/usr/local/sbin",
+		"/usr/local/bin",
+		"/usr/sbin",
+		"/usr/bin",
+		"/sbin",
+		"/bin",
+	}
+
+	var path []string
+
+	for _, d := range directories {
+		if !slices.Contains(path, d) {
+			path = append(path, d)
+		}
+	}
+
+	return strings.Join(path, ":")
 }
 
 func (s *systemd) systemInstallActions(ctx context.Context) ([]machineAction, error) {
@@ -207,7 +247,7 @@ func (s *systemd) systemInstallActions(ctx context.Context) ([]machineAction, er
 	unit := m.file(
 		"systemd unit",
 		s.definition(),
-		[]byte(systemdUnit(systemBinary, systemSettings, systemUser)),
+		[]byte(systemdUnit(systemBinary, systemSettings, systemUser, "")),
 		0o644,
 	)
 
@@ -320,7 +360,7 @@ func (s *systemd) hasLinger(ctx context.Context) bool {
 	return false
 }
 
-func systemdUnit(executable, settings, user string) string {
+func systemdUnit(executable, settings, user, path string) string {
 	var b strings.Builder
 
 	b.WriteString("# Written by relic server setup; relic server setup rewrites it.\n")
@@ -333,6 +373,11 @@ func systemdUnit(executable, settings, user string) string {
 	b.WriteString("\n[Service]\n")
 	_, _ = fmt.Fprintf(&b, "ExecStart=%s server start --worker\n", executable)
 	_, _ = fmt.Fprintf(&b, "EnvironmentFile=%s\n", settings)
+
+	if path != "" {
+		_, _ = fmt.Fprintf(&b, "Environment=\"PATH=%s\"\n", path)
+	}
+
 	b.WriteString("Restart=always\nRestartSec=3\nLimitNOFILE=65536\n")
 
 	if user != "" {

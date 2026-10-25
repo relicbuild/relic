@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -282,6 +284,7 @@ func TestMachineSetupUserService(t *testing.T) {
 		"EnvironmentFile=" + settings + "\n",
 		"Restart=always\n",
 		"WantedBy=default.target\n",
+		"Environment=\"PATH=" + filepath.Join(m.home, ".local", "bin") + ":/usr/local/bin:/usr/local/sbin:",
 	} {
 		if !strings.Contains(unit, want) {
 			t.Errorf("unit lacks %q:\n%s", want, unit)
@@ -289,10 +292,10 @@ func TestMachineSetupUserService(t *testing.T) {
 	}
 
 	wantRan := []string{
+		"loginctl enable-linger dev",
 		"systemctl --user daemon-reload",
 		"systemctl --user enable relic.service",
 		"systemctl --user restart relic.service",
-		"loginctl enable-linger dev",
 	}
 	if strings.Join(*ran, "\n") != strings.Join(wantRan, "\n") {
 		t.Errorf("ran:\n%s\nwant:\n%s", strings.Join(*ran, "\n"), strings.Join(wantRan, "\n"))
@@ -898,5 +901,97 @@ func TestMachineSetupSkipsLingerWhenAlreadyEnabled(t *testing.T) {
 		if strings.Contains(cmd, "enable-linger") {
 			t.Errorf("ran %q when linger was already enabled", cmd)
 		}
+	}
+}
+
+func TestMachineSetupStartsTheUserManagerFirst(t *testing.T) {
+	t.Parallel()
+
+	m, ran, _ := testMachineSetup(t, "")
+	m.yes = true
+
+	lingering := false
+	run := m.run
+	m.run = func(ctx context.Context, name string, args ...string) error {
+		if name == "systemctl" && !lingering {
+			return fmt.Errorf("%s %v: no user manager", name, args)
+		}
+
+		if name == "loginctl" {
+			lingering = true
+		}
+
+		return run(ctx, name, args...)
+	}
+
+	answers := 0
+	m.query = func(_ context.Context, name string, args ...string) (string, error) {
+		if name == "systemctl" && slices.Contains(args, "show-environment") {
+			if answers++; answers < 3 {
+				return "", errors.New("failed to connect to bus")
+			}
+		}
+
+		return "", nil
+	}
+
+	if err := m.runSetup(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	if answers < 3 {
+		t.Errorf("setup asked the user manager %d times, want it to wait for it", answers)
+	}
+
+	if len(*ran) == 0 || (*ran)[0] != "loginctl enable-linger dev" {
+		t.Errorf("ran %v, want loginctl enable-linger first", *ran)
+	}
+}
+
+func TestMachineSetupShowsTheLingerFileWhenLingerIsOn(t *testing.T) {
+	t.Parallel()
+
+	m, _, out := testMachineSetup(t, "")
+	m.yes = true
+
+	linger := filepath.Join(m.root, "var", "lib", "systemd", "linger", "dev")
+	if err := os.MkdirAll(filepath.Dir(linger), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(linger, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.runSetup(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(out.String(), linger) {
+		t.Errorf("the plan does not show %s:\n%s", linger, out)
+	}
+}
+
+func TestMachineSetupRefusesAUserServiceBesideASystemOne(t *testing.T) {
+	t.Parallel()
+
+	m, ran, _ := testMachineSetup(t, "")
+	m.yes = true
+
+	unit := filepath.Join(m.root, systemUnit)
+	if err := os.MkdirAll(filepath.Dir(unit), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(unit, []byte("[Unit]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.runSetup(t.Context()); err == nil || !strings.Contains(err.Error(), "system service") {
+		t.Fatalf("setup beside a system service = %v, want a refusal", err)
+	}
+
+	if entries, _ := os.ReadDir(m.home); len(entries) > 0 || len(*ran) > 0 {
+		t.Errorf("setup went ahead: wrote %v, ran %v", entries, *ran)
 	}
 }
