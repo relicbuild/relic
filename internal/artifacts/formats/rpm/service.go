@@ -141,14 +141,9 @@ func (s *Service) indexPackage(ctx context.Context, r repository.Repository, ite
 }
 
 // ServesRepodata reports whether r generates repodata in folder root: a
-// local repository at its metadata depth, a virtual one at its root.
+// local or virtual repository at its metadata depth.
 func ServesRepodata(r repository.Repository, root string) bool {
-	switch {
-	case r.Format != Format:
-		return false
-	case r.Class == "virtual":
-		return root == ""
-	case r.Class == "remote":
+	if r.Format != Format || r.Class == repository.ClassRemote {
 		return false
 	}
 
@@ -192,7 +187,7 @@ func (s *Service) buildRepodata(ctx context.Context, r repository.Repository, ro
 
 	for _, m := range s.members(ctx, r, 0) {
 		if m.Class == "remote" {
-			u, changed, ok, err := s.upstream(ctx, m)
+			u, changed, ok, err := s.upstream(ctx, m, root)
 			if err != nil {
 				s.log.WarnContext(ctx, "skipping member repodata", "repo", r.Name, "member", m.Name, "error", err)
 				continue
@@ -206,12 +201,7 @@ func (s *Service) buildRepodata(ctx context.Context, r repository.Repository, ro
 			continue
 		}
 
-		memberRoot := root
-		if m.Name != r.Name {
-			memberRoot = ""
-		}
-
-		local, changed, err := s.entries(ctx, m, memberRoot)
+		local, changed, err := s.entries(ctx, m, root)
 		if err != nil {
 			return nil, err
 		}
@@ -298,12 +288,16 @@ type repoMDData struct {
 	} `xml:"data"`
 }
 
-func (s *Service) upstream(ctx context.Context, m repository.Repository) (UpstreamMetadata, time.Time, bool, error) {
+func (s *Service) upstream(
+	ctx context.Context,
+	m repository.Repository,
+	root string,
+) (UpstreamMetadata, time.Time, bool, error) {
 	if repository.Restricted(ctx, m.Name) {
 		return UpstreamMetadata{}, time.Time{}, false, nil
 	}
 
-	item, err := s.repos.Resolve(ctx, m.Name, path.Join(RepodataFolder, RepoMD))
+	item, err := s.repos.Resolve(ctx, m.Name, path.Join(root, RepodataFolder, RepoMD))
 	if errors.Is(err, repository.ErrNotFound) {
 		return UpstreamMetadata{}, time.Time{}, false, nil
 	}
@@ -325,7 +319,7 @@ func (s *Service) upstream(ctx context.Context, m repository.Repository) (Upstre
 	u := UpstreamMetadata{}
 
 	for _, d := range md.Data {
-		open := s.opener(ctx, m.Name, d.Location.Href)
+		open := s.opener(ctx, m.Name, path.Join(root, d.Location.Href))
 
 		switch d.Type {
 		case "primary":

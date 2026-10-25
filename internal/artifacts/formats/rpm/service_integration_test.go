@@ -164,6 +164,30 @@ func TestRepodataServesTheBuiltCopyWhileItRebuilds(t *testing.T) {
 	}
 }
 
+func TestRepodataOfAVirtualFollowsItsMetadataDepth(t *testing.T) {
+	t.Parallel()
+
+	f := newRPMFixture(t, localOf("rpm-local", 1), virtualOf("rpm", 1, "rpm-local"))
+	virtual := f.repository(t, "rpm")
+
+	f.deploy(t, "rpm-local", "f43", "older")
+	f.deploy(t, "rpm-local", "f44", "newer")
+
+	if ServesRepodata(virtual, "") || !ServesRepodata(virtual, "f43") {
+		t.Errorf("a virtual repository of metadataDepth 1 serves repodata at its root: %v, in f43: %v",
+			ServesRepodata(virtual, ""), ServesRepodata(virtual, "f43"))
+	}
+
+	files, err := f.svc.Repodata(t.Context(), virtual, "f43")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := primaryOf(t, files); len(got) != 1 || got["older"] != "older-1.0-1.noarch.rpm" {
+		t.Errorf("f43 of the virtual lists %v, want only older at older-1.0-1.noarch.rpm", got)
+	}
+}
+
 func BenchmarkRepodataBurst(b *testing.B) {
 	f := newRPMFixture(b, localOf("rpm-local", 0), virtualOf("rpm", 0, "rpm-local"))
 

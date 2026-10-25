@@ -133,7 +133,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
     const immutable = d.class === 'local' && d.immutable
     const indexes = {
       signingKey: defaultSigningKey[d.format] && d.class !== 'remote' ? d.signingKey ?? '' : '',
-      metadataDepth: d.format === 'rpm' && d.class === 'local' ? d.metadataDepth : 0,
+      metadataDepth: d.format === 'rpm' && d.class !== 'remote' ? d.metadataDepth : 0,
       architectures: d.format === 'debian' && d.class === 'virtual' ? d.architectures : []
     }
     if (r) {
@@ -227,10 +227,10 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
           <UInput v-model="state.signingKey" :placeholder="defaultSigningKey[state.format ?? '']" class="w-full" />
         </UFormField>
         <UFormField
-          v-if="state.format === 'rpm' && state.class === 'local'"
+          v-if="state.format === 'rpm' && state.class !== 'remote'"
           name="metadataDepth"
           label="Metadata depth"
-          description="0 indexes the whole repository at repodata/; 1 indexes each top folder (el9/repodata/, el10/repodata/)."
+          description="0 indexes the whole repository at repodata/; 1 indexes each top folder (el9/repodata/, el10/repodata/). A virtual repository takes each folder from the same folder of its members."
         >
           <UInputNumber
             v-model="state.metadataDepth"
