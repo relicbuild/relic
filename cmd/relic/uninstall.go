@@ -107,6 +107,10 @@ func (m *machineSetup) runUninstall(ctx context.Context, purge bool) error {
 		}
 	}
 
+	if purge {
+		m.removeEmptyDirectories()
+	}
+
 	_, _ = fmt.Fprintln(m.out, "Done.")
 	m.printKept(keep)
 
@@ -149,10 +153,30 @@ func (m *machineSetup) uninstallPlan(ctx context.Context) (remove, keep []machin
 
 	return actions, append(existing(
 		removal("client config: contexts and tokens", m.configPath),
+		removal("the client config's lock", m.configPath+".lock"),
+		removal("build runs recorded on this machine", filepath.Join(filepath.Dir(m.configPath), "builds")),
 		removal("server settings, with the encryption key", filepath.Join(m.configDir(), "server.env")),
 		removal("the server's certificate authority and certificate", filepath.Join(m.configDir(), "tls")),
 		removal("the server's database and files", m.dataDir()),
 	), serviceKeep...), nil
+}
+
+func (m *machineSetup) removeEmptyDirectories() {
+	directories := []string{
+		filepath.Join(m.root, "etc", "relic"),
+	}
+	if !m.system {
+		directories = []string{
+			m.configDir(),
+			filepath.Dir(m.configPath),
+		}
+	}
+
+	for _, d := range directories {
+		if filepath.Base(d) == "relic" {
+			_ = os.Remove(d)
+		}
+	}
 }
 
 func (m *machineSetup) withoutCompletionBlock(rc string) (machineAction, bool) {

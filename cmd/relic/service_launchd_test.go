@@ -389,6 +389,34 @@ func TestUninstallLaunchAgent(t *testing.T) {
 	}
 }
 
+func TestUninstallPurgeAfterUninstallDeletesTheLog(t *testing.T) {
+	t.Parallel()
+
+	m, _, _ := installedLaunchAgent(t, "", launchctlRunning)
+	m.yes = true
+
+	log := filepath.Join(m.home, "Library", "Logs", "relic.log")
+	if err := os.WriteFile(log, []byte("started\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.runUninstall(t.Context(), false); err != nil {
+		t.Fatal(err)
+	}
+
+	if !exists(log) {
+		t.Fatal("uninstall without --purge removed the log")
+	}
+
+	if err := m.runUninstall(t.Context(), true); err != nil {
+		t.Fatal(err)
+	}
+
+	if exists(log) {
+		t.Error("uninstall --purge after an uninstall kept the log")
+	}
+}
+
 func TestServerConfigSetRestartsTheLaunchAgent(t *testing.T) {
 	t.Parallel()
 

@@ -287,8 +287,10 @@ func launchdPlist(executable, settings, log string) string {
 }
 
 func (l *launchd) uninstallActions(ctx context.Context) (remove, keep []machineAction) {
+	keep = existing(removal("the server's log", l.logPath()))
+
 	if !exists(l.definition()) {
-		return nil, nil
+		return nil, keep
 	}
 
 	if _, loaded := l.properties(ctx); loaded {
@@ -297,7 +299,7 @@ func (l *launchd) uninstallActions(ctx context.Context) (remove, keep []machineA
 
 	remove = append(remove, removal("launch agent", l.definition()))
 
-	return remove, existing(removal("the server's log", l.logPath()))
+	return remove, keep
 }
 
 func (l *launchd) status(ctx context.Context) (serviceState, error) {
