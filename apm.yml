@@ -1,0 +1,42 @@
+# The agent skills Relic's AGENTS.md names, installed with `apm install`
+# (https://github.com/microsoft/apm). Versions are pinned; apm.lock.yaml
+# records what they resolved to.
+name: relic
+version: 0.0.0
+targets:
+  - claude
+dependencies:
+  apm:
+    - samber/cc-skills-golang/skills/golang-how-to#v2.0.0
+    - samber/cc-skills-golang/skills/golang-grpc#v2.0.0
+    - samber/cc-skills-golang/skills/golang-error-handling#v2.0.0
+    - samber/cc-skills-golang/skills/golang-testing#v2.0.0
+    - samber/cc-skills-golang/skills/golang-database#v2.0.0
+    - samber/cc-skills-golang/skills/golang-security#v2.0.0
+    - samber/cc-skills-golang/skills/golang-safety#v2.0.0
+    - samber/cc-skills-golang/skills/golang-spf13-cobra#v2.0.0
+    - samber/cc-skills-golang/skills/golang-cli#v2.0.0
+    - samber/cc-skills-golang/skills/golang-lint#v2.0.0
+    - samber/cc-skills-golang/skills/golang-continuous-integration#v2.0.0
+    - samber/cc-skills-golang/skills/golang-observability#v2.0.0
+    - samber/cc-skills-golang/skills/golang-code-style#v2.0.0
+    - samber/cc-skills-golang/skills/golang-naming#v2.0.0
+    - samber/cc-skills-golang/skills/golang-concurrency#v2.0.0
+    - samber/cc-skills-golang/skills/golang-context#v2.0.0
+    - samber/cc-skills-golang/skills/golang-performance#v2.0.0
+    - samber/cc-skills-golang/skills/golang-benchmark#v2.0.0
+    - samber/cc-skills-golang/skills/golang-documentation#v2.0.0
+    - samber/cc-skills-golang/skills/golang-modernize#v2.0.0
+    - samber/cc-skills-golang/skills/golang-troubleshooting#v2.0.0
+    - samber/cc-skills-golang/skills/golang-structs-interfaces#v2.0.0
+    - samber/cc-skills-golang/skills/golang-data-structures#v2.0.0
+    - samber/cc-skills-golang/skills/golang-design-patterns#v2.0.0
+    - samber/cc-skills-golang/skills/golang-project-layout#v2.0.0
+    - samber/cc-skills-golang/skills/golang-refactoring#v2.0.0
+    - samber/cc-skills-golang/skills/golang-dependency-management#v2.0.0
+    - nuxt/ui/skills/nuxt-ui#v4.12.0
+    - LukasNiessen/kubernetes-skill#34f93c1e409156958cc7c410ab1aa88ab512f10f
+    - git: blader/humanizer
+      ref: v3.1.0
+      skills:
+        - humanizer
