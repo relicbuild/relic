@@ -401,7 +401,10 @@ func TestServerConfigSetRestartsTheLaunchAgent(t *testing.T) {
 
 	path := svc.settingsPath()
 
-	if err := m.setServiceSetting(t.Context(), &bytes.Buffer{}, path, "RELIC_LOG_LEVEL", "debug"); err != nil {
+	if err := m.setServiceSettings(t.Context(), &bytes.Buffer{}, path, setting{
+		key:   "RELIC_LOG_LEVEL",
+		value: "debug",
+	}); err != nil {
 		t.Fatal(err)
 	}
 

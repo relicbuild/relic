@@ -486,19 +486,30 @@ func TestServerConfigSet(t *testing.T) {
 	*ran = nil
 	path := filepath.Join(m.configDir(), "server.env")
 
+	outputs := make([]string, 0, 2)
+
 	for range 2 {
 		var out bytes.Buffer
-		if err := m.setServiceSetting(t.Context(), &out, path, "RELIC_LOG_LEVEL", "debug"); err != nil {
+		if err := m.setServiceSettings(t.Context(), &out, path, setting{
+			key:   "RELIC_LOG_LEVEL",
+			value: "debug",
+		}); err != nil {
 			t.Fatal(err)
 		}
+
+		outputs = append(outputs, out.String())
 	}
 
 	if !strings.Contains(readFile(t, path), "RELIC_LOG_LEVEL=debug\n") {
 		t.Errorf("settings:\n%s", readFile(t, path))
 	}
 
-	if n := strings.Count(strings.Join(*ran, "\n"), "systemctl --user restart relic.service"); n != 2 {
-		t.Errorf("restarted %d times, want 2 (the second set restarts too): %v", n, *ran)
+	if n := strings.Count(strings.Join(*ran, "\n"), "systemctl --user restart relic.service"); n != 1 {
+		t.Errorf("restarted %d times, want 1 (a set that changes nothing does not restart): %v", n, *ran)
+	}
+
+	if !strings.Contains(outputs[1], "not restarted") {
+		t.Errorf("second set printed %q", outputs[1])
 	}
 }
 
@@ -522,16 +533,35 @@ func TestSettingArgument(t *testing.T) {
 		},
 		{
 			name:       "value from standard input",
-			arg:        "RELIC_ADMIN_PASSWORD",
+			arg:        "RELIC_OBJECT_STORAGE_SECRET_KEY",
 			valueStdin: true,
 			stdin:      "s3cret=x\n",
-			wantKey:    "RELIC_ADMIN_PASSWORD",
+			wantKey:    "RELIC_OBJECT_STORAGE_SECRET_KEY",
 			wantValue:  "s3cret=x",
 		},
 		{
 			name:       "value in the argument and from standard input",
-			arg:        "RELIC_ADMIN_PASSWORD=x",
+			arg:        "RELIC_OBJECT_STORAGE_SECRET_KEY=x",
 			valueStdin: true,
+			wantErr:    true,
+		},
+		{
+			name:       "an empty value from standard input",
+			arg:        "RELIC_OBJECT_STORAGE_SECRET_KEY",
+			valueStdin: true,
+			stdin:      "\n",
+			wantErr:    true,
+		},
+		{
+			name:    "the first administrator's password",
+			arg:     "RELIC_ADMIN_PASSWORD=Another-pass-123",
+			wantErr: true,
+		},
+		{
+			name:       "the first administrator's password from standard input",
+			arg:        "RELIC_ADMIN_PASSWORD",
+			valueStdin: true,
+			stdin:      "Another-pass-123\n",
 			wantErr:    true,
 		},
 		{
@@ -758,7 +788,10 @@ func TestServerConfigSetWithoutSystemdChangesNothing(t *testing.T) {
 		return "", exec.ErrNotFound
 	}
 
-	if err := m.setServiceSetting(t.Context(), &bytes.Buffer{}, path, "RELIC_LOG_LEVEL", "debug"); err == nil {
+	if err := m.setServiceSettings(t.Context(), &bytes.Buffer{}, path, setting{
+		key:   "RELIC_LOG_LEVEL",
+		value: "debug",
+	}); err == nil {
 		t.Fatal("set without systemctl went ahead")
 	}
 
@@ -786,7 +819,10 @@ func TestServerConfigSetRefusesASettingTheServerRejects(t *testing.T) {
 		"RELIC_LOG_LEVEL":           "loud",
 		"OTEL_TRACES_SAMPLER":       "sometimes",
 	} {
-		err := m.setServiceSetting(t.Context(), &bytes.Buffer{}, path, key, value)
+		err := m.setServiceSettings(t.Context(), &bytes.Buffer{}, path, setting{
+			key:   key,
+			value: value,
+		})
 		if err == nil || !strings.Contains(err.Error(), key) {
 			t.Errorf("set %s=%s = %v, want an error that names it", key, value, err)
 		}
@@ -818,7 +854,10 @@ func TestServerConfigSetFixesOneOfSeveralWrongSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := m.setServiceSetting(t.Context(), &bytes.Buffer{}, path, "RELIC_LOG_LEVEL", "debug"); err != nil {
+	if err := m.setServiceSettings(t.Context(), &bytes.Buffer{}, path, setting{
+		key:   "RELIC_LOG_LEVEL",
+		value: "debug",
+	}); err != nil {
 		t.Fatalf("fixing one wrong setting while another stays wrong = %v", err)
 	}
 }

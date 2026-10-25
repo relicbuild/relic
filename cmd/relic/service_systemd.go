@@ -438,9 +438,16 @@ func (s *systemd) restart(ctx context.Context) error {
 		}
 	}
 
-	command := s.systemctl("restart", "relic.service")
+	for _, command := range [][]string{
+		s.systemctl("reset-failed", "relic.service"),
+		s.systemctl("restart", "relic.service"),
+	} {
+		if err := s.m.run(ctx, command[0], command[1:]...); err != nil {
+			return err
+		}
+	}
 
-	return s.m.run(ctx, command[0], command[1:]...)
+	return nil
 }
 
 func (s *systemd) startCommand() string {
