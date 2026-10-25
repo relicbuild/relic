@@ -137,6 +137,96 @@ func TestStorageRepositoryNamesAreReservedForTheirProject(t *testing.T) {
 	}
 }
 
+func TestProjectRolesCoverTheProjectsBuildsAndReleases(t *testing.T) {
+	t.Parallel()
+	srv := server(t)
+	send := func(c call) (reply, string) {
+		return do(t, srv, c)
+	}
+	as := func(user string) rest {
+		return rest{
+			t:    t,
+			srv:  send,
+			user: user,
+		}
+	}
+	admin := as("")
+	paula := as("paula:Paula-pass-12345")
+	dave := as("dave:Dave-pass-12345")
+	olga := as("olga:Olga-pass-12345")
+	mallory := as("mallory:Mallory-pass-12345")
+
+	for _, name := range []string{
+		"paula",
+		"dave",
+		"olga",
+		"mallory",
+	} {
+		password := strings.ToUpper(name[:1]) + name[1:] + "-pass-12345"
+		admin.call(
+			http.MethodPut,
+			"/api/v1/users/"+name,
+			`{"name":"`+name+`","email":"`+name+`@example.com","password":"`+password+`"}`,
+			http.StatusOK,
+		)
+	}
+
+	admin.call(
+		http.MethodPut,
+		"/api/v1/projects/acme",
+		`{"key":"acme","name":"Acme","members":[{"name":"paula","role":"PROJECT_ROLE_ADMIN"},`+
+			`{"name":"dave","role":"PROJECT_ROLE_DEVELOPER"},{"name":"olga","role":"PROJECT_ROLE_VIEWER"}]}`,
+		http.StatusOK,
+	)
+	admin.call(
+		http.MethodPost,
+		"/api/v1/repositories",
+		`{"name":"acme-libs","class":"REPOSITORY_CLASS_LOCAL","format":"FORMAT_GENERIC","project":"acme"}`,
+		http.StatusOK,
+	)
+	upload(t, srv, "acme-libs", "lib.txt", "lib")
+
+	run := func(number string) string {
+		return `{"project":"acme","run":{"name":"acmeb","number":"` + number + `","started":"2026-10-24T10:00:00Z"}}`
+	}
+
+	dave.call(http.MethodPost, "/api/v1/builds/acmeb/runs", run("1"), http.StatusOK)
+	olga.call(http.MethodPost, "/api/v1/builds/acmeb/runs", run("2"), http.StatusForbidden)
+
+	for _, member := range []rest{
+		paula,
+		dave,
+		olga,
+	} {
+		if got := member.call(http.MethodGet, "/api/v1/builds?project=acme", "", http.StatusOK); !strings.Contains(
+			got,
+			`"name":"acmeb"`,
+		) {
+			t.Errorf("builds of acme as %s = %s", cmpUser(member.user), got)
+		}
+	}
+
+	if got := mallory.call(http.MethodGet, "/api/v1/builds?project=acme", "", http.StatusOK); strings.Contains(
+		got,
+		"acmeb",
+	) {
+		t.Errorf("builds of acme as someone outside it = %s", got)
+	}
+
+	created := paula.call(
+		http.MethodPost,
+		"/api/v1/releases/acmerel/versions",
+		`{"project":"acme","spec":{"name":"acmerel","version":"1","sources":[{"files":[{"path":"acme-libs/lib.txt"}]}]}}`,
+		http.StatusOK,
+	)
+	if !strings.Contains(created, "RELEASE_STATUS_COMPLETED") {
+		t.Errorf("release created by the project admin = %s", created)
+	}
+
+	olga.call(http.MethodGet, "/api/v1/releases/acmerel/versions/1?project=acme", "", http.StatusOK)
+	mallory.call(http.MethodGet, "/api/v1/releases/acmerel/versions/1?project=acme", "", http.StatusNotFound)
+}
+
 func TestDashboardSummaryCountsWhatTheCallerMayRead(t *testing.T) {
 	t.Parallel()
 	srv, db := serverDB(t)

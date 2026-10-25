@@ -981,6 +981,12 @@ func newRouter(
 	bundles := release.New(db, repos, builds, keySvc, log)
 	bundles.SetLayout(layout.ReleaseBundles)
 	bundles.SetProjects(projects)
+	projects.SetStorageRepositories(func(key string) []string {
+		return []string{
+			builds.Repository(key),
+			bundles.Layout().Repository(key),
+		}
+	})
 	repos.ReserveStorage(bundles.StorageOwner)
 	bundles.SetDownloadBlocker(blocker.RefuseCopy)
 	builds.SetDownloadBlocker(blocker.RefuseCopy)

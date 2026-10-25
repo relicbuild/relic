@@ -121,7 +121,8 @@ type Service struct {
 	// changed runs after a change, so permissions are recompiled.
 	changed func()
 	// repositoryProjects maps repositories to their projects.
-	repositoryProjects func(context.Context) (map[string]string, error)
+	repositoryProjects  func(context.Context) (map[string]string, error)
+	storageRepositories func(key string) []string
 }
 
 // New returns a Service.
@@ -141,6 +142,12 @@ func (s *Service) SetChanged(fn func()) { s.changed = fn }
 // project.
 func (s *Service) SetRepositoryProjects(fn func(context.Context) (map[string]string, error)) {
 	s.repositoryProjects = fn
+}
+
+// SetStorageRepositories tells the service where a project's builds and
+// releases are stored, so its members' roles cover them.
+func (s *Service) SetStorageRepositories(fn func(key string) []string) {
+	s.storageRepositories = fn
 }
 
 func domainProject(r database.Project) (Project, error) {
@@ -477,34 +484,48 @@ func (s *Service) Permissions(ctx context.Context) ([]auth.Permission, error) {
 	var out []auth.Permission
 
 	for _, p := range projects {
-		names := byProject[p.Key]
-		if len(names) == 0 || len(p.Members) == 0 {
+		if len(p.Members) == 0 {
 			continue
 		}
 
-		slices.Sort(names)
-
-		sec := &auth.Section{
-			Selector: auth.Selector{
-				Repositories: names,
-			},
-			Users:  map[string][]auth.Action{},
-			Groups: map[string][]auth.Action{},
+		perm := auth.Permission{
+			Name: "project " + p.Key,
 		}
 
-		for _, m := range p.Members {
-			if m.Group {
-				sec.Groups[m.Name] = roleActions[m.Role]
-			} else {
-				sec.Users[m.Name] = roleActions[m.Role]
-			}
+		if names := byProject[p.Key]; len(names) > 0 {
+			slices.Sort(names)
+			perm.Repository = memberSection(p.Members, names)
 		}
 
-		out = append(out, auth.Permission{
-			Name:       "project " + p.Key,
-			Repository: sec,
-		})
+		if s.storageRepositories != nil {
+			stored := memberSection(p.Members, s.storageRepositories(p.Key))
+			perm.Build, perm.Release = stored, stored
+		}
+
+		if perm.Repository != nil || perm.Build != nil {
+			out = append(out, perm)
+		}
 	}
 
 	return out, nil
+}
+
+func memberSection(members []Member, repositories []string) *auth.Section {
+	sec := &auth.Section{
+		Selector: auth.Selector{
+			Repositories: repositories,
+		},
+		Users:  map[string][]auth.Action{},
+		Groups: map[string][]auth.Action{},
+	}
+
+	for _, m := range members {
+		if m.Group {
+			sec.Groups[m.Name] = roleActions[m.Role]
+		} else {
+			sec.Users[m.Name] = roleActions[m.Role]
+		}
+	}
+
+	return sec
 }
