@@ -532,6 +532,16 @@ func TestPutUserRefusesNamesThatCannotSignIn(t *testing.T) {
 			wantErr: security.ErrInvalid,
 		},
 		{
+			name:    "the name of unauthenticated requests",
+			user:    "anonymous",
+			wantErr: security.ErrInvalid,
+		},
+		{
+			name:    "the name of unauthenticated requests in capitals",
+			user:    "Anonymous",
+			wantErr: security.ErrInvalid,
+		},
+		{
 			name:    "differs from an existing user only by case",
 			user:    "Existing",
 			wantErr: security.ErrExists,
@@ -571,6 +581,70 @@ func TestPutUserRefusesNamesThatCannotSignIn(t *testing.T) {
 
 			if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
 				t.Fatalf("PutUser(%q) = %v, want %v", tt.user, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestPutUserRefusesShortPasswords(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		password string
+		wantErr  error
+	}{
+		{
+			name:     "one character",
+			password: "a",
+			wantErr:  security.ErrInvalid,
+		},
+		{
+			name:     "one character short",
+			password: strings.Repeat("a", security.MinPasswordLength-1),
+			wantErr:  security.ErrInvalid,
+		},
+		{
+			name:     "short in characters, long in bytes",
+			password: strings.Repeat("é", security.MinPasswordLength-1),
+			wantErr:  security.ErrInvalid,
+		},
+		{
+			name:     "the minimum length",
+			password: strings.Repeat("a", security.MinPasswordLength),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			s := security.NewService(databasetest.NewDB(t), slog.New(slog.DiscardHandler))
+
+			_, err := s.PutUser(ctx, security.User{
+				Name:     "new",
+				Email:    "new@example.com",
+				Password: tt.password,
+			})
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("PutUser of a new user = %v, want %v", err, tt.wantErr)
+			}
+
+			if _, err := s.PutUser(ctx, security.User{
+				Name:     "existing",
+				Email:    "existing@example.com",
+				Password: "Existing-pass-1",
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = s.PutUser(ctx, security.User{
+				Name:     "existing",
+				Email:    "existing@example.com",
+				Password: tt.password,
+			})
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("PutUser of an existing user = %v, want %v", err, tt.wantErr)
 			}
 		})
 	}

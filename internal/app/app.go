@@ -1323,6 +1323,10 @@ func BootstrapAdmin(ctx context.Context, db *database.DB, username, password str
 		return fmt.Errorf("RELIC_ADMIN_USERNAME: %w", security.InvalidUsername(username))
 	}
 
+	if err := security.CheckPassword(password); err != nil {
+		return fmt.Errorf("RELIC_ADMIN_PASSWORD: %w", err)
+	}
+
 	hash, err := auth.HashPassword(password)
 	if err != nil {
 		return err

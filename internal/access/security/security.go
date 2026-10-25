@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 	"uuid"
 
 	"relic/internal/access/auth"
@@ -95,12 +96,31 @@ func (s *Service) ReplaceUser(ctx context.Context, u User) (created bool, err er
 
 var username = regexp.MustCompile(`^[\w.@-]{1,64}$`)
 
-// ValidUsername reports whether name can be a Relic username: 1 to 64 letters, digits or . @ _ -.
-func ValidUsername(name string) bool { return username.MatchString(name) }
+// ValidUsername reports whether name can be a Relic username: 1 to 64 letters, digits or . @ _ -, and not the
+// name of unauthenticated requests in any case.
+func ValidUsername(name string) bool {
+	return username.MatchString(name) && !strings.EqualFold(name, auth.AnonymousUser)
+}
 
 // InvalidUsername is the ErrInvalid that refuses name as a new username.
 func InvalidUsername(name string) error {
+	if strings.EqualFold(name, auth.AnonymousUser) {
+		return fmt.Errorf("%w: username %q names unauthenticated requests", ErrInvalid, name)
+	}
+
 	return fmt.Errorf("%w: username %q must be 1 to 64 letters, digits or the characters . @ _ -", ErrInvalid, name)
+}
+
+// MinPasswordLength is the fewest characters a user's password may have.
+const MinPasswordLength = 8
+
+// CheckPassword refuses a password shorter than MinPasswordLength characters with ErrInvalid.
+func CheckPassword(password string) error {
+	if utf8.RuneCountInString(password) < MinPasswordLength {
+		return fmt.Errorf("%w: password must be at least %d characters", ErrInvalid, MinPasswordLength)
+	}
+
+	return nil
 }
 
 const usernamesLock = "security:usernames"
@@ -149,6 +169,10 @@ func (s *Service) putUser(ctx context.Context, u User, w userWrite) (created boo
 
 	switch {
 	case u.Password != "":
+		if err := CheckPassword(u.Password); err != nil {
+			return false, err
+		}
+
 		if hash, err = auth.HashPassword(u.Password); err != nil {
 			return false, err
 		}
