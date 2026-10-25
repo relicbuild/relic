@@ -20,6 +20,7 @@ var jfrogAllowed = []string{
 	"web/layers/site/app/pages/index.vue",
 	"go.mod",
 	"go.sum",
+	".github/dependabot.yml",
 	"web/pnpm-lock.yaml",
 	".golangci.yml",
 	"api/api_test.go",
