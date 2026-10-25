@@ -79,6 +79,10 @@ func withUserinfo(u, user, token string) (string, error) {
 	return p.String(), nil
 }
 
+func plainFileName(name string) bool {
+	return name != "." && name != ".." && !strings.ContainsAny(name, `/\`) && filepath.IsLocal(name)
+}
+
 func withoutScheme(u string) string {
 	return strings.TrimPrefix(strings.TrimPrefix(u, "https:"), "http:")
 }
@@ -557,6 +561,10 @@ var setupClients = map[string]setupClient{
 				},
 			}
 			if e.publicKey != "" {
+				if !plainFileName(e.keyPair) {
+					return nil, fmt.Errorf("apk: the key pair name %q cannot name a key file", e.keyPair)
+				}
+
 				steps = append(steps, setupStep{
 					file:    "etc/apk/keys/" + e.keyPair + ".rsa.pub",
 					mode:    0o644,

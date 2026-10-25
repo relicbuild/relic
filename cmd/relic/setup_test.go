@@ -516,3 +516,47 @@ func TestYarnSetupKeepsYarnrcValid(t *testing.T) {
 		})
 	}
 }
+
+func TestApkSetupWritesKeysUnderTheKeysFolderOnly(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name, keyPair string
+		wantErr       bool
+	}{
+		{
+			name:    "a plain key pair name",
+			keyPair: "relic-rsa",
+		},
+		{
+			name:    "a key pair name with a path",
+			keyPair: "../../../tmp/relic-traversal",
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			steps, err := setupClients["apk"].steps(setupEnv{
+				url:       "https://relic.example.com/alpine/alpine",
+				user:      "admin",
+				keyPair:   tc.keyPair,
+				publicKey: "key",
+				flags: map[string]string{
+					"branch": "v3.22",
+				},
+			})
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("apk setup wrote %v", steps)
+				}
+
+				return
+			}
+
+			if err != nil || len(steps) != 2 || steps[1].file != "etc/apk/keys/relic-rsa.rsa.pub" {
+				t.Errorf("apk setup = %v, %v", steps, err)
+			}
+		})
+	}
+}

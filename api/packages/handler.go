@@ -31,6 +31,7 @@ import (
 	"relic/internal/artifacts/formats/rpm"
 	"relic/internal/artifacts/formats/terraform"
 	"relic/internal/artifacts/repository"
+	"relic/internal/artifacts/signingkey"
 	"relic/internal/artifacts/usage"
 	"relic/internal/platform/httperror"
 	"relic/internal/platform/httpserver"
@@ -189,7 +190,7 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, err error) 
 			"error",
 			err,
 		)
-	case errors.Is(err, repository.ErrChecksumMismatch):
+	case errors.Is(err, repository.ErrChecksumMismatch), errors.Is(err, signingkey.ErrKind):
 		status, msg = http.StatusConflict, err.Error()
 	case errors.Is(err, repository.ErrTooLarge), errors.Is(err, repository.ErrQuotaExceeded):
 		status, msg = http.StatusRequestEntityTooLarge, err.Error()

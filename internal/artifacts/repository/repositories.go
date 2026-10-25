@@ -87,6 +87,10 @@ func (s *Service) CreateRepository(ctx context.Context, r Repository) error {
 		return err
 	}
 
+	if err := s.checkKeyPairs(ctx, r); err != nil {
+		return err
+	}
+
 	config, err := s.encodeConfig(r)
 	if err != nil {
 		return err
@@ -196,6 +200,10 @@ func (s *Service) UpdateRepository(ctx context.Context, r Repository) error {
 	}
 
 	if err := s.checkMembers(ctx, r); err != nil {
+		return err
+	}
+
+	if err := s.checkKeyPairs(ctx, r); err != nil {
 		return err
 	}
 
@@ -486,6 +494,64 @@ func (r Repository) KeyPairRef() string {
 	default:
 		return ""
 	}
+}
+
+// KeyPairKind is the kind of key pair that signs format's metadata: rsa for
+// Alpine, gpg for Debian and RPM, else "".
+func KeyPairKind(format Format) string {
+	switch format {
+	case FormatAlpine:
+		return "rsa"
+	case FormatDebian, FormatRPM:
+		return "gpg"
+	default:
+		return ""
+	}
+}
+
+func (s *Service) checkKeyPairs(ctx context.Context, r Repository) error {
+	kind := KeyPairKind(r.Format)
+	if kind == "" {
+		return nil
+	}
+
+	repos, err := s.ListRepositories(ctx, "", "")
+	if err != nil {
+		return err
+	}
+
+	for _, name := range []string{
+		r.KeyPairRef(),
+	} {
+		stored, err := s.db.GetKeyPair(ctx, name)
+		if err == nil && stored.Kind != kind {
+			return fmt.Errorf("%w: key pair %s is %s; a %s repository is signed with %s",
+				ErrInvalidRepository, name, stored.Kind, r.Format, kind)
+		}
+
+		if err != nil && !errors.Is(database.NotFound(err), database.ErrNotFound) {
+			return fmt.Errorf("key pair %s: %w", name, err)
+		}
+
+		for _, other := range repos {
+			otherKind := KeyPairKind(other.Format)
+			if other.Name != r.Name && otherKind != "" && otherKind != kind &&
+				other.KeyPairRef() == name {
+				return fmt.Errorf(
+					"%w: key pair %s signs %s, a %s repository, with %s; a %s repository is signed with %s",
+					ErrInvalidRepository,
+					name,
+					other.Name,
+					other.Format,
+					otherKind,
+					r.Format,
+					kind,
+				)
+			}
+		}
+	}
+
+	return nil
 }
 
 // OwnRepositories names the repositories Relic writes itself: build

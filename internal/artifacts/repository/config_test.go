@@ -190,3 +190,51 @@ func TestValidateFormat(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateSigningKeys(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		format  Format
+		primary string
+		wantErr bool
+	}{
+		{
+			name:    "a plain name",
+			format:  FormatDebian,
+			primary: "debian-signing.2026_1",
+		},
+		{
+			name:    "a name with a path",
+			format:  FormatAlpine,
+			primary: "../../../tmp/relic-traversal",
+			wantErr: true,
+		},
+		{
+			name:    "a name with a space",
+			format:  FormatRPM,
+			primary: "../x y",
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			r := Repository{
+				Name:   "r",
+				Class:  ClassLocal,
+				Format: tt.format,
+				Config: Config{
+					SigningKey: tt.primary,
+				},
+			}
+
+			err := r.Validate()
+			if tt.wantErr != errors.Is(err, ErrInvalidRepository) || !tt.wantErr && err != nil {
+				t.Errorf("Validate() = %v, want an error: %v", err, tt.wantErr)
+			}
+		})
+	}
+}

@@ -214,3 +214,108 @@ func TestUpdateRepositoryKeepsTheRemotePasswordOnItsHost(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateRepositoryRefusesKeyPairsOfTheOtherKind(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		repo    Repository
+		wantErr bool
+	}{
+		{
+			name: "a stored RSA key pair for Debian",
+			repo: Repository{
+				Name:   "deb-wrongkey",
+				Class:  ClassLocal,
+				Format: FormatDebian,
+				Config: Config{
+					SigningKey: "stored-rsa",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "a stored OpenPGP key pair for Alpine",
+			repo: Repository{
+				Name:   "apk-wrongkey",
+				Class:  ClassLocal,
+				Format: FormatAlpine,
+				Config: Config{
+					SigningKey: "stored-gpg",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "a key pair another repository signs with the other kind",
+			repo: Repository{
+				Name:   "rpm-wrongkey",
+				Class:  ClassLocal,
+				Format: FormatRPM,
+				Config: Config{
+					SigningKey: "alpine-unstored",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "a stored key pair of the right kind",
+			repo: Repository{
+				Name:   "rpm-rightkey",
+				Class:  ClassLocal,
+				Format: FormatRPM,
+				Config: Config{
+					SigningKey: "stored-gpg",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			s, _, db := newTestService(t)
+			ctx := t.Context()
+
+			for name, kind := range map[string]string{
+				"stored-rsa": "rsa",
+				"stored-gpg": "gpg",
+			} {
+				if err := db.InsertKeyPair(ctx, database.InsertKeyPairParams{
+					Name:       name,
+					Kind:       kind,
+					PrivateKey: []byte("private"),
+					PublicKey:  "public",
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if err := s.CreateRepository(ctx, Repository{
+				Name:   "alpine-local",
+				Class:  ClassLocal,
+				Format: FormatAlpine,
+				Config: Config{
+					SigningKey: "alpine-unstored",
+				},
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			err := s.CreateRepository(ctx, tt.repo)
+			if tt.wantErr != errors.Is(err, ErrInvalidRepository) || !tt.wantErr && err != nil {
+				t.Errorf("CreateRepository() = %v, want an error: %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr {
+				return
+			}
+
+			tt.repo.Config.SigningKey = "stored-rsa"
+			if err := s.UpdateRepository(ctx, tt.repo); !errors.Is(err, ErrInvalidRepository) {
+				t.Errorf("UpdateRepository() to an RSA key pair = %v, want ErrInvalidRepository", err)
+			}
+		})
+	}
+}

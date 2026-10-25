@@ -248,8 +248,9 @@ func (r Repository) Upstream() RemoteConfig {
 }
 
 var (
-	repoKeyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
-	reservedKeys   = []string{
+	keyPairNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+	repoKeyPattern     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+	reservedKeys       = []string{
 		"api",
 		"ui",
 		"list",
@@ -283,6 +284,10 @@ func (r *Repository) Validate() error {
 
 	if r.Config.MaxUploadSize < 0 || r.Config.MaxStorage < 0 {
 		return fmt.Errorf("%w: maxUploadSize and maxStorage cannot be negative", ErrInvalidRepository)
+	}
+
+	if err := r.validateSigningKeys(); err != nil {
+		return err
 	}
 
 	if r.Config.Remote != nil && r.Class != ClassRemote {
@@ -328,6 +333,22 @@ func (r *Repository) Validate() error {
 
 	if !storableFields(reflect.ValueOf(r.Config)) {
 		return fmt.Errorf("%w: the settings hold text that is not UTF-8 or holds NUL", ErrInvalidRepository)
+	}
+
+	return nil
+}
+
+func (r *Repository) validateSigningKeys() error {
+	for _, name := range []string{
+		r.Config.SigningKey,
+	} {
+		if name != "" && !keyPairNamePattern.MatchString(name) {
+			return fmt.Errorf(
+				"%w: invalid key pair name %q: letters, digits, '.', '_' and '-', up to 64",
+				ErrInvalidRepository,
+				name,
+			)
+		}
 	}
 
 	return nil
