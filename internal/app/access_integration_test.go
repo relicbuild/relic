@@ -11,7 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect/v2"
+
 	"relic/api/adapters/artifactory/layout"
+	relicv1 "relic/api/gen/relic/v1"
+	"relic/api/gen/relic/v1/relicv1connect"
 	"relic/internal/platform/database"
 )
 
@@ -423,5 +427,115 @@ func TestAnUnreadableRepositoryAnswersLikeAMissingOne(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestViewersSeeOnlyTheRepositoriesTheyMayRead(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	srv := server(t)
+
+	createRepository(t, srv, "viewer-readable", "LOCAL", "MCP", "")
+	createRepository(t, srv, "viewer-unreadable", "LOCAL", "MCP", "")
+	upload(
+		t,
+		srv,
+		"viewer-readable",
+		"weather/1.0.0/server.json",
+		`{"name":"io.github.acme/weather","version":"1.0.0","description":"Forecasts"}`,
+	)
+
+	security := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
+	if _, err := security.PutUser(ctx, &relicv1.PutUserRequest{
+		User: &relicv1.User{
+			Name:     "vera",
+			Email:    "vera@example.com",
+			Password: "Vera-pass-12345",
+			Viewer:   true,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := security.PutPermission(ctx, &relicv1.PutPermissionRequest{
+		Permission: &relicv1.Permission{
+			Name: "viewer-readable",
+			Rules: []*relicv1.PermissionRule{
+				{
+					Resource: relicv1.ResourceKind_RESOURCE_KIND_REPOSITORY,
+					Selector: &relicv1.RepositorySelector{
+						Repositories: []string{
+							"viewer-readable",
+						},
+					},
+					Grants: []*relicv1.PermissionGrant{
+						{
+							Principal: &relicv1.PermissionGrant_User{
+								User: "vera",
+							},
+							Actions: []relicv1.Action{
+								relicv1.Action_ACTION_READ,
+							},
+						},
+					},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	viewer := apiClient(relicHTTP("vera", "Vera-pass-12345"), srv.URL)
+	repositories := relicv1connect.NewRepositoryServiceClient(viewer)
+
+	listed, err := repositories.ListRepositories(ctx, &relicv1.ListRepositoriesRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	names := make([]string, 0, len(listed.GetRepositories()))
+	for _, r := range listed.GetRepositories() {
+		names = append(names, r.GetName())
+	}
+
+	if want := []string{
+		"viewer-readable",
+	}; !reflect.DeepEqual(names, want) {
+		t.Errorf("ListRepositories = %v, want %v", names, want)
+	}
+
+	if _, err := repositories.GetRepository(ctx, &relicv1.GetRepositoryRequest{
+		Name: "viewer-unreadable",
+	}); code(err) != connect.CodeNotFound {
+		t.Errorf("GetRepository of an unreadable repository: %v, want not found", err)
+	}
+
+	summary, err := relicv1connect.NewSystemServiceClient(viewer).GetDashboardSummary(
+		ctx,
+		&relicv1.GetDashboardSummaryRequest{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if want := map[string]int32{
+		"local": 1,
+	}; !reflect.DeepEqual(summary.GetRepositories(), want) {
+		t.Errorf("dashboard repositories = %v, want %v", summary.GetRepositories(), want)
+	}
+
+	entries, err := relicv1connect.NewAgentRegistryServiceClient(viewer).ListRegistryEntries(
+		ctx,
+		&relicv1.ListRegistryEntriesRequest{
+			Repository: "viewer-readable",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := entries.GetEntries(); len(got) != 1 || got[0].GetApproved() {
+		t.Errorf("registry entries = %v, want the one unapproved entry", got)
 	}
 }

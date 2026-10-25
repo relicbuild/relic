@@ -180,7 +180,7 @@ func repositoryOf(m *relicv1.Repository) (repository.Repository, error) {
 
 func (s *repositoryServer) canRead(ctx context.Context, r repository.Repository) (bool, error) {
 	p := auth.FromContext(ctx)
-	if p.Admin || p.Viewer {
+	if p.Admin {
 		return true, nil
 	}
 
