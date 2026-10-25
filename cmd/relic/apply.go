@@ -250,9 +250,9 @@ func getCmd(g *globals) *cobra.Command {
 			names,
 			", ",
 		) + ".\nWith -o yaml the output is relic.build/v1 documents that relic apply accepts.",
-		Example:   "  relic get repositories\n  relic get repository libs-local -o yaml",
-		Args:      cobra.RangeArgs(1, 2),
-		ValidArgs: names,
+		Example:           "  relic get repositories\n  relic get repository libs-local -o yaml",
+		Args:              cobra.RangeArgs(1, 2),
+		ValidArgsFunction: completeResources(g, names),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			k, err := kindNamed(args[0])
 			if err != nil {
@@ -293,6 +293,19 @@ func getCmd(g *globals) *cobra.Command {
 	cmd.Flags().StringVarP(&output, "output", "o", "text", "output format: text, name, yaml or json")
 
 	return cmd
+}
+
+func completeResources(g *globals, names []string) cobra.CompletionFunc {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		switch len(args) {
+		case 0:
+			return names, cobra.ShellCompDirectiveNoFileComp
+		case 1:
+			return g.completeNamesAt(1, resourceNames(args[0]), nil)(cmd, args, toComplete)
+		default:
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+	}
 }
 
 func printResources(w io.Writer, k *kind, items []proto.Message, output string, list bool) error {

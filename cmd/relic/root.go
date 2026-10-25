@@ -162,6 +162,7 @@ func rootCmd(g *globals) *cobra.Command {
 	}
 
 	refuseUnknownSubcommands(root)
+	g.completeNames(root)
 	g.showProgress(root)
 
 	return root

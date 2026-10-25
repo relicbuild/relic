@@ -1391,7 +1391,8 @@ func imagePromoteCmd(g *globals) *cobra.Command {
 		Example: "  relic image promote docker-dev/team/app:1.4.0 docker-prod --copy\n" +
 			"  relic image promote docker-dev/team/app:1.4.0 docker-prod/release/app:stable\n" +
 			"  relic image promote docker-dev/team/app:any docker-archive --all-tags",
-		Args: cobra.ExactArgs(2),
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: completeTargetArg(g, 0),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			repo, image, tag, err := imageRef(args[0])
 			if err != nil {

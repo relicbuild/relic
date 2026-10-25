@@ -1167,8 +1167,7 @@ func packageSetupCmd(g *globals) *cobra.Command {
 			"  relic package setup go go-virtual --private 'git.example.com/*' --write\n" +
 			"  relic package setup npm npm-virtual --agent --project .\n" +
 			"  relic package setup apt debian-remote --distribution bookworm --write   # as root, e.g. in a Dockerfile",
-		Args:      cobra.ExactArgs(2),
-		ValidArgs: names,
+		Args: cobra.ExactArgs(2),
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			if len(args) == 0 {
 				return names, cobra.ShellCompDirectiveNoFileComp
