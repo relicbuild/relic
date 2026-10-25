@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -159,9 +161,45 @@ func rootCmd(g *globals) *cobra.Command {
 		root.AddCommand(c)
 	}
 
+	refuseUnknownSubcommands(root)
 	g.showProgress(root)
 
 	return root
+}
+
+func refuseUnknownSubcommands(root *cobra.Command) {
+	for _, c := range root.Commands() {
+		refuseUnknownSubcommands(c)
+
+		if !c.HasSubCommands() || c.Runnable() {
+			continue
+		}
+
+		c.Args = unknownSubcommand
+		c.SuggestionsMinimumDistance = 2
+		c.RunE = func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		}
+
+		if c.Annotations == nil {
+			c.Annotations = map[string]string{}
+		}
+
+		c.Annotations[progressAnnotation] = "off"
+	}
+}
+
+func unknownSubcommand(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+
+	message := fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath())
+	if suggestions := cmd.SuggestionsFor(args[0]); len(suggestions) > 0 {
+		message += "\n\nDid you mean this?\n\t" + strings.Join(suggestions, "\n\t")
+	}
+
+	return errors.New(message)
 }
 
 func group(use, short, groupID string, cmds ...*cobra.Command) *cobra.Command {
