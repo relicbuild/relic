@@ -38,6 +38,7 @@ type setupEnv struct {
 	home, root   string
 	goos         string
 	getenv       func(string) string
+	class        relicv1.RepositoryClass
 	signingKeys  []signingKey
 	flags        map[string]string
 }
@@ -697,6 +698,14 @@ var setupClients = map[string]setupClient{
 					"\npassword=" + e.token + "\nenabled=1\ngpgcheck=0\n" + signature,
 			}), nil
 		},
+		notes: func(e setupEnv) string {
+			if e.class != relicv1.RepositoryClass_REPOSITORY_CLASS_REMOTE {
+				return ""
+			}
+
+			return "The upstream signs this remote's metadata and packages, not Relic: add the upstream's gpgkey= " +
+				"and set repo_gpgcheck=1 and gpgcheck=1 to check them."
+		},
 	},
 	"nix": {
 		formats: []relicv1.Format{
@@ -1015,7 +1024,7 @@ func packageSetupCmd(g *globals) *cobra.Command {
 				}
 			}
 
-			if client.notes != nil {
+			if client.notes != nil && client.notes(e) != "" {
 				_, _ = fmt.Fprintf(out, "\n%s\n", client.notes(e))
 			}
 
@@ -1112,12 +1121,13 @@ func setupEnvFor(cmd *cobra.Command, g *globals, c *client, client setupClient, 
 		user:         me.GetPrincipal().GetUsername(),
 		token:        target.token,
 		contextToken: target.contextToken,
+		class:        r.GetRepository().GetClass(),
 	}
 	if e.url == "" {
 		e.url = e.files
 	}
 
-	if slices.Contains(signedFormats, format) {
+	if slices.Contains(signedFormats, format) && e.class != relicv1.RepositoryClass_REPOSITORY_CLASS_REMOTE {
 		key, err := c.repositories.GetRepositorySigningKey(
 			ctx,
 			&relicv1.GetRepositorySigningKeyRequest{

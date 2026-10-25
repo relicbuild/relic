@@ -67,6 +67,16 @@ spec: {class: local, format: gomod}
 ---
 apiVersion: relic.build/v1
 kind: Repository
+metadata: {name: deb-remote}
+spec: {class: remote, format: debian, remote: {url: "https://deb.example.org/debian"}}
+---
+apiVersion: relic.build/v1
+kind: Repository
+metadata: {name: rpm-remote}
+spec: {class: remote, format: rpm, remote: {url: "https://rpm.example.org/fedora"}}
+---
+apiVersion: relic.build/v1
+kind: Repository
 metadata: {name: apk-rotating}
 spec: {class: local, format: alpine, signingKey: apk-old, secondarySigningKey: apk-new}
 ---
@@ -218,6 +228,28 @@ spec: {class: local, format: debian, signingKey: deb-old, secondarySigningKey: d
 
 	if !strings.Contains(string(dnfRepo), "repo_gpgcheck=1\n") {
 		t.Errorf("dnf repository file of a repository with the default key pair = %q, want repo_gpgcheck=1", dnfRepo)
+	}
+
+	if _, err := setup("apt", "deb-remote", "--distribution", "bookworm", "--write"); err != nil {
+		t.Fatal(err)
+	}
+
+	remoteList, _ := os.ReadFile(filepath.Join(root, "etc/apt/sources.list.d/relic-deb-remote.list"))
+	if !strings.HasPrefix(string(remoteList), "deb "+srv.URL) || strings.Contains(string(remoteList), "signed-by") {
+		t.Errorf("apt source of a remote = %q, want no signed-by, so the upstream's key applies", remoteList)
+	}
+
+	if _, err := os.Stat(filepath.Join(root, "etc/apt/keyrings/relic-deb-remote.asc")); !os.IsNotExist(err) {
+		t.Errorf("apt setup of a remote wrote Relic's key: %v", err)
+	}
+
+	if _, err := setup("dnf", "rpm-remote", "--write"); err != nil {
+		t.Fatal(err)
+	}
+
+	remoteRepo, _ := os.ReadFile(filepath.Join(root, "etc/yum.repos.d/relic-rpm-remote.repo"))
+	if !strings.Contains(string(remoteRepo), "repo_gpgcheck=0\n") || strings.Contains(string(remoteRepo), "gpgkey=") {
+		t.Errorf("dnf repository file of a remote = %q, want no check of Relic's signature", remoteRepo)
 	}
 
 	if _, err := setup("apk", "apk-rotating", "--branch", "v3.22", "--write"); err != nil {
