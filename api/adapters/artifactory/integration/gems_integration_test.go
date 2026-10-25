@@ -274,16 +274,24 @@ func TestGemsAPIKeyAndYank(t *testing.T) {
 		path:   api + "api_key.yaml",
 	})
 
-	key, ok := strings.CutPrefix(strings.TrimSpace(yml), "---\n:rubygems_api_key: ")
-	if resp.StatusCode != 200 || !ok || !strings.HasPrefix(key, "Bearer ") || strings.Contains(yml, "password") {
-		t.Fatalf("api_key.yaml = %d %q", resp.StatusCode, yml)
+	key, ok := strings.CutPrefix(strings.TrimSpace(yml), srv.URL+"/artifactory/api/gems/gems: ")
+	if resp.StatusCode != 200 || !ok || key == "" || strings.Contains(yml, "rubygems_api_key") ||
+		strings.Contains(yml, "password") {
+		t.Fatalf("api_key.yaml = %d %q, want a credentials entry for the repository's URL alone", resp.StatusCode, yml)
+	}
+
+	if _, native := do(t, srv, call{
+		method: "GET",
+		path:   "/gems/gems/api/v1/api_key.yaml",
+	}); !strings.HasPrefix(native, srv.URL+"/gems/gems: ") {
+		t.Errorf("native api_key.yaml = %q", native)
 	}
 
 	if _, plain := do(t, srv, call{
 		method: "GET",
 		path:   api + "api_key",
-	}); !strings.HasPrefix(plain, "Bearer ") {
-		t.Errorf("api_key = %q", plain)
+	}); plain == "" || strings.Contains(plain, " ") {
+		t.Errorf("api_key = %q, want a token", plain)
 	}
 
 	if resp, body := do(
