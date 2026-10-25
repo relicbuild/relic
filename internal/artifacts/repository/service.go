@@ -657,7 +657,7 @@ func upsertFile(
 		return false, ErrConflict
 	case err == nil:
 		if immutable && *existing.Sha256 != b.Sha256 && user != SystemUser {
-			return false, fmt.Errorf("%w: %s/%s/%s exists", ErrImmutable, repoKey, parent, name)
+			return false, fmt.Errorf("%w: %s/%s exists", ErrImmutable, repoKey, JoinPath(parent, name))
 		}
 
 		if err := checkHolds(ctx, q, repoKey, JoinPath(parent, name)); err != nil {
