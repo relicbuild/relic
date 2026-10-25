@@ -125,3 +125,45 @@ func TestKubernetesDocsNameTheMinimumHelm(t *testing.T) {
 		}
 	}
 }
+
+func TestKubernetesDocsNameTheBundledServices(t *testing.T) {
+	t.Parallel()
+
+	objs, stderr := render(t, cnpg...)
+	if stderr != "" {
+		t.Fatal(stderr)
+	}
+
+	for _, rendered := range []struct {
+		kind string
+		name string
+	}{
+		{
+			"Cluster",
+			"r-cluster",
+		},
+		{
+			"Secret",
+			"r-seaweedfs-s3-secret",
+		},
+	} {
+		if find(objs, rendered.kind, rendered.name) == nil {
+			t.Errorf("no %s %s", rendered.kind, rendered.name)
+		}
+	}
+
+	quickStart := docsPage(t, "2.quick-start.md")
+	for _, name := range []string{
+		"`<release>-cluster`",
+		"`<release>-cluster-app`",
+		"`<release>-seaweedfs`",
+	} {
+		if !strings.Contains(quickStart, name) {
+			t.Errorf("2.quick-start.md does not name %s", name)
+		}
+	}
+
+	if !strings.Contains(docsPage(t, "1.overview.md"), "| `cnpg/cluster` (`cluster`) |") {
+		t.Error("1.overview.md does not give cluster as the PostgreSQL chart's values key")
+	}
+}
