@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"relic/internal/access/sso"
+	"relic/internal/platform/httpserver"
 )
 
 func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request) {
@@ -50,6 +51,8 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	httpserver.SetAuditTarget(r.Context(), strings.TrimSpace(in.UserName))
+
 	u, err := h.dir.CreateUser(r.Context(), sso.DirectoryUser{
 		UserName: strings.TrimSpace(in.UserName),
 		Email:    primaryEmail(in.Emails),
@@ -70,6 +73,8 @@ func (h *Handler) replaceUser(w http.ResponseWriter, r *http.Request) {
 	if !read(w, r, &in) {
 		return
 	}
+
+	h.auditUser(r)
 
 	u, err := h.dir.UpdateUser(r.Context(), sso.DirectoryUser{
 		ID:       r.PathValue("id"),
@@ -189,6 +194,8 @@ func (h *Handler) patchUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	httpserver.SetAuditTarget(r.Context(), before.UserName)
+
 	u := before
 
 	for _, op := range in.Operations {
@@ -219,7 +226,15 @@ func (h *Handler) patchUser(w http.ResponseWriter, r *http.Request) {
 	write(w, http.StatusOK, wireUser(r, u))
 }
 
+func (h *Handler) auditUser(r *http.Request) {
+	if u, err := h.dir.User(r.Context(), r.PathValue("id")); err == nil {
+		httpserver.SetAuditTarget(r.Context(), u.UserName)
+	}
+}
+
 func (h *Handler) deleteUser(w http.ResponseWriter, r *http.Request) {
+	h.auditUser(r)
+
 	if err := h.dir.DeleteUser(r.Context(), r.PathValue("id")); err != nil {
 		h.fail(w, r, err)
 		return

@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"net/http"
 	"slices"
 
@@ -79,6 +80,8 @@ func (rt *Router) audited(route Route, h http.Handler) http.Handler {
 			ResponseWriter: w,
 		}
 
+		r = r.WithContext(WithAuditTarget(r.Context()))
+
 		defer func() {
 			if p := recover(); p != nil {
 				rt.audit(r, route, http.StatusInternalServerError)
@@ -89,6 +92,30 @@ func (rt *Router) audited(route Route, h http.Handler) http.Handler {
 		h.ServeHTTP(rec, r)
 		rt.audit(r, route, rec.code())
 	})
+}
+
+type auditTargetKey struct{}
+
+// WithAuditTarget returns ctx with room for SetAuditTarget.
+func WithAuditTarget(ctx context.Context) context.Context {
+	return context.WithValue(ctx, auditTargetKey{}, new(string))
+}
+
+// SetAuditTarget names what an audited request acts on, when its path does
+// not (a user created, or one named by an ID).
+func SetAuditTarget(ctx context.Context, target string) {
+	if slot, ok := ctx.Value(auditTargetKey{}).(*string); ok {
+		*slot = target
+	}
+}
+
+// AuditTarget is the target SetAuditTarget named for the request, if any.
+func AuditTarget(ctx context.Context) string {
+	if slot, ok := ctx.Value(auditTargetKey{}).(*string); ok {
+		return *slot
+	}
+
+	return ""
 }
 
 // HandleFunc is Handle for a function.

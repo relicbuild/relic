@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -63,6 +64,61 @@ func TestAuditLog(t *testing.T) {
 	}
 
 	_ = resp.Body.Close()
+
+	if _, err := carol.CreateToken(ctx, &relicv1.CreateTokenRequest{
+		Description: "g",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	tokens, err := carol.ListTokens(ctx, &relicv1.ListTokensRequest{})
+	if err != nil || len(tokens.GetTokens()) != 1 {
+		t.Fatalf("carol's tokens = %v, %v", tokens, err)
+	}
+
+	tokenID := tokens.GetTokens()[0].GetId()
+	if _, err := admin.RevokeToken(ctx, &relicv1.RevokeTokenRequest{
+		Id: tokenID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	scim := func(method, path, body string) string {
+		t.Helper()
+
+		req, err := http.NewRequestWithContext(ctx, method, srv.URL+path, strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		req.SetBasicAuth("admin", "password")
+		req.Header.Set("Content-Type", "application/scim+json")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		defer func() {
+			_ = resp.Body.Close()
+		}()
+
+		var created struct {
+			ID string `json:"id"`
+		}
+
+		_ = json.NewDecoder(resp.Body).Decode(&created)
+
+		return created.ID
+	}
+
+	samID := scim(http.MethodPost, "/scim/v2/Users", `{"userName":"Sam.Smith","active":true}`)
+	if samID == "" {
+		t.Fatal("SCIM did not create Sam.Smith")
+	}
+
+	scim(http.MethodDelete, "/scim/v2/Users/"+samID, "")
+	scim(http.MethodPost, "/scim/v2/Groups", `{"displayName":"scim-team"}`)
 
 	login := relicv1connect.NewSessionServiceClient(apiClient(http.DefaultClient, srv.URL))
 	req := &relicv1.LoginRequest{
@@ -134,6 +190,36 @@ func TestAuditLog(t *testing.T) {
 			action:  "relic.v1.SessionService/Login",
 			target:  "carol",
 			outcome: relicv1.AuditOutcome_AUDIT_OUTCOME_DENIED,
+		},
+		{
+			actor:   "carol",
+			action:  "relic.v1.SecurityService/CreateToken",
+			target:  tokenID,
+			outcome: relicv1.AuditOutcome_AUDIT_OUTCOME_SUCCESS,
+		},
+		{
+			actor:   "admin",
+			action:  "relic.v1.SecurityService/RevokeToken",
+			target:  tokenID,
+			outcome: relicv1.AuditOutcome_AUDIT_OUTCOME_SUCCESS,
+		},
+		{
+			actor:   "admin",
+			action:  "POST /scim/v2/Users",
+			target:  "Sam.Smith",
+			outcome: relicv1.AuditOutcome_AUDIT_OUTCOME_SUCCESS,
+		},
+		{
+			actor:   "admin",
+			action:  "DELETE /scim/v2/Users/{id}",
+			target:  "Sam.Smith",
+			outcome: relicv1.AuditOutcome_AUDIT_OUTCOME_SUCCESS,
+		},
+		{
+			actor:   "admin",
+			action:  "POST /scim/v2/Groups",
+			target:  "scim-team",
+			outcome: relicv1.AuditOutcome_AUDIT_OUTCOME_SUCCESS,
 		},
 	} {
 		found := false

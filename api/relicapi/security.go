@@ -14,6 +14,7 @@ import (
 	"relic/internal/access/auth"
 	"relic/internal/access/project"
 	"relic/internal/access/security"
+	"relic/internal/platform/httpserver"
 )
 
 type securityServer struct {
@@ -495,6 +496,8 @@ func (s *securityServer) CreateToken(
 	if err != nil {
 		return nil, err
 	}
+
+	httpserver.SetAuditTarget(ctx, tok.ID)
 
 	return &relicv1.CreateTokenResponse{
 		AccessToken:  tok.AccessToken,

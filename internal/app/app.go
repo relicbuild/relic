@@ -2,6 +2,7 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -1146,7 +1147,7 @@ func recordRoute(auditLog *audit.Service) httpserver.AuditHook {
 		e := audit.Event{
 			Actor:   auth.FromContext(r.Context()).Name(),
 			Action:  r.Method + " " + path,
-			Target:  r.URL.Path,
+			Target:  cmp.Or(httpserver.AuditTarget(r.Context()), r.URL.Path),
 			Outcome: audit.HTTPOutcome(status),
 		}
 		if status >= http.StatusBadRequest {

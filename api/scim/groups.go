@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"relic/internal/access/sso"
+	"relic/internal/platform/httpserver"
 )
 
 func (h *Handler) listGroups(w http.ResponseWriter, r *http.Request) {
@@ -63,6 +64,8 @@ func (h *Handler) createGroup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalidValue", "displayName is required")
 		return
 	}
+
+	httpserver.SetAuditTarget(r.Context(), strings.TrimSpace(in.DisplayName))
 
 	g, err := h.dir.CreateGroup(r.Context(), strings.TrimSpace(in.DisplayName), memberIDs(in.Members))
 	if err != nil {
