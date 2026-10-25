@@ -522,7 +522,8 @@ func (h *Handler) hfCreateRepo(w http.ResponseWriter, r *http.Request, m Mount, 
 		return
 	}
 
-	if _, ok := h.hfUploadTarget(w, r, rp, string(kind)+"/"+id); !ok {
+	target, ok := h.hfUploadTarget(w, r, rp, string(kind)+"/"+id)
+	if !ok {
 		return
 	}
 
@@ -531,14 +532,26 @@ func (h *Handler) hfCreateRepo(w http.ResponseWriter, r *http.Request, m Mount, 
 		path = "datasets/" + id
 	}
 
-	writeJSON(
-		w,
-		http.StatusOK,
-		map[string]any{
-			"url":  m.base(r) + "/" + rp.Name + "/" + path,
-			"name": id,
-		},
-	)
+	created := map[string]any{
+		"url":  m.base(r) + "/" + rp.Name + "/" + path,
+		"name": id,
+	}
+
+	_, err := h.hf.CreateRepository(r.Context(), target, kind, id, auth.FromContext(r.Context()).Name())
+	if errors.Is(err, hf.ErrRepoExists) {
+		message := "You already created this " + strings.TrimSuffix(string(kind), "s") + " repo"
+		created["error"] = message
+		w.Header().Set("X-Error-Message", message)
+		writeJSON(w, http.StatusConflict, created)
+
+		return
+	}
+
+	if h.hfFail(w, r, err) {
+		return
+	}
+
+	writeJSON(w, http.StatusOK, created)
 }
 
 func (h *Handler) hfUploadTarget(

@@ -70,6 +70,21 @@ func TestHuggingFaceRepository(t *testing.T) {
 		t.Errorf("create model repo = %d %s", resp.StatusCode, body)
 	}
 
+	if resp, body := do(t, srv, call{
+		method: "GET",
+		path:   EP + "/api/models/org/demo/revision/main",
+	}); resp.StatusCode != 200 || !strings.Contains(body, `"rfilename": ".gitattributes"`) {
+		t.Errorf("a created repo = %d %s, want its first commit, with .gitattributes", resp.StatusCode, body)
+	}
+
+	if resp, body := do(t, srv, call{
+		method: "POST",
+		path:   EP + "/api/repos/create",
+		body:   `{"name":"demo","organization":"org"}`,
+	}); resp.StatusCode != 409 || !strings.Contains(body, `/artifactory/api/huggingfaceml/hf/org/demo"`) {
+		t.Errorf("create an existing repo = %d %s, want 409 with its url, which exist_ok reads", resp.StatusCode, body)
+	}
+
 	if _, body = do(
 		t,
 		srv,

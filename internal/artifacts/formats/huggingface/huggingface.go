@@ -360,6 +360,88 @@ func (s *Service) CreateCommit(
 	return c, err
 }
 
+// ErrRepoExists is returned for creating a repository that exists.
+var ErrRepoExists = errors.New("repository already exists")
+
+// DefaultRevision is the branch a repository is created with.
+const DefaultRevision = "main"
+
+const initialAttributes = `*.7z filter=lfs diff=lfs merge=lfs -text
+*.arrow filter=lfs diff=lfs merge=lfs -text
+*.bin filter=lfs diff=lfs merge=lfs -text
+*.bz2 filter=lfs diff=lfs merge=lfs -text
+*.ckpt filter=lfs diff=lfs merge=lfs -text
+*.ftz filter=lfs diff=lfs merge=lfs -text
+*.gz filter=lfs diff=lfs merge=lfs -text
+*.h5 filter=lfs diff=lfs merge=lfs -text
+*.joblib filter=lfs diff=lfs merge=lfs -text
+*.lfs.* filter=lfs diff=lfs merge=lfs -text
+*.mlmodel filter=lfs diff=lfs merge=lfs -text
+*.model filter=lfs diff=lfs merge=lfs -text
+*.msgpack filter=lfs diff=lfs merge=lfs -text
+*.npy filter=lfs diff=lfs merge=lfs -text
+*.npz filter=lfs diff=lfs merge=lfs -text
+*.onnx filter=lfs diff=lfs merge=lfs -text
+*.ot filter=lfs diff=lfs merge=lfs -text
+*.parquet filter=lfs diff=lfs merge=lfs -text
+*.pb filter=lfs diff=lfs merge=lfs -text
+*.pickle filter=lfs diff=lfs merge=lfs -text
+*.pkl filter=lfs diff=lfs merge=lfs -text
+*.pt filter=lfs diff=lfs merge=lfs -text
+*.pth filter=lfs diff=lfs merge=lfs -text
+*.rar filter=lfs diff=lfs merge=lfs -text
+*.safetensors filter=lfs diff=lfs merge=lfs -text
+saved_model/**/* filter=lfs diff=lfs merge=lfs -text
+*.tar.* filter=lfs diff=lfs merge=lfs -text
+*.tar filter=lfs diff=lfs merge=lfs -text
+*.tflite filter=lfs diff=lfs merge=lfs -text
+*.tgz filter=lfs diff=lfs merge=lfs -text
+*.wasm filter=lfs diff=lfs merge=lfs -text
+*.xz filter=lfs diff=lfs merge=lfs -text
+*.zip filter=lfs diff=lfs merge=lfs -text
+*.zst filter=lfs diff=lfs merge=lfs -text
+*tfevents* filter=lfs diff=lfs merge=lfs -text
+`
+
+// CreateRepository creates a repository in a local repository with the
+// Hub's first commit (.gitattributes on DefaultRevision), or returns
+// ErrRepoExists.
+func (s *Service) CreateRepository(ctx context.Context, repoKey string, kind Kind, id, user string) (Commit, error) {
+	var c Commit
+
+	err := s.repos.WithLock(ctx, commitLock(repoKey, kind, id, DefaultRevision), func() error {
+		_, err := s.commits(ctx, repoKey, kind, id)
+		switch {
+		case err == nil:
+			return fmt.Errorf("%w: %s/%s", ErrRepoExists, kind, id)
+		case !errors.Is(err, ErrRepoNotFound):
+			return err
+		}
+
+		first := Operation{
+			Key: "file",
+		}
+		first.Value.Path = ".gitattributes"
+		first.Value.Encoding = "base64"
+		first.Value.Content = base64.StdEncoding.EncodeToString([]byte(initialAttributes))
+
+		c, err = s.createCommit(ctx, repoKey, kind, id, DefaultRevision, []Operation{
+			first,
+		}, user)
+		if err != nil && c.Folder != "" {
+			if derr := s.repos.Delete(ctx, repoKey, c.Folder); derr != nil && !errors.Is(derr, repository.ErrNotFound) {
+				s.log.WarnContext(ctx, "clean up failed commit", "repo", repoKey, "folder", c.Folder, "error", derr)
+			}
+
+			c = Commit{}
+		}
+
+		return err
+	})
+
+	return c, err
+}
+
 func commitLock(repoKey string, kind Kind, id, rev string) string {
 	return "huggingface-commit:" + repoKey + "/" + string(kind) + "/" + id + "/" + rev
 }
