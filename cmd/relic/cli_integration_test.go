@@ -348,7 +348,14 @@ func TestCLI(t *testing.T) {
 		t.Errorf("apply of get = %q %v", out, err)
 	}
 
-	if out, err := relic(t, config, "", "get", "users"); err != nil || !hasTableRow(out, "cli-user") {
+	if out, err := relic(
+		t,
+		config,
+		"",
+		"get",
+		"users",
+	); err != nil ||
+		!hasTableRowWith(out, "cli-user", "cli@example.com") {
 		t.Errorf("get users = %q %v", out, err)
 	}
 

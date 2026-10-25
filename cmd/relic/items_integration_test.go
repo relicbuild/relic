@@ -40,6 +40,10 @@ func adminCLI(t *testing.T, repos ...string) (config, dir string) {
 		)
 	}
 
+	if len(docs) == 0 {
+		return config, dir
+	}
+
 	if _, err := relic(t, config, strings.Join(docs, "---\n"), "apply", "-f", "-"); err != nil {
 		t.Fatal(err)
 	}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -179,27 +180,66 @@ func readDocuments(files []string, stdin io.Reader) ([]document, error) {
 
 	var out []document
 
-	for _, f := range files {
-		r := stdin
+	for _, name := range files {
+		paths, err := documentFiles(name)
+		if err != nil {
+			return nil, err
+		}
 
-		if f != "-" {
-			b, err := os.ReadFile(f) //nolint:gosec // the user names the files to read
-			if err != nil {
-				return nil, err
+		for _, f := range paths {
+			r := stdin
+
+			if f != "-" {
+				b, err := os.ReadFile(f) //nolint:gosec // the user names the files to read
+				if err != nil {
+					return nil, err
+				}
+
+				r = bytes.NewReader(b)
 			}
 
-			r = bytes.NewReader(b)
-		}
+			docs, err := decodeDocuments(r)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", f, err)
+			}
 
-		docs, err := decodeDocuments(r)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", f, err)
-		}
+			if len(docs) == 0 {
+				return nil, fmt.Errorf("%s: no %s resources", f, apiVersion)
+			}
 
-		out = append(out, docs...)
+			out = append(out, docs...)
+		}
 	}
 
 	return out, nil
+}
+
+func documentFiles(name string) ([]string, error) {
+	fi, statErr := os.Stat(name)
+	if isDirectory := statErr == nil && fi.IsDir(); name == "-" || !isDirectory {
+		return []string{
+			name,
+		}, nil
+	}
+
+	entries, err := os.ReadDir(name)
+	if err != nil {
+		return nil, err
+	}
+
+	var paths []string
+
+	for _, e := range entries {
+		if ext := filepath.Ext(e.Name()); !e.IsDir() && (ext == ".yaml" || ext == ".yml") {
+			paths = append(paths, filepath.Join(name, e.Name()))
+		}
+	}
+
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("%s: no .yaml or .yml files", name)
+	}
+
+	return paths, nil
 }
 
 func decodeDocuments(r io.Reader) ([]document, error) {

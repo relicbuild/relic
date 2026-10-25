@@ -2,10 +2,13 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -982,6 +985,113 @@ func TestWriteBodyStreamsFiles(t *testing.T) {
 
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestReadDocuments(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	group := "apiVersion: relic.build/v1\nkind: Group\nmetadata: {name: %s}\n"
+
+	for name, content := range map[string]string{
+		"empty.yaml":            "",
+		"comment.yaml":          "# only a comment\n",
+		"separators.yaml":       "---\n---\n",
+		"manifests/b.yml":       fmt.Sprintf(group, "b"),
+		"manifests/a.yaml":      fmt.Sprintf(group, "a"),
+		"manifests/notes.txt":   "not YAML",
+		"no-manifests/notes.md": "not YAML",
+	} {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tests := []struct {
+		name      string
+		file      string
+		wantNames []string
+		wantErr   string
+	}{
+		{
+			name:    "an empty file",
+			file:    "empty.yaml",
+			wantErr: "no relic.build/v1 resources",
+		},
+		{
+			name:    "a comment",
+			file:    "comment.yaml",
+			wantErr: "no relic.build/v1 resources",
+		},
+		{
+			name:    "empty documents",
+			file:    "separators.yaml",
+			wantErr: "no relic.build/v1 resources",
+		},
+		{
+			name: "a directory",
+			file: "manifests",
+			wantNames: []string{
+				"a",
+				"b",
+			},
+		},
+		{
+			name:    "a directory without YAML files",
+			file:    "no-manifests",
+			wantErr: "no .yaml or .yml files",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			docs, err := readDocuments([]string{
+				filepath.Join(dir, tt.file),
+			}, strings.NewReader(""))
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("readDocuments = %v, want an error with %q", err, tt.wantErr)
+				}
+
+				return
+			}
+
+			var names []string
+			for _, d := range docs {
+				names = append(names, d.name)
+			}
+
+			if err != nil || !slices.Equal(names, tt.wantNames) {
+				t.Errorf("readDocuments = %v, %v; want %v", names, err, tt.wantNames)
+			}
+		})
+	}
+}
+
+func TestDiffExitCodeTellsAFailureFromDifferences(t *testing.T) {
+	t.Parallel()
+
+	bad := filepath.Join(t.TempDir(), "bad.yaml")
+	if err := os.WriteFile(bad, []byte("kind: [\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := runRelic(t, nil, "--url", "https://relic.example.com", "--token", "t", "diff", "-f", bad, "--exit-code")
+	if f, ok := errors.AsType[failure](err); !ok || f.status != 2 {
+		t.Errorf("diff --exit-code of a broken file = %v, want exit status 2", err)
+	}
+
+	if _, err := runRelic(t, nil, "--url", "https://relic.example.com", "--token", "t", "diff", "-f", bad); err == nil {
+		t.Error("diff of a broken file succeeded")
+	} else if _, ok := errors.AsType[failure](err); ok {
+		t.Errorf("diff without --exit-code = %v, want exit status 1", err)
 	}
 }
 
