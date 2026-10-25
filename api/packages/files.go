@@ -77,6 +77,10 @@ func (h *Handler) ServeFile(w http.ResponseWriter, r *http.Request, m Mount, t T
 		}
 	}
 
+	if h.helmForeignChart(w, r, m, t) {
+		return
+	}
+
 	if h.debianIndex(w, r, t) {
 		return
 	}

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"connectrpc.com/connect/v2"
@@ -171,6 +172,104 @@ func TestHelmRepository(t *testing.T) {
 		if chart := chartYAML(t, got); resp.StatusCode != 200 || !strings.Contains(chart, want) {
 			t.Errorf("GET %s = %d with Chart.yaml %q, want %q", p, resp.StatusCode, chart, want)
 		}
+	}
+}
+
+func TestHelmRemoteWithChartsOnAnotherHost(t *testing.T) {
+	t.Parallel()
+
+	chart := chartTgz(t, "exporter", "4.60.0")
+
+	var fetched atomic.Int32
+
+	releases := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fetched.Add(1)
+
+		if r.URL.Path != "/releases/download/exporter-4.60.0/exporter-4.60.0.tgz" {
+			http.NotFound(w, r)
+			return
+		}
+
+		_, _ = io.WriteString(w, chart)
+	}))
+	t.Cleanup(releases.Close)
+
+	pages := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/index.yaml" {
+			http.NotFound(w, r)
+			return
+		}
+
+		_, _ = io.WriteString(w, "apiVersion: v1\nentries:\n  exporter:\n  - name: exporter\n    version: 4.60.0\n"+
+			"    urls:\n    - "+releases.URL+"/releases/download/exporter-4.60.0/exporter-4.60.0.tgz\n"+
+			"  bitnami:\n  - name: bitnami\n    version: 1.0.0\n    urls:\n    - oci://registry.example.com/charts/bitnami\n")
+	}))
+	t.Cleanup(pages.Close)
+
+	srv := server(t)
+	for key, body := range map[string]string{
+		"helm-prom": `{"rclass":"remote","packageType":"helm","url":"` + pages.URL + `"}`,
+	} {
+		if resp, got := do(t, srv, call{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/" + key,
+			body:   body,
+		}); resp.StatusCode >= 300 {
+			t.Fatalf("create %s = %d %s", key, resp.StatusCode, got)
+		}
+	}
+
+	if resp, got := do(t, srv, call{
+		method: "PUT",
+		path:   "/artifactory/api/repositories/helm",
+		body:   `{"rclass":"virtual","packageType":"helm","repositories":["helm-prom"]}`,
+	}); resp.StatusCode >= 300 {
+		t.Fatalf("create helm = %d %s", resp.StatusCode, got)
+	}
+
+	releasesHost := strings.TrimPrefix(releases.URL, "http://")
+	want := "_upstream/" + releasesHost + "/releases/download/exporter-4.60.0/exporter-4.60.0.tgz"
+
+	idx := getIndex(t, srv, "/helm/helm-prom/index.yaml")
+	if urls := idx.Entries["exporter"][0].URLs; len(urls) != 1 || urls[0] != want {
+		t.Fatalf("remote index urls = %q, want %q, a path Relic serves", urls, want)
+	}
+
+	if urls := idx.Entries["bitnami"][0].URLs; len(urls) != 1 ||
+		urls[0] != "oci://registry.example.com/charts/bitnami" {
+		t.Errorf("oci urls = %q, want them kept", urls)
+	}
+
+	for _, repo := range []string{
+		"helm-prom",
+		"helm",
+	} {
+		resp, got := do(t, srv, call{
+			method: "GET",
+			path:   "/helm/" + repo + "/" + want,
+		})
+		if resp.StatusCode != 200 || !strings.Contains(chartYAML(t, got), "name: exporter\n") {
+			t.Errorf("GET the chart through %s = %d", repo, resp.StatusCode)
+		}
+	}
+
+	if fetched.Load() != 1 {
+		t.Errorf("the releases host served %d requests, want 1 and the cache for the rest", fetched.Load())
+	}
+
+	if resp, _ := do(t, srv, call{
+		method: "GET",
+		path:   "/api/v1/files/helm-prom/" + want,
+	}); resp.StatusCode != 200 {
+		t.Errorf("cached chart in helm-prom = %d, want 200", resp.StatusCode)
+	}
+
+	if resp, _ := do(t, srv, call{
+		method: "GET",
+		path:   "/helm/helm-prom/_upstream/" + releasesHost + "/releases/download/other/other-1.0.0.tgz",
+	}); resp.StatusCode != 404 || fetched.Load() != 1 {
+		t.Errorf("a path the index does not list = %d after %d fetches, want 404 and no fetch", resp.StatusCode,
+			fetched.Load())
 	}
 }
 

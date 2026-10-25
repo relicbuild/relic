@@ -44,17 +44,19 @@ type Service struct {
 	repos *repository.Service
 	log   *slog.Logger
 
-	mu    sync.Mutex
-	metas map[string]map[string]any
+	mu          sync.Mutex
+	metas       map[string]map[string]any
+	foreignURLs map[string]map[string]string
 }
 
 // NewService returns a Service and registers its deploy hook and the
 // index as remote metadata.
 func NewService(repos *repository.Service, log *slog.Logger) *Service {
 	s := &Service{
-		repos: repos,
-		log:   log,
-		metas: map[string]map[string]any{},
+		repos:       repos,
+		log:         log,
+		metas:       map[string]map[string]any{},
+		foreignURLs: map[string]map[string]string{},
 	}
 	repos.RegisterHook(Format, s.indexChart)
 	repos.RegisterMetadata(func(name string) bool {
@@ -225,7 +227,7 @@ func (s *Service) BuildIndex(ctx context.Context, r repository.Repository) ([]by
 			err     error
 		)
 		if m.Class == "remote" {
-			entries, err = s.remoteEntries(ctx, m)
+			entries, _, err = s.remoteEntries(ctx, m)
 		} else {
 			entries, err = s.localEntries(ctx, m.Name)
 		}
@@ -308,19 +310,22 @@ func (s *Service) localEntries(ctx context.Context, repoKey string) ([]map[strin
 	return entries, nil
 }
 
-func (s *Service) remoteEntries(ctx context.Context, r repository.Repository) ([]map[string]any, error) {
+func (s *Service) remoteEntries(
+	ctx context.Context,
+	r repository.Repository,
+) ([]map[string]any, map[string]string, error) {
 	item, err := s.repos.Resolve(ctx, r.Name, IndexFile)
 	if errors.Is(err, repository.ErrNotFound) {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	rc, err := s.repos.Open(ctx, item, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	defer func() {
@@ -329,28 +334,29 @@ func (s *Service) remoteEntries(ctx context.Context, r repository.Repository) ([
 
 	body, err := io.ReadAll(io.LimitReader(rc, maxIndexBytes))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var idx Index
 	if err := yaml.Unmarshal(body, &idx); err != nil {
-		return nil, fmt.Errorf("%w: index of %s: %w", repository.ErrUpstream, r.Name, err)
+		return nil, nil, fmt.Errorf("%w: index of %s: %w", repository.ErrUpstream, r.Name, err)
 	}
 
 	base, err := url.Parse(strings.TrimSuffix(s.repos.UpstreamOf(r).URL, "/") + "/")
 	if err != nil {
-		return nil, fmt.Errorf("%w: url of %s: %w", repository.ErrUpstream, r.Name, err)
+		return nil, nil, fmt.Errorf("%w: url of %s: %w", repository.ErrUpstream, r.Name, err)
 	}
 
 	var entries []map[string]any
 
 	restricted := repository.Restricted(ctx, r.Name)
+	foreign := map[string]string{}
 
 	for _, list := range idx.Entries {
 		for _, e := range list {
-			urls := relativeURLs(e["urls"], base)
+			urls := relativeURLs(e["urls"], base, foreign)
 			if restricted && len(urls) > 0 && !strings.Contains(urls[0], "://") &&
-				!repository.Visible(ctx, r.Name, urls[0]) {
+				!repository.Visible(ctx, r.Name, unescaped(urls[0])) {
 				continue
 			}
 
@@ -359,10 +365,24 @@ func (s *Service) remoteEntries(ctx context.Context, r repository.Repository) ([
 		}
 	}
 
-	return entries, nil
+	s.mu.Lock()
+	if len(s.foreignURLs) >= foreignIndexLimit {
+		clear(s.foreignURLs)
+	}
+
+	s.foreignURLs[item.Checksums.SHA256] = foreign
+	s.mu.Unlock()
+
+	return entries, foreign, nil
 }
 
-func relativeURLs(v any, base *url.URL) []string {
+// ForeignPrefix starts the paths a remote's index gives the charts its
+// upstream index lists on another host: ForeignPrefix<host>/<path>.
+const ForeignPrefix = "_upstream/"
+
+const foreignIndexLimit = 256
+
+func relativeURLs(v any, base *url.URL, foreign map[string]string) []string {
 	list, _ := v.([]any)
 
 	var out []string
@@ -376,14 +396,71 @@ func relativeURLs(v any, base *url.URL) []string {
 		}
 
 		abs := base.ResolveReference(ref)
-		if rel, ok := strings.CutPrefix(abs.String(), base.String()); ok && abs.Host == base.Host {
+		rel, onSite := strings.CutPrefix(abs.String(), base.String())
+
+		switch {
+		case onSite && abs.Host == base.Host:
 			out = append(out, rel)
-		} else {
+		case (abs.Scheme == "https" || abs.Scheme == "http") && abs.Host != "" && abs.User == nil:
+			p := ForeignPrefix + abs.Host + "/" + strings.TrimPrefix(abs.Path, "/")
+			foreign[p] = abs.String()
+			out = append(out, escapePath(p))
+		default:
 			out = append(out, abs.String())
 		}
 	}
 
 	return out
+}
+
+// ForeignChart fetches through r's remote members, and caches at p, the chart a remote's upstream index lists on
+// another host and Relic serves at p, for URLs that index lists only.
+func (s *Service) ForeignChart(ctx context.Context, r repository.Repository, p string) (repository.Item, error) {
+	if !strings.HasPrefix(p, ForeignPrefix) {
+		return repository.Item{}, repository.ErrNotFound
+	}
+
+	for _, m := range s.members(ctx, r, 0) {
+		if m.Class != "remote" {
+			continue
+		}
+
+		upstreamURL, err := s.foreignURL(ctx, m, p)
+		if err != nil {
+			return repository.Item{}, err
+		}
+
+		if upstreamURL == "" {
+			continue
+		}
+
+		return s.repos.ResolveURL(ctx, m, upstreamURL, p)
+	}
+
+	return repository.Item{}, repository.ErrNotFound
+}
+
+func (s *Service) foreignURL(ctx context.Context, r repository.Repository, p string) (string, error) {
+	item, err := s.repos.Resolve(ctx, r.Name, IndexFile)
+	if errors.Is(err, repository.ErrNotFound) {
+		return "", nil
+	}
+
+	if err != nil {
+		return "", err
+	}
+
+	s.mu.Lock()
+	foreign, ok := s.foreignURLs[item.Checksums.SHA256]
+	s.mu.Unlock()
+
+	if !ok {
+		if _, foreign, err = s.remoteEntries(ctx, r); err != nil {
+			return "", err
+		}
+	}
+
+	return foreign[p], nil
 }
 
 func compareVersions(a, b string) int {
@@ -396,6 +473,14 @@ func compareVersions(a, b string) int {
 }
 
 func str(v any) string { s, _ := v.(string); return s }
+
+func unescaped(p string) string {
+	if u, err := url.PathUnescape(p); err == nil {
+		return u
+	}
+
+	return p
+}
 
 func escapePath(p string) string {
 	parts := strings.Split(p, "/")
