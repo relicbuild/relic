@@ -50,11 +50,34 @@ func (e syftMissingError) Error() string {
 		"install it or point --syft at it"
 }
 
+func localPath(target string) (string, bool) {
+	for _, scheme := range []string{
+		"dir:",
+		"file:",
+	} {
+		if p, ok := strings.CutPrefix(target, scheme); ok {
+			return p, true
+		}
+	}
+
+	return target, strings.HasPrefix(target, "/") || strings.HasPrefix(target, ".")
+}
+
 func syftPURLs(ctx context.Context, syft, target string) ([]string, error) {
+	if p, ok := localPath(target); ok {
+		if _, err := os.Stat(p); err != nil {
+			if pathErr, isPath := errors.AsType[*fs.PathError](err); isPath {
+				return nil, pathErr.Err
+			}
+
+			return nil, err
+		}
+	}
+
 	var stderr bytes.Buffer
 
 	//nolint:gosec // G204: Syft, as the user names it, with the target as one argument; no shell
-	cmd := exec.CommandContext(ctx, syft, "scan", target, "-o", "syft-json", "-q")
+	cmd := exec.CommandContext(ctx, syft, "scan", target, "-o", "syft-json")
 	cmd.Stderr = &stderr
 
 	out, err := cmd.Output()
@@ -65,7 +88,11 @@ func syftPURLs(ctx context.Context, syft, target string) ([]string, error) {
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("syft %s: %w: %s", target, err, strings.TrimSpace(stderr.String()))
+		if detail := strings.TrimSpace(stderr.String()); detail != "" {
+			return nil, fmt.Errorf("syft %s: %w: %s", target, err, detail)
+		}
+
+		return nil, fmt.Errorf("syft %s: %w", target, err)
 	}
 
 	return sbomPURLs(out)
@@ -389,7 +416,7 @@ func auditCmd(g *globals) *cobra.Command {
 
 			purls, err := syftPURLs(cmd.Context(), f.syft, "dir:"+dir)
 			if err != nil {
-				return err
+				return fmt.Errorf("audit %s: %w", dir, err)
 			}
 
 			res, err := scanPackages(cmd, g, purls, &f)

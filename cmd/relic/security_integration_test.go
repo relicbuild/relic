@@ -174,6 +174,9 @@ spec: {active: true, scopes: [{kind: repository, names: [npm-remote]}], policies
 	}
 
 	project := filepath.Join(dir, "project")
+	if err := os.MkdirAll(project, 0o700); err != nil {
+		t.Fatal(err)
+	}
 
 	out, err = relic(t, config, "", "security", "audit", project, "--syft", syft)
 	if err != nil || !strings.Contains(out, project+": 2 components") {
