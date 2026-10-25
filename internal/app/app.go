@@ -463,14 +463,18 @@ func SealStoredSecrets(
 	repos := newRepositories(db, blobs, log)
 	repos.SetSecrets(box)
 
-	return errors.Join(
+	if err := errors.Join(
 		repos.SealStoredPasswords(ctx),
 		signingkey.New(db, box).SealStored(ctx),
 		replication.SealStored(ctx, db, box),
 		ldap.NewService(db, box, nil, log).SealStored(ctx),
 		sso.New(db, box, log).SealStored(ctx),
 		webhook.New(db, box, log).SealStored(ctx),
-	)
+	); err != nil {
+		return err
+	}
+
+	return db.TruncateLog(ctx)
 }
 
 const layoutRetryInterval = 5 * time.Second

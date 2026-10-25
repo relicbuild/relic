@@ -5,9 +5,13 @@ package integration
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -116,6 +120,42 @@ func TestSecretsAtRest(t *testing.T) {
 
 	if err := app.SealStoredSecrets(t.Context(), db, blobs, box, log); err != nil {
 		t.Fatal(err)
+	}
+
+	if db.SQLite() {
+		rows, err := db.Query(t.Context(), "SELECT file FROM pragma_database_list WHERE name = 'main'")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var file string
+		if !rows.Next() || rows.Scan(&file) != nil {
+			t.Fatal("no database file")
+		}
+
+		rows.Close()
+
+		for _, path := range []string{
+			file,
+			file + "-wal",
+		} {
+			content, err := os.ReadFile(path)
+			if err != nil && !errors.Is(err, fs.ErrNotExist) {
+				t.Fatal(err)
+			}
+
+			for _, secret := range []string{
+				upstreamPassword,
+				"repl-s3cret",
+				"ldap-s3cret",
+				"oidc-s3cret",
+				"webhook-s3cret",
+			} {
+				if bytes.Contains(content, []byte(secret)) {
+					t.Errorf("%s still holds %s after sealing", filepath.Base(path), secret)
+				}
+			}
+		}
 	}
 
 	tokens, err := auth.NewTokens(t.Context(), db, box, access.Format{})

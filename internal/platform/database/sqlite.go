@@ -167,6 +167,7 @@ func sqliteDSN(path string, pragmas ...string) string {
 		"synchronous(FULL)",
 		fmt.Sprintf("busy_timeout(%d)", sqliteBusyTimeout.Milliseconds()),
 		"case_sensitive_like(1)",
+		"secure_delete(1)",
 	}, pragmas...) {
 		q.Add("_pragma", p)
 	}

@@ -169,6 +169,22 @@ func (db *DB) Query(ctx context.Context, sql string, args ...any) (Rows, error) 
 	return db.engine.query(ctx, sql, args...)
 }
 
+// TruncateLog moves a SQLite database's write-ahead log into the database
+// file and empties it, so that page images it held, such as a row's earlier
+// text, are gone; on PostgreSQL it does nothing.
+func (db *DB) TruncateLog(ctx context.Context) error {
+	e, ok := db.engine.(*sqliteEngine)
+	if !ok {
+		return nil
+	}
+
+	if _, err := e.writer.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		return fmt.Errorf("truncate the write-ahead log: %w", err)
+	}
+
+	return nil
+}
+
 // SQLite reports whether the database is SQLite rather than PostgreSQL.
 func (db *DB) SQLite() bool {
 	_, ok := db.engine.(*sqliteEngine)
