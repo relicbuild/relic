@@ -3,6 +3,7 @@ package repository
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"reflect"
 	"regexp"
 	"slices"
@@ -296,6 +297,15 @@ func (r *Repository) Validate() error {
 	case ClassRemote:
 		if r.Config.Remote == nil {
 			r.Config.Remote = &RemoteConfig{}
+		}
+
+		for _, raw := range []string{
+			r.Config.Remote.URL,
+			r.Config.Remote.IndexURL,
+		} {
+			if u, err := url.Parse(raw); err == nil && u.User != nil {
+				return fmt.Errorf("%w: put credentials in username and password, not the URL", ErrInvalidRepository)
+			}
 		}
 	case ClassVirtual:
 		if r.Config.Virtual == nil {

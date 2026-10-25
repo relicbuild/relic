@@ -74,6 +74,67 @@ func TestValidateRefusesTextTheDatabasesCannotStore(t *testing.T) {
 	}
 }
 
+func TestValidateRefusesCredentialsInRemoteURLs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		remote  RemoteConfig
+		wantErr bool
+	}{
+		{
+			name: "credentials in the username and password",
+			remote: RemoteConfig{
+				URL:      "https://upstream.example.com/",
+				Username: "u",
+				Password: "p",
+			},
+		},
+		//nolint:gosec // G101: a made-up URL whose user info is refused
+		{
+			name: "a user and password in the URL",
+			remote: RemoteConfig{
+				URL: "https://u:p@upstream.example.com/",
+			},
+			wantErr: true,
+		},
+		{
+			name: "a user in the URL",
+			remote: RemoteConfig{
+				URL: "https://u@upstream.example.com/",
+			},
+			wantErr: true,
+		},
+		//nolint:gosec // G101: a made-up URL whose user info is refused
+		{
+			name: "a user and password in the index URL",
+			remote: RemoteConfig{
+				URL:      "https://upstream.example.com/",
+				IndexURL: "https://u:p@index.example.com/",
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			r := Repository{
+				Name:  "r",
+				Class: ClassRemote,
+				Config: Config{
+					Remote: &tt.remote,
+				},
+			}
+
+			err := r.Validate()
+			if tt.wantErr != errors.Is(err, ErrInvalidRepository) || !tt.wantErr && err != nil {
+				t.Errorf("Validate() = %v, want an error: %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestValidateFormat(t *testing.T) {
 	t.Parallel()
 

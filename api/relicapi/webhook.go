@@ -2,6 +2,7 @@ package relicapi
 
 import (
 	"context"
+	"net/url"
 
 	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -28,10 +29,10 @@ var deliveryStatuses = map[string]relicv1.WebhookDeliveryStatus{
 	"failed":    relicv1.WebhookDeliveryStatus_WEBHOOK_DELIVERY_STATUS_FAILED,
 }
 
-func webhookMessage(w webhook.Webhook) *relicv1.Webhook {
+func webhookMessage(ctx context.Context, w webhook.Webhook) *relicv1.Webhook {
 	return &relicv1.Webhook{
 		Name:        w.Name,
-		Url:         w.URL,
+		Url:         webhookURL(ctx, w.URL),
 		Events:      w.Events,
 		Format:      webhookFormats[w.Format],
 		Enabled:     w.Enabled,
@@ -69,6 +70,23 @@ func domainWebhook(m *relicv1.Webhook) (webhook.Webhook, error) {
 	}, nil
 }
 
+func webhookURL(ctx context.Context, raw string) string {
+	if auth.FromContext(ctx).Admin {
+		return raw
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+
+	return (&url.URL{
+		Scheme: u.Scheme,
+		Host:   u.Host,
+		Path:   "/",
+	}).String()
+}
+
 func (s *webhookServer) ListWebhooks(
 	ctx context.Context,
 	_ *relicv1.ListWebhooksRequest,
@@ -82,7 +100,7 @@ func (s *webhookServer) ListWebhooks(
 		Webhooks: make([]*relicv1.Webhook, 0, len(list)),
 	}
 	for _, w := range list {
-		out.Webhooks = append(out.Webhooks, webhookMessage(w))
+		out.Webhooks = append(out.Webhooks, webhookMessage(ctx, w))
 	}
 
 	return out, nil
@@ -98,7 +116,7 @@ func (s *webhookServer) GetWebhook(
 	}
 
 	return &relicv1.GetWebhookResponse{
-		Webhook: webhookMessage(w),
+		Webhook: webhookMessage(ctx, w),
 	}, nil
 }
 
@@ -117,7 +135,7 @@ func (s *webhookServer) PutWebhook(
 	}
 
 	return &relicv1.PutWebhookResponse{
-		Webhook: webhookMessage(w),
+		Webhook: webhookMessage(ctx, w),
 	}, nil
 }
 

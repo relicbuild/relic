@@ -87,6 +87,18 @@ func TestReplicationService(t *testing.T) {
 		t.Errorf("after update: password %q %v, config %+v", plain, err, loaded)
 	}
 
+	moved := cfg
+	moved.TargetURL = "https://elsewhere.example/libs"
+
+	if err := s.Update(ctx, moved); !errors.Is(err, replication.ErrInvalid) {
+		t.Errorf("update to another host without the password = %v, want %v", err, replication.ErrInvalid)
+	}
+
+	moved.TargetURL = "https://target.example/other-libs"
+	if err := s.Update(ctx, moved); err != nil {
+		t.Errorf("update to another path on the same host = %v", err)
+	}
+
 	for i := range 50 {
 		password := fmt.Sprintf("p%d", i)
 		kept := cfg

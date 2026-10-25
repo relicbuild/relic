@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -123,6 +124,16 @@ func (s *Service) CreateRepository(ctx context.Context, r Repository) error {
 
 const repositoryKeysLock = "repository:keys"
 
+// SameOrigin reports whether two URLs have the same scheme, host and port,
+// so that a stored credential for one may be sent to the other.
+func SameOrigin(stored, updated string) bool {
+	a, errA := url.Parse(stored)
+	b, errB := url.Parse(updated)
+
+	return errA == nil && errB == nil && a.Host != "" &&
+		strings.EqualFold(a.Scheme, b.Scheme) && strings.EqualFold(a.Host, b.Host)
+}
+
 func (s *Service) withProject(ctx context.Context, key, current string, save func() error) error {
 	if project.IsDefault(key) || key == current {
 		return save()
@@ -192,6 +203,10 @@ func (s *Service) UpdateRepository(ctx context.Context, r Repository) error {
 		stored, err := s.storedPassword(ctx, r.Name)
 		if err != nil {
 			return err
+		}
+
+		if stored != "" && !SameOrigin(existing.Config.Remote.URL, r.Config.Remote.URL) {
+			return fmt.Errorf("%w: the remote URL's host changed: give the password again", ErrInvalidRepository)
 		}
 
 		r.Config.Remote.Password = stored

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"relic/internal/artifacts/repository"
 	"relic/internal/platform/database"
 	"relic/internal/platform/sealing"
 )
@@ -154,6 +155,11 @@ func (s *Service) document(ctx context.Context, cfg Config) ([]byte, error) {
 			var old Config
 			if err := json.Unmarshal(row.Config, &old); err != nil {
 				return nil, fmt.Errorf("decode replication %s: %w", cfg.Repository, err)
+			}
+
+			if old.Password != "" && old.TargetURL != cfg.TargetURL &&
+				!repository.SameOrigin(old.TargetURL, cfg.TargetURL) {
+				return nil, fmt.Errorf("%w: the target URL's host changed: give the password again", ErrInvalid)
 			}
 
 			cfg.Password = old.Password

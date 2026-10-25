@@ -330,7 +330,8 @@ func Merge(existing repository.Repository, patch []byte) (repository.Repository,
 		)
 	}
 
-	if r.Config.Remote != nil && r.Config.Remote.Password == "" && existing.Config.Remote != nil {
+	if r.Config.Remote != nil && r.Config.Remote.Password == "" && existing.Config.Remote != nil &&
+		repository.SameOrigin(existing.Config.Remote.URL, r.Config.Remote.URL) {
 		r.Config.Remote.Password = existing.Config.Remote.Password
 	}
 
