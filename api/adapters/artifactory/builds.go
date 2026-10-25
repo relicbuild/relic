@@ -376,6 +376,11 @@ func (h *Handler) requireBuild(w http.ResponseWriter, r *http.Request, proj, nam
 		return false
 	}
 
+	if !perms.CanBuild(p.Subject(), h.builds.Repository(proj), name, auth.ActionRead) {
+		h.writeError(w, r, buildinfo.ErrNotFound)
+		return false
+	}
+
 	if !perms.CanBuild(p.Subject(), h.builds.Repository(proj), name, a) {
 		packages.Forbidden(w, r, string(a), "build "+name)
 		return false

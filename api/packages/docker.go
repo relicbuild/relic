@@ -213,6 +213,17 @@ func (h *Handler) dockerAllowed(w http.ResponseWriter, r *http.Request, repoKey,
 		return false
 	}
 
+	usable, err := h.usable(r, repoKey)
+	if err != nil {
+		h.writeError(w, r, err)
+		return false
+	}
+
+	if !usable {
+		RegistryError(w, http.StatusNotFound, "NAME_UNKNOWN", "repository name not known to registry")
+		return false
+	}
+
 	RegistryError(w, http.StatusForbidden, "DENIED", "requested access to the resource is denied")
 
 	return false

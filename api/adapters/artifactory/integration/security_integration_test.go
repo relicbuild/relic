@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -299,6 +300,72 @@ func TestSecurityRegressions(t *testing.T) {
 
 		if !strings.Contains(list, "rel.jar") {
 			t.Errorf("deep list misses readable files: %s", list)
+		}
+	})
+
+	t.Run("unreadable repositories and builds answer as missing ones", func(t *testing.T) {
+		if resp, body := do(t, srv, call{
+			method: "PUT",
+			path:   "/artifactory/api/security/users/eve",
+			body:   `{"email":"eve@example.com","password":"Eve-pass-12345"}`,
+		}); resp.StatusCode >= 300 {
+			t.Fatalf("create eve = %d %s", resp.StatusCode, body)
+		}
+
+		if resp, body := do(t, srv, call{
+			method: "PUT",
+			path:   "/artifactory/api/build",
+			body: `{"name":"hiddenbuild","number":"1","started":"2026-10-24T10:00:00.000+0000",` +
+				`"modules":[]}`,
+		}); resp.StatusCode >= 300 {
+			t.Fatalf("publish hiddenbuild = %d %s", resp.StatusCode, body)
+		}
+
+		if resp, body := do(t, srv, call{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/hidden-docker",
+			body:   `{"rclass":"local","packageType":"docker"}`,
+		}); resp.StatusCode >= 300 {
+			t.Fatalf("create hidden-docker = %d %s", resp.StatusCode, body)
+		}
+
+		eve := func(path string) (int, string) {
+			resp, body := do(t, srv, call{
+				method: "GET",
+				path:   path,
+				noAuth: true,
+				headers: map[string]string{
+					"Authorization": "Basic " + base64.StdEncoding.EncodeToString([]byte("eve:Eve-pass-12345")),
+				},
+			})
+
+			return resp.StatusCode, body
+		}
+		for hidden, missing := range map[string]string{
+			"/artifactory/api/storage/secret-local/nope.txt": "/artifactory/api/storage/nope-repo/nope.txt",
+			"/artifactory/secret-local/s.bin":                "/artifactory/nope-repo/s.bin",
+			"/artifactory/api/build/hiddenbuild":             "/artifactory/api/build/nopebuild",
+			"/v2/hidden-docker/app/manifests/latest":         "/v2/nope-docker/app/manifests/latest",
+		} {
+			hiddenStatus, hiddenBody := eve(hidden)
+			missingStatus, missingBody := eve(missing)
+
+			if hiddenStatus != missingStatus || hiddenStatus != http.StatusNotFound ||
+				strings.Contains(hiddenBody, "secret") {
+				t.Errorf("GET %s = %d %s; GET %s = %d %s; want the same 404",
+					hidden, hiddenStatus, hiddenBody, missing, missingStatus, missingBody)
+			}
+		}
+
+		if status, body := func() (int, string) {
+			resp, body := as(call{
+				method: "DELETE",
+				path:   "/artifactory/libs-local/rel.jar",
+			})
+
+			return resp.StatusCode, body
+		}(); status != http.StatusForbidden {
+			t.Errorf("deleting in a readable repository without delete = %d %s, want 403", status, body)
 		}
 	})
 
