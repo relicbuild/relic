@@ -4,6 +4,7 @@ package repository
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -64,5 +65,49 @@ func TestTrashRepositoryInAnotherCaseIsReported(t *testing.T) {
 
 	if err := s.ensureTrashRepo(t.Context()); !errors.Is(err, ErrRepositoryKeyCaseConflict) {
 		t.Errorf("ensureTrashRepo() = %v, want %v", err, ErrRepositoryKeyCaseConflict)
+	}
+}
+
+func TestOwnRepositories(t *testing.T) {
+	t.Parallel()
+
+	s, _, _ := newTestService(t)
+
+	for _, r := range []Repository{
+		{
+			Name:   "builds",
+			Class:  ClassLocal,
+			Format: FormatBuild,
+		},
+		{
+			Name:   "releases",
+			Class:  ClassLocal,
+			Format: FormatRelease,
+		},
+		{
+			Name:   "attestations",
+			Class:  ClassLocal,
+			Format: FormatEvidence,
+		},
+	} {
+		if err := s.CreateRepository(t.Context(), r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := s.OwnRepositories(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	slices.Sort(got)
+
+	want := []string{
+		"attestations",
+		"builds",
+		"releases",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("OwnRepositories = %v, want %v", got, want)
 	}
 }

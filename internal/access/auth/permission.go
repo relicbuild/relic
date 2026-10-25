@@ -91,6 +91,9 @@ type Permissions struct {
 	// AdminOnly are repositories only administrators may use, whatever
 	// permissions say.
 	AdminOnly []string
+	// OwnRepositories are Relic's own repositories (build information, releases,
+	// evidence): a repository rule reaches them only by naming them.
+	OwnRepositories []string
 }
 
 func (p Permissions) adminOnly(repo Repository) bool { return slices.Contains(p.AdminOnly, repo.Name) }
@@ -106,7 +109,7 @@ func (p Permissions) CanInRepository(s Subject, repo Repository, itemPath string
 	}
 
 	for _, t := range p.All {
-		if t.Repository != nil && t.Repository.coversRepository(repo) && t.Repository.coversPath(itemPath) &&
+		if t.Repository != nil && p.repositoryRuleCovers(t.Repository, repo) && t.Repository.coversPath(itemPath) &&
 			t.Repository.grants(s, a) {
 			return true
 		}
@@ -131,7 +134,7 @@ func (p Permissions) CanAnywhereInRepository(s Subject, repo Repository, a Actio
 	}
 
 	for _, t := range p.All {
-		if t.Repository != nil && t.Repository.coversRepository(repo) && t.Repository.grants(s, a) {
+		if t.Repository != nil && p.repositoryRuleCovers(t.Repository, repo) && t.Repository.grants(s, a) {
 			return true
 		}
 	}
@@ -152,7 +155,7 @@ func (p Permissions) CanReadAll(s Subject, repo Repository) bool {
 
 	for _, t := range p.All {
 		sec := t.Repository
-		if sec == nil || !sec.coversRepository(repo) || !sec.grants(s, ActionRead) {
+		if sec == nil || !p.repositoryRuleCovers(sec, repo) || !sec.grants(s, ActionRead) {
 			continue
 		}
 
@@ -207,6 +210,16 @@ func (p Permissions) CanRelease(s Subject, repository, name, version string, a A
 	}
 
 	return false
+}
+
+// repositoryRuleCovers reports whether the repository rule sec covers repo; sets
+// never select Relic's own repositories.
+func (p Permissions) repositoryRuleCovers(sec *Section, repo Repository) bool {
+	if slices.Contains(p.OwnRepositories, repo.Name) {
+		return slices.Contains(sec.Selector.Repositories, repo.Name)
+	}
+
+	return sec.coversRepository(repo)
 }
 
 func (sec *Section) coversRepository(r Repository) bool {
@@ -313,7 +326,7 @@ func (p Permissions) Effective(repo Repository, itemPath string) []Grant {
 
 	for _, t := range p.All {
 		sec := t.Repository
-		if sec == nil || !sec.coversRepository(repo) || !sec.coversPath(itemPath) {
+		if sec == nil || !p.repositoryRuleCovers(sec, repo) || !sec.coversPath(itemPath) {
 			continue
 		}
 

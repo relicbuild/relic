@@ -138,6 +138,9 @@ func (d Dependencies) serverInterceptors(recorder audit.Recorder) []connect.Serv
 	)
 }
 
+// maxRequestBytes bounds a Relic API request message.
+const maxRequestBytes = 64 << 20
+
 // Handler returns the API, to be mounted at Prefix.
 func Handler(d Dependencies) http.Handler {
 	server := connect.NewServer(d.serverInterceptors(d.auditRecorder())...)
@@ -228,14 +231,14 @@ func Handler(d Dependencies) http.Handler {
 			connectproto.NewBinaryCodec(),
 			strictJSON{},
 		),
-		connecthttp.WithReadMaxBytes(0),
+		connecthttp.WithReadMaxBytes(maxRequestBytes),
 	)
 
 	err := vanguard.Mount(
 		api,
 		server,
 		vanguard.WithCodec(strictRESTJSON),
-		vanguard.WithMaxReadBytes(0),
+		vanguard.WithMaxReadBytes(maxRequestBytes),
 	)
 	if err != nil {
 		panic(fmt.Sprintf("relic api: %v", err))

@@ -247,6 +247,21 @@ func TestPermissions(t *testing.T) {
 				},
 			},
 			{
+				Name: "evidence",
+				Repository: &Section{
+					Selector: Selector{
+						Repositories: []string{
+							"relic-evidence",
+						},
+					},
+					Users: map[string][]Action{
+						"bob": {
+							ActionWrite,
+						},
+					},
+				},
+			},
+			{
 				Name: "releases",
 				Release: &Section{
 					Selector: Selector{
@@ -284,6 +299,11 @@ func TestPermissions(t *testing.T) {
 					},
 				},
 			},
+		},
+		OwnRepositories: []string{
+			"relic-build-info",
+			"release-bundles-v2",
+			"relic-evidence",
 		},
 	}
 	libs := Repository{
@@ -486,6 +506,39 @@ func TestPermissions(t *testing.T) {
 			"org/a.jar",
 			ActionRead,
 			false,
+		},
+		{
+			"a set does not reach release storage",
+			ops,
+			Repository{
+				Name:  "release-bundles-v2",
+				Class: "local",
+			},
+			"web/1.0/a.bin",
+			ActionWrite,
+			false,
+		},
+		{
+			"a set does not reach build information",
+			ops,
+			Repository{
+				Name:  "relic-build-info",
+				Class: "local",
+			},
+			"app-web/1.json",
+			ActionRead,
+			false,
+		},
+		{
+			"a rule naming an own repository reaches it",
+			bob,
+			Repository{
+				Name:  "relic-evidence",
+				Class: "local",
+			},
+			"a.json",
+			ActionWrite,
+			true,
 		},
 	}
 	for _, tt := range repoTests {
