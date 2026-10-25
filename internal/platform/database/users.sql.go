@@ -176,6 +176,23 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 	return items, nil
 }
 
+const setUserPassword = `-- name: SetUserPassword :execrows
+UPDATE users SET password_hash = $1 WHERE username = $2 AND realm = 'internal'
+`
+
+type SetUserPasswordParams struct {
+	PasswordHash string
+	Username     string
+}
+
+func (q *Queries) SetUserPassword(ctx context.Context, arg SetUserPasswordParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setUserPassword, arg.PasswordHash, arg.Username)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const upsertUser = `-- name: UpsertUser :one
 INSERT INTO users (id, username, email, password_hash, admin, viewer, extensions)
 VALUES ($1, $2, $3, $4, $5, $6, $7)

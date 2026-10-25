@@ -3,6 +3,8 @@ package main
 import (
 	"errors"
 	"path"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -92,5 +94,41 @@ func TestParseBuildRef(t *testing.T) {
 				t.Errorf("parseBuildRef(%q) = %q, %q, %v", tt.ref, name, number, err)
 			}
 		})
+	}
+}
+
+func TestBuildPublishNeedsALocalRun(t *testing.T) {
+	t.Parallel()
+
+	for _, args := range [][]string{
+		{
+			"build",
+			"publish",
+			"app",
+			"42",
+		},
+		{
+			"build",
+			"publish",
+			"app",
+			"42",
+			"--dry-run",
+		},
+	} {
+		dir := t.TempDir()
+
+		_, err := runRelic(
+			t,
+			map[string]string{
+				"RELIC_BUILD_DIR": filepath.Join(dir, "builds"),
+			},
+			append([]string{
+				"--config",
+				filepath.Join(dir, "missing.yaml"),
+			}, args...)...,
+		)
+		if err == nil || !strings.Contains(err.Error(), "no run app/42 is recorded locally") {
+			t.Errorf("relic %s = %v, want the missing local run reported", strings.Join(args, " "), err)
+		}
 	}
 }

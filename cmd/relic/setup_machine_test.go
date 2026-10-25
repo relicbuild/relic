@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -282,6 +284,7 @@ func TestMachineSetupUserService(t *testing.T) {
 		"EnvironmentFile=" + settings + "\n",
 		"Restart=always\n",
 		"WantedBy=default.target\n",
+		"Environment=\"PATH=" + filepath.Join(m.home, ".local", "bin") + ":/usr/local/bin:/usr/local/sbin:",
 	} {
 		if !strings.Contains(unit, want) {
 			t.Errorf("unit lacks %q:\n%s", want, unit)
@@ -289,10 +292,10 @@ func TestMachineSetupUserService(t *testing.T) {
 	}
 
 	wantRan := []string{
+		"loginctl enable-linger dev",
 		"systemctl --user daemon-reload",
 		"systemctl --user enable relic.service",
 		"systemctl --user restart relic.service",
-		"loginctl enable-linger dev",
 	}
 	if strings.Join(*ran, "\n") != strings.Join(wantRan, "\n") {
 		t.Errorf("ran:\n%s\nwant:\n%s", strings.Join(*ran, "\n"), strings.Join(wantRan, "\n"))
@@ -486,19 +489,30 @@ func TestServerConfigSet(t *testing.T) {
 	*ran = nil
 	path := filepath.Join(m.configDir(), "server.env")
 
+	outputs := make([]string, 0, 2)
+
 	for range 2 {
 		var out bytes.Buffer
-		if err := m.setServiceSetting(t.Context(), &out, path, "RELIC_LOG_LEVEL", "debug"); err != nil {
+		if err := m.setServiceSettings(t.Context(), &out, path, setting{
+			key:   "RELIC_LOG_LEVEL",
+			value: "debug",
+		}); err != nil {
 			t.Fatal(err)
 		}
+
+		outputs = append(outputs, out.String())
 	}
 
 	if !strings.Contains(readFile(t, path), "RELIC_LOG_LEVEL=debug\n") {
 		t.Errorf("settings:\n%s", readFile(t, path))
 	}
 
-	if n := strings.Count(strings.Join(*ran, "\n"), "systemctl --user restart relic.service"); n != 2 {
-		t.Errorf("restarted %d times, want 2 (the second set restarts too): %v", n, *ran)
+	if n := strings.Count(strings.Join(*ran, "\n"), "systemctl --user restart relic.service"); n != 1 {
+		t.Errorf("restarted %d times, want 1 (a set that changes nothing does not restart): %v", n, *ran)
+	}
+
+	if !strings.Contains(outputs[1], "not restarted") {
+		t.Errorf("second set printed %q", outputs[1])
 	}
 }
 
@@ -522,16 +536,35 @@ func TestSettingArgument(t *testing.T) {
 		},
 		{
 			name:       "value from standard input",
-			arg:        "RELIC_ADMIN_PASSWORD",
+			arg:        "RELIC_OBJECT_STORAGE_SECRET_KEY",
 			valueStdin: true,
 			stdin:      "s3cret=x\n",
-			wantKey:    "RELIC_ADMIN_PASSWORD",
+			wantKey:    "RELIC_OBJECT_STORAGE_SECRET_KEY",
 			wantValue:  "s3cret=x",
 		},
 		{
 			name:       "value in the argument and from standard input",
-			arg:        "RELIC_ADMIN_PASSWORD=x",
+			arg:        "RELIC_OBJECT_STORAGE_SECRET_KEY=x",
 			valueStdin: true,
+			wantErr:    true,
+		},
+		{
+			name:       "an empty value from standard input",
+			arg:        "RELIC_OBJECT_STORAGE_SECRET_KEY",
+			valueStdin: true,
+			stdin:      "\n",
+			wantErr:    true,
+		},
+		{
+			name:    "the first administrator's password",
+			arg:     "RELIC_ADMIN_PASSWORD=Another-pass-123",
+			wantErr: true,
+		},
+		{
+			name:       "the first administrator's password from standard input",
+			arg:        "RELIC_ADMIN_PASSWORD",
+			valueStdin: true,
+			stdin:      "Another-pass-123\n",
 			wantErr:    true,
 		},
 		{
@@ -758,7 +791,10 @@ func TestServerConfigSetWithoutSystemdChangesNothing(t *testing.T) {
 		return "", exec.ErrNotFound
 	}
 
-	if err := m.setServiceSetting(t.Context(), &bytes.Buffer{}, path, "RELIC_LOG_LEVEL", "debug"); err == nil {
+	if err := m.setServiceSettings(t.Context(), &bytes.Buffer{}, path, setting{
+		key:   "RELIC_LOG_LEVEL",
+		value: "debug",
+	}); err == nil {
 		t.Fatal("set without systemctl went ahead")
 	}
 
@@ -786,7 +822,10 @@ func TestServerConfigSetRefusesASettingTheServerRejects(t *testing.T) {
 		"RELIC_LOG_LEVEL":           "loud",
 		"OTEL_TRACES_SAMPLER":       "sometimes",
 	} {
-		err := m.setServiceSetting(t.Context(), &bytes.Buffer{}, path, key, value)
+		err := m.setServiceSettings(t.Context(), &bytes.Buffer{}, path, setting{
+			key:   key,
+			value: value,
+		})
 		if err == nil || !strings.Contains(err.Error(), key) {
 			t.Errorf("set %s=%s = %v, want an error that names it", key, value, err)
 		}
@@ -818,7 +857,10 @@ func TestServerConfigSetFixesOneOfSeveralWrongSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := m.setServiceSetting(t.Context(), &bytes.Buffer{}, path, "RELIC_LOG_LEVEL", "debug"); err != nil {
+	if err := m.setServiceSettings(t.Context(), &bytes.Buffer{}, path, setting{
+		key:   "RELIC_LOG_LEVEL",
+		value: "debug",
+	}); err != nil {
 		t.Fatalf("fixing one wrong setting while another stays wrong = %v", err)
 	}
 }
@@ -859,5 +901,131 @@ func TestMachineSetupSkipsLingerWhenAlreadyEnabled(t *testing.T) {
 		if strings.Contains(cmd, "enable-linger") {
 			t.Errorf("ran %q when linger was already enabled", cmd)
 		}
+	}
+}
+
+func TestMachineSetupStartsTheUserManagerFirst(t *testing.T) {
+	t.Parallel()
+
+	m, ran, _ := testMachineSetup(t, "")
+	m.yes = true
+
+	lingering := false
+	run := m.run
+	m.run = func(ctx context.Context, name string, args ...string) error {
+		if name == "systemctl" && !lingering {
+			return fmt.Errorf("%s %v: no user manager", name, args)
+		}
+
+		if name == "loginctl" {
+			lingering = true
+		}
+
+		return run(ctx, name, args...)
+	}
+
+	answers := 0
+	m.query = func(_ context.Context, name string, args ...string) (string, error) {
+		if name == "systemctl" && slices.Contains(args, "show-environment") {
+			if answers++; answers < 3 {
+				return "", errors.New("failed to connect to bus")
+			}
+		}
+
+		return "", nil
+	}
+
+	if err := m.runSetup(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	if answers < 3 {
+		t.Errorf("setup asked the user manager %d times, want it to wait for it", answers)
+	}
+
+	if len(*ran) == 0 || (*ran)[0] != "loginctl enable-linger dev" {
+		t.Errorf("ran %v, want loginctl enable-linger first", *ran)
+	}
+}
+
+func TestMachineSetupShowsTheLingerFileWhenLingerIsOn(t *testing.T) {
+	t.Parallel()
+
+	m, _, out := testMachineSetup(t, "")
+	m.yes = true
+
+	linger := filepath.Join(m.root, "var", "lib", "systemd", "linger", "dev")
+	if err := os.MkdirAll(filepath.Dir(linger), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(linger, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.runSetup(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(out.String(), linger) {
+		t.Errorf("the plan does not show %s:\n%s", linger, out)
+	}
+}
+
+func TestMachineSetupRefusesAUserServiceBesideASystemOne(t *testing.T) {
+	t.Parallel()
+
+	m, ran, _ := testMachineSetup(t, "")
+	m.yes = true
+
+	unit := filepath.Join(m.root, systemUnit)
+	if err := os.MkdirAll(filepath.Dir(unit), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(unit, []byte("[Unit]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.runSetup(t.Context()); err == nil || !strings.Contains(err.Error(), "system service") {
+		t.Fatalf("setup beside a system service = %v, want a refusal", err)
+	}
+
+	if entries, _ := os.ReadDir(m.home); len(entries) > 0 || len(*ran) > 0 {
+		t.Errorf("setup went ahead: wrote %v, ran %v", entries, *ran)
+	}
+}
+
+func TestMachineSetupWritesThroughASymlinkedShellFile(t *testing.T) {
+	t.Parallel()
+
+	m, _, _ := testMachineSetup(t, "")
+	m.yes = true
+
+	target := filepath.Join(m.home, "dotfiles", "bashrc")
+	bashrc := filepath.Join(m.home, ".bashrc")
+
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(target, []byte("alias ll='ls -l'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Symlink(target, bashrc); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.runSetup(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	if fi, err := os.Lstat(bashrc); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("setup replaced the symbolic link .bashrc: %v %v", fi, err)
+	}
+
+	if got := readFile(t, target); !strings.Contains(got, "Completion for relic") {
+		t.Errorf("the link's target holds %q", got)
 	}
 }

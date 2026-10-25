@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"math/big"
 	"net"
 	"net/netip"
@@ -414,20 +415,28 @@ type CertificateFiles struct {
 	certificatePath string
 	keyPath         string
 
+	log *slog.Logger
+
 	mu       sync.Mutex
 	current  *tls.Certificate
 	modified [2]time.Time
+	warned   string
 }
 
 // LoadCertificateFiles reads a PEM certificate chain and its PEM private
 // key.
-func LoadCertificateFiles(certificatePath, keyPath string) (*CertificateFiles, error) {
+func LoadCertificateFiles(
+	ctx context.Context,
+	certificatePath, keyPath string,
+	log *slog.Logger,
+) (*CertificateFiles, error) {
 	files := &CertificateFiles{
 		certificatePath: certificatePath,
 		keyPath:         keyPath,
+		log:             log,
 	}
 
-	if _, err := files.GetCertificate(nil); err != nil {
+	if _, err := files.certificate(ctx); err != nil {
 		return nil, err
 	}
 
@@ -436,13 +445,23 @@ func LoadCertificateFiles(certificatePath, keyPath string) (*CertificateFiles, e
 
 // GetCertificate returns the files' certificate, keeping the last one read
 // while the files are being replaced; it is a tls.Config.GetCertificate.
-func (f *CertificateFiles) GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+func (f *CertificateFiles) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	ctx := context.Background()
+	if hello != nil {
+		ctx = hello.Context()
+	}
+
+	return f.certificate(ctx)
+}
+
+func (f *CertificateFiles) certificate(ctx context.Context) (*tls.Certificate, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	modified, err := f.modifiedTimes()
 	if err != nil {
 		if f.current != nil {
+			f.warn(ctx, err)
 			return f.current, nil
 		}
 
@@ -456,18 +475,45 @@ func (f *CertificateFiles) GetCertificate(*tls.ClientHelloInfo) (*tls.Certificat
 	loaded, err := tls.LoadX509KeyPair(f.certificatePath, f.keyPath)
 	if err != nil {
 		if f.current != nil {
+			f.modified = modified
+			f.warn(ctx, err)
+
 			return f.current, nil
 		}
 
 		return nil, fmt.Errorf("RELIC_TLS_CERTIFICATE_FILE and RELIC_TLS_KEY_FILE: %w", err)
 	}
 
+	if f.current != nil {
+		f.log.InfoContext(
+			ctx,
+			"TLS certificate files reloaded",
+			"file", f.certificatePath,
+			"not_after", loaded.Leaf.NotAfter,
+		)
+	}
+
 	f.current = &loaded
 	f.modified = modified
+	f.warned = ""
 
 	telemetry.TLSCertificateServed(telemetry.TLSSourceOperator, loaded.Leaf.NotAfter)
 
 	return f.current, nil
+}
+
+func (f *CertificateFiles) warn(ctx context.Context, err error) {
+	if err.Error() == f.warned {
+		return
+	}
+
+	f.warned = err.Error()
+	f.log.WarnContext(
+		ctx,
+		"TLS certificate files changed but cannot be loaded; serving the previous certificate",
+		"file", f.certificatePath,
+		"error", err,
+	)
 }
 
 func (f *CertificateFiles) modifiedTimes() ([2]time.Time, error) {

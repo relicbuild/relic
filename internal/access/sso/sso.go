@@ -386,11 +386,15 @@ func randomString() string {
 // ReturnPath is where to send the browser after a sign-in: a path on this
 // server, or /.
 func ReturnPath(p string) string {
-	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.HasPrefix(p, "/\\") {
+	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.ContainsFunc(p, browserIgnoredOrSlash) {
 		return "/"
 	}
 
 	return p
+}
+
+func browserIgnoredOrSlash(r rune) bool {
+	return r < 0x20 || r == 0x7f || r == '\\'
 }
 
 func (s *Service) saveRequest(ctx context.Context, provider, verifier, nonce, returnTo string) (string, error) {

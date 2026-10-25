@@ -73,8 +73,9 @@ func TestReport(t *testing.T) {
 	put(t, config, dir, "charts/README.md", "readme")
 
 	out, err := relic(t, config, "", "security", "report", "charts/demo-0.1.0.tgz")
-	if err != nil || !strings.HasPrefix(out, "charts/demo-0.1.0.tgz: queued (not picked up by the scanner yet)\n") {
-		t.Errorf("report before the scanner picked the file up = %q %v", out, err)
+	if err != nil || !strings.HasPrefix(out, "charts/demo-0.1.0.tgz: unavailable ("+
+		"Relic Scan is off: no worker with Syft and Grype reported lately)\n") {
+		t.Errorf("report without a worker that scans = %q %v", out, err)
 	}
 
 	if _, err := relic(

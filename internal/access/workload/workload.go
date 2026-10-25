@@ -20,6 +20,7 @@ import (
 
 	"relic/internal/access/audit"
 	"relic/internal/access/auth"
+	"relic/internal/access/security"
 	"relic/internal/platform/database"
 	"relic/internal/platform/telemetry"
 )
@@ -215,6 +216,18 @@ func decode(n string, raw []byte) (Identity, error) {
 func (s *Service) PutIdentity(ctx context.Context, id Identity) error {
 	if err := id.Validate(); err != nil {
 		return err
+	}
+
+	for i, r := range id.Rules {
+		if err := security.CheckPrincipal(ctx, s.db, r.User, false); err != nil {
+			return fmt.Errorf("%w: rule %d: %w", ErrInvalid, i+1, err)
+		}
+
+		for _, g := range r.Groups {
+			if err := security.CheckPrincipal(ctx, s.db, g, true); err != nil {
+				return fmt.Errorf("%w: rule %d: %w", ErrInvalid, i+1, err)
+			}
+		}
 	}
 
 	raw, err := json.Marshal(id)
@@ -449,6 +462,10 @@ func (s *Service) exchange(ctx context.Context, n, token string) (Exchange, erro
 		Description:      "workload " + n + ": " + verified.Subject,
 		WorkloadIdentity: n,
 	})
+	if errors.Is(err, auth.ErrUnknownGroup) {
+		return Exchange{}, refused("the rule's group does not exist: %v", err)
+	}
+
 	if err != nil {
 		return Exchange{}, err
 	}

@@ -25,6 +25,8 @@ var (
 )
 
 func serverConfigCmd(g *globals) *cobra.Command {
+	var output string
+
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Show the settings of the Relic service on this machine, secrets masked",
@@ -45,13 +47,25 @@ func serverConfigCmd(g *globals) *cobra.Command {
 				return fmt.Errorf("read %s: %w (a system service's settings need sudo)", path, err)
 			}
 
+			settings := map[string]string{}
+
 			for l := range strings.Lines(string(b)) {
-				_, _ = fmt.Fprint(cmd.OutOrStdout(), maskedSettingsLine(l))
+				if key, value, ok := strings.Cut(strings.TrimSpace(maskedSettingsLine(l)), "="); ok &&
+					!strings.HasPrefix(key, "#") {
+					settings[key] = strings.Trim(value, `"'`)
+				}
 			}
 
-			return nil
+			return printMessage(cmd.OutOrStdout(), output, settings, func(w io.Writer) error {
+				for l := range strings.Lines(string(b)) {
+					_, _ = fmt.Fprint(w, maskedSettingsLine(l))
+				}
+
+				return nil
+			})
 		},
 	}
+	outputFlag(cmd, &output)
 	cmd.AddCommand(serverConfigSetCmd(g))
 
 	return cmd
@@ -220,18 +234,34 @@ func serverConfigSetCmd(g *globals) *cobra.Command {
 	var valueStdin bool
 
 	cmd := &cobra.Command{
-		Use:   "set <KEY>=<value>",
-		Short: "Change one setting of the Relic service on this machine and restart it",
-		Long: "Writes the setting and restarts the service, also when the setting already has that value, " +
-			"so the service runs with it. --value-stdin reads the value from standard input, which keeps " +
-			"a secret out of the process list and the shell history.",
+		Use:   "set <KEY>=<value>...",
+		Short: "Change settings of the Relic service on this machine and restart it",
+		Long: "Writes the settings and restarts the service once. When every setting already has its value, " +
+			"nothing is written and the service is not restarted. --value-stdin reads the value of one key " +
+			"from standard input, which keeps a secret out of the process list and the shell history. " +
+			"RELIC_ADMIN_PASSWORD is refused: it only creates the first administrator, so changing it later " +
+			"changes nothing on the server.",
 		Example: "  relic server config set RELIC_LOG_LEVEL=debug\n" +
-			"  printf '%s' \"$PASSWORD\" | relic server config set RELIC_ADMIN_PASSWORD --value-stdin",
-		Args: cobra.ExactArgs(1),
+			"  relic server config set RELIC_SCAN_SYFT_PATH=/opt/bin/syft RELIC_SCAN_GRYPE_PATH=/opt/bin/grype\n" +
+			"  printf '%s' \"$SECRET\" | relic server config set RELIC_OBJECT_STORAGE_SECRET_KEY --value-stdin",
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			key, value, err := settingArgument(args[0], valueStdin, cmd.InOrStdin())
-			if err != nil {
-				return err
+			if valueStdin && len(args) > 1 {
+				return errors.New("with --value-stdin, give one key")
+			}
+
+			settings := make([]setting, 0, len(args))
+
+			for _, arg := range args {
+				key, value, err := settingArgument(arg, valueStdin, cmd.InOrStdin())
+				if err != nil {
+					return err
+				}
+
+				settings = append(settings, setting{
+					key:   key,
+					value: value,
+				})
 			}
 
 			path, m, err := serviceSettings(cmd, g)
@@ -239,13 +269,18 @@ func serverConfigSetCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			return m.setServiceSetting(cmd.Context(), cmd.OutOrStdout(), path, key, value)
+			return m.setServiceSettings(cmd.Context(), cmd.OutOrStdout(), path, settings...)
 		},
 	}
 	cmd.Flags().
 		BoolVar(&valueStdin, "value-stdin", false, "read the value from standard input; the argument is the key")
 
 	return cmd
+}
+
+type setting struct {
+	key   string
+	value string
 }
 
 func settingArgument(arg string, valueStdin bool, in io.Reader) (string, string, error) {
@@ -262,6 +297,9 @@ func settingArgument(arg string, valueStdin bool, in io.Reader) (string, string,
 		}
 
 		value, ok = strings.TrimRight(line, "\r\n"), true
+		if value == "" {
+			return "", "", fmt.Errorf("no value for %s on standard input", key)
+		}
 	}
 
 	if !ok || (!strings.HasPrefix(key, "RELIC_") && !strings.HasPrefix(key, "OTEL_")) {
@@ -272,6 +310,13 @@ func settingArgument(arg string, valueStdin bool, in io.Reader) (string, string,
 
 	if strings.HasPrefix(key, "RELIC_") && !slices.Contains(app.SettingNames, key) {
 		return "", "", fmt.Errorf("%s is not a server setting; the configuration reference lists them", key)
+	}
+
+	if key == "RELIC_ADMIN_PASSWORD" {
+		return "", "", errors.New(
+			"RELIC_ADMIN_PASSWORD only sets the password of the first administrator, when the server has no " +
+				"users yet; change the admin password on the Users page of the web UI, or with relic apply --force on the User",
+		)
 	}
 
 	return key, value, nil
@@ -297,16 +342,20 @@ func newSettingsErrors(before, after string) error {
 }
 
 func settingsErrors(settings string) []string {
+	var lines []string
+
+	if _, err := parseSettings(settings); err != nil {
+		lines = strings.Split(err.Error(), "\n")
+	}
+
 	env := keyValues(settings, "=")
 
 	err := app.CheckSettings(func(key string) string {
 		return env[key]
 	}, "server")
 	if err == nil {
-		return nil
+		return lines
 	}
-
-	var lines []string
 
 	for line := range strings.Lines(err.Error()) {
 		line = strings.TrimSuffix(line, "\n")
@@ -317,7 +366,7 @@ func settingsErrors(settings string) []string {
 	return lines
 }
 
-func (m *machineSetup) setServiceSetting(ctx context.Context, w io.Writer, path, key, value string) error {
+func (m *machineSetup) setServiceSettings(ctx context.Context, w io.Writer, path string, settings ...setting) error {
 	b, err := os.ReadFile(path) //nolint:gosec // the settings file relic server setup wrote
 	if err != nil {
 		return fmt.Errorf("read %s: %w (a system service's settings need sudo)", path, err)
@@ -343,17 +392,28 @@ func (m *machineSetup) setServiceSetting(ctx context.Context, w io.Writer, path,
 		return err
 	}
 
-	settings := withSetting(string(b), key, value, true)
-	if err := newSettingsErrors(string(b), settings); err != nil {
-		return fmt.Errorf("the server would not start with this %s; nothing was changed:\n%w", key, err)
+	content := string(b)
+	keys := make([]string, 0, len(settings))
+
+	for _, s := range settings {
+		content = withSetting(content, s.key, s.value, true)
+		keys = append(keys, s.key)
 	}
 
-	a := m.file("server settings", path, []byte(settings), fi.Mode().Perm())
+	names := strings.Join(keys, ", ")
 
-	done := "Set " + key + " and restarted the service."
+	if err := newSettingsErrors(string(b), content); err != nil {
+		return fmt.Errorf("the server would not start with this %s; nothing was changed:\n%w", names, err)
+	}
+
+	a := m.file("server settings", path, []byte(content), fi.Mode().Perm())
 	if a.state == "unchanged" {
-		done = key + " is already set to that; restarted the service."
-	} else if err := m.apply(ctx, a); err != nil {
+		_, _ = fmt.Fprintf(w, "%s already set to that; the service was not restarted.\n", names)
+
+		return nil
+	}
+
+	if err := m.apply(ctx, a); err != nil {
 		return err
 	}
 
@@ -361,7 +421,7 @@ func (m *machineSetup) setServiceSetting(ctx context.Context, w io.Writer, path,
 		return fmt.Errorf("restart the service: %w", err)
 	}
 
-	_, _ = fmt.Fprintln(w, done)
+	_, _ = fmt.Fprintf(w, "Set %s and restarted the service.\n", names)
 
 	return nil
 }

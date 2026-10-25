@@ -9,6 +9,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 	"uuid"
 
 	"relic/api/adapters/artifactory/access"
@@ -45,6 +46,18 @@ func TestTokensRevoke(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if _, err := tokens.Issue(ctx, auth.IssueParams{
+		Username: "alice",
+		Scope: auth.TokenScope{
+			Kind: auth.ScopeGroups,
+			Groups: []string{
+				"latergroup",
+			},
+		},
+	}); !errors.Is(err, auth.ErrUnknownGroup) {
+		t.Fatalf("token for a group that does not exist: %v, want %v", err, auth.ErrUnknownGroup)
+	}
+
 	issued, err := tokens.Issue(ctx, auth.IssueParams{
 		Username: "alice",
 		Scope:    auth.UserScope,
@@ -74,6 +87,101 @@ func TestTokensRevoke(t *testing.T) {
 
 	if err := tokens.Revoke(ctx, issued.AccessToken); err != nil {
 		t.Errorf("revoking a revoked token: %v", err)
+	}
+}
+
+func TestRevokingATokenRevokesTheTokensItBound(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db := databasetest.NewDB(t)
+
+	tokens, err := auth.NewTokens(ctx, db, nil, access.Format{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.CreateUser(ctx, database.CreateUserParams{
+		ID:           uuid.NewV7(),
+		Username:     "alice",
+		PasswordHash: "!",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	mint := func(parent auth.IssuedToken, refreshable bool) auth.IssuedToken {
+		t.Helper()
+
+		p := auth.Principal{
+			Username: "alice",
+		}
+
+		if parent.AccessToken != "" {
+			verified, err := tokens.Verify(ctx, parent.AccessToken)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			p.BoundBy, p.BoundUntil = verified.ID, verified.Expires
+		}
+
+		issued, err := tokens.Issue(ctx, p.LimitIssue(auth.IssueParams{
+			Username:    "alice",
+			Scope:       auth.UserScope,
+			ExpiresIn:   time.Hour,
+			Refreshable: refreshable,
+		}, time.Now()))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return issued
+	}
+	valid := func(tok auth.IssuedToken) bool {
+		_, err := tokens.Verify(ctx, tok.AccessToken)
+		return err == nil
+	}
+
+	parent := mint(auth.IssuedToken{}, true)
+	child := mint(parent, true)
+	grandchild := mint(child, false)
+	other := mint(auth.IssuedToken{}, false)
+
+	if child.ExpiresIn > time.Hour {
+		t.Errorf("a token minted with a token = %+v, want it within the parent's life", child)
+	}
+
+	refreshed, err := tokens.Refresh(ctx, parent.RefreshToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !valid(child) || !valid(grandchild) {
+		t.Fatal("refreshing the parent revoked the tokens it bound")
+	}
+
+	if err := tokens.Revoke(ctx, refreshed.AccessToken); err != nil {
+		t.Fatal(err)
+	}
+
+	if !valid(child) || !valid(grandchild) {
+		t.Fatal("signing out with the parent revoked the tokens it bound")
+	}
+
+	if _, err := tokens.Refresh(ctx, child.RefreshToken); !errors.Is(err, auth.ErrInvalidToken) {
+		t.Errorf("refresh of a token whose parent is revoked = %v, want %v", err, auth.ErrInvalidToken)
+	}
+
+	if err := tokens.RevokeID(ctx, child.ID, "alice"); err != nil {
+		t.Fatal(err)
+	}
+
+	if valid(child) || valid(grandchild) {
+		t.Error("tokens bound by a revoked token, directly or through another, are still valid")
+	}
+
+	if !valid(other) {
+		t.Error("revoking one token revoked an unrelated one")
 	}
 }
 

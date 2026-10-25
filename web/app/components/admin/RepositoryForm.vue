@@ -10,22 +10,6 @@ const emit = defineEmits<{ close: [saved: boolean] }>()
 const relic = useRelic()
 const toast = useToast()
 
-const defaultUpstream: Record<string, string> = {
-  maven: 'https://repo1.maven.org/maven2',
-  gradle: 'https://repo1.maven.org/maven2',
-  npm: 'https://registry.npmjs.org',
-  pypi: 'https://files.pythonhosted.org',
-  gomod: 'https://proxy.golang.org',
-  docker: 'https://registry-1.docker.io',
-  nuget: 'https://www.nuget.org',
-  rubygems: 'https://rubygems.org',
-  cargo: 'https://index.crates.io',
-  conan: 'https://center2.conan.io',
-  huggingface: 'https://huggingface.co',
-  alpine: 'https://dl-cdn.alpinelinux.org/alpine',
-  debian: 'https://deb.debian.org/debian'
-}
-
 const schema = z.object({
   name: z.string().regex(/^[a-zA-Z0-9][\w.-]{0,63}$/, 'Letters, digits, dot, dash and underscore; up to 64'),
   class: z.enum(['local', 'remote', 'virtual']),
@@ -49,6 +33,7 @@ const schema = z.object({
   localOnlyPatterns: z.array(z.string()),
   defaultDeploymentRepo: z.string().optional(),
   signingKey: z.string().optional(),
+  secondarySigningKey: z.string().optional(),
   metadataDepth: z.number().int().min(0).max(16),
   architectures: z.array(z.string())
 }).superRefine((d, ctx) => {
@@ -87,6 +72,7 @@ const state = reactive<Partial<Schema>>({
   localOnlyPatterns: [...(r?.virtual?.localOnlyPatterns ?? [])],
   defaultDeploymentRepo: r?.virtual?.deployTo ?? '',
   signingKey: r?.signingKey ?? '',
+  secondarySigningKey: r?.secondarySigningKey ?? '',
   metadataDepth: r?.metadataDepth ?? 0,
   architectures: [...(r?.architectures ?? [])]
 })
@@ -97,8 +83,8 @@ const defaultSigningKey: Record<string, string> = {
 }
 const signsIndexes = computed(() => !!defaultSigningKey[state.format ?? ''] && state.class !== 'remote')
 watch(() => [state.class, state.format], () => {
-  if (state.class === 'remote' && !state.url) {
-    state.url = defaultUpstream[state.format ?? ''] ?? ''
+  if (state.class === 'remote') {
+    state.url = upstreamURL(state.format ?? '', state.url ?? '')
   }
 })
 
@@ -133,7 +119,8 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
     const immutable = d.class === 'local' && d.immutable
     const indexes = {
       signingKey: defaultSigningKey[d.format] && d.class !== 'remote' ? d.signingKey ?? '' : '',
-      metadataDepth: d.format === 'rpm' && d.class === 'local' ? d.metadataDepth : 0,
+      secondarySigningKey: defaultSigningKey[d.format] && d.class !== 'remote' ? d.secondarySigningKey ?? '' : '',
+      metadataDepth: d.format === 'rpm' && d.class !== 'remote' ? d.metadataDepth : 0,
       architectures: d.format === 'debian' && d.class === 'virtual' ? d.architectures : []
     }
     if (r) {
@@ -227,10 +214,19 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
           <UInput v-model="state.signingKey" :placeholder="defaultSigningKey[state.format ?? '']" class="w-full" />
         </UFormField>
         <UFormField
-          v-if="state.format === 'rpm' && state.class === 'local'"
+          v-if="signsIndexes"
+          name="secondarySigningKey"
+          label="Secondary signing key"
+          description="A key pair that also signs the indexes, with its public key published next to the signing key's, so clients that trust either keep working while the key is replaced."
+          hint="Optional"
+        >
+          <UInput v-model="state.secondarySigningKey" class="w-full" />
+        </UFormField>
+        <UFormField
+          v-if="state.format === 'rpm' && state.class !== 'remote'"
           name="metadataDepth"
           label="Metadata depth"
-          description="0 indexes the whole repository at repodata/; 1 indexes each top folder (el9/repodata/, el10/repodata/)."
+          description="0 indexes the whole repository at repodata/; 1 indexes each top folder (el9/repodata/, el10/repodata/). A virtual repository takes each folder from the same folder of its members."
         >
           <UInputNumber
             v-model="state.metadataDepth"

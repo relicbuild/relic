@@ -76,6 +76,15 @@ func TestRelicAPIREST(t *testing.T) {
 			`"name":"app.txt"`,
 		},
 		{
+			"stat the file with its path's slashes percent-encoded",
+			call{
+				method: http.MethodGet,
+				path:   "/api/v1/repositories/rest-libs/details/org%2Fapp%2F1.0%2Fapp.txt",
+			},
+			http.StatusOK,
+			`"name":"app.txt"`,
+		},
+		{
 			"list the root's children",
 			call{
 				method: http.MethodGet,

@@ -40,7 +40,7 @@ test('an RPM repository is created with its signing key and metadata depth', asy
   await form.getByLabel('Format').click()
   await page.getByRole('option', { name: 'rpm', exact: true }).click()
   await form.getByRole('textbox', { name: /^Name/ }).fill(name)
-  await form.getByLabel('Signing key').fill(`${name}-key`)
+  await form.getByLabel('Signing key', { exact: true }).fill(`${name}-key`)
   await form.getByLabel('Metadata depth').fill('1')
   await form.getByRole('button', { name: 'Create' }).click()
   await toast(page, `Repository ${name} created`)

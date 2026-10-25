@@ -146,14 +146,16 @@ SELECT i.id, i.repo_key, i.path, i.name, i.type, i.size, i.sha1, i.sha256, i.md5
 FROM items i
 WHERE i.type = 'file' AND i.sha1 = ANY($3::text[])
   AND ($4::text = '' OR i.repo_key = $4::text)
+  AND NOT EXISTS (SELECT 1 FROM repositories r WHERE r.key = i.repo_key AND r.format = ANY($5::text[]))
 ORDER BY i.repo_key, i.path, i.name
 `
 
 type FindItemsBySHA1Params struct {
-	BuildName   string
-	BuildNumber string
-	Sha1s       []string
-	SourceRepo  string
+	BuildName       string
+	BuildNumber     string
+	Sha1s           []string
+	SourceRepo      string
+	ExcludedFormats []string
 }
 
 type FindItemsBySHA1Row struct {
@@ -169,6 +171,7 @@ func (q *Queries) FindItemsBySHA1(ctx context.Context, arg FindItemsBySHA1Params
 		arg.BuildNumber,
 		arg.Sha1s,
 		arg.SourceRepo,
+		arg.ExcludedFormats,
 	)
 	if err != nil {
 		return nil, err

@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -186,6 +187,10 @@ func TestScanPipeline(t *testing.T) {
 		t.Fatalf("findings = %d, %v", len(findings), err)
 	}
 
+	if known, err := db.KnownCVEIDs(ctx); err != nil || !slices.Contains(known, "CVE-2021-23337") {
+		t.Errorf("CVEs known after the scan = %v, %v; want the findings' CVEs", known, err)
+	}
+
 	src, _ := os.ReadFile(seen)
 	if !strings.HasPrefix(string(src), "dir:") {
 		t.Errorf("npm tarball not cataloged as an extracted directory: %q", src)
@@ -206,13 +211,21 @@ func TestScanPipeline(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if a, err := db.GetScanArtifact(ctx, c.Sha256); err != nil || a.Components != 2 || a.Reason != "SBOM imported" ||
-		a.DbBuilt != nil {
-		t.Fatalf("after the import, scan record = %+v, %v; want it stale until matched", a, err)
+	if a, err := db.GetScanArtifact(ctx, c.Sha256); err != nil || a.Components != 2 || a.Status != scan.StatusQueued ||
+		a.Reason != "SBOM imported, not matched yet" || a.DbBuilt != nil {
+		t.Fatalf("after the import, scan record = %+v, %v; want it queued until matched", a, err)
 	}
 
 	if cleared, _ := db.ListFindings(ctx, c.Sha256); len(cleared) != 0 {
 		t.Errorf("findings of the replaced SBOM kept: %d", len(cleared))
+	}
+
+	built := time.Now()
+	if stale, err := db.ListStaleScans(ctx, database.ListStaleScansParams{
+		DbBuilt: &built,
+		MaxRows: 10,
+	}); err != nil || !slices.Contains(stale, c.Sha256) {
+		t.Errorf("stale scans = %v, %v; want the imported SBOM matched with the next database", stale, err)
 	}
 
 	if err := svc.Rematch(ctx, c.Sha256); err != nil {
@@ -221,6 +234,11 @@ func TestScanPipeline(t *testing.T) {
 
 	if matched, _ := db.ListFindings(ctx, c.Sha256); len(matched) != 3 {
 		t.Errorf("findings of the imported SBOM = %d, want it matched", len(matched))
+	}
+
+	if a, err := db.GetScanArtifact(ctx, c.Sha256); err != nil || a.Status != scan.StatusDone ||
+		a.Reason != "SBOM imported" {
+		t.Errorf("after matching the imported SBOM, scan = %s (%s), %v; want done", a.Status, a.Reason, err)
 	}
 
 	past, total, err := scan.NewResults(db).FindingsPage(ctx, scan.FindingsQuery{
@@ -263,7 +281,8 @@ func TestScanPipeline(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if a, err := db.GetScanArtifact(ctx, c.Sha256); err != nil || a.Components != 2 || a.Reason != "SBOM imported" {
+	if a, err := db.GetScanArtifact(ctx, c.Sha256); err != nil || a.Components != 2 ||
+		a.Reason != "SBOM imported, not matched yet" {
 		t.Errorf("a scan that finished after an SBOM import replaced it: %+v, %v", a, err)
 	}
 
@@ -321,6 +340,170 @@ func TestScanPipeline(t *testing.T) {
 	if !reflect.DeepEqual(rep.Components, wantComponents) {
 		t.Errorf("graph scan components = %+v, want %+v", rep.Components, wantComponents)
 	}
+}
+
+func TestScanCoversPackagesAndConfigurationFiles(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db := databasetest.NewDB(t)
+	blobs := objectstoretest.NewMemory()
+	log := slog.New(slog.DiscardHandler)
+
+	repos := repository.NewService(db, blobs, log)
+	if err := repos.CreateRepository(
+		ctx,
+		repository.Repository{
+			Name:   "files",
+			Class:  "local",
+			Format: "generic",
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	var gem bytes.Buffer
+
+	gemTar := tar.NewWriter(&gem)
+	for name, body := range map[string]string{
+		"metadata.gz": gzipText(t, "--- !ruby/object:Gem::Specification\nname: rack\n"+
+			"version: !ruby/object:Gem::Version\n  version: 2.2.3\nplatform: ruby\n"),
+		"data.tar.gz": tgz(t, map[string]string{
+			"lib/rack.rb": "module Rack; end",
+		}),
+	} {
+		_ = gemTar.WriteHeader(&tar.Header{
+			Name:     name,
+			Mode:     0o644,
+			Size:     int64(len(body)),
+			Typeflag: tar.TypeReg,
+		})
+		_, _ = io.WriteString(gemTar, body)
+	}
+
+	_ = gemTar.Close()
+
+	apk := tgz(t, map[string]string{
+		".PKGINFO": "pkgname = zlib\npkgver = 1.2.11-r3\narch = x86_64\norigin = zlib\n",
+	})
+
+	files := map[string]string{
+		"gems/rack-2.2.3.gem":                         gem.String(),
+		"alpine/v3.12/main/x86_64/zlib-1.2.11-r3.apk": apk,
+		"k8s/deploy.yaml":                             "apiVersion: v1\nkind: Pod\n",
+		"app/Dockerfile":                              "FROM alpine:3.12\n",
+		"docs/readme.md":                              "not scanned",
+	}
+	for p, body := range files {
+		if _, err := repos.Deploy(
+			ctx,
+			repository.DeployInput{
+				Repository: "files",
+				Path:       p,
+				Body:       strings.NewReader(body),
+				User:       "admin",
+			},
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	_, grype, _ := fakeScanners(t)
+	seen := filepath.Join(t.TempDir(), "sources")
+	listing := filepath.Join(t.TempDir(), "syft")
+	scripttest.Write(t, listing, "#!/bin/sh\ncase \"$2\" in dir:*) find \"${2#dir:}\" -type f >>"+seen+";; esac\n"+
+		"echo '{\"artifacts\":[],\"schema\":{\"version\":\"16.1.10\"}}'\n")
+	svc := scan.NewService(db, blobs, scan.Syft{
+		Exec: scan.Exec{
+			Path: listing,
+		},
+	}, grype, scan.Limits{}, log)
+
+	claimed, err := svc.Claim(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	names := map[string]string{}
+	for _, c := range claimed {
+		names[c.FileName] = c.Sha256
+	}
+
+	for _, want := range []string{
+		"rack-2.2.3.gem",
+		"zlib-1.2.11-r3.apk",
+		"deploy.yaml",
+		"Dockerfile",
+	} {
+		if names[want] == "" {
+			t.Errorf("%s not claimed for scanning: %v", want, names)
+		}
+	}
+
+	if names["readme.md"] != "" {
+		t.Error("readme.md claimed for scanning")
+	}
+
+	for name, sha := range names {
+		if err := svc.ScanArtifact(ctx, sha, name); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+
+	stored := func(name string) (string, string) {
+		t.Helper()
+
+		a, err := db.GetScanArtifact(ctx, names[name])
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		zr, err := gzip.NewReader(bytes.NewReader(a.Sbom))
+		if err != nil {
+			t.Fatalf("%s: SBOM: %v", name, err)
+		}
+
+		sbom, err := io.ReadAll(zr)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return string(sbom), a.Status
+	}
+
+	if sbom, status := stored("rack-2.2.3.gem"); status != scan.StatusDone ||
+		!strings.Contains(sbom, `"purl":"pkg:gem/rack@2.2.3"`) {
+		t.Errorf("gem scan = %s %s, want it done with the gem's own package", status, sbom)
+	}
+
+	if sbom, status := stored("zlib-1.2.11-r3.apk"); status != scan.StatusDone ||
+		!strings.Contains(sbom, `pkg:apk/alpine/zlib@1.2.11-r3`) ||
+		!strings.Contains(sbom, `"distro":{"id":"alpine","versionID":"3.12"}`) {
+		t.Errorf("apk scan = %s %s, want the package and its Alpine branch", status, sbom)
+	}
+
+	src, _ := os.ReadFile(seen)
+	for _, want := range []string{
+		"/lib/rack.rb\n",
+		"/deploy.yaml\n",
+		"/Dockerfile\n",
+	} {
+		if !strings.Contains(string(src), want) {
+			t.Errorf("%s not cataloged from an extracted directory: %q", want, src)
+		}
+	}
+}
+
+func gzipText(t *testing.T, text string) string {
+	t.Helper()
+
+	var buf bytes.Buffer
+
+	zw := gzip.NewWriter(&buf)
+	_, _ = io.WriteString(zw, text)
+	_ = zw.Close()
+
+	return buf.String()
 }
 
 func TestScanStoredImage(t *testing.T) {
@@ -641,6 +824,85 @@ func TestRunGraphLastAttemptFails(t *testing.T) {
 	if g, err := db.GetGraphScan(ctx, unqueued); err != nil || g.Status != scan.StatusFailed ||
 		g.Error != "the job queue refused it" {
 		t.Errorf("a graph scan whose job was never queued = %+v, %v; want failed with the reason", g, err)
+	}
+}
+
+func TestFailArtifactRecordsAMatchThatKeepsFailing(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db := databasetest.NewDB(t)
+	blobs := objectstoretest.NewMemory()
+	log := slog.New(slog.DiscardHandler)
+
+	repos := repository.NewService(db, blobs, log)
+	if err := repos.CreateRepository(
+		ctx,
+		repository.Repository{
+			Name:   "npm-local",
+			Class:  "local",
+			Format: "npm",
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := repos.Deploy(
+		ctx,
+		repository.DeployInput{
+			Repository: "npm-local",
+			Path:       "x/-/x-1.0.0.tgz",
+			Body: strings.NewReader(tgz(t, map[string]string{
+				"package/package.json": `{"name":"x","version":"1.0.0"}`,
+			})),
+			User: "admin",
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	syft, _, _ := fakeScanners(t)
+	failing := filepath.Join(t.TempDir(), "grype")
+	scripttest.Write(t, failing, "#!/bin/sh\necho 'ERROR failed to load vulnerability db' >&2\nexit 1\n")
+	svc := scan.NewService(db, blobs, syft, scan.Grype{
+		Exec: scan.Exec{
+			Path: failing,
+		},
+		DatabaseDir: t.TempDir(),
+	}, scan.Limits{}, log)
+
+	claimed, err := svc.Claim(ctx, 10)
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("claim = %v, %v", claimed, err)
+	}
+
+	c := claimed[0]
+
+	scanErr := svc.ScanArtifact(ctx, c.Sha256, c.FileName)
+	if scanErr == nil {
+		t.Fatal("ScanArtifact succeeded with a failing grype")
+	}
+
+	if a, _ := db.GetScanArtifact(ctx, c.Sha256); a.Status != scan.StatusQueued {
+		t.Errorf("after a failed attempt, status = %s, want it queued for the retry", a.Status)
+	}
+
+	if err := svc.FailArtifact(ctx, c.Sha256, scanErr); err != nil {
+		t.Fatal(err)
+	}
+
+	a, err := db.GetScanArtifact(ctx, c.Sha256)
+	if err != nil || a.Status != scan.StatusFailed ||
+		!strings.HasPrefix(a.Reason, "match: grype: exit status 1: ERROR failed to load vulnerability db") {
+		t.Fatalf("after the last attempt, scan = %s (%s), %v; want failed with grype's error", a.Status, a.Reason, err)
+	}
+
+	if n, err := db.ForgetFailedMatches(ctx); err != nil || n != 1 {
+		t.Fatalf("ForgetFailedMatches = %d, %v; want the failed match dropped", n, err)
+	}
+
+	if again, err := svc.Claim(ctx, 10); err != nil || len(again) != 1 {
+		t.Errorf("claim after the failed match was dropped = %v, %v; want it scanned again", again, err)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"relic/internal/access/auth"
+	"relic/internal/artifacts/formats/terraform"
 	"relic/internal/artifacts/repository"
 	"relic/internal/platform/httperror"
 
@@ -85,10 +86,28 @@ func (h *Handler) terraformModule(w http.ResponseWriter, r *http.Request, m Moun
 			},
 		})
 	case len(parts) == 5 && parts[4] == "download":
-		item, ok := versions[strings.TrimPrefix(parts[3], "v")]
+		version := strings.TrimPrefix(parts[3], "v")
+
+		found, ok := versions[version]
 		if !ok {
 			http.NotFound(w, r)
 			return
+		}
+
+		item := found.item
+		if found.remote != nil {
+			module, _ := terraform.ParseModule(namespace, parts[1], parts[2])
+
+			item, err = h.tfProviders.RemoteModule(r.Context(), *found.remote, module, version)
+			if errors.Is(err, terraform.ErrNotFound) || errors.Is(err, terraform.ErrUnsupportedSource) {
+				httperror.Write(w, r, http.StatusNotFound, "module archive not available: "+err.Error())
+				return
+			}
+
+			if err != nil {
+				h.writeError(w, r, err)
+				return
+			}
 		}
 		// terraform fetches the archive without its token, depending on its version.
 		p := terraformArchives(m) + item.Repository + "/" + escapePath(item.Path())
@@ -124,46 +143,83 @@ func (h *Handler) terraformRepository(
 	}
 }
 
+type moduleVersion struct {
+	item   repository.Item
+	remote *repository.Repository
+}
+
 func (h *Handler) terraformVersions(
 	r *http.Request,
 	rp repository.Repository,
 	folder string,
-) (map[string]repository.Item, error) {
-	members := h.ReadRepos(r.Context(), rp)
+) (map[string]moduleVersion, error) {
+	out := map[string]moduleVersion{}
 
-	keys := make([]string, 0, len(members))
-	for _, m := range members {
-		keys = append(keys, m.Name)
-	}
+	for _, m := range h.ReadRepos(r.Context(), rp) {
+		if err := h.storedModuleVersions(r, m.Name, folder, out); err != nil {
+			return nil, err
+		}
 
-	out := map[string]repository.Item{}
+		if m.Class != repository.ClassRemote || h.tfProviders == nil {
+			continue
+		}
 
-	for _, key := range keys {
-		dir, err := h.repos.Stat(r.Context(), key, folder)
-		if errors.Is(err, repository.ErrNotFound) {
+		parts := strings.Split(folder, "/")
+
+		module, ok := terraform.ParseModule(parts[0], parts[1], parts[2])
+		if !ok {
+			continue
+		}
+
+		upstream, err := h.tfProviders.RemoteModuleVersions(r.Context(), m, module)
+		if errors.Is(err, terraform.ErrNotFound) {
 			continue
 		}
 
 		if err != nil {
-			return nil, err
+			h.log.WarnContext(r.Context(), "terraform: upstream module versions", "repo", m.Name, "error", err)
+			continue
 		}
 
-		kids, err := h.repos.Children(r.Context(), dir)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, k := range kids {
-			if tag, ok := strings.CutSuffix(k.Name, ".zip"); ok && !k.IsFolder() {
-				v := strings.TrimPrefix(tag, "v")
-				if _, dup := out[v]; !dup && semver.IsValid("v"+v) {
-					out[v] = k
+		for _, v := range upstream {
+			if _, dup := out[v]; !dup && semver.IsValid("v"+v) {
+				out[v] = moduleVersion{
+					remote: &m,
 				}
 			}
 		}
 	}
 
 	return out, nil
+}
+
+func (h *Handler) storedModuleVersions(r *http.Request, repoKey, folder string, out map[string]moduleVersion) error {
+	dir, err := h.repos.Stat(r.Context(), repoKey, folder)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil
+	}
+
+	if err != nil {
+		return err
+	}
+
+	kids, err := h.repos.Children(r.Context(), dir)
+	if err != nil {
+		return err
+	}
+
+	for _, k := range kids {
+		if tag, ok := strings.CutSuffix(k.Name, ".zip"); ok && !k.IsFolder() {
+			v := strings.TrimPrefix(tag, "v")
+			if _, dup := out[v]; !dup && semver.IsValid("v"+v) {
+				out[v] = moduleVersion{
+					item: k,
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 func (h *Handler) terraformArchive(w http.ResponseWriter, r *http.Request, m Mount) {

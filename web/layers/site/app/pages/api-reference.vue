@@ -7,18 +7,7 @@ const colorMode = useColorMode()
 const specURL = useAppConfig().relic.dashboard ? '/api/v1/openapi.json' : '/openapi.json'
 const { data: spec, error, refresh } = await useAsyncData('openapi', () => $fetch<string>(specURL, { responseType: 'text' }), { server: false })
 
-const configuration = computed(() => ({
-  content: spec.value ?? '',
-  darkMode: colorMode.value === 'dark',
-  hideDarkModeToggle: true,
-  hideClientButton: true,
-  // Relic runs air-gapped: no Scalar cloud features (AI, deploy, sharing).
-  agent: { disabled: true },
-  mcp: { disabled: true },
-  showDeveloperTools: 'never' as const,
-  showToolbar: 'never' as const,
-  metaData: { title: 'Relic API reference' }
-}))
+const configuration = computed(() => apiReferenceConfiguration(spec.value ?? '', colorMode.value === 'dark'))
 </script>
 
 <template>

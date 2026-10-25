@@ -2,6 +2,7 @@ package relicapi
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"mime"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"relic/internal/access/auth"
 	"relic/internal/artifacts/repository"
+	"relic/internal/platform/localdisk"
 	"relic/internal/platform/objectstore"
 )
 
@@ -43,8 +45,7 @@ func (d Dependencies) files(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		d.upload(w, r, key, p)
 	default:
-		w.Header().Set("Allow", "GET, HEAD, PUT")
-		writeHTTPError(w, connect.NewError(connect.CodeUnimplemented, "method not allowed"))
+		writeMethodNotAllowed(w, "GET, HEAD, PUT")
 	}
 }
 
@@ -169,6 +170,13 @@ func (d Dependencies) upload(w http.ResponseWriter, r *http.Request, key, p stri
 		return
 	}
 
+	if len(props) > 0 {
+		if err := can(ctx, d, target, p, auth.ActionAnnotate); err != nil {
+			writeHTTPError(w, codeOf(err))
+			return
+		}
+	}
+
 	check, err := repositoryAccess(ctx, d, target)
 	if err != nil {
 		writeHTTPError(w, d.logged(r, err))
@@ -244,31 +252,19 @@ func (d Dependencies) logged(r *http.Request, err error) *connect.Error {
 }
 
 func writeHTTPError(w http.ResponseWriter, ce *connect.Error) {
-	status := map[connect.Code]int{
-		connect.CodeInvalidArgument:    http.StatusBadRequest,
-		connect.CodeUnauthenticated:    http.StatusUnauthorized,
-		connect.CodePermissionDenied:   http.StatusForbidden,
-		connect.CodeNotFound:           http.StatusNotFound,
-		connect.CodeAlreadyExists:      http.StatusConflict,
-		connect.CodeUnimplemented:      http.StatusMethodNotAllowed,
-		connect.CodeFailedPrecondition: http.StatusConflict,
-		connect.CodeUnavailable:        http.StatusBadGateway,
-		connect.CodeResourceExhausted:  http.StatusRequestEntityTooLarge,
-	}[ce.Code()]
-	if status == 0 {
-		status = http.StatusInternalServerError
-	}
+	status := restHTTPStatus(ce.Code())
 
-	if ce.Message() == objectstore.ErrStorageFull.Error() {
+	switch {
+	case errors.Is(ce, repository.ErrTooLarge), errors.Is(ce, repository.ErrQuotaExceeded):
+		status = http.StatusRequestEntityTooLarge
+	case errors.Is(ce, objectstore.ErrStorageFull), errors.Is(ce, localdisk.ErrFull):
 		status = http.StatusInsufficientStorage
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	//nolint:errchkjson // plain strings
-	_ = json.NewEncoder(w).
-		Encode(map[string]string{
-			"code":    ce.Code().String(),
-			"message": ce.Message(),
-		})
+	writeRESTError(w, status, ce)
+}
+
+func writeMethodNotAllowed(w http.ResponseWriter, allow string) {
+	w.Header().Set("Allow", allow)
+	writeRESTError(w, http.StatusMethodNotAllowed, connect.NewError(connect.CodeUnimplemented, "method not allowed"))
 }

@@ -102,7 +102,11 @@ func releaseServer(t *testing.T, latest string, corrupt, prereleaseOnly bool) *h
 			return
 		}
 
-		if strings.HasPrefix(r.URL.Path, "/releases/tag/") {
+		if tag, ok := strings.CutPrefix(r.URL.Path, "/releases/tag/"); ok {
+			if tag != "v1.0.0" && tag != latest {
+				http.NotFound(w, r)
+			}
+
 			return
 		}
 
@@ -163,6 +167,7 @@ func TestInstallScript(t *testing.T) {
 		noChecksumTool bool
 		prereleaseOnly bool
 		noReleases     bool
+		readOnlyDir    bool
 		want           string
 		failure        string
 	}{
@@ -179,6 +184,21 @@ func TestInstallScript(t *testing.T) {
 			name:    "pinned release",
 			version: "v1.0.0",
 			want:    "relic version v1.0.0",
+		},
+		{
+			name:    "pinned release without v",
+			version: "1.0.0",
+			want:    "relic version v1.0.0",
+		},
+		{
+			name:    "unknown release",
+			version: "v9.9.9",
+			failure: "no release v9.9.9 at",
+		},
+		{
+			name:        "a directory relic cannot write to",
+			readOnlyDir: true,
+			failure:     "cannot write to",
 		},
 		{
 			name:           "no release found",
@@ -214,6 +234,16 @@ func TestInstallScript(t *testing.T) {
 			srv := releaseServer(t, latest, tt.corrupt, tt.prereleaseOnly)
 			dir := filepath.Join(t.TempDir(), "bin")
 
+			if tt.readOnlyDir {
+				if os.Geteuid() == 0 {
+					t.Skip("root writes into a read-only directory")
+				}
+
+				if err := os.Mkdir(dir, 0o500); err != nil {
+					t.Fatal(err)
+				}
+			}
+
 			cmd := exec.CommandContext(t.Context(), "sh", script)
 
 			cmd.Env = append(
@@ -232,6 +262,10 @@ func TestInstallScript(t *testing.T) {
 			if tt.failure != "" {
 				if err == nil || !strings.Contains(string(out), tt.failure) {
 					t.Fatalf("install succeeded or failed for another reason than %q: %v\n%s", tt.failure, err, out)
+				}
+
+				if tt.readOnlyDir && strings.Contains(string(out), "Downloading") {
+					t.Errorf("install downloaded before it checked %s:\n%s", dir, out)
 				}
 
 				if _, err := os.Stat(filepath.Join(dir, "relic")); err == nil {

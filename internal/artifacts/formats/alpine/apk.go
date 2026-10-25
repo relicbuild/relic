@@ -244,10 +244,16 @@ func (p Package) Stanza() string {
 	return b.String()
 }
 
+// Signer is an RSA key pair that signs indexes, and its name.
+type Signer struct {
+	Key  *rsa.PrivateKey
+	Name string
+}
+
 // Index builds a signed APKINDEX.tar.gz from stanzas: a signature segment
-// (.SIGN.RSA.<keyName>.rsa.pub, an RSA PKCS#1 v1.5 signature over the
-// SHA-1 of the next gzip member) followed by the index segment.
-func Index(stanzas []string, description string, key *rsa.PrivateKey, keyName string, now time.Time) ([]byte, error) {
+// (.SIGN.RSA.<name>.rsa.pub for each signer, an RSA PKCS#1 v1.5 signature
+// over the SHA-1 of the next gzip member) followed by the index segment.
+func Index(stanzas []string, description string, signers []Signer, now time.Time) ([]byte, error) {
 	var body bytes.Buffer
 	for _, s := range stanzas {
 		body.WriteString(strings.TrimRight(s, "\n"))
@@ -270,17 +276,21 @@ func Index(stanzas []string, description string, key *rsa.PrivateKey, keyName st
 
 	sum := sha1.Sum(index) //nolint:gosec // apk format
 
-	sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA1, sum[:])
-	if err != nil {
-		return nil, fmt.Errorf("sign index: %w", err)
+	signatures := make([]tarFile, 0, len(signers))
+
+	for _, signer := range signers {
+		sig, err := rsa.SignPKCS1v15(rand.Reader, signer.Key, crypto.SHA1, sum[:])
+		if err != nil {
+			return nil, fmt.Errorf("sign index with %s: %w", signer.Name, err)
+		}
+
+		signatures = append(signatures, tarFile{
+			".SIGN.RSA." + signer.Name + ".rsa.pub",
+			sig,
+		})
 	}
 
-	signature, err := gzipTar([]tarFile{
-		{
-			".SIGN.RSA." + keyName + ".rsa.pub",
-			sig,
-		},
-	}, now, false)
+	signature, err := gzipTar(signatures, now, false)
 	if err != nil {
 		return nil, err
 	}

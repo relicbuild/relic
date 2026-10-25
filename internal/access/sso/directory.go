@@ -20,6 +20,19 @@ var (
 	ErrImmutable     = errors.New("cannot be changed")
 )
 
+type conflictError struct {
+	err error
+}
+
+func (e conflictError) Error() string { return e.err.Error() }
+
+func (e conflictError) Unwrap() []error {
+	return []error{
+		ErrConflict,
+		e.err,
+	}
+}
+
 // DirectoryUser is a single sign-on user as an identity provider's
 // provisioning (SCIM) sees it.
 type DirectoryUser struct {
@@ -144,7 +157,9 @@ func (d *Directory) CreateUser(ctx context.Context, u DirectoryUser) (DirectoryU
 		!u.Active,
 	)
 	if errors.Is(err, security.ErrExists) {
-		return DirectoryUser{}, fmt.Errorf("%w: %w", ErrConflict, err)
+		return DirectoryUser{}, conflictError{
+			err: err,
+		}
 	}
 
 	if err != nil {

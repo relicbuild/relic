@@ -6,8 +6,7 @@ const versionPlaceholder = 'X.Y.Z'
 
 export function useCodePlaceholders() {
   const server = useServerAddress()
-  const version = String(useRuntimeConfig().public.relicVersion ?? '')
-  const release = /^v\d+\.\d+\.\d+/.test(version) ? version.slice(1) : ''
+  const release = releaseTag(String(useRuntimeConfig().public.relicVersion ?? '')).slice(1)
 
   function text(s: string): string {
     const addressed = server.text(s)

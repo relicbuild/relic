@@ -4,6 +4,7 @@ package sso
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"uuid"
 
@@ -66,8 +67,12 @@ func TestCreateUserRefusesANameThatDiffersOnlyByCase(t *testing.T) {
 		UserName: "ALICE",
 		Active:   true,
 	})
-	if !errors.Is(err, ErrConflict) {
-		t.Errorf("SCIM creating ALICE = %v, want %v", err, ErrConflict)
+	if !errors.Is(err, ErrConflict) || !errors.Is(err, security.ErrExists) {
+		t.Errorf("SCIM creating ALICE = %v, want %v and %v", err, ErrConflict, security.ErrExists)
+	}
+
+	if err != nil && strings.Count(err.Error(), "already exists") != 1 {
+		t.Errorf("SCIM creating ALICE = %q, want one %q", err, "already exists")
 	}
 
 	if _, err := db.GetUserByUsername(ctx, "Alice"); err == nil {

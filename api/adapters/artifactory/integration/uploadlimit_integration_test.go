@@ -6,6 +6,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -117,6 +118,71 @@ func faultyServer(t *testing.T) (*httptest.Server, *objectstoretest.Faulty) {
 	t.Cleanup(srv.Close)
 
 	return srv, blobs
+}
+
+func TestDeploysToAFullDatabaseAre507(t *testing.T) {
+	t.Parallel()
+
+	if !databasetest.SQLite() {
+		t.Skip("a full disk is a single-node SQLite condition")
+	}
+
+	db := databasetest.NewDB(t)
+	log := slog.New(slog.DiscardHandler)
+
+	if err := app.BootstrapAdmin(t.Context(), db, "admin", "password", log); err != nil {
+		t.Fatal(err)
+	}
+
+	tokens, err := auth.NewTokens(t.Context(), db, nil, access.Format{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv := httptest.NewServer(app.NewHandler(db, objectstoretest.NewMemory(), tokens, nil, app.Options{}, log))
+	t.Cleanup(srv.Close)
+
+	if resp, body := do(t, srv, call{
+		method: http.MethodPut,
+		path:   "/artifactory/api/repositories/generic-local",
+		body:   `{"rclass":"local","packageType":"generic"}`,
+		headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+	}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("create = %d %s", resp.StatusCode, body)
+	}
+
+	rows, err := db.Query(t.Context(), "PRAGMA max_page_count = 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows.Close()
+
+	property := strings.Repeat("p", 3000)
+
+	status := http.StatusCreated
+	for i := 0; i < 200 && status == http.StatusCreated; i++ {
+		resp, _ := do(t, srv, call{
+			method: http.MethodPut,
+			path:   fmt.Sprintf("/artifactory/generic-local/f%d.txt;p1=%s", i, property),
+			body:   "content",
+		})
+		status = resp.StatusCode
+	}
+
+	if status != http.StatusInsufficientStorage {
+		t.Errorf("deploying until the database is full ended with %d, want 507", status)
+	}
+
+	if resp, body := do(t, srv, call{
+		method: http.MethodPut,
+		path:   "/api/v1/files/generic-local/g.txt?p1=" + property,
+		body:   "content",
+	}); resp.StatusCode != http.StatusInsufficientStorage {
+		t.Errorf("PUT /api/v1/files to a full database = %d %s, want 507", resp.StatusCode, body)
+	}
 }
 
 func TestUploadsToAFullStoreAre507(t *testing.T) {

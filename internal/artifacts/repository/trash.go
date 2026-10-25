@@ -145,33 +145,40 @@ func (s *Service) trash(
 		},
 	}
 
-	err := s.Copy(
-		ctx,
-		CopyInput{
-			Source:                item,
-			DestinationRepository: s.trashLayout.Repository,
-			DestinationPath:       dest,
-			Move:                  true,
-			User:                  user,
-			RefuseFile:            refuseFile,
-			merge:                 true,
-			before: func(q database.Querier) error {
-				return s.clearEarlierEntry(ctx, q, dest)
-			},
-			then: func(q database.Querier) error {
-				trashed, err := q.GetItem(ctx, database.GetItemParams{
-					RepoKey: s.trashLayout.Repository,
-					Path:    parent,
-					Name:    name,
-				})
-				if err != nil {
-					return fmt.Errorf("find trash entry %s: %w", dest, err)
-				}
-
-				return setProperties(ctx, q, trashed.ID, props)
-			},
+	move := CopyInput{
+		Source:                item,
+		DestinationRepository: s.trashLayout.Repository,
+		DestinationPath:       dest,
+		Move:                  true,
+		User:                  user,
+		RefuseFile:            refuseFile,
+		merge:                 true,
+		before: func(q database.Querier) error {
+			return s.clearEarlierEntry(ctx, q, dest)
 		},
-	)
+		then: func(q database.Querier) error {
+			trashed, err := q.GetItem(ctx, database.GetItemParams{
+				RepoKey: s.trashLayout.Repository,
+				Path:    parent,
+				Name:    name,
+			})
+			if err != nil {
+				return fmt.Errorf("find trash entry %s: %w", dest, err)
+			}
+
+			return setProperties(ctx, q, trashed.ID, props)
+		},
+	}
+
+	batched, err := s.moveFilesInBatches(ctx, move)
+	if batched {
+		move.before = nil
+	}
+
+	if err == nil {
+		err = s.Copy(ctx, move)
+	}
+
 	if err != nil {
 		return fmt.Errorf("move %s/%s to the trash: %w", item.Repository, item.Path(), err)
 	}

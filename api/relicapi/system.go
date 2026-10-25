@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"relic/internal/artifacts/usage"
+	"relic/internal/scanning/scan"
 
 	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -62,6 +63,11 @@ func (s *systemServer) GetSystemStatus(
 	}
 
 	for _, k := range jobs {
+		if k.Kind == scan.DatabaseImportJob && k.FailedSinceCompleted() {
+			out.Scanner.VulnerabilityDatabaseImportError = k.LastError
+			out.Scanner.VulnerabilityDatabaseImportFailed = ts(k.LastErrorAt)
+		}
+
 		out.BackgroundJobs = append(out.BackgroundJobs, &relicv1.BackgroundJobSummary{
 			Kind:         k.Kind,
 			States:       counts(k.States),
@@ -114,6 +120,11 @@ func (s *systemServer) GetSystemStatus(
 	}
 
 	out.Scanner.Scans = counts(scans)
+
+	if out.Scanner.Available, err = s.d.scanning(ctx); err != nil {
+		return nil, err
+	}
+
 	if built, err := s.d.ScanResults.LatestDBBuilt(ctx); err == nil && !built.IsZero() {
 		out.Scanner.VulnerabilityDatabaseBuilt = timestamppb.New(built)
 	}
@@ -317,6 +328,10 @@ func (s *systemServer) GetDashboardSummary(
 		}
 
 		out.Scans, out.Findings = counts(scans), counts(findings)
+	}
+
+	if out.ScannerAvailable, err = s.d.scanning(ctx); err != nil {
+		return nil, err
 	}
 
 	if built, err := s.d.ScanResults.LatestDBBuilt(ctx); err == nil && !built.IsZero() {

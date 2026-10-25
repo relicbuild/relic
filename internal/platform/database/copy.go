@@ -50,7 +50,7 @@ type CopyProgress func(table string, rows int64)
 
 // Copy copies every table of from into to, which must be empty.
 func Copy(ctx context.Context, from, to *DB, progress CopyProgress) error {
-	if err := to.Migrate(ctx); err != nil {
+	if _, err := to.Migrate(ctx); err != nil {
 		return fmt.Errorf("migrate the target: %w", err)
 	}
 
@@ -75,12 +75,17 @@ func Copy(ctx context.Context, from, to *DB, progress CopyProgress) error {
 		kinds = from
 	}
 
+	columns := make(map[string][]column, len(tables))
+
+	for _, t := range tables {
+		if columns[t], err = kinds.columns(ctx, t); err != nil {
+			return err
+		}
+	}
+
 	err = to.copyTx(ctx, func(insert func(table string, cols []column, batch string) error) error {
 		for _, t := range tables {
-			cols, err := kinds.columns(ctx, t)
-			if err != nil {
-				return err
-			}
+			cols := columns[t]
 
 			n, err := from.readRows(ctx, t, cols, func(batch string) error {
 				return insert(t, cols, batch)

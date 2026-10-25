@@ -21,6 +21,12 @@ RETURNING sha256, file_name;
 DELETE FROM scan_artifacts WHERE sha256 IN (SELECT value FROM json_each(@sha256s)) AND status = 'failed'
 RETURNING sha256;
 
+-- name: ForgetFailedMatches :execrows
+DELETE FROM scan_artifacts WHERE status = 'failed' AND reason LIKE 'match:%';
+
+-- name: ListContentFolders :many
+SELECT DISTINCT path FROM items WHERE sha256 = @sha256 AND type = 'file' ORDER BY path LIMIT 20;
+
 -- name: GetScanArtifact :one
 SELECT * FROM scan_artifacts WHERE sha256 = @sha256;
 
@@ -49,7 +55,7 @@ SELECT * FROM scan_findings WHERE sha256 = @sha256 ORDER BY severity, vuln_id, p
 
 -- name: ListStaleScans :many
 SELECT sha256 FROM scan_artifacts
-WHERE status IN ('done', 'partial') AND sbom IS NOT NULL AND (db_built IS NULL OR db_built < @db_built)
+WHERE status IN ('done', 'partial', 'queued') AND sbom IS NOT NULL AND (db_built IS NULL OR db_built < @db_built)
 ORDER BY sha256
 LIMIT @max_rows;
 
@@ -154,9 +160,9 @@ ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' T
 -- Replaces an artifact's SBOM with an imported one; matching it comes next,
 -- and until then it counts as matched against no database (stale).
 INSERT INTO scan_artifacts (sha256, file_name, status, reason, sbom, components, db_built, updated)
-VALUES (@sha256, @file_name, 'done', 'SBOM imported', @sbom, @components, NULL, @now)
+VALUES (@sha256, @file_name, 'queued', 'SBOM imported, not matched yet', @sbom, @components, NULL, @now)
 ON CONFLICT (sha256) DO UPDATE
-SET status = 'done', reason = 'SBOM imported', sbom = excluded.sbom, components = excluded.components,
+SET status = 'queued', reason = 'SBOM imported, not matched yet', sbom = excluded.sbom, components = excluded.components,
     db_built = NULL, updated = excluded.updated;
 
 -- name: ListFindingsForPackage :many

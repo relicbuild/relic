@@ -169,7 +169,7 @@ const columns: TableColumn<JobKindView>[] = [
           <UPageCard
             icon="i-lucide-scan-search"
             title="Relic Scan"
-            :description="data.scanner.vulnerabilityDatabaseBuilt ? `Vulnerability database built ${formatDate(data.scanner.vulnerabilityDatabaseBuilt)}` : 'No vulnerability database yet'"
+            :description="!data.scanner.available ? 'Off: no worker with Syft and Grype reported lately' : data.scanner.vulnerabilityDatabaseBuilt ? `Vulnerability database built ${formatDate(data.scanner.vulnerabilityDatabaseBuilt)}` : 'No vulnerability database yet'"
             variant="subtle"
           >
             <div class="flex flex-wrap gap-2">
@@ -177,6 +177,14 @@ const columns: TableColumn<JobKindView>[] = [
               <UBadge color="success" variant="subtle" :label="`Done ${(data.scanner.scans.done ?? 0) + (data.scanner.scans.partial ?? 0)}`" />
               <UBadge color="error" variant="subtle" :label="`Failed ${data.scanner.scans.failed ?? 0}`" />
             </div>
+            <UAlert
+              v-if="data.scanner.importError"
+              color="error"
+              variant="subtle"
+              icon="i-lucide-database-zap"
+              :title="`The latest database import failed${data.scanner.importFailed ? ` ${formatDate(data.scanner.importFailed)}` : ''}`"
+              :description="data.scanner.importError"
+            />
             <UFileUpload
               v-if="administers"
               v-slot="{ open }"

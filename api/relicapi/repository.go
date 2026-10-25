@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"connectrpc.com/connect/v2"
@@ -72,21 +73,22 @@ func RepositoryMessage(r repository.Repository) *relicv1.Repository {
 	c := r.Config
 
 	out := &relicv1.Repository{
-		Name:          r.Name,
-		Class:         classOf(r.Class),
-		Format:        formatMessage(r.Format),
-		Project:       r.Project,
-		Description:   c.Description,
-		Notes:         c.Notes,
-		Environments:  c.Environments,
-		SigningKey:    c.SigningKey,
-		Architectures: c.Architectures,
-		MetadataDepth: c.MetadataDepth,
-		Created:       timestamppb.New(r.Created),
-		Updated:       timestamppb.New(r.Updated),
-		MaxUploadSize: c.MaxUploadSize,
-		MaxStorage:    c.MaxStorage,
-		Immutable:     c.Immutable,
+		Name:                r.Name,
+		Class:               classOf(r.Class),
+		Format:              formatMessage(r.Format),
+		Project:             r.Project,
+		Description:         c.Description,
+		Notes:               c.Notes,
+		Environments:        c.Environments,
+		SigningKey:          c.SigningKey,
+		SecondarySigningKey: c.SecondarySigningKey,
+		Architectures:       c.Architectures,
+		MetadataDepth:       c.MetadataDepth,
+		Created:             timestamppb.New(r.Created),
+		Updated:             timestamppb.New(r.Updated),
+		MaxUploadSize:       c.MaxUploadSize,
+		MaxStorage:          c.MaxStorage,
+		Immutable:           c.Immutable,
 	}
 	if rc := c.Remote; rc != nil {
 		out.Remote = &relicv1.RemoteRepositorySettings{
@@ -136,15 +138,16 @@ func repositoryOf(m *relicv1.Repository) (repository.Repository, error) {
 		Format:  format,
 		Project: m.GetProject(),
 		Config: repository.Config{
-			Description:   m.GetDescription(),
-			Notes:         m.GetNotes(),
-			Environments:  m.GetEnvironments(),
-			SigningKey:    m.GetSigningKey(),
-			Architectures: m.GetArchitectures(),
-			MetadataDepth: m.GetMetadataDepth(),
-			MaxUploadSize: m.GetMaxUploadSize(),
-			MaxStorage:    m.GetMaxStorage(),
-			Immutable:     m.GetImmutable(),
+			Description:         m.GetDescription(),
+			Notes:               m.GetNotes(),
+			Environments:        m.GetEnvironments(),
+			SigningKey:          m.GetSigningKey(),
+			SecondarySigningKey: m.GetSecondarySigningKey(),
+			Architectures:       m.GetArchitectures(),
+			MetadataDepth:       m.GetMetadataDepth(),
+			MaxUploadSize:       m.GetMaxUploadSize(),
+			MaxStorage:          m.GetMaxStorage(),
+			Immutable:           m.GetImmutable(),
 		},
 	}
 	if rm := m.GetRemote(); rm != nil {
@@ -177,7 +180,7 @@ func repositoryOf(m *relicv1.Repository) (repository.Repository, error) {
 
 func (s *repositoryServer) canRead(ctx context.Context, r repository.Repository) (bool, error) {
 	p := auth.FromContext(ctx)
-	if p.Admin || p.Viewer {
+	if p.Admin {
 		return true, nil
 	}
 
@@ -338,23 +341,30 @@ func (s *repositoryServer) GetRepositorySigningKey(
 		)
 	}
 
-	var publicKey string
+	out := &relicv1.GetRepositorySigningKeyResponse{}
 
-	switch r.Format {
-	case repository.FormatAlpine:
-		_, publicKey, err = s.d.SigningKeys.RSA(ctx, keyPair)
-	default:
-		_, publicKey, err = s.d.SigningKeys.GPG(ctx, keyPair)
+	for i, ref := range r.KeyPairRefs() {
+		var publicKey string
+
+		switch r.Format {
+		case repository.FormatAlpine:
+			_, publicKey, err = s.d.SigningKeys.RSA(ctx, ref)
+		default:
+			_, publicKey, err = s.d.SigningKeys.GPG(ctx, ref)
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		if i == 0 {
+			out.KeyPair, out.PublicKey = ref, publicKey
+		} else {
+			out.SecondaryKeyPair, out.SecondaryPublicKey = ref, publicKey
+		}
 	}
 
-	if err != nil {
-		return nil, err
-	}
-
-	return &relicv1.GetRepositorySigningKeyResponse{
-		KeyPair:   keyPair,
-		PublicKey: publicKey,
-	}, nil
+	return out, nil
 }
 
 func (s *repositoryServer) GetClientEndpoints(
@@ -413,6 +423,10 @@ func (s *repositoryServer) CreateRepository(
 		return nil, err
 	}
 
+	if err := readableMembers(ctx, s.d, r, nil); err != nil {
+		return nil, err
+	}
+
 	if err := s.d.Repositories.CreateRepository(ctx, r); err != nil {
 		return nil, err
 	}
@@ -451,6 +465,10 @@ func (s *repositoryServer) UpdateRepository(
 		return nil, err
 	}
 
+	if err := readableMembers(ctx, s.d, r, existing.Members()); err != nil {
+		return nil, err
+	}
+
 	r.Config.Extensions = existing.Config.Extensions
 	if err := s.d.Repositories.UpdateRepository(ctx, r); err != nil {
 		return nil, err
@@ -466,6 +484,25 @@ func (s *repositoryServer) UpdateRepository(
 	return &relicv1.UpdateRepositoryResponse{
 		Repository: RepositoryMessage(updated),
 	}, nil
+}
+
+func readableMembers(ctx context.Context, d Dependencies, r repository.Repository, kept []string) error {
+	for _, member := range r.Members() {
+		if slices.Contains(kept, member) {
+			continue
+		}
+
+		_, err := readableRepository(ctx, d, member)
+		if errors.Is(err, repository.ErrRepositoryNotFound) {
+			return fmt.Errorf("%w: member %s of %s does not exist", repository.ErrInvalidRepository, member, r.Name)
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *repositoryServer) DeleteRepository(

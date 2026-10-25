@@ -57,6 +57,9 @@ type Principal struct {
 	// principal in; tokens it mints expire with that token (LimitIssue).
 	WorkloadIdentity     string
 	WorkloadTokenExpires time.Time
+	// BoundBy is the token whose revocation also revokes the tokens the principal mints.
+	BoundBy    string
+	BoundUntil time.Time
 }
 
 // MaxUserTokenLifetime bounds tokens non-administrators mint for
@@ -171,9 +174,10 @@ type Authenticator struct {
 	verified map[[32]byte]time.Time
 	backoff  *Backoff
 
-	apiKeys        []apiKeyHeader
-	expiredBearers map[string]bool
-	leftBearers    []leftBearer
+	apiKeys           []apiKeyHeader
+	bareTokenPrefixes []string
+	expiredBearers    map[string]bool
+	leftBearers       []leftBearer
 }
 
 type leftBearer struct {
@@ -191,6 +195,26 @@ func (a *Authenticator) AcceptAPIKey(header, prefix string) {
 		header: header,
 		prefix: prefix,
 	})
+}
+
+// AcceptBareToken makes requests under prefix whose Authorization header is
+// a token alone, with no scheme, authenticate with that token.
+func (a *Authenticator) AcceptBareToken(prefix string) {
+	a.bareTokenPrefixes = append(a.bareTokenPrefixes, prefix)
+}
+
+func (a *Authenticator) bareToken(r *http.Request, header string) (string, bool) {
+	if strings.ContainsAny(header, " \t") {
+		return "", false
+	}
+
+	for _, prefix := range a.bareTokenPrefixes {
+		if strings.HasPrefix(r.URL.Path, prefix) {
+			return header, true
+		}
+	}
+
+	return "", false
 }
 
 // LeaveBearer makes requests to a path containing pathPart whose bearer
@@ -290,7 +314,12 @@ func (a *Authenticator) Authenticate(r *http.Request) (Principal, error) {
 		return a.cookie(r)
 	}
 
-	if token, ok := BearerToken(header); ok {
+	token, ok := BearerToken(header)
+	if !ok {
+		token, ok = a.bareToken(r, header)
+	}
+
+	if ok {
 		for _, left := range a.leftBearers {
 			if strings.HasPrefix(token, left.prefix) && strings.Contains(r.URL.Path, left.pathPart) {
 				return Principal{}, nil
@@ -397,6 +426,39 @@ func (a *Authenticator) Password(r *http.Request, username, password string) (Pr
 	return p, err
 }
 
+// ConfirmPassword checks password against the password Relic stores for username, counting failures toward the backoff.
+func (a *Authenticator) ConfirmPassword(r *http.Request, username, password string) error {
+	client := clientAddr(r)
+	if wait := a.backoff.Wait(client); wait > 0 {
+		return &ThrottledError{
+			Wait: wait,
+		}
+	}
+
+	user, err := a.users.GetUserByUsername(r.Context(), username)
+	if err != nil && !errors.Is(database.NotFound(err), database.ErrNotFound) {
+		return fmt.Errorf("look up user: %w", err)
+	}
+
+	hash := user.PasswordHash
+	if err != nil || user.Realm == RealmLDAP || user.Realm == RealmSSO {
+		hash = dummyHash()
+	}
+
+	ok, err := VerifyPassword(password, hash)
+	if err != nil {
+		return fmt.Errorf("verify password for %s: %w", username, err)
+	}
+
+	if !ok || hash != user.PasswordHash {
+		a.backoff.Fail(client)
+
+		return ErrBadCredentials
+	}
+
+	return nil
+}
+
 func (a *Authenticator) bearer(ctx context.Context, token string) (Principal, error) {
 	tok, err := a.tokens.Verify(ctx, token)
 	if errors.Is(err, ErrInvalidToken) {
@@ -425,6 +487,13 @@ func (a *Authenticator) bearer(ctx context.Context, token string) (Principal, er
 	if tok.WorkloadIdentity != "" {
 		p.WorkloadIdentity = tok.WorkloadIdentity
 		p.WorkloadTokenExpires = tok.Expires
+	}
+
+	switch {
+	case !tok.SignIn:
+		p.BoundBy, p.BoundUntil = tok.ID, tok.Expires
+	case tok.BoundBy != "":
+		p.BoundBy, p.BoundUntil = tok.BoundBy, tok.Expires
 	}
 
 	return p, nil
@@ -557,6 +626,11 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 			Unauthorized(w, r)
 			return
 		case WriteThrottled(w, r, err):
+			return
+		case database.IsUnavailable(err):
+			a.log.WarnContext(r.Context(), "authentication failed: database unavailable", "error", err)
+			httperror.Write(w, r, http.StatusServiceUnavailable, "database unavailable")
+
 			return
 		case err != nil:
 			a.log.ErrorContext(r.Context(), "authentication failed", "error", err)

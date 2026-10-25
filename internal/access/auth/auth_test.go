@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,8 @@ import (
 	"testing"
 	"time"
 	"uuid"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"relic/internal/platform/database"
 	"relic/internal/platform/sealing"
@@ -278,6 +281,67 @@ func TestMiddlewareAndRequire(t *testing.T) {
 
 			if rec.Code == http.StatusUnauthorized && rec.Header().Get("WWW-Authenticate") == "" {
 				t.Error("401 without WWW-Authenticate")
+			}
+		})
+	}
+}
+
+type unreachableUsers struct {
+	err error
+}
+
+func (u unreachableUsers) GetUserByUsername(context.Context, string) (database.User, error) {
+	return database.User{}, fmt.Errorf("get user: %w", u.err)
+}
+
+func TestMiddlewareAnswers503WhileTheDatabaseIsDown(t *testing.T) {
+	t.Parallel()
+
+	_, connectErr := pgconn.Connect(t.Context(), "postgres://relic@127.0.0.1:1/relic?sslmode=disable&connect_timeout=5")
+	if connectErr == nil {
+		t.Fatal("connecting to a closed port succeeded")
+	}
+
+	tests := []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{
+			name:   "the database refuses connections",
+			err:    connectErr,
+			status: http.StatusServiceUnavailable,
+		},
+		{
+			name:   "another lookup failure",
+			err:    errors.New("scan: unexpected column"),
+			status: http.StatusInternalServerError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			a := NewAuthenticator(unreachableUsers{
+				err: tt.err,
+			}, fakeGroups{}, fakeTokens{}, slog.New(slog.DiscardHandler))
+			h := a.Middleware(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				t.Error("the request went past authentication")
+			}))
+
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/repositories", nil)
+			req.SetBasicAuth("bob", "userpw")
+
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			if rec.Code != tt.status {
+				t.Errorf("response = %d %s, want %d", rec.Code, rec.Body, tt.status)
+			}
+
+			if tt.status == http.StatusServiceUnavailable &&
+				!strings.Contains(rec.Body.String(), "database unavailable") {
+				t.Errorf("body = %s, want it to name the database", rec.Body)
 			}
 		})
 	}
@@ -775,6 +839,55 @@ func TestAcceptAPIKey(t *testing.T) {
 	}
 }
 
+func TestAcceptBareToken(t *testing.T) {
+	t.Parallel()
+	a := newTestAuthenticator(t)
+	a.AcceptBareToken("/pkg/")
+
+	tests := []struct {
+		name, path, header string
+		want               string
+		wantErr            error
+	}{
+		{
+			name:   "a bare token on its prefix",
+			path:   "/pkg/api/v1/gems",
+			header: "good-bob",
+			want:   "bob",
+		},
+		{
+			name:    "a bare token that does not verify",
+			path:    "/pkg/api/v1/gems",
+			header:  "bad-bob",
+			wantErr: ErrBadCredentials,
+		},
+		{
+			name:   "a bearer token on its prefix",
+			path:   "/pkg/api/v1/gems",
+			header: "Bearer good-bob",
+			want:   "bob",
+		},
+		{
+			name:    "a bare token elsewhere",
+			path:    "/other/api/v1/gems",
+			header:  "good-bob",
+			wantErr: ErrBadCredentials,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, tt.path, nil)
+			r.Header.Set("Authorization", tt.header)
+
+			p, err := a.Authenticate(r)
+			if !errors.Is(err, tt.wantErr) || p.Username != tt.want {
+				t.Errorf("Authenticate = %q, %v; want %q, %v", p.Username, err, tt.want, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestAllowExpiredBearer(t *testing.T) {
 	t.Parallel()
 	a := newTestAuthenticator(t)
@@ -918,6 +1031,35 @@ func TestLimitIssueBoundsTheLifetime(t *testing.T) {
 			},
 			want: time.Hour,
 		},
+		{
+			name: "a user signed in with a short-lived token",
+			p: Principal{
+				Username:   "bob",
+				BoundBy:    "parent",
+				BoundUntil: now.Add(time.Minute),
+			},
+			requested: 12 * time.Hour,
+			want:      time.Minute,
+		},
+		{
+			name: "an administrator signed in with a token",
+			p: Principal{
+				Username:   "root",
+				Admin:      true,
+				BoundBy:    "parent",
+				BoundUntil: now.Add(time.Minute),
+			},
+			want: time.Minute,
+		},
+		{
+			name: "a user signed in with a token that never expires",
+			p: Principal{
+				Username: "bob",
+				BoundBy:  "parent",
+			},
+			requested: time.Hour,
+			want:      time.Hour,
+		},
 	}
 
 	for _, tt := range tests {
@@ -925,12 +1067,24 @@ func TestLimitIssueBoundsTheLifetime(t *testing.T) {
 			t.Parallel()
 
 			got := tt.p.LimitIssue(IssueParams{
-				Username:  tt.p.Username,
-				Scope:     UserScope,
-				ExpiresIn: tt.requested,
+				Username:    tt.p.Username,
+				Scope:       UserScope,
+				ExpiresIn:   tt.requested,
+				Refreshable: true,
 			}, now)
 			if got.ExpiresIn != tt.want {
 				t.Errorf("ExpiresIn = %v, want %v", got.ExpiresIn, tt.want)
+			}
+
+			bound := tt.p.WorkloadIdentity != ""
+			if got.BoundBy != tt.p.BoundBy || got.Refreshable == bound {
+				t.Errorf(
+					"BoundBy = %q, Refreshable = %v; want %q, %v",
+					got.BoundBy,
+					got.Refreshable,
+					tt.p.BoundBy,
+					!bound,
+				)
 			}
 		})
 	}

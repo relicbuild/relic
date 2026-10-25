@@ -154,3 +154,74 @@ func TestReplacingADeletedPolicyOrWatchDoesNotRecreateIt(t *testing.T) {
 		t.Errorf("the deleted watch after the replace: %v, want ErrNotFound", err)
 	}
 }
+
+func TestImportIgnoreRulesKeepsRulesAlreadyStored(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	admin := &policy.Admin{
+		DB: databasetest.NewDB(t),
+	}
+	rule := func(notes, pkg string) policy.IgnoreRule {
+		return policy.IgnoreRule{
+			Notes: notes,
+			CVEs: []string{
+				"CVE-2024-0001",
+			},
+			Packages: []string{
+				pkg,
+			},
+		}
+	}
+
+	tests := []struct {
+		name         string
+		rules        []policy.IgnoreRule
+		wantCreated  int
+		wantExisting int
+	}{
+		{
+			name: "a document with a statement twice",
+			rules: []policy.IgnoreRule{
+				rule("VEX 1", "pkg:npm/lodash@4.17.15"),
+				rule("VEX 1 again", "pkg:npm/lodash@4.17.15"),
+				rule("VEX 1", "pkg:npm/left-pad@1.3.0"),
+			},
+			wantCreated:  2,
+			wantExisting: 1,
+		},
+		{
+			name: "the same document again",
+			rules: []policy.IgnoreRule{
+				rule("VEX 1", "pkg:npm/lodash@4.17.15"),
+				rule("VEX 1", "pkg:npm/left-pad@1.3.0"),
+			},
+			wantExisting: 2,
+		},
+		{
+			name: "a new package",
+			rules: []policy.IgnoreRule{
+				rule("VEX 2", "pkg:npm/lodash@4.17.15"),
+				rule("VEX 2", "pkg:npm/minimist@1.2.5"),
+			},
+			wantCreated:  1,
+			wantExisting: 1,
+		},
+	}
+	for _, tt := range tests {
+		created, existing, err := admin.ImportIgnoreRules(ctx, tt.rules, "admin")
+		if err != nil {
+			t.Fatalf("%s: %v", tt.name, err)
+		}
+
+		if len(created) != tt.wantCreated || existing != tt.wantExisting {
+			t.Errorf("%s: %d created, %d existing; want %d, %d",
+				tt.name, len(created), existing, tt.wantCreated, tt.wantExisting)
+		}
+	}
+
+	stored, err := admin.IgnoreRules(ctx, false)
+	if err != nil || len(stored) != 3 {
+		t.Errorf("stored rules = %d %v, want 3", len(stored), err)
+	}
+}

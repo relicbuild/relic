@@ -68,13 +68,13 @@ func Main(m *testing.M) {
 }
 
 // NewDB returns a migrated, empty database that is dropped when t ends.
-func NewDB(t *testing.T) *database.DB {
+func NewDB(t testing.TB) *database.DB {
 	t.Helper()
 	return newDB(t, 0)
 }
 
 // NewDBAt returns an empty database migrated up to version only.
-func NewDBAt(t *testing.T, version int64) *database.DB {
+func NewDBAt(t testing.TB, version int64) *database.DB {
 	t.Helper()
 	return newDB(t, version)
 }
@@ -93,7 +93,7 @@ func RequirePostgreSQL(t *testing.T) {
 	}
 }
 
-func newDB(t *testing.T, version int64) *database.DB {
+func newDB(t testing.TB, version int64) *database.DB {
 	t.Helper()
 
 	if SQLite() {
@@ -138,7 +138,7 @@ func newDB(t *testing.T, version int64) *database.DB {
 	t.Cleanup(db.Close)
 
 	if version > 0 {
-		if err := db.MigrateTo(ctx, version); err != nil {
+		if _, err := db.MigrateTo(ctx, version); err != nil {
 			t.Fatalf("migrate: %v", err)
 		}
 	}
@@ -254,7 +254,7 @@ func createTemplate(ctx context.Context, name string) error {
 
 	defer db.Close()
 
-	if err := db.Migrate(ctx); err != nil {
+	if _, err := db.Migrate(ctx); err != nil {
 		return fmt.Errorf("migrate template: %w", err)
 	}
 
@@ -291,7 +291,7 @@ func databaseURL(name string) (string, error) {
 	return fmt.Sprintf("postgres://relic:relic@%s:%d/%s?sslmode=disable", cfg.Host, cfg.Port, name), nil
 }
 
-func newSQLiteDB(t *testing.T, version int64) *database.DB {
+func newSQLiteDB(t testing.TB, version int64) *database.DB {
 	t.Helper()
 
 	ctx := t.Context()
@@ -319,7 +319,7 @@ func newSQLiteDB(t *testing.T, version int64) *database.DB {
 	t.Cleanup(db.Close)
 
 	if version > 0 {
-		if err := db.MigrateTo(ctx, version); err != nil {
+		if _, err := db.MigrateTo(ctx, version); err != nil {
 			t.Fatalf("migrate: %v", err)
 		}
 	}
@@ -338,7 +338,7 @@ func migratedSQLite(ctx context.Context) (string, error) {
 		return dir, err
 	}
 
-	err = db.Migrate(ctx)
+	_, err = db.Migrate(ctx)
 
 	db.Close()
 

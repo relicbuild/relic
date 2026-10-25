@@ -28,7 +28,7 @@ func TestBackupWhileWriting(t *testing.T) {
 
 	t.Cleanup(db.Close)
 
-	if err := db.Migrate(ctx); err != nil {
+	if _, err := db.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
 
@@ -82,7 +82,7 @@ func TestBackupWhileWriting(t *testing.T) {
 
 	t.Cleanup(snap.Close)
 
-	if err := snap.Migrate(ctx); err != nil {
+	if _, err := snap.Migrate(ctx); err != nil {
 		t.Fatalf("migrate the snapshot: %v", err)
 	}
 

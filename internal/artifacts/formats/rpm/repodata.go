@@ -33,6 +33,8 @@ type UpstreamMetadata struct {
 	Primary   func() (io.ReadCloser, error)
 	Filelists func() (io.ReadCloser, error)
 	Other     func() (io.ReadCloser, error)
+	// Hidden are the package IDs (pkgid checksums) left out.
+	Hidden map[string]bool
 }
 
 // Repodata is a generated repodata folder: its files by name.
@@ -114,6 +116,7 @@ type upstreamSource struct {
 	body     io.ReadCloser
 	decoder  *xml.Decoder
 	recorder *recorder
+	hidden   map[string]bool
 }
 
 func (k metadataKind) build(entries []Entry, upstreams []UpstreamMetadata) (dataFile, error) {
@@ -147,6 +150,7 @@ func (k metadataKind) build(entries []Entry, upstreams []UpstreamMetadata) (data
 			body:     body,
 			decoder:  decoder,
 			recorder: rec,
+			hidden:   u.Hidden,
 		})
 
 		count, err := packageCount(decoder)
@@ -154,7 +158,7 @@ func (k metadataKind) build(entries []Entry, upstreams []UpstreamMetadata) (data
 			return dataFile{}, fmt.Errorf("upstream: %w", err)
 		}
 
-		total += count
+		total += max(count-len(u.Hidden), 0)
 	}
 
 	var compressed bytes.Buffer
@@ -181,7 +185,7 @@ func (k metadataKind) build(entries []Entry, upstreams []UpstreamMetadata) (data
 	}
 
 	for _, s := range sources {
-		if err := copyPackages(out, s.decoder, s.recorder); err != nil {
+		if err := copyPackages(out, s.decoder, s.recorder, s.hidden); err != nil {
 			return dataFile{}, fmt.Errorf("upstream: %w", err)
 		}
 	}
@@ -229,7 +233,70 @@ func packageCount(decoder *xml.Decoder) (int, error) {
 	}
 }
 
-func copyPackages(out io.Writer, decoder *xml.Decoder, rec *recorder) error {
+type packageID struct {
+	PkgID     string `xml:"pkgid,attr"`
+	Checksums []struct {
+		PkgID string `xml:"pkgid,attr"`
+		Value string `xml:",chardata"`
+	} `xml:"checksum"`
+	Location struct {
+		Href string `xml:"href,attr"`
+	} `xml:"location"`
+}
+
+func (p packageID) id() string {
+	for _, c := range p.Checksums {
+		if c.PkgID == "YES" {
+			return strings.TrimSpace(c.Value)
+		}
+	}
+
+	return p.PkgID
+}
+
+func hiddenPackages(
+	openPrimary func() (io.ReadCloser, error),
+	hide func(location string) bool,
+) (map[string]bool, error) {
+	body, err := openPrimary()
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		_ = body.Close()
+	}()
+
+	hidden := map[string]bool{}
+	decoder := xml.NewDecoder(body)
+
+	for {
+		tok, err := decoder.Token()
+		if errors.Is(err, io.EOF) {
+			return hidden, nil
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		start, ok := tok.(xml.StartElement)
+		if !ok || start.Name.Local != "package" {
+			continue
+		}
+
+		var p packageID
+		if err := decoder.DecodeElement(&p, &start); err != nil {
+			return nil, err
+		}
+
+		if hide(p.Location.Href) {
+			hidden[p.id()] = true
+		}
+	}
+}
+
+func copyPackages(out io.Writer, decoder *xml.Decoder, rec *recorder, hidden map[string]bool) error {
 	for {
 		offset := decoder.InputOffset()
 
@@ -252,11 +319,24 @@ func copyPackages(out io.Writer, decoder *xml.Decoder, rec *recorder) error {
 			return fmt.Errorf("unexpected <%s>", start.Name.Local)
 		}
 
-		if err := decoder.Skip(); err != nil {
+		var p packageID
+
+		if len(hidden) == 0 {
+			err = decoder.Skip()
+		} else {
+			err = decoder.DecodeElement(&p, &start)
+		}
+
+		if err != nil {
 			return err
 		}
 
 		end := decoder.InputOffset()
+
+		if hidden[p.id()] {
+			rec.discardBefore(end)
+			continue
+		}
 
 		raw, err := rec.between(offset, end)
 		if err != nil {

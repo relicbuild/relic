@@ -1,18 +1,25 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
 	"relic/internal/access/auth"
 	"relic/internal/app/ui"
 	"relic/internal/artifacts/repository"
+	"relic/internal/platform/database"
 	"relic/internal/platform/objectstore"
 )
 
@@ -103,6 +110,80 @@ func TestRunListsEveryConfigurationError(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestMigrateLogsTheAppliedMigrations(t *testing.T) {
+	t.Parallel()
+
+	var logged bytes.Buffer
+
+	log := slog.New(slog.NewTextHandler(&logged, nil))
+	url := "sqlite://" + filepath.Join(t.TempDir(), "relic.db")
+	getenv := func(key string) string {
+		if key == "RELIC_DATABASE_URL" {
+			return url
+		}
+
+		return ""
+	}
+
+	if err := migrate(t.Context(), getenv, log); err != nil {
+		t.Fatal(err)
+	}
+
+	if out := logged.String(); !regexp.MustCompile(`msg="database migration applied" version=\d+ name=\d{5}_\w+ `).
+		MatchString(out) {
+		t.Errorf("migrating a new database logged %q, want a line per migration", out)
+	}
+
+	logged.Reset()
+
+	if err := migrate(t.Context(), getenv, log); err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(logged.String(), "database migration applied") {
+		t.Errorf("migrating a migrated database logged %q", logged.String())
+	}
+}
+
+func TestMigrateRefusesADatabaseANewerReleaseMigrated(t *testing.T) {
+	t.Parallel()
+
+	url := "sqlite://" + filepath.Join(t.TempDir(), "relic.db")
+	getenv := func(key string) string {
+		if key == "RELIC_DATABASE_URL" {
+			return url
+		}
+
+		return ""
+	}
+
+	db, err := database.Open(t.Context(), url)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(db.Close)
+
+	if _, err := db.Migrate(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := db.Query(t.Context(), "INSERT INTO goose_db_version (version_id, is_applied) VALUES (99999, true)")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows.Close()
+
+	err = migrate(t.Context(), getenv, slog.New(slog.DiscardHandler))
+
+	version, _ := relicVersion()
+	if err == nil || !strings.Contains(err.Error(), "relic "+version+" cannot use this database") ||
+		!strings.Contains(err.Error(), "99999") {
+		t.Errorf("migrating a database a newer release migrated = %v, want a refusal naming both versions", err)
 	}
 }
 
@@ -277,6 +358,10 @@ func TestAPINotFound(t *testing.T) {
 			"/apis",
 			http.StatusOK,
 		},
+		{
+			"/v1/repositories/app/tags",
+			http.StatusNotFound,
+		},
 	}
 
 	rec := httptest.NewRecorder()
@@ -345,6 +430,18 @@ func TestRelicVersionIsTheStampedRelease(t *testing.T) {
 	}
 }
 
+func TestRelicRevisionIsTheStampedRevision(t *testing.T) {
+	Revision = "acfc32502d6fac32f63fb1a8bb38122f7627611a"
+
+	t.Cleanup(func() {
+		Revision = ""
+	})
+
+	if _, r := relicVersion(); r != "acfc32502d6fac32f63fb1a8bb38122f7627611a" {
+		t.Errorf("revision = %q, want the stamped one", r)
+	}
+}
+
 func TestRelicRevisionComesFromADescribedVersion(t *testing.T) {
 	Version = "v0.2.0-beta.3-2-gf84fd3cb"
 
@@ -366,8 +463,10 @@ func TestOutboundClientsRefusePrivateAddresses(t *testing.T) {
 	t.Cleanup(target.Close)
 
 	clients := map[string]func(allowPrivate bool) *http.Client{
-		"webhook":     webhookClient,
-		"replication": replicationClient,
+		"webhook": webhookClient,
+		"replication": func(allowPrivate bool) *http.Client {
+			return replicationClient(allowPrivate, nil)
+		},
 	}
 
 	tests := []struct {
@@ -408,5 +507,76 @@ func TestOutboundClientsRefusePrivateAddresses(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestReplicationClientTrustsTheUpstreamAuthority(t *testing.T) {
+	t.Parallel()
+
+	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(target.Close)
+
+	caFile := filepath.Join(t.TempDir(), "ca.crt")
+	if err := os.WriteFile(caFile, pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: target.Certificate().Raw,
+	}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	roots, err := trustedRoots("RELIC_UPSTREAM_CA_CERTIFICATE_FILE", caFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name        string
+		roots       *x509.CertPool
+		wantRefused bool
+	}{
+		{
+			name:        "the system roots refuse a private authority",
+			wantRefused: true,
+		},
+		{
+			name:  "the upstream CA file trusts it",
+			roots: roots,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, target.URL, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			resp, err := replicationClient(true, tt.roots).Do(req)
+			if err == nil {
+				_ = resp.Body.Close()
+			}
+
+			var unknown x509.UnknownAuthorityError
+			if refused := errors.As(err, &unknown); refused != tt.wantRefused {
+				t.Errorf("request = %v, want refused %v", err, tt.wantRefused)
+			}
+		})
+	}
+}
+
+func TestTrustedRootsRefusesAFileWithoutCertificates(t *testing.T) {
+	t.Parallel()
+
+	file := filepath.Join(t.TempDir(), "ca.crt")
+	if err := os.WriteFile(file, []byte("not a certificate"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := trustedRoots("RELIC_UPSTREAM_CA_CERTIFICATE_FILE", file); err == nil ||
+		!strings.Contains(err.Error(), "RELIC_UPSTREAM_CA_CERTIFICATE_FILE") {
+		t.Errorf("trustedRoots = %v, want an error naming the setting", err)
 	}
 }

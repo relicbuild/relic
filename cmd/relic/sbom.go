@@ -105,7 +105,12 @@ func sbomImportCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			_, err = fmt.Fprintf(cmd.ErrOrStderr(), "imported the SBOM of %s/%s\n", repo, p)
+			_, err = fmt.Fprintf(
+				cmd.OutOrStdout(),
+				"imported the SBOM of %s/%s; its scan stays queued until it is matched\n",
+				repo,
+				p,
+			)
 
 			return err
 		},

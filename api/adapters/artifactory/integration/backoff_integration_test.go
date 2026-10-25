@@ -55,10 +55,6 @@ func TestSignInBackoff(t *testing.T) {
 		}
 	}
 
-	if got := bad(); got != http.StatusUnauthorized {
-		t.Fatalf("21st wrong password = %d, want 401 (checked, then throttled)", got)
-	}
-
 	resp, _ := do(t, srv, call{
 		method: "GET",
 		path:   "/artifactory/api/repositories",

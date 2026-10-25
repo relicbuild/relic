@@ -25,7 +25,7 @@ import (
 
 const cacheTTL = 30 * time.Second
 
-var scannable = regexp.MustCompile(`(?i)` + scan.ScannablePattern)
+var heldFile = regexp.MustCompile(`(?i)` + scan.PackagePattern)
 
 // Blocker decides whether a download is blocked.
 type Blocker struct {
@@ -112,9 +112,14 @@ func (b *Blocker) Explain(ctx context.Context, repoKey, itemPath, sha256Hex stri
 		}
 	}
 
-	d, err := b.quarantine(ctx, repoKey, itemPath, sha256Hex)
-	if err == nil && !d.Blocked {
-		d, err = b.decide(ctx, repoKey, itemPath, sha256Hex)
+	held, err := b.quarantine(ctx, repoKey, itemPath, sha256Hex)
+	if err != nil || held.Blocked {
+		return held, err
+	}
+
+	d, err := b.decide(ctx, repoKey, itemPath, sha256Hex)
+	if err == nil && !d.Blocked && d.Rule == "" {
+		d = held
 	}
 
 	return d, err
@@ -124,6 +129,10 @@ func (b *Blocker) Explain(ctx context.Context, repoKey, itemPath, sha256Hex stri
 // records a block in the audit log, the decisions and the events.
 func (b *Blocker) Check(ctx context.Context, repoKey, itemPath, sha256Hex string) (Decision, error) {
 	d, err := b.Explain(ctx, repoKey, itemPath, sha256Hex)
+	if err == nil && d.Rule == RuleNotHeld {
+		telemetry.DownloadNotHeld(d.cause())
+	}
+
 	if err != nil || !d.Blocked {
 		return d, err
 	}
@@ -191,6 +200,13 @@ func (b *Blocker) RefuseCopy(ctx context.Context, file repository.Item) error {
 	return nil
 }
 
+// RuleNotHeld is the rule of a decision that serves a file quarantine or blockUnscanned would hold if it were a
+// package, image or model file.
+const RuleNotHeld = "not_held"
+
+const notHeldReason = "served without a successful scan: Relic Scan holds only package, image and model files " +
+	"until they are scanned"
+
 var unscannedReasons = map[string]string{
 	"":                 "the artifact has not been scanned yet",
 	scan.StatusQueued:  "the artifact has not been scanned yet",
@@ -242,7 +258,7 @@ func (b *Blocker) decide(ctx context.Context, repoKey, itemPath, sha256Hex strin
 	}
 
 	scanned := !notScanned && (a.Status == scan.StatusDone || a.Status == scan.StatusPartial)
-	if !scanned && unscanned && scannable.MatchString(fileName) {
+	if !scanned && unscanned && heldFile.MatchString(fileName) {
 		return Decision{
 			Blocked: true,
 			Reason:  unscannedReasons[a.Status],
@@ -251,8 +267,17 @@ func (b *Blocker) decide(ctx context.Context, repoKey, itemPath, sha256Hex strin
 		}, nil
 	}
 
+	var note Decision
+	if !scanned && unscanned {
+		note = Decision{
+			Reason: notHeldReason,
+			Watch:  covering[0].Name,
+			Rule:   RuleNotHeld,
+		}
+	}
+
 	if notScanned {
-		return Decision{}, nil
+		return note, nil
 	}
 
 	findings, err := b.db.ListFindings(ctx, sha256Hex)
@@ -397,7 +422,12 @@ func (b *Blocker) decide(ctx context.Context, repoKey, itemPath, sha256Hex strin
 		}
 	}
 
-	return b.checkLicenses(covering, pols, ignores, repoKey+"/"+itemPath, a.Sbom, issues)
+	d, err := b.checkLicenses(covering, pols, ignores, repoKey+"/"+itemPath, a.Sbom, issues)
+	if err == nil && !d.Blocked {
+		d = note
+	}
+
+	return d, err
 }
 
 func (b *Blocker) checkLicenses(

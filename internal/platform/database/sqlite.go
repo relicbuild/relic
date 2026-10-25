@@ -21,14 +21,14 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riversqlite"
 	"github.com/riverqueue/river/rivermigrate"
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 type sqliteEngine struct {
 	path       string
 	reader     *sql.DB
 	writer     *sql.DB
-	jobs       *sql.DB
 	traced     sqliteDBTX
 	unregister func()
 }
@@ -75,20 +75,11 @@ func openSQLite(ctx context.Context, path string, mustExist bool) (*sqliteEngine
 
 	reader.SetMaxOpenConns(sqliteReadConnections)
 
-	jobs, err := sql.Open("sqlite", sqliteDSN(path))
-	if err != nil {
-		_ = reader.Close()
-		_ = writer.Close()
-
-		return nil, nil, fmt.Errorf("open database: %w", err)
-	}
-
-	jobs.SetMaxOpenConns(1)
-
 	readAcquired, unregisterReader := telemetry.RegisterSQLDB(reader)
 	writeAcquired, unregisterWriter := telemetry.RegisterSQLDB(writer)
 	unregisterDisk := telemetry.RegisterDisk(
 		telemetry.VolumeDatabase,
+		path,
 		func() (uint64, uint64, error) {
 			return localdisk.Usage(filepath.Dir(path))
 		},
@@ -101,7 +92,6 @@ func openSQLite(ctx context.Context, path string, mustExist bool) (*sqliteEngine
 		path:   path,
 		reader: reader,
 		writer: writer,
-		jobs:   jobs,
 		traced: sqliteConnections{
 			read: tracedSQLite{
 				db:       reader,
@@ -167,6 +157,7 @@ func sqliteDSN(path string, pragmas ...string) string {
 		"synchronous(FULL)",
 		fmt.Sprintf("busy_timeout(%d)", sqliteBusyTimeout.Milliseconds()),
 		"case_sensitive_like(1)",
+		"secure_delete(1)",
 	}, pragmas...) {
 		q.Add("_pragma", p)
 	}
@@ -182,7 +173,6 @@ func sqliteDSN(path string, pragmas ...string) string {
 
 func (e *sqliteEngine) close() {
 	e.unregister()
-	_ = e.jobs.Close()
 	_ = e.reader.Close()
 	_ = e.writer.Close()
 }
@@ -214,7 +204,7 @@ func (e *sqliteEngine) withTx(ctx context.Context, fn func(q Querier) error) (er
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit: %w", err)
+		return fmt.Errorf("commit: %w", markDiskFull(err))
 	}
 
 	return nil
@@ -295,6 +285,14 @@ func readOnlyStatement(query string) bool {
 	}
 }
 
+func markDiskFull(err error) error {
+	if liteErr, ok := errors.AsType[*sqlite.Error](err); ok && liteErr.Code()&0xff == sqlite3.SQLITE_FULL {
+		return fmt.Errorf("%w: %w", localdisk.ErrFull, err)
+	}
+
+	return err
+}
+
 type tracedSQLite struct {
 	db       sqliteDBTX
 	acquired func()
@@ -308,6 +306,7 @@ func (t tracedSQLite) ExecContext(ctx context.Context, query string, args ...any
 	}
 
 	res, err := t.db.ExecContext(ctx, query, args...)
+	err = markDiskFull(err)
 	end(err)
 
 	return res, err
@@ -321,6 +320,7 @@ func (t tracedSQLite) QueryContext(ctx context.Context, query string, args ...an
 	}
 
 	rows, err := t.db.QueryContext(ctx, query, args...)
+	err = markDiskFull(err)
 	end(err)
 
 	return rows, err
@@ -354,23 +354,19 @@ func (r sqliteRows) Close() {
 	_ = r.Rows.Close()
 }
 
-func (e *sqliteEngine) migrateTo(ctx context.Context, version int64) error {
+func (e *sqliteEngine) migrateTo(ctx context.Context, version int64) ([]Migration, error) {
 	unlock, err := localdisk.Lock(e.path + ".migrate-lock")
 	if err != nil {
-		return fmt.Errorf("migration lock: %w", err)
+		return nil, fmt.Errorf("migration lock: %w", err)
 	}
 	defer unlock()
 
 	provider, err := goose.NewProvider(goose.DialectSQLite3, e.writer, migrations.SQLite)
 	if err != nil {
-		return fmt.Errorf("migrations: %w", err)
+		return nil, fmt.Errorf("migrations: %w", err)
 	}
 
-	if _, err := provider.UpTo(ctx, version); err != nil {
-		return fmt.Errorf("migrate: %w", err)
-	}
-
-	return nil
+	return migrateUpTo(ctx, provider, version)
 }
 
 func (e *sqliteEngine) migrateJobQueue(ctx context.Context) error {
@@ -380,7 +376,7 @@ func (e *sqliteEngine) migrateJobQueue(ctx context.Context) error {
 	}
 	defer unlock()
 
-	migrator, err := rivermigrate.New(riversqlite.New(e.jobs), nil)
+	migrator, err := rivermigrate.New(riversqlite.New(e.writer), nil)
 	if err != nil {
 		return fmt.Errorf("job queue migrations: %w", err)
 	}
@@ -393,7 +389,7 @@ func (e *sqliteEngine) migrateJobQueue(ctx context.Context) error {
 }
 
 func (e *sqliteEngine) newJobClient(cfg *river.Config) (JobClient, error) {
-	client, err := river.NewClient(riversqlite.New(e.jobs), cfg)
+	client, err := river.NewClient(riversqlite.New(e.writer), cfg)
 	if err != nil {
 		return nil, fmt.Errorf("job client: %w", err)
 	}

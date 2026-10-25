@@ -11,7 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect/v2"
+
 	"relic/api/adapters/artifactory/layout"
+	relicv1 "relic/api/gen/relic/v1"
+	"relic/api/gen/relic/v1/relicv1connect"
 	"relic/internal/platform/database"
 )
 
@@ -120,12 +124,12 @@ func TestStorageRepositoryNamesAreReservedForTheirProject(t *testing.T) {
 		http.StatusOK,
 	)
 
-	run := `{"project":"beta","run":{"name":"app","number":"1","started":"2026-09-25T10:00:00Z"}}`
-	admin.call(http.MethodPost, "/api/v1/builds/app/runs", run, http.StatusBadRequest)
+	run := `{"name":"app","number":"1","started":"2026-09-25T10:00:00Z"}`
+	admin.call(http.MethodPost, "/api/v1/builds/app/runs?project=beta", run, http.StatusBadRequest)
 	admin.call(http.MethodGet, "/api/v1/repositories/beta-build-info", "", http.StatusNotFound)
 
 	admin.call(http.MethodPut, "/api/v1/projects/beta", `{"key":"beta","name":"Beta"}`, http.StatusOK)
-	admin.call(http.MethodPost, "/api/v1/builds/app/runs", run, http.StatusOK)
+	admin.call(http.MethodPost, "/api/v1/builds/app/runs?project=beta", run, http.StatusOK)
 
 	if got := admin.call(
 		http.MethodGet,
@@ -135,6 +139,96 @@ func TestStorageRepositoryNamesAreReservedForTheirProject(t *testing.T) {
 	); !strings.Contains(got, `"project":"beta"`) {
 		t.Errorf("beta's build-info repository = %s", got)
 	}
+}
+
+func TestProjectRolesCoverTheProjectsBuildsAndReleases(t *testing.T) {
+	t.Parallel()
+	srv := server(t)
+	send := func(c call) (reply, string) {
+		return do(t, srv, c)
+	}
+	as := func(user string) rest {
+		return rest{
+			t:    t,
+			srv:  send,
+			user: user,
+		}
+	}
+	admin := as("")
+	paula := as("paula:Paula-pass-12345")
+	dave := as("dave:Dave-pass-12345")
+	olga := as("olga:Olga-pass-12345")
+	mallory := as("mallory:Mallory-pass-12345")
+
+	for _, name := range []string{
+		"paula",
+		"dave",
+		"olga",
+		"mallory",
+	} {
+		password := strings.ToUpper(name[:1]) + name[1:] + "-pass-12345"
+		admin.call(
+			http.MethodPut,
+			"/api/v1/users/"+name,
+			`{"name":"`+name+`","email":"`+name+`@example.com","password":"`+password+`"}`,
+			http.StatusOK,
+		)
+	}
+
+	admin.call(
+		http.MethodPut,
+		"/api/v1/projects/acme",
+		`{"key":"acme","name":"Acme","members":[{"name":"paula","role":"PROJECT_ROLE_ADMIN"},`+
+			`{"name":"dave","role":"PROJECT_ROLE_DEVELOPER"},{"name":"olga","role":"PROJECT_ROLE_VIEWER"}]}`,
+		http.StatusOK,
+	)
+	admin.call(
+		http.MethodPost,
+		"/api/v1/repositories",
+		`{"name":"acme-libs","class":"REPOSITORY_CLASS_LOCAL","format":"FORMAT_GENERIC","project":"acme"}`,
+		http.StatusOK,
+	)
+	upload(t, srv, "acme-libs", "lib.txt", "lib")
+
+	run := func(number string) string {
+		return `{"name":"acmeb","number":"` + number + `","started":"2026-10-24T10:00:00Z"}`
+	}
+
+	dave.call(http.MethodPost, "/api/v1/builds/acmeb/runs?project=acme", run("1"), http.StatusOK)
+	olga.call(http.MethodPost, "/api/v1/builds/acmeb/runs?project=acme", run("2"), http.StatusForbidden)
+
+	for _, member := range []rest{
+		paula,
+		dave,
+		olga,
+	} {
+		if got := member.call(http.MethodGet, "/api/v1/builds?project=acme", "", http.StatusOK); !strings.Contains(
+			got,
+			`"name":"acmeb"`,
+		) {
+			t.Errorf("builds of acme as %s = %s", cmpUser(member.user), got)
+		}
+	}
+
+	if got := mallory.call(http.MethodGet, "/api/v1/builds?project=acme", "", http.StatusOK); strings.Contains(
+		got,
+		"acmeb",
+	) {
+		t.Errorf("builds of acme as someone outside it = %s", got)
+	}
+
+	created := paula.call(
+		http.MethodPost,
+		"/api/v1/releases/acmerel/versions?project=acme",
+		`{"name":"acmerel","version":"1","sources":[{"files":[{"path":"acme-libs/lib.txt"}]}]}`,
+		http.StatusOK,
+	)
+	if !strings.Contains(created, "RELEASE_STATUS_COMPLETED") {
+		t.Errorf("release created by the project admin = %s", created)
+	}
+
+	olga.call(http.MethodGet, "/api/v1/releases/acmerel/versions/1?project=acme", "", http.StatusOK)
+	mallory.call(http.MethodGet, "/api/v1/releases/acmerel/versions/1?project=acme", "", http.StatusNotFound)
 }
 
 func TestDashboardSummaryCountsWhatTheCallerMayRead(t *testing.T) {
@@ -158,7 +252,7 @@ func TestDashboardSummaryCountsWhatTheCallerMayRead(t *testing.T) {
 	admin.call(
 		http.MethodPost,
 		"/api/v1/builds/app/runs",
-		`{"run":{"name":"app","number":"1","started":"2026-09-25T10:00:00Z"}}`,
+		`{"name":"app","number":"1","started":"2026-09-25T10:00:00Z"}`,
 		http.StatusOK,
 	)
 	admin.call(
@@ -333,5 +427,115 @@ func TestAnUnreadableRepositoryAnswersLikeAMissingOne(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestViewersSeeOnlyTheRepositoriesTheyMayRead(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	srv := server(t)
+
+	createRepository(t, srv, "viewer-readable", "LOCAL", "MCP", "")
+	createRepository(t, srv, "viewer-unreadable", "LOCAL", "MCP", "")
+	upload(
+		t,
+		srv,
+		"viewer-readable",
+		"weather/1.0.0/server.json",
+		`{"name":"io.github.acme/weather","version":"1.0.0","description":"Forecasts"}`,
+	)
+
+	security := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
+	if _, err := security.PutUser(ctx, &relicv1.PutUserRequest{
+		User: &relicv1.User{
+			Name:     "vera",
+			Email:    "vera@example.com",
+			Password: "Vera-pass-12345",
+			Viewer:   true,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := security.PutPermission(ctx, &relicv1.PutPermissionRequest{
+		Permission: &relicv1.Permission{
+			Name: "viewer-readable",
+			Rules: []*relicv1.PermissionRule{
+				{
+					Resource: relicv1.ResourceKind_RESOURCE_KIND_REPOSITORY,
+					Selector: &relicv1.RepositorySelector{
+						Repositories: []string{
+							"viewer-readable",
+						},
+					},
+					Grants: []*relicv1.PermissionGrant{
+						{
+							Principal: &relicv1.PermissionGrant_User{
+								User: "vera",
+							},
+							Actions: []relicv1.Action{
+								relicv1.Action_ACTION_READ,
+							},
+						},
+					},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	viewer := apiClient(relicHTTP("vera", "Vera-pass-12345"), srv.URL)
+	repositories := relicv1connect.NewRepositoryServiceClient(viewer)
+
+	listed, err := repositories.ListRepositories(ctx, &relicv1.ListRepositoriesRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	names := make([]string, 0, len(listed.GetRepositories()))
+	for _, r := range listed.GetRepositories() {
+		names = append(names, r.GetName())
+	}
+
+	if want := []string{
+		"viewer-readable",
+	}; !reflect.DeepEqual(names, want) {
+		t.Errorf("ListRepositories = %v, want %v", names, want)
+	}
+
+	if _, err := repositories.GetRepository(ctx, &relicv1.GetRepositoryRequest{
+		Name: "viewer-unreadable",
+	}); code(err) != connect.CodeNotFound {
+		t.Errorf("GetRepository of an unreadable repository: %v, want not found", err)
+	}
+
+	summary, err := relicv1connect.NewSystemServiceClient(viewer).GetDashboardSummary(
+		ctx,
+		&relicv1.GetDashboardSummaryRequest{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if want := map[string]int32{
+		"local": 1,
+	}; !reflect.DeepEqual(summary.GetRepositories(), want) {
+		t.Errorf("dashboard repositories = %v, want %v", summary.GetRepositories(), want)
+	}
+
+	entries, err := relicv1connect.NewAgentRegistryServiceClient(viewer).ListRegistryEntries(
+		ctx,
+		&relicv1.ListRegistryEntriesRequest{
+			Repository: "viewer-readable",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := entries.GetEntries(); len(got) != 1 || got[0].GetApproved() {
+		t.Errorf("registry entries = %v, want the one unapproved entry", got)
 	}
 }

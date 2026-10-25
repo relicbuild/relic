@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -396,5 +397,403 @@ esac
 
 	if b, _ := os.ReadFile(sources); strings.Count(string(b), "nuget-local\n") != 1 {
 		t.Errorf("sources = %q", b)
+	}
+}
+
+func TestYarnSetupAuthenticatesUnscopedPackages(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+
+	err := applySetupSteps(t, "yarn", setupEnv{
+		repo:  "npm",
+		url:   "https://relic.example.com/npm/npm/",
+		token: "secret",
+		home:  home,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	b, err := os.ReadFile(filepath.Join(home, ".npmrc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(string(b), "\n//relic.example.com/npm/npm/:always-auth=true\n") {
+		t.Errorf(".npmrc = %q, want always-auth for the registry", b)
+	}
+}
+
+func TestYarnSetupKeepsYarnrcValid(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		old     string
+		repos   []string
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "a second repository replaces the first",
+			old:  "enableTelemetry: false\n",
+			repos: []string{
+				"npm",
+				"npm-local",
+			},
+			want: "enableTelemetry: false\n" +
+				"# relic setup npm-local begin\n" +
+				"npmRegistryServer: \"https://relic.example.com/npm/npm-local/\"\n" +
+				"npmAlwaysAuth: true\n" +
+				"npmAuthToken: \"secret\"\n" +
+				"# relic setup npm-local end\n",
+		},
+		{
+			name: "the same repository again",
+			repos: []string{
+				"npm",
+				"npm",
+			},
+			want: "# relic setup npm begin\n" +
+				"npmRegistryServer: \"https://relic.example.com/npm/npm/\"\n" +
+				"npmAlwaysAuth: true\n" +
+				"npmAuthToken: \"secret\"\n" +
+				"# relic setup npm end\n",
+		},
+		{
+			name: "a registry set outside the blocks",
+			old:  "npmRegistryServer: \"https://registry.example.com\"\n",
+			repos: []string{
+				"npm",
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			home := t.TempDir()
+			yarnrc := filepath.Join(home, ".yarnrc.yml")
+
+			if tt.old != "" {
+				if err := os.WriteFile(yarnrc, []byte(tt.old), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			var err error
+
+			for _, repo := range tt.repos {
+				err = applySetupSteps(t, "yarn", setupEnv{
+					repo:  repo,
+					url:   "https://relic.example.com/npm/" + repo + "/",
+					token: "secret",
+					home:  home,
+				})
+				if err != nil {
+					break
+				}
+			}
+
+			b, _ := os.ReadFile(yarnrc)
+
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("setup yarn: %v, want an error: %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr {
+				if string(b) != tt.old {
+					t.Errorf(".yarnrc.yml = %q, want it unchanged", b)
+				}
+
+				return
+			}
+
+			if string(b) != tt.want {
+				t.Errorf(".yarnrc.yml = %q, want %q", b, tt.want)
+			}
+		})
+	}
+}
+
+func TestApkSetupWritesKeysUnderTheKeysFolderOnly(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name, keyPair, branch string
+		wantErr               bool
+	}{
+		{
+			name:    "a plain key pair name",
+			keyPair: "relic-rsa",
+			branch:  "v3.22",
+		},
+		{
+			name:    "a key pair name with a path",
+			keyPair: "../../../tmp/relic-traversal",
+			branch:  "v3.22",
+			wantErr: true,
+		},
+		{
+			name:    "a branch with a path",
+			keyPair: "relic-rsa",
+			branch:  "../v3.22",
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			steps, err := setupClients["apk"].steps(setupEnv{
+				url:  "https://relic.example.com/alpine/alpine",
+				user: "admin",
+				signingKeys: []signingKey{
+					{
+						name:      tc.keyPair,
+						publicKey: "key",
+					},
+				},
+				flags: map[string]string{
+					"branch": tc.branch,
+				},
+			})
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("apk setup wrote %v", steps)
+				}
+
+				return
+			}
+
+			if err != nil || len(steps) != 2 || steps[1].file != "etc/apk/keys/relic-rsa.rsa.pub" {
+				t.Errorf("apk setup = %v, %v", steps, err)
+			}
+		})
+	}
+}
+
+func TestPoetrySetupAvoidsPoetrysReservedName(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		repo, want string
+	}{
+		{
+			repo: "pypi",
+			want: "relic-pypi",
+		},
+		{
+			repo: "PyPI",
+			want: "relic-PyPI",
+		},
+		{
+			repo: "pypi-virtual",
+			want: "pypi-virtual",
+		},
+	} {
+		t.Run(tc.repo, func(t *testing.T) {
+			t.Parallel()
+
+			e := setupEnv{
+				repo:  tc.repo,
+				url:   "https://relic.example.com/pypi/" + tc.repo + "/simple",
+				user:  "ci",
+				token: "secret",
+			}
+
+			steps, err := setupClients["poetry"].steps(e)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var configured []string
+			for _, s := range steps {
+				configured = append(configured, s.command[2])
+			}
+
+			if !slices.Equal(configured, []string{
+				"repositories." + tc.want,
+				"http-basic." + tc.want,
+			}) {
+				t.Errorf("poetry config keys = %q, want them named %s", configured, tc.want)
+			}
+
+			if note := setupClients["poetry"].notes(e); !strings.Contains(note, " "+tc.want+" "+e.url) {
+				t.Errorf("note = %q, want the source named %s", note, tc.want)
+			}
+		})
+	}
+}
+
+func TestSetupTrustsTheContextsCertificateAuthority(t *testing.T) {
+	t.Parallel()
+
+	const authority = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+
+	configured := map[string]string{
+		"pip":    "cert = ",
+		"twine":  "ca_cert = ",
+		"poetry": "certificates.",
+		"helm":   "--ca-file",
+		"podman": ".config/containers/certs.d/relic.example.com:8443/ca.crt",
+		"apt":    "::CaInfo \"",
+		"dnf":    "sslcacert=",
+	}
+
+	for name, client := range setupClients {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			e := setupEnv{
+				repo:     "repo",
+				url:      "https://relic.example.com:8443/repo/",
+				registry: "relic.example.com:8443",
+				host:     "relic.example.com:8443",
+				user:     "ci",
+				token:    "secret",
+				home:     t.TempDir(),
+				root:     t.TempDir(),
+				flags: map[string]string{
+					"branch":       "v3.21",
+					"distribution": "bookworm",
+				},
+			}
+
+			plain, err := clientSteps(withAuthority(e, client), client)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			own, _ := client.steps(e)
+			if len(plain) != len(own) || trustNote(withAuthority(e, client), client) != "" {
+				t.Errorf(
+					"without an authority: %d steps, want the client's %d, and no trust note",
+					len(plain),
+					len(own),
+				)
+			}
+
+			e.certificateAuthority = authority
+			e = withAuthority(e, client)
+
+			steps, err := clientSteps(e, client)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			written := stepPath(e, client, steps[0].file)
+			if client.system {
+				written = "/" + steps[0].file
+			}
+
+			if steps[0].content != authority || written != e.authorityFile || !steps[0].owned {
+				t.Errorf(
+					"first step writes %q to %s, want the authority at %s",
+					steps[0].content,
+					written,
+					e.authorityFile,
+				)
+			}
+
+			var configuration strings.Builder
+			for _, s := range steps[1:] {
+				configuration.WriteString(s.file + "\n" + s.content + "\n" + strings.Join(s.command, " ") + "\n")
+			}
+
+			note := trustNote(e, client)
+
+			if want, ok := configured[name]; ok {
+				if !strings.Contains(configuration.String(), want) || note != "" {
+					t.Errorf(
+						"steps = %q, want %q in them and no trust note, got %q",
+						configuration.String(),
+						want,
+						note,
+					)
+				}
+
+				return
+			}
+
+			if !strings.Contains(note, e.authorityFile) {
+				t.Errorf("trust note = %q, want it to name %s", note, e.authorityFile)
+			}
+		})
+	}
+}
+
+func TestNetrcNamesTheHostAsEachClientMatchesIt(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name, client, host string
+		want, wantNot      []string
+	}{
+		{
+			name:   "go on a server with a port",
+			client: "go",
+			host:   "127.0.0.1:8090",
+			want: []string{
+				"machine 127.0.0.1:8090 login ci password secret\n",
+				"machine 127.0.0.1 login ci password secret\n",
+			},
+		},
+		{
+			name:   "pip on a server with a port",
+			client: "pip",
+			host:   "127.0.0.1:8090",
+			want: []string{
+				"machine 127.0.0.1:8090 login ci password secret\n",
+				"machine 127.0.0.1 login ci password secret\n",
+			},
+		},
+		{
+			name:   "go on the default port",
+			client: "go",
+			host:   "relic.example.com",
+			want: []string{
+				"machine relic.example.com login ci password secret\n",
+			},
+			wantNot: []string{
+				"machine relic.example.com:",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			steps, err := setupClients[tc.client].steps(setupEnv{
+				repo:  "repo",
+				url:   "https://" + tc.host + "/repo/",
+				host:  tc.host,
+				user:  "ci",
+				token: "secret",
+				home:  t.TempDir(),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			i := slices.IndexFunc(steps, func(s setupStep) bool {
+				return s.file == ".netrc"
+			})
+			if i < 0 {
+				t.Fatalf("no .netrc step in %+v", steps)
+			}
+
+			for _, line := range tc.want {
+				if !strings.Contains(steps[i].content, line) {
+					t.Errorf(".netrc = %q, want %q", steps[i].content, line)
+				}
+			}
+
+			for _, line := range tc.wantNot {
+				if strings.Contains(steps[i].content, line) {
+					t.Errorf(".netrc = %q, want no %q", steps[i].content, line)
+				}
+			}
+		})
 	}
 }

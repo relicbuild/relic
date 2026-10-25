@@ -24,8 +24,15 @@ type JobKind struct {
 	Kind         string
 	States       map[string]int64
 	LastFinished *time.Time
-	LastError    string
-	LastErrorAt  *time.Time
+	// LastCompleted is when a job of the kind last succeeded.
+	LastCompleted *time.Time
+	LastError     string
+	LastErrorAt   *time.Time
+}
+
+// FailedSinceCompleted reports whether the kind's latest error came after its latest success, if any.
+func (k JobKind) FailedSinceCompleted() bool {
+	return k.LastErrorAt != nil && (k.LastCompleted == nil || k.LastErrorAt.After(*k.LastCompleted))
 }
 
 // Service reports on the server.
@@ -76,6 +83,10 @@ func (s *Service) Jobs(ctx context.Context) ([]JobKind, error) {
 		k.States[st.State] = st.Count
 		if st.LastFinished != nil && (k.LastFinished == nil || st.LastFinished.After(*k.LastFinished)) {
 			k.LastFinished = st.LastFinished
+		}
+
+		if st.State == "completed" {
+			k.LastCompleted = st.LastFinished
 		}
 	}
 

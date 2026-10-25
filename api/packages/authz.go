@@ -200,12 +200,38 @@ func (h *Handler) RequireRepo(w http.ResponseWriter, r *http.Request, checks ...
 		}
 
 		if !ok {
-			Forbidden(w, r, string(c.Action), c.Repo+"/"+c.Path)
+			h.refuse(w, r, c)
 			return false
 		}
 	}
 
 	return true
+}
+
+func (h *Handler) refuse(w http.ResponseWriter, r *http.Request, c RepoCheck) {
+	usable, err := h.usable(r, c.Repo)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+
+	if usable {
+		Forbidden(w, r, string(c.Action), c.Repo+"/"+c.Path)
+		return
+	}
+
+	httperror.Write(w, r, http.StatusNotFound, "repository not found")
+}
+
+func (h *Handler) usable(r *http.Request, repoKey string) (bool, error) {
+	for _, a := range auth.Actions {
+		ok, err := h.CanRepoAnywhere(r, repoKey, a)
+		if err != nil || ok {
+			return ok, err
+		}
+	}
+
+	return false, nil
 }
 
 // RepoCheck is one permission RequireRepo checks: action on path in repo.

@@ -49,11 +49,10 @@ fi
 step "gem push with ~/.gem/credentials from api_key.yaml"
 curl -sf -u "$SCENARIO_USER:$SCENARIO_PASSWORD" "${api}api/v1/api_key.yaml" >"$HOME/.gem/credentials"
 chmod 600 "$HOME/.gem/credentials"
-grep -q ":rubygems_api_key:" "$HOME/.gem/credentials"
-# RubyGems 3.x loads :rubygems_api_key: under the key name "rubygems".
+grep -qF "${api%/}: " "$HOME/.gem/credentials"
 for v in 1.0.0 1.1.0; do
   gemspec relic_native "$v"
-  gem push "relic_native-$v.gem" --host "${api%/}" --key rubygems
+  gem push "relic_native-$v.gem" --host "${api%/}"
 done
 jf rt s "$LOCAL/gems/relic_native-*.gem" | expect_count 2
 
@@ -61,7 +60,7 @@ step "gem install and search through the virtual, then gem yank"
 gem install relic_native -v 1.1.0 --clear-sources --source "$authed" --no-document
 ruby -e 'require "relic_native"; abort unless RelicNative.v == "1.1.0"'
 gem search relic_native --remote --clear-sources --source "$authed" | grep -q "relic_native (1.1.0)"
-gem yank relic_native -v 1.1.0 --host "${api%/}" --key rubygems
+gem yank relic_native -v 1.1.0 --host "${api%/}"
 jf rt s "$LOCAL/gems/relic_native-*.gem" | jq -e --arg kept "$LOCAL/gems/relic_native-1.0.0.gem" '[.[].path] == [$kept]' >/dev/null
 jf rt s "$REMOTE/gems/rainbow-*.gem" | jq -e 'length >= 1' >/dev/null
 

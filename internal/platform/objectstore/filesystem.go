@@ -64,6 +64,7 @@ func NewFilesystem(dir string) (*FilesystemStore, error) {
 
 	telemetry.RegisterDisk(
 		telemetry.VolumeObjectStorage,
+		root,
 		func() (uint64, uint64, error) {
 			return localdisk.Usage(root)
 		},

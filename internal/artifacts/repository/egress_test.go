@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"crypto/x509"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -120,7 +121,7 @@ func TestUpstreamClientRefusesPrivateAddresses(t *testing.T) {
 
 	req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
 
-	resp, err := newUpstreamClient(time.Second, false).Do(req)
+	resp, err := newUpstreamClient(time.Second, false, nil).Do(req)
 	if err == nil {
 		_ = resp.Body.Close()
 	}
@@ -131,12 +132,56 @@ func TestUpstreamClientRefusesPrivateAddresses(t *testing.T) {
 
 	req, _ = http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
 
-	resp, err = newUpstreamClient(time.Second, true).Do(req)
+	resp, err = newUpstreamClient(time.Second, true, nil).Do(req)
 	if err != nil {
 		t.Fatalf("allowed private upstream: %v", err)
 	}
 
 	_ = resp.Body.Close()
+}
+
+func TestUpstreamClientTrustsTheUpstreamRoots(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(srv.Close)
+
+	roots := x509.NewCertPool()
+	roots.AddCert(srv.Certificate())
+
+	tests := []struct {
+		name        string
+		roots       *x509.CertPool
+		wantRefused bool
+	}{
+		{
+			name:        "the system roots refuse a private authority",
+			wantRefused: true,
+		},
+		{
+			name:  "the upstream roots trust it",
+			roots: roots,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+
+			resp, err := newUpstreamClient(time.Second, true, tt.roots).Do(req)
+			if err == nil {
+				_ = resp.Body.Close()
+			}
+
+			var unknown x509.UnknownAuthorityError
+			if refused := errors.As(err, &unknown); refused != tt.wantRefused {
+				t.Errorf("request = %v, want refused %v", err, tt.wantRefused)
+			}
+		})
+	}
 }
 
 func TestNoDowngrade(t *testing.T) {

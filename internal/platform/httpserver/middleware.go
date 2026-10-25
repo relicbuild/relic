@@ -26,6 +26,8 @@ func RequestID(ctx context.Context) string {
 
 var secretQuery = regexp.MustCompile(`(?i)((?:access_)?token|password|api_?key|sig)=[^&]*`)
 
+var secretPath = regexp.MustCompile(`(/-/user/token/)[^/]*`)
+
 // Observe assigns a request ID, recovers panics, logs one line per request,
 // warns of a request still running after slowRequestAfter, and fails a
 // response write that makes no progress for writeStallTimeout.
@@ -49,6 +51,12 @@ func observe(log *slog.Logger, next http.Handler, stall, slow time.Duration) htt
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 
 		ctx, principal := auth.NewSlot(context.WithValue(r.Context(), requestIDKey{}, id))
+
+		path := secretPath.ReplaceAllString(r.URL.Path, "${1}REDACTED")
+		if path != r.URL.Path {
+			telemetry.RedactURLPath(ctx, path)
+		}
+
 		pattern := new(string)
 		ctx = context.WithValue(ctx, routeKey{}, pattern)
 		rec := &statusRecorder{
@@ -75,7 +83,7 @@ func observe(log *slog.Logger, next http.Handler, stall, slow time.Duration) htt
 			log.WarnContext(ctx, "slow request",
 				"request_id", id,
 				"method", r.Method,
-				"path", r.URL.Path,
+				"path", path,
 				"elapsed_ms", time.Since(start).Milliseconds(),
 				"remote_addr", r.RemoteAddr,
 			)
@@ -98,7 +106,7 @@ func observe(log *slog.Logger, next http.Handler, stall, slow time.Duration) htt
 			log.InfoContext(ctx, "request",
 				"request_id", id,
 				"method", r.Method,
-				"path", r.URL.Path,
+				"path", path,
 				"query", secretQuery.ReplaceAllString(r.URL.RawQuery, "${1}=REDACTED"),
 				"status", rec.code(),
 				"bytes", rec.bytes,

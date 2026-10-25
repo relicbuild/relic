@@ -96,9 +96,42 @@ func TestVulnerabilityDatabaseCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	const zstdArchive = "\x28\xb5\x2f\xfd" + "database archive"
+
 	archive := filepath.Join(dir, "grype-db.tar.zst")
-	if err := os.WriteFile(archive, []byte("database archive"), 0o600); err != nil {
+	if err := os.WriteFile(archive, []byte(zstdArchive), 0o600); err != nil {
 		t.Fatal(err)
+	}
+
+	if _, err := relic(t, config, "", "security", "database", "import", archive); err == nil ||
+		!strings.Contains(err.Error(), "Relic Scan is off") {
+		t.Errorf("import without a worker that scans = %v, want it refused", err)
+	}
+
+	worker := `INSERT INTO river_queue (name, updated_at) VALUES ('scan', now())`
+	if db.SQLite() {
+		worker = `INSERT INTO river_queue (name, updated_at) VALUES ('scan', datetime('now', 'subsec'))`
+	}
+
+	rows, err := db.Query(t.Context(), worker)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows.Close()
+
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	garbage := filepath.Join(dir, "bad.tar.zst")
+	if err := os.WriteFile(garbage, []byte("garbage\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := relic(t, config, "", "security", "database", "import", garbage); err == nil ||
+		!strings.Contains(err.Error(), "not a vulnerability database archive") {
+		t.Errorf("import of a file that is no archive = %v, want it refused", err)
 	}
 
 	out, err := relic(t, config, "", "security", "database", "import", archive)
@@ -106,7 +139,7 @@ func TestVulnerabilityDatabaseCommands(t *testing.T) {
 		t.Fatalf("import = %q %v", out, err)
 	}
 
-	if b, _ := os.ReadFile(filepath.Join(grype.DatabaseDir, "6", "vulnerability.db")); string(b) != "database archive" {
+	if b, _ := os.ReadFile(filepath.Join(grype.DatabaseDir, "6", "vulnerability.db")); string(b) != zstdArchive {
 		t.Errorf("installed database = %q", b)
 	}
 

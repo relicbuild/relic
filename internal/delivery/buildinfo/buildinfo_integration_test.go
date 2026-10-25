@@ -568,6 +568,78 @@ func TestDiscardKeepsFilesOfAnotherRun(t *testing.T) {
 	}
 }
 
+func TestBuildItemsLeaveOutReleaseCopies(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	builds, repos, _ := newService(t)
+	now := time.Now()
+	tags := repository.Properties{
+		"build.name": {
+			"app",
+		},
+		"build.number": {
+			"1",
+		},
+	}
+
+	if err := repos.CreateRepository(ctx, repository.Repository{
+		Name:   "releases",
+		Class:  repository.ClassLocal,
+		Format: repository.FormatRelease,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	built := deployTagged(t, repos, "src", "app/f.jar", "jar", tags)
+	deployTagged(t, repos, "releases", "rel/1/artifacts/app/f.jar", "jar", tags)
+	deployFile(t, repos, "dst", "keep.txt", "k")
+	next := deployFile(t, repos, "src", "app/g.jar", "run 2")
+
+	for _, doc := range []buildinfo.Document{
+		producing("1", now.Add(-time.Hour), "src/app/f.jar", built),
+		producing("2", now, "src/app/g.jar", next),
+	} {
+		if err := builds.PublishDocument(ctx, "", doc, "admin"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	items, err := builds.Items(ctx, "", "app", "1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(items) != 1 || items[0].Repository != "src" {
+		t.Errorf("items = %+v, want only src/app/f.jar", items)
+	}
+
+	if _, err := builds.Promote(ctx, "", "app", "1", buildinfo.Promotion{
+		TargetRepository: "dst",
+	}, "admin", buildinfo.AllowAll); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := repos.Stat(ctx, "releases", "rel/1/artifacts/app/f.jar"); err != nil {
+		t.Errorf("release copy after the promotion: %v, want it in place", err)
+	}
+
+	if err := builds.Discard(ctx, "", "app", buildinfo.Retention{
+		MaxRuns:         1,
+		DeleteArtifacts: true,
+	}, buildinfo.AllowAll); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := repos.Stat(ctx, "releases", "rel/1/artifacts/app/f.jar"); err != nil {
+		t.Errorf("release copy after the discard: %v, want it kept", err)
+	}
+
+	if _, err := repos.Stat(ctx, "dst", "app/f.jar"); !errors.Is(err, repository.ErrNotFound) {
+		t.Errorf("promoted artifact of the discarded run: %v, want it deleted", err)
+	}
+}
+
 func TestPublishKeepsBuildsOutOfAnotherProjectsRepository(t *testing.T) {
 	t.Parallel()
 

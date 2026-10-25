@@ -2,6 +2,7 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -176,7 +177,7 @@ func Run(ctx context.Context, args []string, getenv func(string) string, stderr 
 	case "worker":
 		return runWorker(ctx, getenv, log)
 	default:
-		return migrate(ctx, getenv)
+		return migrate(ctx, getenv, log)
 	}
 }
 
@@ -198,7 +199,7 @@ func CheckSettings(getenv func(string) string, command string) error {
 	return errors.Join(errs...)
 }
 
-func migrate(ctx context.Context, getenv func(string) string) error {
+func migrate(ctx context.Context, getenv func(string) string, log *slog.Logger) error {
 	url := getenv("RELIC_DATABASE_URL")
 	if url == "" {
 		return errors.New("config: RELIC_DATABASE_URL is required")
@@ -210,10 +211,28 @@ func migrate(ctx context.Context, getenv func(string) string) error {
 	}
 	defer db.Close()
 
-	return db.Migrate(ctx)
+	return migrateDB(ctx, db, log)
 }
 
-func openDB(ctx context.Context, cfg config.Config) (*database.DB, error) {
+func migrateDB(ctx context.Context, db *database.DB, log *slog.Logger) error {
+	applied, err := db.Migrate(ctx)
+	if newer, ok := errors.AsType[*database.NewerSchemaError](err); ok {
+		version, _ := relicVersion()
+		return fmt.Errorf("relic %s cannot use this database: %w", version, newer)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	for _, m := range applied {
+		log.InfoContext(ctx, "database migration applied", "version", m.Version, "name", m.Name, "duration", m.Duration)
+	}
+
+	return nil
+}
+
+func openDB(ctx context.Context, cfg config.Config, log *slog.Logger) (*database.DB, error) {
 	db, err := database.OpenWith(ctx, cfg.DatabaseURL, database.Options{
 		MaxConnections: cfg.DatabaseMaxConnections,
 	})
@@ -221,7 +240,7 @@ func openDB(ctx context.Context, cfg config.Config) (*database.DB, error) {
 		return nil, err
 	}
 
-	if err := db.Migrate(ctx); err != nil {
+	if err := migrateDB(ctx, db, log); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -229,8 +248,8 @@ func openDB(ctx context.Context, cfg config.Config) (*database.DB, error) {
 	return db, nil
 }
 
-func openServerDB(ctx context.Context, cfg config.Config) (*database.DB, error) {
-	db, err := openDB(ctx, cfg)
+func openServerDB(ctx context.Context, cfg config.Config, log *slog.Logger) (*database.DB, error) {
+	db, err := openDB(ctx, cfg, log)
 	if err != nil || cfg.DatabaseStatementTimeout == 0 {
 		return db, err
 	}
@@ -261,7 +280,7 @@ func runServer(ctx context.Context, getenv func(string) string, mode serverMode,
 		}
 	}
 
-	db, err := openServerDB(ctx, cfg)
+	db, err := openServerDB(ctx, cfg, log)
 	if err != nil {
 		return err
 	}
@@ -322,9 +341,15 @@ func runServer(ctx context.Context, getenv func(string) string, mode serverMode,
 		return err
 	}
 
+	upstreamRoots, err := trustedRoots("RELIC_UPSTREAM_CA_CERTIFICATE_FILE", cfg.UpstreamCACertificateFile)
+	if err != nil {
+		return err
+	}
+
 	handler := NewHandler(db, blobs, tokens, queue, Options{
 		IndexerDir:                 cfg.Scan.IndexerDir,
 		AllowPrivateUpstreams:      cfg.AllowPrivateUpstreams,
+		UpstreamRoots:              upstreamRoots,
 		MaxUploadSize:              cfg.MaxUploadSize,
 		Downloads:                  downloads,
 		Usage:                      usageRecorder,
@@ -336,7 +361,7 @@ func runServer(ctx context.Context, getenv func(string) string, mode serverMode,
 		SignInNote:                 cfg.SignInNote,
 	}, log)
 	if mode.withWorker {
-		workerDB, openErr := openDB(ctx, cfg)
+		workerDB, openErr := openDB(ctx, cfg, log)
 		if openErr != nil {
 			return openErr
 		}
@@ -373,7 +398,7 @@ func runServer(ctx context.Context, getenv func(string) string, mode serverMode,
 
 func serverTLSConfig(ctx context.Context, cfg config.TLS, listenAddress string, log *slog.Logger) (*tls.Config, error) {
 	if cfg.CertificateFile != "" {
-		files, err := servertls.LoadCertificateFiles(cfg.CertificateFile, cfg.KeyFile)
+		files, err := servertls.LoadCertificateFiles(ctx, cfg.CertificateFile, cfg.KeyFile, log)
 		if err != nil {
 			return nil, err
 		}
@@ -418,8 +443,20 @@ func ldapTLSConfig(caFile string) (*tls.Config, error) {
 	cfg := &tls.Config{
 		MinVersion: tls.VersionTLS12,
 	}
-	if caFile == "" {
-		return cfg, nil
+
+	pool, err := trustedRoots("RELIC_LDAP_CA_CERTIFICATE_FILE", caFile)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg.RootCAs = pool
+
+	return cfg, nil
+}
+
+func trustedRoots(setting, file string) (*x509.CertPool, error) {
+	if file == "" {
+		return nil, nil //nolint:nilnil // nil selects the system roots
 	}
 
 	pool, err := x509.SystemCertPool()
@@ -427,18 +464,16 @@ func ldapTLSConfig(caFile string) (*tls.Config, error) {
 		pool = x509.NewCertPool()
 	}
 
-	pem, err := os.ReadFile(caFile) //nolint:gosec // an operator-set path
+	pem, err := os.ReadFile(file) //nolint:gosec // an operator-set path
 	if err != nil {
-		return nil, fmt.Errorf("RELIC_LDAP_CA_CERTIFICATE_FILE: %w", err)
+		return nil, fmt.Errorf("%s: %w", setting, err)
 	}
 
 	if !pool.AppendCertsFromPEM(pem) {
-		return nil, fmt.Errorf("RELIC_LDAP_CA_CERTIFICATE_FILE %s holds no PEM certificates", caFile)
+		return nil, fmt.Errorf("%s %s holds no PEM certificates", setting, file)
 	}
 
-	cfg.RootCAs = pool
-
-	return cfg, nil
+	return pool, nil
 }
 
 // SealStoredSecrets seals the secrets stored before RELIC_ENCRYPTION_KEY was
@@ -462,14 +497,18 @@ func SealStoredSecrets(
 	repos := newRepositories(db, blobs, log)
 	repos.SetSecrets(box)
 
-	return errors.Join(
+	if err := errors.Join(
 		repos.SealStoredPasswords(ctx),
 		signingkey.New(db, box).SealStored(ctx),
 		replication.SealStored(ctx, db, box),
 		ldap.NewService(db, box, nil, log).SealStored(ctx),
 		sso.New(db, box, log).SealStored(ctx),
 		webhook.New(db, box, log).SealStored(ctx),
-	)
+	); err != nil {
+		return err
+	}
+
+	return db.TruncateLog(ctx)
 }
 
 const layoutRetryInterval = 5 * time.Second
@@ -551,7 +590,7 @@ func runWorker(ctx context.Context, getenv func(string) string, log *slog.Logger
 		return fmt.Errorf("config: %w", err)
 	}
 
-	db, err := openDB(ctx, cfg)
+	db, err := openDB(ctx, cfg, log)
 	if err != nil {
 		return err
 	}
@@ -588,15 +627,21 @@ func startWorker(
 	box *sealing.Box,
 	log *slog.Logger,
 ) (func() error, error) {
+	upstreamRoots, err := trustedRoots("RELIC_UPSTREAM_CA_CERTIFICATE_FILE", cfg.UpstreamCACertificateFile)
+	if err != nil {
+		return nil, err
+	}
+
 	repos := newRepositories(db, blobs, log)
 	repos.AllowPrivateUpstreams(cfg.AllowPrivateUpstreams)
+	repos.TrustUpstreamRoots(upstreamRoots)
 	repos.SetSecrets(box)
 	repos.SetTrash(cfg.Trash.Enabled)
 
 	pusher := replication.NewPusher(
 		db,
 		repos,
-		adapter.ReplicationTargets(replicationClient(cfg.AllowPrivateUpstreams)),
+		adapter.ReplicationTargets(replicationClient(cfg.AllowPrivateUpstreams, upstreamRoots)),
 		log,
 	)
 	pusher.SetSecrets(box)
@@ -698,9 +743,17 @@ func outboundTransport(allowPrivate bool) *http.Transport {
 	return transport
 }
 
-func replicationClient(allowPrivate bool) *http.Client {
+func replicationClient(allowPrivate bool, roots *x509.CertPool) *http.Client {
+	transport := outboundTransport(allowPrivate)
+	if roots != nil {
+		transport.TLSClientConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			RootCAs:    roots,
+		}
+	}
+
 	return &http.Client{
-		Transport: telemetry.ClientTransport(outboundTransport(allowPrivate)),
+		Transport: telemetry.ClientTransport(transport),
 	}
 }
 
@@ -762,6 +815,22 @@ func enqueueGraphScan(queue Queue) func(context.Context, uuid.UUID) error {
 	}
 }
 
+// River reports a queue it works every ten minutes.
+const queueReportWindow = 20 * time.Minute
+
+func queueWorkers(status *systemstatus.Service, queue string) func(context.Context) (bool, error) {
+	return func(ctx context.Context) (bool, error) {
+		queues, err := status.Queues(ctx)
+		if err != nil {
+			return false, err
+		}
+
+		return slices.ContainsFunc(queues, func(q systemstatus.Queue) bool {
+			return q.Name == queue && time.Since(q.Updated) < queueReportWindow
+		}), nil
+	}
+}
+
 func enqueueRematch(queue Queue) func(context.Context, string) error {
 	if queue == nil {
 		return nil
@@ -807,6 +876,9 @@ type Options struct {
 	IndexerDir string
 	// AllowPrivateUpstreams lets remotes reach private addresses.
 	AllowPrivateUpstreams bool
+	// UpstreamRoots are the CA certificates remotes trust; nil for the
+	// system roots.
+	UpstreamRoots *x509.CertPool
 	// MaxUploadSize caps every upload in bytes; 0 for no limit.
 	MaxUploadSize int64
 	// Downloads counts downloads; nil counts nothing (tests).
@@ -869,6 +941,7 @@ func newRouter(
 
 	repos := newRepositories(db, blobs, log)
 	repos.AllowPrivateUpstreams(opts.AllowPrivateUpstreams)
+	repos.TrustUpstreamRoots(opts.UpstreamRoots)
 	repos.SetMaxUploadSize(opts.MaxUploadSize)
 	repos.SetTrash(!opts.DisableTrash)
 	repos.SetSecrets(opts.Secrets)
@@ -943,7 +1016,7 @@ func newRouter(
 		Conan:              conan.NewService(repos, log),
 		HuggingFace:        huggingface.NewService(repos, log),
 		Alpine:             alpine.NewService(repos, keySvc, log),
-		Debian:             debian.NewService(repos, keySvc, log),
+		Debian:             debian.NewService(db, repos, keySvc, log),
 		RPM:                rpm.NewService(repos, keySvc, log),
 		Nix:                nix.NewService(repos, log),
 		TerraformProviders: terraform.NewService(repos, log),
@@ -965,6 +1038,12 @@ func newRouter(
 	bundles := release.New(db, repos, builds, keySvc, log)
 	bundles.SetLayout(layout.ReleaseBundles)
 	bundles.SetProjects(projects)
+	projects.SetStorageRepositories(func(key string) []string {
+		return []string{
+			builds.Repository(key),
+			bundles.Layout().Repository(key),
+		}
+	})
 	repos.ReserveStorage(bundles.StorageOwner)
 	bundles.SetDownloadBlocker(blocker.RefuseCopy)
 	builds.SetDownloadBlocker(blocker.RefuseCopy)
@@ -1003,6 +1082,7 @@ func newRouter(
 	xh.Register(rt)
 	scim.New(sso.NewDirectory(db, sec), log).Register(rt)
 
+	status := systemstatus.NewService(db)
 	version, revision := relicVersion()
 	api := relicapi.Handler(relicapi.Dependencies{ // each method enforces its own access
 		Version:                          version,
@@ -1033,7 +1113,7 @@ func newRouter(
 		Projects:                         projects,
 		AgentRegistry:                    agentRegistry,
 		Usage:                            usagestats.NewService(db, repos.Projects),
-		SystemStatus:                     systemstatus.NewService(db),
+		SystemStatus:                     status,
 		DownloadBlocker:                  blocker,
 		DownloadStats:                    opts.Downloads,
 		ContainerImages:                  dockerSvc,
@@ -1049,6 +1129,8 @@ func newRouter(
 		QueueStorageCheck:                enqueueStorageCheck(queue),
 		QueueReplication:                 enqueueReplication(queue),
 		QueueGraphScan:                   enqueueGraphScan(queue),
+		GraphScanWorkers:                 queueWorkers(status, backgroundjobs.GraphQueue),
+		ScanWorkers:                      queueWorkers(status, backgroundjobs.ScanQueue),
 		QueueRematch:                     enqueueRematch(queue),
 		VulnerabilityDatabases:           scan.NewDatabaseImports(blobs, log),
 		QueueVulnerabilityDatabaseImport: enqueueDatabaseImport(queue),
@@ -1122,7 +1204,7 @@ func recordRoute(auditLog *audit.Service) httpserver.AuditHook {
 		e := audit.Event{
 			Actor:   auth.FromContext(r.Context()).Name(),
 			Action:  r.Method + " " + path,
-			Target:  r.URL.Path,
+			Target:  cmp.Or(httpserver.AuditTarget(r.Context()), r.URL.Path),
 			Outcome: audit.HTTPOutcome(status),
 		}
 		if status >= http.StatusBadRequest {
@@ -1299,6 +1381,10 @@ func BootstrapAdmin(ctx context.Context, db *database.DB, username, password str
 		return fmt.Errorf("RELIC_ADMIN_USERNAME: %w", security.InvalidUsername(username))
 	}
 
+	if err := security.CheckPassword(password); err != nil {
+		return fmt.Errorf("RELIC_ADMIN_PASSWORD: %w", err)
+	}
+
 	hash, err := auth.HashPassword(password)
 	if err != nil {
 		return err
@@ -1325,6 +1411,7 @@ func BootstrapAdmin(ctx context.Context, db *database.DB, username, password str
 var apiPrefixes = append([]string{
 	"/api/",
 	scim.PathPrefix,
+	packages.RegistryV1Prefix,
 }, adapter.PathPrefixes...)
 
 func apiNotFound(next http.Handler) http.Handler {
@@ -1371,25 +1458,29 @@ func uiHeaders(next http.Handler) http.Handler {
 // Version is the release the binary was built as; empty uses the module version from the build info.
 var Version string
 
+// Revision is the commit the binary was built from; empty uses the build info's VCS revision.
+var Revision string
+
 func relicVersion() (version, revision string) {
 	version = "dev"
 	if Version != "" {
 		version = Version
 	}
 
-	bi, ok := debug.ReadBuildInfo()
-	if !ok {
-		return version, ""
-	}
-
-	if v := bi.Main.Version; Version == "" && v != "" && v != "(devel)" {
-		version = v
-	}
-
-	for _, s := range bi.Settings {
-		if s.Key == "vcs.revision" {
-			revision = s.Value
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		if v := bi.Main.Version; Version == "" && v != "" && v != "(devel)" {
+			version = v
 		}
+
+		for _, s := range bi.Settings {
+			if s.Key == "vcs.revision" {
+				revision = s.Value
+			}
+		}
+	}
+
+	if Revision != "" {
+		revision = Revision
 	}
 
 	if m := describedCommit.FindStringSubmatch(version); revision == "" && m != nil {

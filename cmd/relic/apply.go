@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"connectrpc.com/connect/v2"
 	"github.com/pmezard/go-difflib/difflib"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"relic/internal/platform/terminal"
 )
@@ -85,7 +88,7 @@ func applyCmd(g *globals) *cobra.Command {
 		},
 	}
 	cmd.Flags().
-		StringSliceVarP(&files, "filename", "f", nil, "YAML file with relic.build/v1 resources; - reads standard input")
+		StringSliceVarP(&files, "filename", "f", nil, "YAML file or directory with relic.build/v1 resources; - reads standard input")
 	cmd.Flags().BoolVar(&force, "force", false, "update resources even when they look unchanged (to set a password)")
 
 	return cmd
@@ -100,55 +103,71 @@ func diffCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "diff -f <file>...",
 		Short: "Show what apply would change",
-		Long:  "Prints a unified diff, per resource, of the fields its spec owns: the server's values against the file's.",
-		Args:  cobra.NoArgs,
+		Long: "Prints a unified diff, per resource, of the fields its spec owns: the server's values against the file's.\n" +
+			"With --exit-code, it exits with status 1 when something would change and 2 when it fails.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			c, err := g.dial()
-			if err != nil {
+			changed, err := printDiff(cmd, g, files)
+
+			switch {
+			case err != nil && exitCode:
+				return failure{
+					status: 2,
+					err:    err,
+				}
+			case err != nil:
 				return err
-			}
-
-			docs, err := readDocuments(files, cmd.InOrStdin())
-			if err != nil {
-				return err
-			}
-
-			changed := false
-
-			for _, d := range docs {
-				live, err := d.kind.get(cmd.Context(), c, d.name)
-				if err != nil && !isNotFound(err) {
-					return fmt.Errorf("get %s: %w", d, err)
-				}
-
-				var from proto.Message
-				if err == nil {
-					from = restrict(live, d.owned, d.kind)
-				}
-
-				text, err := unifiedDiff(d, from, restrict(d.msg, d.owned, d.kind))
-				if err != nil {
-					return err
-				}
-
-				if text != "" {
-					changed = true
-					_, _ = fmt.Fprint(cmd.OutOrStdout(), text)
-				}
-			}
-
-			if changed && exitCode {
+			case changed && exitCode:
 				return exitCode1
+			default:
+				return nil
 			}
-
-			return nil
 		},
 	}
 	cmd.Flags().
-		StringSliceVarP(&files, "filename", "f", nil, "YAML file with relic.build/v1 resources; - reads standard input")
-	cmd.Flags().BoolVar(&exitCode, "exit-code", false, "exit with status 1 when there are differences")
+		StringSliceVarP(&files, "filename", "f", nil, "YAML file or directory with relic.build/v1 resources; - reads standard input")
+	cmd.Flags().
+		BoolVar(&exitCode, "exit-code", false, "exit with status 1 when there are differences and 2 when the diff fails")
 
 	return cmd
+}
+
+func printDiff(cmd *cobra.Command, g *globals, files []string) (bool, error) {
+	c, err := g.dial()
+	if err != nil {
+		return false, err
+	}
+
+	docs, err := readDocuments(files, cmd.InOrStdin())
+	if err != nil {
+		return false, err
+	}
+
+	changed := false
+
+	for _, d := range docs {
+		live, err := d.kind.get(cmd.Context(), c, d.name)
+		if err != nil && !isNotFound(err) {
+			return changed, fmt.Errorf("get %s: %w", d, err)
+		}
+
+		var from proto.Message
+		if err == nil {
+			from = restrict(live, d.owned, d.kind)
+		}
+
+		text, err := unifiedDiff(d, from, restrict(d.msg, d.owned, d.kind))
+		if err != nil {
+			return changed, err
+		}
+
+		if text != "" {
+			changed = true
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), text)
+		}
+	}
+
+	return changed, nil
 }
 
 const exitCode1 = exitCode(1)
@@ -229,7 +248,7 @@ func deleteCmd(g *globals) *cobra.Command {
 		},
 	}
 	cmd.Flags().
-		StringSliceVarP(&files, "filename", "f", nil, "YAML file with relic.build/v1 resources; - reads standard input")
+		StringSliceVarP(&files, "filename", "f", nil, "YAML file or directory with relic.build/v1 resources; - reads standard input")
 	cmd.Flags().BoolVar(&ignoreNotFound, "ignore-not-found", false, "do not fail for resources that do not exist")
 
 	return cmd
@@ -250,9 +269,9 @@ func getCmd(g *globals) *cobra.Command {
 			names,
 			", ",
 		) + ".\nWith -o yaml the output is relic.build/v1 documents that relic apply accepts.",
-		Example:   "  relic get repositories\n  relic get repository libs-local -o yaml",
-		Args:      cobra.RangeArgs(1, 2),
-		ValidArgs: names,
+		Example:           "  relic get repositories\n  relic get repository libs-local -o yaml",
+		Args:              cobra.RangeArgs(1, 2),
+		ValidArgsFunction: completeResources(g, names),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			k, err := kindNamed(args[0])
 			if err != nil {
@@ -295,6 +314,19 @@ func getCmd(g *globals) *cobra.Command {
 	return cmd
 }
 
+func completeResources(g *globals, names []string) cobra.CompletionFunc {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		switch len(args) {
+		case 0:
+			return names, cobra.ShellCompDirectiveNoFileComp
+		case 1:
+			return g.completeNamesAt(1, resourceNames(args[0]), nil)(cmd, args, toComplete)
+		default:
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+	}
+}
+
 func printResources(w io.Writer, k *kind, items []proto.Message, output string, list bool) error {
 	if output == "json" {
 		return printResourcesJSON(w, items, list)
@@ -307,10 +339,20 @@ func printResources(w io.Writer, k *kind, items []proto.Message, output string, 
 			},
 		}
 
+		for _, c := range k.columns {
+			table.Headers = append(table.Headers, columnHeader(c))
+		}
+
 		for _, m := range items {
-			table.Rows = append(table.Rows, []string{
+			row := []string{
 				nameOf(m, k.nameField),
-			})
+			}
+
+			for _, c := range k.columns {
+				row = append(row, tableCell(fieldText(m.ProtoReflect(), strings.Split(c, "."))))
+			}
+
+			table.Rows = append(table.Rows, row)
 		}
 
 		return table.Print(w)
@@ -337,6 +379,60 @@ func printResources(w io.Writer, k *kind, items []proto.Message, output string, 
 	}
 
 	return nil
+}
+
+func columnHeader(path string) string {
+	name := path[strings.LastIndex(path, ".")+1:]
+
+	var header strings.Builder
+
+	for i, r := range name {
+		if i > 0 && unicode.IsUpper(r) {
+			header.WriteByte(' ')
+		}
+
+		header.WriteRune(unicode.ToUpper(r))
+	}
+
+	return header.String()
+}
+
+func fieldText(m protoreflect.Message, path []string) string {
+	fd := m.Descriptor().Fields().ByJSONName(path[0])
+	if fd == nil || !m.Has(fd) {
+		return ""
+	}
+
+	v := m.Get(fd)
+
+	switch {
+	case len(path) > 1 && fd.Message() != nil && !fd.IsList():
+		return fieldText(v.Message(), path[1:])
+	case fd.IsList() && fd.Kind() == protoreflect.MessageKind:
+		return strconv.Itoa(v.List().Len())
+	case fd.IsList():
+		values := make([]string, 0, v.List().Len())
+		for i := range v.List().Len() {
+			values = append(values, v.List().Get(i).String())
+		}
+
+		return strings.Join(values, ",")
+	case fd.Kind() == protoreflect.EnumKind:
+		return enumText(fd.Enum(), v.Enum())
+	default:
+		return v.String()
+	}
+}
+
+func enumText(ed protoreflect.EnumDescriptor, n protoreflect.EnumNumber) string {
+	value := ed.Values().ByNumber(n)
+	if value == nil || n == 0 {
+		return ""
+	}
+
+	prefix := strings.TrimSuffix(string(ed.Values().ByNumber(0).Name()), "UNSPECIFIED")
+
+	return strings.ToLower(strings.TrimPrefix(string(value.Name()), prefix))
 }
 
 func printResourcesJSON(w io.Writer, items []proto.Message, list bool) error {

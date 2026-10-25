@@ -92,3 +92,73 @@ func TestProviderValidate(t *testing.T) {
 		})
 	}
 }
+
+func TestReturnPath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{
+			name: "a path on this server",
+			path: "/browse/libs-local?tab=files",
+			want: "/browse/libs-local?tab=files",
+		},
+		{
+			name: "an absolute URL",
+			path: "https://evil.example.com/",
+			want: "/",
+		},
+		{
+			name: "a host-relative URL",
+			path: "//evil.example.com/x",
+			want: "/",
+		},
+		{
+			name: "a backslash after the slash",
+			path: "/\\evil.example.com/x",
+			want: "/",
+		},
+		{
+			name: "a tab between the slashes",
+			path: "/\t/evil.example.com/x",
+			want: "/",
+		},
+		{
+			name: "a newline between the slashes",
+			path: "/\n/evil.example.com/x",
+			want: "/",
+		},
+		{
+			name: "a carriage return between the slashes",
+			path: "/\r/evil.example.com/x",
+			want: "/",
+		},
+		{
+			name: "a backslash later in the path",
+			path: "/a\\b",
+			want: "/",
+		},
+		{
+			name: "a delete character",
+			path: "/a\x7f",
+			want: "/",
+		},
+		{
+			name: "empty",
+			path: "",
+			want: "/",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := ReturnPath(tt.path); got != tt.want {
+				t.Errorf("ReturnPath(%q) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
+	}
+}

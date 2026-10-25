@@ -5,6 +5,7 @@ import (
 	"crypto/md5"  //nolint:gosec // MD5 is a wire checksum here, not a security control
 	"crypto/sha1" //nolint:gosec // content addressing and client checksums, not security
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -37,6 +38,7 @@ type Service struct {
 	client        *http.Client
 	upstreams     sync.Map
 	allowPrivate  bool
+	upstreamRoots *x509.CertPool
 	maxUploadSize int64
 	trashDisabled bool
 	trashLayout   TrashLayout
@@ -152,6 +154,10 @@ func (s *Service) SetHTTPClient(c *http.Client) { s.client = c }
 // AllowPrivateUpstreams lets remote repositories reach loopback and private
 // addresses (RELIC_UPSTREAM_ALLOW_PRIVATE_ADDRESSES).
 func (s *Service) AllowPrivateUpstreams(allow bool) { s.allowPrivate = allow }
+
+// TrustUpstreamRoots makes remote repositories trust the CA certificates in
+// roots (RELIC_UPSTREAM_CA_CERTIFICATE_FILE); nil keeps the system roots.
+func (s *Service) TrustUpstreamRoots(roots *x509.CertPool) { s.upstreamRoots = roots }
 
 // SetMaxUploadSize limits every upload to n bytes (RELIC_MAX_UPLOAD_SIZE);
 // 0 leaves only the repositories' own limits.
@@ -651,7 +657,7 @@ func upsertFile(
 		return false, ErrConflict
 	case err == nil:
 		if immutable && *existing.Sha256 != b.Sha256 && user != SystemUser {
-			return false, fmt.Errorf("%w: %s/%s/%s exists", ErrImmutable, repoKey, parent, name)
+			return false, fmt.Errorf("%w: %s/%s exists", ErrImmutable, repoKey, JoinPath(parent, name))
 		}
 
 		if err := checkHolds(ctx, q, repoKey, JoinPath(parent, name)); err != nil {
@@ -1409,7 +1415,7 @@ func verify(expected, actual Checksums) error {
 		},
 	} {
 		if c.want != "" && !strings.EqualFold(c.want, c.got) {
-			return fmt.Errorf("%w: client %s %s, actual %s", ErrChecksumMismatch, c.name, c.want, c.got)
+			return fmt.Errorf("%w: expected %s %s, actual %s", ErrChecksumMismatch, c.name, c.want, c.got)
 		}
 	}
 

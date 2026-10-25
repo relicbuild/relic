@@ -22,7 +22,7 @@ import (
 func trustedAuthority(
 	cmd *cobra.Command,
 	server *url.URL,
-	certificateAuthorityFile string,
+	certificateAuthorityFile, saved string,
 	canAsk bool,
 ) (string, error) {
 	if certificateAuthorityFile != "" {
@@ -33,19 +33,11 @@ func trustedAuthority(
 		return "", nil
 	}
 
-	port := server.Port()
-	if port == "" {
-		port = "443"
+	if saved != "" && verifiesWith(cmd, server, saved) {
+		return saved, nil
 	}
 
-	dialer := &tls.Dialer{
-		Config: &tls.Config{
-			ServerName: server.Hostname(),
-			MinVersion: tls.VersionTLS12,
-		},
-	}
-
-	conn, err := dialer.DialContext(cmd.Context(), "tcp", net.JoinHostPort(server.Hostname(), port))
+	conn, err := dialTLS(cmd, server, nil)
 	if err == nil {
 		_ = conn.Close()
 
@@ -56,7 +48,7 @@ func trustedAuthority(
 
 	var unknownAuthority x509.UnknownAuthorityError
 	if !errors.As(err, &verification) || !errors.As(verification.Err, &unknownAuthority) {
-		return "", fmt.Errorf("connect to %s: %w", server.Host, err)
+		return "", err
 	}
 
 	chain := verification.UnverifiedCertificates
@@ -100,6 +92,48 @@ func trustedAuthority(
 		Type:  "CERTIFICATE",
 		Bytes: authority.Raw,
 	})), nil
+}
+
+func dialTLS(cmd *cobra.Command, server *url.URL, roots *x509.CertPool) (net.Conn, error) {
+	port := server.Port()
+	if port == "" {
+		port = "443"
+	}
+
+	dialer := &tls.Dialer{
+		Config: &tls.Config{
+			ServerName: server.Hostname(),
+			MinVersion: tls.VersionTLS12,
+			RootCAs:    roots,
+		},
+	}
+
+	conn, err := dialer.DialContext(cmd.Context(), "tcp", net.JoinHostPort(server.Hostname(), port))
+	if err != nil {
+		return nil, fmt.Errorf("connect to %s: %w", server.Host, err)
+	}
+
+	return conn, nil
+}
+
+func verifiesWith(cmd *cobra.Command, server *url.URL, authority string) bool {
+	roots, err := x509.SystemCertPool()
+	if err != nil {
+		roots = x509.NewCertPool()
+	}
+
+	if !roots.AppendCertsFromPEM([]byte(authority)) {
+		return false
+	}
+
+	conn, err := dialTLS(cmd, server, roots)
+	if err != nil {
+		return false
+	}
+
+	_ = conn.Close()
+
+	return true
 }
 
 func verifyChain(chain []*x509.Certificate, authority *x509.Certificate, hostname string) error {

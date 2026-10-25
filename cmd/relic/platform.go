@@ -673,6 +673,11 @@ func serverStatus(cmd *cobra.Command, g *globals) (*statusResult, error) {
 	case err == nil:
 		res.User = me.GetPrincipal().GetUsername()
 		res.Admin = me.GetPrincipal().GetAdmin()
+	case connect.CodeOf(err) == connect.CodeUnavailable:
+		res.Healthy = false
+		res.Checks = append(res.Checks, unavailableCheck(err))
+
+		return res, nil
 	case connect.CodeOf(err) != connect.CodeUnauthenticated:
 		return nil, fmt.Errorf("status: %w", err)
 	}
@@ -693,6 +698,23 @@ func serverStatus(cmd *cobra.Command, g *globals) (*statusResult, error) {
 	}
 
 	return res, nil
+}
+
+func unavailableCheck(err error) *relicv1.HealthCheck {
+	message := err.Error()
+	if ce, ok := errors.AsType[*connect.Error](err); ok {
+		message = ce.Message()
+	}
+
+	name, ok := strings.CutSuffix(message, " unavailable")
+	if !ok || name == "" {
+		name = "server"
+	}
+
+	return &relicv1.HealthCheck{
+		Name:  name,
+		Error: message,
+	}
 }
 
 func printServerStatus(w io.Writer, res *statusResult) {

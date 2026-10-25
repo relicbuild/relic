@@ -92,6 +92,10 @@ func (m *machineSetup) runSetup(ctx context.Context) error {
 		)
 	}
 
+	if err := m.refuseAnotherScope(); err != nil {
+		return err
+	}
+
 	actions, err := m.plan(ctx)
 	if err != nil {
 		return err
@@ -123,6 +127,24 @@ func (m *machineSetup) runSetup(ctx context.Context) error {
 	m.printNext()
 
 	return nil
+}
+
+func (m *machineSetup) refuseAnotherScope() error {
+	if m.system || m.goos != "linux" {
+		return nil
+	}
+
+	svc, err := m.serviceManagerAt(true)
+	if err != nil || !exists(svc.definition()) {
+		return err
+	}
+
+	return fmt.Errorf(
+		"setup: the system service %s already runs a Relic server on this machine, and a user service "+
+			"would collide with it on the same ports; manage it with sudo, or remove it first with "+
+			"sudo relic server uninstall --system",
+		svc.definition(),
+	)
 }
 
 func (m *machineSetup) findCommands(actions []machineAction) error {
@@ -505,34 +527,8 @@ func (m *machineSetup) apply(ctx context.Context, a machineAction) error {
 		return fmt.Errorf("setup: %w", err)
 	}
 
-	// A file with secrets is written whole under a temporary name and
-	// renamed, so it is never readable with a wider mode in between.
-	tmp, err := os.CreateTemp(filepath.Dir(a.path), ".relic-setup-*")
-	if err != nil {
-		return fmt.Errorf("setup: %w", err)
-	}
-	defer func() {
-		_ = os.Remove(tmp.Name())
-	}()
-
-	if _, err := tmp.Write(a.content); err != nil {
-		_ = tmp.Close()
-
+	if err := writeFileAtomic(a.path, bytes.NewReader(a.content), a.mode); err != nil {
 		return fmt.Errorf("setup: write %s: %w", a.path, err)
-	}
-
-	if err := tmp.Chmod(a.mode); err != nil {
-		_ = tmp.Close()
-
-		return fmt.Errorf("setup: %w", err)
-	}
-
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("setup: %w", err)
-	}
-
-	if err := os.Rename(tmp.Name(), a.path); err != nil {
-		return fmt.Errorf("setup: %w", err)
 	}
 
 	return nil

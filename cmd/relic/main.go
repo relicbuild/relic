@@ -33,6 +33,10 @@ func run() int {
 
 		_, _ = fmt.Fprintln(os.Stderr, "relic:", err)
 
+		if f, ok := errors.AsType[failure](err); ok {
+			return f.status
+		}
+
 		return 1
 	}
 
@@ -52,3 +56,12 @@ func commandContext(ctx context.Context, args []string) (context.Context, contex
 type exitCode int
 
 func (e exitCode) Error() string { return fmt.Sprintf("exit status %d", int(e)) }
+
+type failure struct {
+	status int
+	err    error
+}
+
+func (f failure) Error() string { return f.err.Error() }
+
+func (f failure) Unwrap() error { return f.err }

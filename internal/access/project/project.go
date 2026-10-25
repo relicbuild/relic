@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"relic/internal/access/auth"
+	"relic/internal/access/security"
 	"relic/internal/platform/database"
 )
 
@@ -20,6 +22,9 @@ var (
 	ErrNotFound       = errors.New("project not found")
 	ErrMemberNotFound = errors.New("project member not found")
 	ErrInvalid        = errors.New("invalid project")
+	// ErrHasRepositories refuses to delete a project that repositories
+	// still name.
+	ErrHasRepositories = errors.New("project has repositories")
 )
 
 // Role is what a member may do.
@@ -121,7 +126,8 @@ type Service struct {
 	// changed runs after a change, so permissions are recompiled.
 	changed func()
 	// repositoryProjects maps repositories to their projects.
-	repositoryProjects func(context.Context) (map[string]string, error)
+	repositoryProjects  func(context.Context) (map[string]string, error)
+	storageRepositories func(key string) []string
 }
 
 // New returns a Service.
@@ -141,6 +147,12 @@ func (s *Service) SetChanged(fn func()) { s.changed = fn }
 // project.
 func (s *Service) SetRepositoryProjects(fn func(context.Context) (map[string]string, error)) {
 	s.repositoryProjects = fn
+}
+
+// SetStorageRepositories tells the service where a project's builds and
+// releases are stored, so its members' roles cover them.
+func (s *Service) SetStorageRepositories(fn func(key string) []string) {
+	s.storageRepositories = fn
 }
 
 func domainProject(r database.Project) (Project, error) {
@@ -195,7 +207,16 @@ func (s *Service) Put(ctx context.Context, p Project) (Project, error) {
 		return Project{}, err
 	}
 
-	if err := s.db.WithLock(ctx, projectLock(p.Key), func() error {
+	if err := s.db.WithLock(ctx, Lock(p.Key), func() error {
+		stored, err := s.Get(ctx, p.Key)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return err
+		}
+
+		if err := s.checkNewMembers(ctx, stored.Members, p.Members); err != nil {
+			return err
+		}
+
 		return s.store(ctx, p)
 	}); err != nil {
 		return Project{}, err
@@ -297,17 +318,22 @@ func (s *Service) changeMembers(
 	key string,
 	change func([]Member) ([]Member, error),
 ) (Project, error) {
-	if err := s.db.WithLock(ctx, projectLock(key), func() error {
+	if err := s.db.WithLock(ctx, Lock(key), func() error {
 		p, err := s.Get(ctx, key)
 		if err != nil {
 			return err
 		}
 
+		stored := slices.Clone(p.Members)
 		if p.Members, err = change(p.Members); err != nil {
 			return err
 		}
 
 		if err := validate(&p); err != nil {
+			return err
+		}
+
+		if err := s.checkNewMembers(ctx, stored, p.Members); err != nil {
 			return err
 		}
 
@@ -319,7 +345,25 @@ func (s *Service) changeMembers(
 	return s.Get(ctx, key)
 }
 
-func projectLock(key string) string { return "project:" + key }
+func (s *Service) checkNewMembers(ctx context.Context, stored, members []Member) error {
+	for _, m := range members {
+		if slices.ContainsFunc(stored, func(existing Member) bool {
+			return existing.Name == m.Name && existing.Group == m.Group
+		}) {
+			continue
+		}
+
+		if err := security.CheckPrincipal(ctx, s.db, m.Name, m.Group); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// Lock is the name of the database lock that changes to the project key, and
+// to the repositories naming it, hold.
+func Lock(key string) string { return "project:" + key }
 
 func (s *Service) store(ctx context.Context, p Project) error {
 	doc, err := json.Marshal(p)
@@ -391,9 +435,30 @@ func validate(p *Project) error {
 	return nil
 }
 
-// Delete removes a project; its repositories keep naming it.
+// Delete removes a project that no repository names.
 func (s *Service) Delete(ctx context.Context, key string) error {
-	return s.db.WithLock(ctx, projectLock(key), func() error {
+	return s.db.WithLock(ctx, Lock(key), func() error {
+		if s.repositoryProjects != nil {
+			repos, err := s.repositoryProjects(ctx)
+			if err != nil {
+				return err
+			}
+
+			var named []string
+
+			for repo, owner := range repos {
+				if owner == key {
+					named = append(named, repo)
+				}
+			}
+
+			if len(named) > 0 {
+				slices.Sort(named)
+
+				return fmt.Errorf("%w: move or delete %s first", ErrHasRepositories, strings.Join(named, ", "))
+			}
+		}
+
 		n, err := s.db.DeleteProject(ctx, key)
 		if err != nil {
 			return fmt.Errorf("delete project: %w", err)
@@ -477,34 +542,48 @@ func (s *Service) Permissions(ctx context.Context) ([]auth.Permission, error) {
 	var out []auth.Permission
 
 	for _, p := range projects {
-		names := byProject[p.Key]
-		if len(names) == 0 || len(p.Members) == 0 {
+		if len(p.Members) == 0 {
 			continue
 		}
 
-		slices.Sort(names)
-
-		sec := &auth.Section{
-			Selector: auth.Selector{
-				Repositories: names,
-			},
-			Users:  map[string][]auth.Action{},
-			Groups: map[string][]auth.Action{},
+		perm := auth.Permission{
+			Name: "project " + p.Key,
 		}
 
-		for _, m := range p.Members {
-			if m.Group {
-				sec.Groups[m.Name] = roleActions[m.Role]
-			} else {
-				sec.Users[m.Name] = roleActions[m.Role]
-			}
+		if names := byProject[p.Key]; len(names) > 0 {
+			slices.Sort(names)
+			perm.Repository = memberSection(p.Members, names)
 		}
 
-		out = append(out, auth.Permission{
-			Name:       "project " + p.Key,
-			Repository: sec,
-		})
+		if s.storageRepositories != nil {
+			stored := memberSection(p.Members, s.storageRepositories(p.Key))
+			perm.Build, perm.Release = stored, stored
+		}
+
+		if perm.Repository != nil || perm.Build != nil {
+			out = append(out, perm)
+		}
 	}
 
 	return out, nil
+}
+
+func memberSection(members []Member, repositories []string) *auth.Section {
+	sec := &auth.Section{
+		Selector: auth.Selector{
+			Repositories: repositories,
+		},
+		Users:  map[string][]auth.Action{},
+		Groups: map[string][]auth.Action{},
+	}
+
+	for _, m := range members {
+		if m.Group {
+			sec.Groups[m.Name] = roleActions[m.Role]
+		} else {
+			sec.Users[m.Name] = roleActions[m.Role]
+		}
+	}
+
+	return sec
 }

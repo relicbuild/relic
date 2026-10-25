@@ -263,7 +263,15 @@ task test:k8s        # one kind cluster: the chart, Kubernetes pulls, restart, u
   scenarios, `-keep` leaves the stack up, `-url https://…` runs against a
   running server. `-tier k8s` runs `TestKubernetes` (`test/e2e/k8s.sh`).
 - Each tier is its own Compose project on free host ports, so tiers run at
-  once. Scenarios run in parallel (`-parallel` sets the width).
+  once. Scenarios run in parallel (`-parallel` sets the width; the Taskfile
+  runs four at a time, `E2E_PARALLELISM` changes it). Every container has a
+  memory limit, and a run fails naming any container that ran out of memory.
+- A test leaves nothing behind: stacks, containers, networks and volumes go
+  when it ends (`-keep` keeps the stack), and the shared PostgreSQL goes with
+  the task that started it. What stays: the images the suite built (labelled
+  `build.relic.e2e=true`) and pulled, and the vulnerability database in the
+  user cache (`relic-e2e/grype`), which both tiers read through a mirror.
+  `task test:clean` removes what stays and anything an interrupted run left.
 - Integration tests share one PostgreSQL server when
   `RELIC_TEST_POSTGRESQL_URL` is set (`test/postgresql.sh` starts it; the
   Taskfile does this). The SQLite pass runs only the packages that use a test
@@ -271,7 +279,8 @@ task test:k8s        # one kind cluster: the chart, Kubernetes pulls, restart, u
   `race` input is set, and with `task test:race`; `task test:all` runs it, then
   tiers 1 and 2.
 - CI runs only on demand, to save GitHub Actions minutes: run it once on the
-  branch before merging (`gh workflow run ci --ref <branch>`, `-f k8s=true`
+  branch before merging, after the same checks and tiers 1 and 2 pass
+  locally (`gh workflow run ci --ref <branch>`, `-f k8s=true`
   for the k8s tier). Never add automatic triggers.
 
 ## JFrog compatibility

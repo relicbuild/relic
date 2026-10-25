@@ -3,12 +3,14 @@
 package database_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"testing"
+	"time"
 
 	"relic/internal/platform/database"
 	"relic/internal/platform/database/databasetest"
@@ -94,6 +96,7 @@ INSERT INTO registry_entries (repo_key, path, kind, name, version, description, 
   ('libs', 'weather/server.json', 'mcp', 'io.example/weather', '1.0.0', 'Forecasts', 'aa', '{"name": "io.example/weather"}', now());
 INSERT INTO approvals (repo_key, path, sha256, approved_by, approved) VALUES ('libs', 'weather/server.json', 'aa', 'admin', now());
 INSERT INTO replication_tombstones (repo_key, path, deleted) VALUES ('libs', 'gone.txt', now());
+INSERT INTO debian_release_dates (repo_key, distribution, digest, date) VALUES ('libs', 'bookworm', 'd1', now());
 INSERT INTO usage_daily (day, repo_key, files, bytes, downloads, deploys) VALUES ('2026-10-05', 'libs', 2, 10, 3, 1);
 INSERT INTO usage_users_daily (day, username, downloads, deploys) VALUES ('2026-10-05', 'bob', 3, 1);
 INSERT INTO workload_identities (name, config, created, updated) VALUES
@@ -173,6 +176,44 @@ func TestCopyRoundTrip(t *testing.T) {
 				t.Errorf("%s, %s:\n got  %v\n want %v", name, table, got[table], want[table])
 			}
 		}
+	}
+}
+
+func TestCopySQLiteToSQLite(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+
+	open := func(name string) *database.DB {
+		db, err := database.Open(ctx, "sqlite://"+filepath.Join(t.TempDir(), name))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		t.Cleanup(db.Close)
+
+		if _, err := db.Migrate(ctx); err != nil {
+			t.Fatal(err)
+		}
+
+		return db
+	}
+
+	src, dst := open("source.db"), open("target.db")
+
+	if _, err := src.UpsertGroup(ctx, database.UpsertGroupParams{
+		Name: "devs",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := database.Copy(ctx, src, dst, nil); err != nil {
+		t.Fatalf("copy SQLite to SQLite: %v", err)
+	}
+
+	if _, err := dst.GetGroup(ctx, "devs"); err != nil {
+		t.Errorf("the copy lacks the group: %v", err)
 	}
 }
 

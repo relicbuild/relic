@@ -108,7 +108,7 @@ func (e *postgresEngine) query(ctx context.Context, sql string, args ...any) (Ro
 	return e.pool.Query(ctx, sql, args...)
 }
 
-func (e *postgresEngine) migrateTo(ctx context.Context, version int64) error {
+func (e *postgresEngine) migrateTo(ctx context.Context, version int64) ([]Migration, error) {
 	sqlDB := stdlib.OpenDBFromPool(e.pool)
 	defer func() {
 		_ = sqlDB.Close()
@@ -116,7 +116,7 @@ func (e *postgresEngine) migrateTo(ctx context.Context, version int64) error {
 
 	locker, err := lock.NewPostgresSessionLocker()
 	if err != nil {
-		return fmt.Errorf("migration lock: %w", err)
+		return nil, fmt.Errorf("migration lock: %w", err)
 	}
 
 	provider, err := goose.NewProvider(
@@ -126,14 +126,10 @@ func (e *postgresEngine) migrateTo(ctx context.Context, version int64) error {
 		goose.WithSessionLocker(locker),
 	)
 	if err != nil {
-		return fmt.Errorf("migrations: %w", err)
+		return nil, fmt.Errorf("migrations: %w", err)
 	}
 
-	if _, err := provider.UpTo(ctx, version); err != nil {
-		return fmt.Errorf("migrate: %w", err)
-	}
-
-	return nil
+	return migrateUpTo(ctx, provider, version)
 }
 
 const jobQueueMigrationLock = 0x72656c6963

@@ -16,6 +16,7 @@ type kind struct {
 	name      string
 	aliases   []string
 	nameField string
+	columns   []string
 	new       func() proto.Message
 	list      func(context.Context, *client) ([]proto.Message, error)
 	// get answers a connect.CodeNotFound error for a missing resource.
@@ -42,6 +43,12 @@ var kinds = []*kind{
 			"repos",
 		},
 		nameField: "name",
+		columns: []string{
+			"class",
+			"format",
+			"project",
+			"remote.url",
+		},
 		new: func() proto.Message {
 			return &relicv1.Repository{}
 		},
@@ -100,6 +107,11 @@ var kinds = []*kind{
 			"users",
 		},
 		nameField: "name",
+		columns: []string{
+			"email",
+			"admin",
+			"disabled",
+		},
 		new: func() proto.Message {
 			return &relicv1.User{}
 		},
@@ -138,6 +150,10 @@ var kinds = []*kind{
 			"groups",
 		},
 		nameField: "name",
+		columns: []string{
+			"description",
+			"admin",
+		},
 		new: func() proto.Message {
 			return &relicv1.Group{}
 		},
@@ -174,6 +190,9 @@ var kinds = []*kind{
 			"perms",
 		},
 		nameField: "name",
+		columns: []string{
+			"rules",
+		},
 		new: func() proto.Message {
 			return &relicv1.Permission{}
 		},
@@ -206,6 +225,10 @@ var kinds = []*kind{
 			"ldap",
 		},
 		nameField: "name",
+		columns: []string{
+			"url",
+			"enabled",
+		},
 		new: func() proto.Message {
 			return &relicv1.LdapServer{}
 		},
@@ -236,6 +259,10 @@ var kinds = []*kind{
 			"sso",
 		},
 		nameField: "name",
+		columns: []string{
+			"displayName",
+			"enabled",
+		},
 		new: func() proto.Message {
 			return &relicv1.IdentityProvider{}
 		},
@@ -280,6 +307,10 @@ var kinds = []*kind{
 			"gates",
 		},
 		nameField: "name",
+		columns: []string{
+			"environment",
+			"condition",
+		},
 		new: func() proto.Message {
 			return &relicv1.PromotionGate{}
 		},
@@ -330,6 +361,11 @@ var kinds = []*kind{
 			"hooks",
 		},
 		nameField: "name",
+		columns: []string{
+			"url",
+			"format",
+			"enabled",
+		},
 		new: func() proto.Message {
 			return &relicv1.Webhook{}
 		},
@@ -384,6 +420,10 @@ var kinds = []*kind{
 			"proj",
 		},
 		nameField: "key",
+		columns: []string{
+			"name",
+			"repositories",
+		},
 		new: func() proto.Message {
 			return &relicv1.Project{}
 		},
@@ -435,6 +475,11 @@ var kinds = []*kind{
 			"workload",
 		},
 		nameField: "name",
+		columns: []string{
+			"issuer",
+			"audience",
+			"enabled",
+		},
 		new: func() proto.Message {
 			return &relicv1.WorkloadIdentity{}
 		},
@@ -476,6 +521,10 @@ var kinds = []*kind{
 			"ldapgroups",
 		},
 		nameField: "name",
+		columns: []string{
+			"ldapServer",
+			"strategy",
+		},
 		new: func() proto.Message {
 			return &relicv1.LdapGroupMapping{}
 		},
@@ -503,6 +552,10 @@ var kinds = []*kind{
 			"policies",
 		},
 		nameField: "name",
+		columns: []string{
+			"kind",
+			"description",
+		},
 		new: func() proto.Message {
 			return &relicv1.Policy{}
 		},
@@ -528,6 +581,10 @@ var kinds = []*kind{
 			"watches",
 		},
 		nameField: "name",
+		columns: []string{
+			"active",
+			"policies",
+		},
 		new: func() proto.Message {
 			return &relicv1.Watch{}
 		},
@@ -552,6 +609,12 @@ var kinds = []*kind{
 			"replications",
 		},
 		nameField: "repository",
+		columns: []string{
+			"targetUrl",
+			"direction",
+			"enabled",
+			"lastStatus",
+		},
 		new: func() proto.Message {
 			return &relicv1.Replication{}
 		},
@@ -598,6 +661,11 @@ var kinds = []*kind{
 			"cleanup-policies",
 		},
 		nameField: "name",
+		columns: []string{
+			"repositories",
+			"pathPattern",
+			"enabled",
+		},
 		new: func() proto.Message {
 			return &relicv1.CleanupPolicy{}
 		},

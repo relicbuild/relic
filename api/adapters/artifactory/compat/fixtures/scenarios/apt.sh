@@ -9,15 +9,16 @@ LOCAL=relic-scenario-debian-local
 REMOTE=relic-scenario-debian-remote
 VIRTUAL=relic-scenario-debian
 for r in "$VIRTUAL" "$LOCAL" "$REMOTE"; do delete_repo "$r"; done
+arch=$(dpkg --print-architecture)
 cat >repos.json <<JSON
 [{"key":"$LOCAL","rclass":"local","packageType":"debian"},
  {"key":"$REMOTE","rclass":"remote","packageType":"debian","url":"https://deb.debian.org/debian"},
- {"key":"$VIRTUAL","rclass":"virtual","packageType":"debian","repositories":"$LOCAL,$REMOTE","defaultDeploymentRepo":"$LOCAL","debianArchitectures":"amd64"}]
+ {"key":"$VIRTUAL","rclass":"virtual","packageType":"debian","repositories":"$LOCAL,$REMOTE","defaultDeploymentRepo":"$LOCAL","debianArchitectures":"$arch"}]
 JSON
 jf rt rc repos.json
 
 step "a real package through the remote"
-jf rt curl -sf -o Packages.xz "/$REMOTE/dists/trixie/main/binary-amd64/Packages.xz"
+jf rt curl -sf -o Packages.xz "/$REMOTE/dists/trixie/main/binary-$arch/Packages.xz"
 file=$(python3 -c '
 import lzma
 for p in lzma.open("Packages.xz").read().decode().split("\n\n"):
@@ -28,7 +29,7 @@ for p in lzma.open("Packages.xz").read().decode().split("\n\n"):
 jf rt curl -sf -o hello.deb "/$REMOTE/$file"
 
 step "jf rt upload --deb"
-jf rt u hello.deb "$LOCAL/pool/main/h/hello/" --deb trixie/main/amd64
+jf rt u hello.deb "$LOCAL/pool/main/h/hello/" --deb "trixie/main/$arch"
 jf rt s "$LOCAL/pool/main/h/hello/hello.deb" | expect_count 1
 
 step "jf apt install, trusting only Relic's key"

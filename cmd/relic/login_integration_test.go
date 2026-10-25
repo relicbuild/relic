@@ -224,6 +224,64 @@ spec:
 	}
 }
 
+func TestPasswordChangesYourPassword(t *testing.T) {
+	t.Parallel()
+
+	srv := testServer(t)
+	config := filepath.Join(t.TempDir(), "config.yaml")
+
+	login := func(password string) error {
+		_, err := relic(t, config, password+"\n", "auth", "login", srv.URL, "--user", "admin", "--password-stdin")
+
+		return err
+	}
+
+	if err := login("password"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range []struct {
+		name, stdin string
+	}{
+		{
+			name:  "a wrong current password",
+			stdin: "Wrong-pass-123\nAdmin-new-pass-1\n",
+		},
+		{
+			name:  "a short new password",
+			stdin: "password\nshort\n",
+		},
+		{
+			name:  "no new password",
+			stdin: "password\n",
+		},
+	} {
+		if _, err := relic(t, config, tt.stdin, "auth", "password", "--password-stdin"); err == nil {
+			t.Errorf("%s was accepted", tt.name)
+		}
+	}
+
+	if out, err := relic(
+		t,
+		config,
+		"password\nAdmin-new-pass-1\n",
+		"auth",
+		"password",
+		"--password-stdin",
+	); err != nil ||
+		out != "password changed\n" {
+		t.Fatalf("auth password = %q %v", out, err)
+	}
+
+	if err := login("password"); err == nil {
+		t.Error("the old password still signs in")
+	}
+
+	if err := login("Admin-new-pass-1"); err != nil {
+		t.Errorf("the new password does not sign in: %v", err)
+	}
+}
+
 func TestLogoutRevokesTheContextsToken(t *testing.T) {
 	t.Parallel()
 
@@ -279,6 +337,81 @@ func TestLogoutRevokesTheContextsToken(t *testing.T) {
 
 	if signsIn(t, srv.URL, second) {
 		t.Error("logout kept the context's token")
+	}
+}
+
+func TestLoginThatCannotSaveRevokesItsToken(t *testing.T) {
+	t.Parallel()
+
+	if os.Geteuid() == 0 {
+		t.Skip("root writes into a read-only directory")
+	}
+
+	srv := testServer(t)
+	dir := filepath.Join(t.TempDir(), "readonly")
+
+	if err := os.Mkdir(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := relic(
+		t,
+		filepath.Join(dir, "config.yaml"),
+		"password\n",
+		"auth",
+		"login",
+		srv.URL,
+		"--user",
+		"admin",
+		"--password-stdin",
+	); err == nil {
+		t.Fatal("a login that could not save its context succeeded")
+	}
+
+	tokens, err := relicv1connect.NewSecurityServiceClient(connect.NewClient(connecthttp.NewTransport(&http.Client{
+		Transport: basicAuth{
+			user:     "admin",
+			password: "password",
+		},
+	}, srv.URL+"/api"))).ListTokens(t.Context(), &relicv1.ListTokensRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, token := range tokens.GetTokens() {
+		if token.GetDescription() == "relic CLI" {
+			t.Errorf("the login left token %s active", token.GetId())
+		}
+	}
+}
+
+func TestLoginAgainTrustsTheSavedAuthority(t *testing.T) {
+	t.Parallel()
+
+	srv, directory := testTLSServer(t)
+	dir := t.TempDir()
+	config := filepath.Join(dir, "config.yaml")
+	authority := filepath.Join(dir, "ca.crt")
+
+	if err := os.WriteFile(authority, directory.Authority().CertificatePEM(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	login := []string{
+		"auth",
+		"login",
+		srv.URL,
+		"--user",
+		"admin",
+		"--password-stdin",
+	}
+
+	if _, err := relic(t, config, "password\n", append(login, "--ca-file", authority)...); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := relic(t, config, "password\n", login...); err != nil {
+		t.Errorf("signing in again without --ca-file = %v, want the context's authority trusted", err)
 	}
 }
 

@@ -17,6 +17,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/ProtonMail/go-crypto/openpgp"
+	"github.com/ProtonMail/go-crypto/openpgp/armor"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -32,20 +34,30 @@ type setupEnv struct {
 	user     string
 	token    string
 	// contextToken reports whether token is the saved context's own, which only the CLI holds.
-	contextToken bool
-	home, root   string
-	goos         string
-	getenv       func(string) string
-	publicKey    string
-	keyPair      string
-	flags        map[string]string
+	contextToken         bool
+	certificateAuthority string
+	authorityFile        string
+	home, root           string
+	goos                 string
+	getenv               func(string) string
+	class                relicv1.RepositoryClass
+	depth                int32
+	signingKeys          []signingKey
+	flags                map[string]string
 }
 
+type signingKey struct {
+	name, publicKey string
+}
+
+const tokenPlaceholder = "<token>"
+
 type setupStep struct {
-	file    string
-	content string
-	block   bool
-	mode    fs.FileMode
+	file      string
+	content   string
+	block     bool
+	soleBlock bool
+	mode      fs.FileMode
 	// command runs with stdin, env added to its environment, and argumentFile
 	// passed as a private @file of one argument per line.
 	command      []string
@@ -53,7 +65,8 @@ type setupStep struct {
 	env          []string
 	argumentFile []string
 	// undo removes what an earlier setup made, so it may find nothing to remove.
-	undo bool
+	undo  bool
+	owned bool
 }
 
 type setupClient struct {
@@ -64,6 +77,7 @@ type setupClient struct {
 	flags      map[string]string
 	steps      func(e setupEnv) ([]setupStep, error)
 	notes      func(e setupEnv) string
+	trust      func(e setupEnv) string
 	system     bool
 }
 
@@ -75,7 +89,47 @@ func withUserinfo(u, user, token string) (string, error) {
 
 	p.User = url.UserPassword(user, token)
 
+	if token == tokenPlaceholder {
+		return strings.Replace(p.String(), url.UserPassword("", token).String()+"@", ":"+token+"@", 1), nil
+	}
+
 	return p.String(), nil
+}
+
+func plainFileName(name string) bool {
+	return name != "." && name != ".." && !strings.ContainsAny(name, `/\`) && filepath.IsLocal(name)
+}
+
+func armoredKeyring(keys []signingKey) (string, error) {
+	var entities openpgp.EntityList
+
+	for _, k := range keys {
+		ring, err := openpgp.ReadArmoredKeyRing(strings.NewReader(k.publicKey))
+		if err != nil {
+			return "", fmt.Errorf("the public key of %s: %w", k.name, err)
+		}
+
+		entities = append(entities, ring...)
+	}
+
+	var buf bytes.Buffer
+
+	w, err := armor.Encode(&buf, openpgp.PublicKeyType, nil)
+	if err != nil {
+		return "", err
+	}
+
+	for _, e := range entities {
+		if err := e.Serialize(w); err != nil {
+			return "", err
+		}
+	}
+
+	if err := w.Close(); err != nil {
+		return "", err
+	}
+
+	return buf.String() + "\n", nil
 }
 
 func withoutScheme(u string) string {
@@ -101,6 +155,7 @@ var setupClients = map[string]setupClient{
 		},
 		short: "~/.npmrc: the registry and a token for it",
 		steps: npmSteps,
+		trust: nodeTrust,
 	},
 	"pnpm": {
 		packageURL: "pkg:npm/lodash@4.17.21",
@@ -109,6 +164,7 @@ var setupClients = map[string]setupClient{
 		},
 		short: "~/.npmrc, which pnpm reads",
 		steps: npmSteps,
+		trust: nodeTrust,
 	},
 	"yarn": {
 		packageURL: "pkg:npm/lodash@4.17.21",
@@ -118,14 +174,17 @@ var setupClients = map[string]setupClient{
 		short: "~/.yarnrc.yml (Yarn 2 and later) and ~/.npmrc (Yarn 1)",
 		steps: func(e setupEnv) ([]setupStep, error) {
 			steps, _ := npmSteps(e)
+			steps[0].content += withoutScheme(e.url) + ":always-auth=true\n"
 
 			return append(steps, setupStep{
-				file:    ".yarnrc.yml",
-				block:   true,
-				mode:    0o600,
-				content: "npmRegistryServer: \"" + e.url + "\"\nnpmAlwaysAuth: true\nnpmAuthToken: \"" + e.token + "\"\n",
+				file:      ".yarnrc.yml",
+				block:     true,
+				soleBlock: true,
+				mode:      0o600,
+				content:   "npmRegistryServer: \"" + e.url + "\"\nnpmAlwaysAuth: true\nnpmAuthToken: \"" + e.token + "\"\n",
 			}), nil
 		},
+		trust: nodeTrust,
 	},
 	"maven": {
 		packageURL: "pkg:maven/org.apache.commons/commons-lang3@3.14.0",
@@ -151,6 +210,7 @@ var setupClients = map[string]setupClient{
 		notes: func(e setupEnv) string {
 			return "To deploy, point distributionManagement at " + e.url + " with the server id " + e.repo + "."
 		},
+		trust: javaTrust,
 	},
 	"gradle": {
 		packageURL: "pkg:maven/org.apache.commons/commons-lang3@3.14.0",
@@ -177,6 +237,7 @@ var setupClients = map[string]setupClient{
 				"password = providers.gradleProperty(\"relicToken\").get() }\n" +
 				"  } } }"
 		},
+		trust: javaTrust,
 	},
 	"go": {
 		packageURL: "pkg:golang/github.com/google/uuid@v1.6.0",
@@ -189,12 +250,7 @@ var setupClients = map[string]setupClient{
 		},
 		steps: func(e setupEnv) ([]setupStep, error) {
 			steps := []setupStep{
-				{
-					file:    ".netrc",
-					block:   true,
-					mode:    0o600,
-					content: "machine " + hostOnly(e.host) + " login " + e.user + " password " + e.token + "\n",
-				},
+				netrcStep(e),
 				{
 					command: []string{
 						"go",
@@ -220,6 +276,7 @@ var setupClients = map[string]setupClient{
 		notes: func(_ setupEnv) string {
 			return "Checksum verification stays on for public modules; name private module paths with --private."
 		},
+		trust: goTrust,
 	},
 	"pip": {
 		packageURL: "pkg:pypi/requests@2.32.3",
@@ -243,6 +300,9 @@ var setupClients = map[string]setupClient{
 		notes: func(e setupEnv) string {
 			return "In the Pipfile:\n  [[source]]\n  url = \"" + e.url + "\"\n  verify_ssl = true\n  name = \"" + e.repo + "\""
 		},
+		trust: func(e setupEnv) string {
+			return "export PIP_CERT=" + e.authorityFile + " REQUESTS_CA_BUNDLE=" + e.authorityFile
+		},
 	},
 	"poetry": {
 		packageURL: "pkg:pypi/requests@2.32.3",
@@ -251,12 +311,12 @@ var setupClients = map[string]setupClient{
 		},
 		short: "poetry config: the repository and its credentials",
 		steps: func(e setupEnv) ([]setupStep, error) {
-			return []setupStep{
+			steps := []setupStep{
 				{
 					command: []string{
 						"poetry",
 						"config",
-						"repositories." + e.repo,
+						"repositories." + poetryRepository(e.repo),
 						strings.TrimSuffix(e.url, "/simple"),
 					},
 				},
@@ -264,15 +324,29 @@ var setupClients = map[string]setupClient{
 					command: []string{
 						"poetry",
 						"config",
-						"http-basic." + e.repo,
+						"http-basic." + poetryRepository(e.repo),
 						e.user,
 					},
 					stdin: e.token + "\n",
 				},
-			}, nil
+			}
+			if e.authorityFile != "" {
+				steps = append(steps, setupStep{
+					command: []string{
+						"poetry",
+						"config",
+						"certificates." + poetryRepository(e.repo) + ".cert",
+						e.authorityFile,
+					},
+				})
+			}
+
+			return steps, nil
 		},
 		notes: func(e setupEnv) string {
-			return "For dependencies: poetry source add --priority=primary " + e.repo + " " + e.url
+			name := poetryRepository(e.repo)
+
+			return "For dependencies: poetry source add --priority=primary " + name + " " + e.url + "\nPublish with: poetry publish -r " + name
 		},
 	},
 	"twine": {
@@ -290,7 +364,10 @@ var setupClients = map[string]setupClient{
 						strings.TrimSuffix(
 							e.url,
 							"/simple",
-						) + "\nusername = " + e.user + "\npassword = " + e.token + "\n",
+						) + "\nusername = " + e.user + "\npassword = " + e.token + "\n" + optionalLine(
+						"ca_cert = ",
+						e.authorityFile,
+					),
 				},
 			}, nil
 		},
@@ -309,6 +386,11 @@ var setupClients = map[string]setupClient{
 		notes: func(e setupEnv) string {
 			return "Images are " + e.registry + "/<image>:<tag>."
 		},
+		trust: func(e setupEnv) string {
+			return "Docker trusts the authority as /etc/docker/certs.d/" + hostOnlyWithPort(e.registry) +
+				"/ca.crt (on Docker Desktop, ~/.docker/certs.d/" + hostOnlyWithPort(e.registry) + "/ca.crt): copy " +
+				e.authorityFile + " there."
+		},
 	},
 	"podman": {
 		packageURL: "pkg:docker/library/nginx@1.27.0",
@@ -317,7 +399,21 @@ var setupClients = map[string]setupClient{
 			relicv1.Format_FORMAT_OCI,
 		},
 		short: "podman login to the registry",
-		steps: loginSteps("podman"),
+		steps: func(e setupEnv) ([]setupStep, error) {
+			steps, _ := loginSteps("podman")(e)
+			if e.certificateAuthority == "" {
+				return steps, nil
+			}
+
+			return append([]setupStep{
+				{
+					file:    ".config/containers/certs.d/" + hostOnlyWithPort(e.registry) + "/ca.crt",
+					mode:    0o644,
+					content: e.certificateAuthority,
+					owned:   true,
+				},
+			}, steps...), nil
+		},
 		notes: func(e setupEnv) string {
 			return "Images are " + e.registry + "/<image>:<tag>."
 		},
@@ -360,6 +456,7 @@ var setupClients = map[string]setupClient{
 				},
 			}, nil
 		},
+		trust: systemTrust,
 	},
 	"conan": {
 		packageURL: "pkg:conan/zlib@1.3.1",
@@ -392,6 +489,9 @@ var setupClients = map[string]setupClient{
 					},
 				},
 			}, nil
+		},
+		trust: func(e setupEnv) string {
+			return "In Conan's global.conf: core.net.http:cacert_path=" + e.authorityFile
 		},
 	},
 	"ruby": {
@@ -433,6 +533,10 @@ var setupClients = map[string]setupClient{
 			return "For gem: gem sources --add " + u.Scheme + "://" + url.User(e.user).String() + ":<token>@" +
 				u.Host + u.EscapedPath()
 		},
+		trust: func(e setupEnv) string {
+			return "bundle config set --global ssl_ca_cert " + e.authorityFile + "\nFor gem, in ~/.gemrc: :ssl_ca_cert: " +
+				e.authorityFile
+		},
 	},
 	"terraform": {
 		formats: []relicv1.Format{
@@ -454,6 +558,7 @@ var setupClients = map[string]setupClient{
 			return "Modules: source = \"" + e.host + "/" + e.repo + "__<namespace>/<name>/<provider>\"; " +
 				"publish them with relic package publish terraform."
 		},
+		trust: goTrust,
 	},
 	"helm": {
 		formats: []relicv1.Format{
@@ -462,10 +567,18 @@ var setupClients = map[string]setupClient{
 		},
 		short: "helm repo add (or helm registry login for OCI charts)",
 		steps: func(e setupEnv) ([]setupStep, error) {
+			var caFile []string
+			if e.authorityFile != "" {
+				caFile = []string{
+					"--ca-file",
+					e.authorityFile,
+				}
+			}
+
 			if e.format == relicv1.Format_FORMAT_HELM_OCI {
 				return []setupStep{
 					{
-						command: []string{
+						command: append([]string{
 							"helm",
 							"registry",
 							"login",
@@ -473,7 +586,7 @@ var setupClients = map[string]setupClient{
 							"--username",
 							e.user,
 							"--password-stdin",
-						},
+						}, caFile...),
 						stdin: e.token,
 					},
 				}, nil
@@ -481,7 +594,7 @@ var setupClients = map[string]setupClient{
 
 			return []setupStep{
 				{
-					command: []string{
+					command: append([]string{
 						"helm",
 						"repo",
 						"add",
@@ -491,7 +604,7 @@ var setupClients = map[string]setupClient{
 						"--username",
 						e.user,
 						"--password-stdin",
-					},
+					}, caFile...),
 					stdin: e.token,
 				},
 			}, nil
@@ -523,6 +636,9 @@ var setupClients = map[string]setupClient{
 		notes: func(e setupEnv) string {
 			return "Use it with --registry " + e.repo + ", or replace crates.io:\n  [source.crates-io]\n  replace-with = \"" + e.repo + "\""
 		},
+		trust: func(e setupEnv) string {
+			return "export CARGO_HTTP_CAINFO=" + e.authorityFile
+		},
 	},
 	"apk": {
 		packageURL: "pkg:apk/alpine/curl@8.9.1-r0",
@@ -532,7 +648,8 @@ var setupClients = map[string]setupClient{
 		short:  "/etc/apk/repositories and the repository's signing key (run as root, e.g. in an image build)",
 		system: true,
 		flags: map[string]string{
-			"branch": "the Alpine branch, as the repository lays it out (v3.21, edge)",
+			"branch":              "the Alpine branch, as the repository lays it out (v3.21, edge)",
+			"alpine-repositories": "the Alpine repositories of the branch, space-separated (default main)",
 		},
 		steps: func(e setupEnv) ([]setupStep, error) {
 			branch := e.flags["branch"]
@@ -540,9 +657,19 @@ var setupClients = map[string]setupClient{
 				return nil, errors.New("apk: give the branch (--branch v3.21)")
 			}
 
-			repository, err := withUserinfo(strings.TrimSuffix(e.url, "/")+"/"+branch+"/main", e.user, e.token)
-			if err != nil {
-				return nil, fmt.Errorf("apk: %w", err)
+			var lines strings.Builder
+
+			for _, name := range strings.Fields(cmp.Or(e.flags["alpine-repositories"], "main")) {
+				if !plainFileName(name) || !plainFileName(branch) {
+					return nil, fmt.Errorf("apk: %s/%s is not a branch and repository of the layout", branch, name)
+				}
+
+				repository, err := withUserinfo(strings.TrimSuffix(e.url, "/")+"/"+branch+"/"+name, e.user, e.token)
+				if err != nil {
+					return nil, fmt.Errorf("apk: %w", err)
+				}
+
+				lines.WriteString(repository + "\n")
 			}
 
 			steps := []setupStep{
@@ -550,18 +677,27 @@ var setupClients = map[string]setupClient{
 					file:    "etc/apk/repositories",
 					block:   true,
 					mode:    0o600,
-					content: repository + "\n",
+					content: lines.String(),
 				},
 			}
-			if e.publicKey != "" {
+
+			for _, key := range e.signingKeys {
+				if !plainFileName(key.name) {
+					return nil, fmt.Errorf("apk: the key pair name %q cannot name a key file", key.name)
+				}
+
 				steps = append(steps, setupStep{
-					file:    "etc/apk/keys/" + e.keyPair + ".rsa.pub",
+					file:    "etc/apk/keys/" + key.name + ".rsa.pub",
 					mode:    0o644,
-					content: e.publicKey,
+					content: key.publicKey,
 				})
 			}
 
 			return steps, nil
+		},
+		trust: func(e setupEnv) string {
+			return "apk trusts the system's authorities: copy " + e.authorityFile +
+				" to /usr/local/share/ca-certificates/ and run update-ca-certificates."
 		},
 	},
 	"apt": {
@@ -586,12 +722,25 @@ var setupClients = map[string]setupClient{
 
 			var steps []setupStep
 
-			if e.publicKey != "" {
+			if len(e.signingKeys) > 0 {
+				keyring, err := armoredKeyring(e.signingKeys)
+				if err != nil {
+					return nil, fmt.Errorf("apt: %w", err)
+				}
+
 				signedBy = "[signed-by=/etc/apt/keyrings/relic-" + e.repo + ".asc] "
 				steps = append(steps, setupStep{
 					file:    "etc/apt/keyrings/relic-" + e.repo + ".asc",
 					mode:    0o644,
-					content: e.publicKey,
+					content: keyring,
+				})
+			}
+
+			if e.authorityFile != "" {
+				steps = append(steps, setupStep{
+					file:    "etc/apt/apt.conf.d/80relic-" + e.repo,
+					mode:    0o644,
+					content: "Acquire::https::" + hostOnly(e.host) + "::CaInfo \"" + e.authorityFile + "\";\n",
 				})
 			}
 
@@ -617,17 +766,30 @@ var setupClients = map[string]setupClient{
 		},
 		short:  "a dnf and yum repository file with its credentials, and the repository's signing key (run as root)",
 		system: true,
+		flags: map[string]string{
+			"folder": "the folder whose repodata to use, in a repository with a metadataDepth (el9, f44)",
+		},
 		steps: func(e setupEnv) ([]setupStep, error) {
+			baseURL, err := dnfBaseURL(e)
+			if err != nil {
+				return nil, err
+			}
+
 			var steps []setupStep
 
 			signature := "repo_gpgcheck=0\n"
 
-			if e.publicKey != "" {
+			if len(e.signingKeys) > 0 {
+				keyring, err := armoredKeyring(e.signingKeys)
+				if err != nil {
+					return nil, fmt.Errorf("dnf: %w", err)
+				}
+
 				keyFile := "etc/pki/rpm-gpg/RPM-GPG-KEY-relic-" + e.repo
 				steps = append(steps, setupStep{
 					file:    keyFile,
 					mode:    0o644,
-					content: e.publicKey,
+					content: keyring,
 				})
 				signature = "repo_gpgcheck=1\ngpgkey=file:///" + keyFile + "\n"
 			}
@@ -635,9 +797,20 @@ var setupClients = map[string]setupClient{
 			return append(steps, setupStep{
 				file: "etc/yum.repos.d/relic-" + e.repo + ".repo",
 				mode: 0o600,
-				content: "[relic-" + e.repo + "]\nname=Relic " + e.repo + "\nbaseurl=" + e.url + "\nusername=" + e.user +
-					"\npassword=" + e.token + "\nenabled=1\ngpgcheck=0\n" + signature,
+				content: "[relic-" + e.repo + "]\nname=Relic " + e.repo + "\nbaseurl=" + baseURL + "\nusername=" + e.user +
+					"\npassword=" + e.token + "\nenabled=1\ngpgcheck=0\n" + signature + optionalLine(
+					"sslcacert=",
+					e.authorityFile,
+				),
 			}), nil
+		},
+		notes: func(e setupEnv) string {
+			if e.class != relicv1.RepositoryClass_REPOSITORY_CLASS_REMOTE {
+				return ""
+			}
+
+			return "The upstream signs this remote's metadata and packages, not Relic: add the upstream's gpgkey= " +
+				"and set repo_gpgcheck=1 and gpgcheck=1 to check them."
 		},
 	},
 	"nix": {
@@ -660,6 +833,10 @@ var setupClients = map[string]setupClient{
 		notes: func(_ setupEnv) string {
 			return "Add the cache's signing key to trusted-public-keys, or set require-sigs = false for unsigned caches."
 		},
+		trust: func(e setupEnv) string {
+			return "In nix.conf (the daemon's /etc/nix/nix.conf on a multi-user install): ssl-cert-file = " +
+				e.authorityFile
+		},
 	},
 	"huggingface": {
 		formats: []relicv1.Format{
@@ -678,7 +855,92 @@ var setupClients = map[string]setupClient{
 		notes: func(e setupEnv) string {
 			return "export HF_ENDPOINT=" + e.url + "\nor relic package huggingface upload|download, which need neither."
 		},
+		trust: func(e setupEnv) string {
+			return "export SSL_CERT_FILE=" + e.authorityFile + " REQUESTS_CA_BUNDLE=" + e.authorityFile
+		},
 	},
+}
+
+func nodeTrust(e setupEnv) string {
+	return "export NODE_EXTRA_CA_CERTS=" + e.authorityFile
+}
+
+func javaTrust(e setupEnv) string {
+	return "Java trusts the authority once it is in the JDK's trust store: keytool -importcert -cacerts -alias relic -file " +
+		e.authorityFile
+}
+
+func goTrust(e setupEnv) string {
+	return "export SSL_CERT_FILE=" + e.authorityFile + " (Linux); on macOS and Windows, add it to the system trust store."
+}
+
+func systemTrust(e setupEnv) string {
+	return "Add " + e.authorityFile + " to the system trust store."
+}
+
+func optionalLine(prefix, value string) string {
+	if value == "" {
+		return ""
+	}
+
+	return prefix + value + "\n"
+}
+
+func authorityStep(e setupEnv, client setupClient) setupStep {
+	return setupStep{
+		file:    authorityFileName(e, client),
+		mode:    0o644,
+		content: e.certificateAuthority,
+		owned:   true,
+	}
+}
+
+func authorityFileName(e setupEnv, client setupClient) string {
+	name := strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-' {
+			return r
+		}
+
+		return '_'
+	}, e.host)
+
+	if client.system {
+		return "etc/relic/certificate-authorities/" + name + ".crt"
+	}
+
+	return ".config/relic/certificate-authorities/" + name + ".crt"
+}
+
+func withAuthority(e setupEnv, client setupClient) setupEnv {
+	switch {
+	case e.certificateAuthority == "":
+		e.authorityFile = ""
+	case client.system:
+		e.authorityFile = "/" + authorityFileName(e, client)
+	default:
+		e.authorityFile = stepPath(e, client, authorityFileName(e, client))
+	}
+
+	return e
+}
+
+func clientSteps(e setupEnv, client setupClient) ([]setupStep, error) {
+	steps, err := client.steps(e)
+	if err != nil || e.authorityFile == "" {
+		return steps, err
+	}
+
+	return append([]setupStep{
+		authorityStep(e, client),
+	}, steps...), nil
+}
+
+func trustNote(e setupEnv, client setupClient) string {
+	if e.authorityFile == "" || client.trust == nil {
+		return ""
+	}
+
+	return "The server's certificate authority is in " + e.authorityFile + ".\n" + client.trust(e)
 }
 
 // homeEnvironment is e.getenv when e.home is the user's own home, and
@@ -743,23 +1005,40 @@ func terraformConfigFile(e setupEnv) string {
 	return ".terraformrc"
 }
 
+func poetryRepository(repo string) string {
+	// Poetry reserves pypi for PyPI, whose credentials poetry publish sends to upload.pypi.org.
+	if strings.EqualFold(repo, "pypi") {
+		return "relic-" + repo
+	}
+
+	return repo
+}
+
 func pipSteps(e setupEnv) ([]setupStep, error) {
 	return []setupStep{
 		{
 			file:    pipConfigFile(e),
 			mode:    0o644,
-			content: "[global]\nindex-url = " + e.url + "\n",
+			content: "[global]\nindex-url = " + e.url + "\n" + optionalLine("cert = ", e.authorityFile),
 		},
 		netrcStep(e),
 	}, nil
 }
 
 func netrcStep(e setupEnv) setupStep {
+	// The go command matches host:port; curl and Python's netrc match the host alone.
+	credentials := " login " + e.user + " password " + e.token + "\n"
+
+	content := "machine " + hostOnly(e.host) + credentials
+	if e.host != hostOnly(e.host) {
+		content = "machine " + e.host + credentials + content
+	}
+
 	return setupStep{
 		file:    ".netrc",
 		block:   true,
 		mode:    0o600,
-		content: "machine " + hostOnly(e.host) + " login " + e.user + " password " + e.token + "\n",
+		content: content,
 	}
 }
 
@@ -888,8 +1167,7 @@ func packageSetupCmd(g *globals) *cobra.Command {
 			"  relic package setup go go-virtual --private 'git.example.com/*' --write\n" +
 			"  relic package setup npm npm-virtual --agent --project .\n" +
 			"  relic package setup apt debian-remote --distribution bookworm --write   # as root, e.g. in a Dockerfile",
-		Args:      cobra.ExactArgs(2),
-		ValidArgs: names,
+		Args: cobra.ExactArgs(2),
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			if len(args) == 0 {
 				return names, cobra.ShellCompDirectiveNoFileComp
@@ -924,7 +1202,7 @@ func packageSetupCmd(g *globals) *cobra.Command {
 
 			switch {
 			case !write && !showToken:
-				e.token = "<token>"
+				e.token = tokenPlaceholder
 			case e.contextToken:
 				e.token, err = clientToken(cmd, c, args[0], args[1], expiresDays)
 				if err != nil {
@@ -932,7 +1210,9 @@ func packageSetupCmd(g *globals) *cobra.Command {
 				}
 			}
 
-			steps, err := client.steps(e)
+			e = withAuthority(e, client)
+
+			steps, err := clientSteps(e, client)
 			if err != nil {
 				return err
 			}
@@ -957,8 +1237,12 @@ func packageSetupCmd(g *globals) *cobra.Command {
 				}
 			}
 
-			if client.notes != nil {
+			if client.notes != nil && client.notes(e) != "" {
 				_, _ = fmt.Fprintf(out, "\n%s\n", client.notes(e))
+			}
+
+			if note := trustNote(e, client); note != "" {
+				_, _ = fmt.Fprintf(out, "\n%s\n", note)
 			}
 
 			return nil
@@ -1045,21 +1329,24 @@ func setupEnvFor(cmd *cobra.Command, g *globals, c *client, client setupClient, 
 	}
 
 	e := setupEnv{
-		repo:         repo,
-		format:       format,
-		url:          ep.GetPackageManager(),
-		registry:     ep.GetContainerRegistry(),
-		files:        ep.GetFiles(),
-		host:         u.Host,
-		user:         me.GetPrincipal().GetUsername(),
-		token:        target.token,
-		contextToken: target.contextToken,
+		repo:                 repo,
+		format:               format,
+		url:                  ep.GetPackageManager(),
+		registry:             ep.GetContainerRegistry(),
+		files:                ep.GetFiles(),
+		host:                 u.Host,
+		user:                 me.GetPrincipal().GetUsername(),
+		token:                target.token,
+		contextToken:         target.contextToken,
+		class:                r.GetRepository().GetClass(),
+		depth:                r.GetRepository().GetMetadataDepth(),
+		certificateAuthority: target.certificateAuthority,
 	}
 	if e.url == "" {
 		e.url = e.files
 	}
 
-	if slices.Contains(signedFormats, format) {
+	if slices.Contains(signedFormats, format) && e.class != relicv1.RepositoryClass_REPOSITORY_CLASS_REMOTE {
 		key, err := c.repositories.GetRepositorySigningKey(
 			ctx,
 			&relicv1.GetRepositorySigningKeyRequest{
@@ -1070,10 +1357,45 @@ func setupEnvFor(cmd *cobra.Command, g *globals, c *client, client setupClient, 
 			return setupEnv{}, fmt.Errorf("setup: the signing key of %s: %w", repo, err)
 		}
 
-		e.keyPair, e.publicKey = key.GetKeyPair(), key.GetPublicKey()
+		e.signingKeys = []signingKey{
+			{
+				name:      key.GetKeyPair(),
+				publicKey: key.GetPublicKey(),
+			},
+		}
+		if key.GetSecondaryKeyPair() != "" {
+			e.signingKeys = append(e.signingKeys, signingKey{
+				name:      key.GetSecondaryKeyPair(),
+				publicKey: key.GetSecondaryPublicKey(),
+			})
+		}
 	}
 
 	return e, nil
+}
+
+func dnfBaseURL(e setupEnv) (string, error) {
+	folder := strings.Trim(e.flags["folder"], "/")
+	if e.depth == 0 {
+		if folder != "" {
+			return "", fmt.Errorf("dnf: %s serves its repodata at its root, so it takes no --folder", e.repo)
+		}
+
+		return e.url, nil
+	}
+
+	segments := strings.Split(folder, "/")
+	if folder == "" || len(segments) != int(e.depth) || slices.ContainsFunc(segments, func(segment string) bool {
+		return !plainFileName(segment)
+	}) {
+		return "", fmt.Errorf(
+			"dnf: %s has repodata %d folder(s) down: give the folder (--folder el9)",
+			e.repo,
+			e.depth,
+		)
+	}
+
+	return strings.TrimSuffix(e.url, "/") + "/" + folder, nil
 }
 
 // clientToken issues the token a client gets in place of the context's own, which signing in again and
@@ -1239,6 +1561,62 @@ func withBlock(old, repo, content string) (string, error) {
 	return old + block, nil
 }
 
+var setupBlockBegin = regexp.MustCompile(`(?m)^# relic setup (\S+) begin\r?$`)
+
+var yamlTopLevelKey = regexp.MustCompile(`(?m)^([A-Za-z0-9_-]+)\s*:`)
+
+func withSoleBlock(old, repo, content string) (string, error) {
+	kept := old
+
+	for _, match := range setupBlockBegin.FindAllStringSubmatch(old, -1) {
+		if match[1] == repo {
+			continue
+		}
+
+		var err error
+		if kept, err = withoutBlock(kept, match[1]); err != nil {
+			return "", err
+		}
+	}
+
+	outside, err := withoutBlock(kept, repo)
+	if err != nil {
+		return "", err
+	}
+
+	set := map[string]bool{}
+	for _, match := range yamlTopLevelKey.FindAllStringSubmatch(outside, -1) {
+		set[match[1]] = true
+	}
+
+	for _, match := range yamlTopLevelKey.FindAllStringSubmatch(content, -1) {
+		if set[match[1]] {
+			return "", fmt.Errorf(
+				"%s is already set outside relic's block; remove it, or merge by hand (relic package setup without --write prints it)",
+				match[1],
+			)
+		}
+	}
+
+	return withBlock(kept, repo, content)
+}
+
+func withoutBlock(old, repo string) (string, error) {
+	begin, end := blockMarkers(repo)
+
+	i, _ := markerLine(old, begin)
+	if i < 0 {
+		return old, nil
+	}
+
+	_, after := markerLine(old[i:], end)
+	if after < 0 {
+		return "", fmt.Errorf("%q has no matching %q; fix the file by hand", begin, end)
+	}
+
+	return old[:i] + old[i+after:], nil
+}
+
 var homeVariables = []string{
 	"HOME",
 	"USERPROFILE",
@@ -1332,12 +1710,17 @@ func applySetupStep(cmd *cobra.Command, e setupEnv, client setupClient, s setupS
 	content := s.content
 
 	switch {
+	case s.soleBlock:
+		content, err = withSoleBlock(string(old), e.repo, s.content)
+		if err != nil {
+			return fmt.Errorf("setup: %s: %w", path, err)
+		}
 	case s.block:
 		content, err = withBlock(string(old), e.repo, s.content)
 		if err != nil {
 			return fmt.Errorf("setup: %s: %w", path, err)
 		}
-	case err == nil && string(old) != s.content && !force:
+	case err == nil && string(old) != s.content && !force && !s.owned:
 		return fmt.Errorf(
 			"setup: %s exists; merge it by hand (relic package setup without --write prints it) or replace it with --force",
 			path,

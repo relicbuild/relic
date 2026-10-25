@@ -52,6 +52,17 @@ func TestExchange(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	for _, g := range []string{
+		"docs",
+		"retired",
+	} {
+		if _, err := db.UpsertGroup(ctx, database.UpsertGroupParams{
+			Name: g,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	issuer := ssotest.NewOIDC(t, "unused", "unused")
 	s := workload.New(db, tokens, slog.New(slog.DiscardHandler))
 
@@ -89,8 +100,21 @@ func TestExchange(t *testing.T) {
 				},
 				User: "ci-bot",
 			},
+			{
+				Claims: map[string]string{
+					"repository": "acme/legacy",
+				},
+				User: "ci-bot",
+				Groups: []string{
+					"retired",
+				},
+			},
 		},
 	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := db.DeleteGroup(ctx, "retired"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -150,6 +174,11 @@ func TestExchange(t *testing.T) {
 			token:    issuer.Mint(t, claims("acme/retired", "refs/heads/dev")),
 		},
 		{
+			name:     "a group deleted after the rule was stored",
+			identity: "github",
+			token:    issuer.Mint(t, claims("acme/legacy", "refs/heads/dev")),
+		},
+		{
 			name:     "wrong audience",
 			identity: "github",
 			token: issuer.Mint(t, map[string]any{
@@ -205,6 +234,82 @@ func TestExchange(t *testing.T) {
 
 			if got.Token.ExpiresIn > workload.MaxTokenLifetime {
 				t.Errorf("issued token lives %s", got.Token.ExpiresIn)
+			}
+		})
+	}
+}
+
+func TestPutIdentityRefusesPrincipalsThatDoNotExist(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		rule    workload.Rule
+		wantErr error
+	}{
+		{
+			name: "an existing user and group",
+			rule: workload.Rule{
+				User: "ci-build",
+				Groups: []string{
+					"readers",
+				},
+			},
+		},
+		{
+			name: "a user that does not exist",
+			rule: workload.Rule{
+				User: "ci-release",
+			},
+			wantErr: workload.ErrInvalid,
+		},
+		{
+			name: "a group that does not exist",
+			rule: workload.Rule{
+				User: "ci-build",
+				Groups: []string{
+					"writers",
+				},
+			},
+			wantErr: workload.ErrInvalid,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			db := databasetest.NewDB(t)
+
+			if _, err := db.UpsertUser(ctx, database.UpsertUserParams{
+				ID:           uuid.NewV7(),
+				Username:     "ci-build",
+				PasswordHash: "!",
+				Extensions:   []byte(`{}`),
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := db.UpsertGroup(ctx, database.UpsertGroupParams{
+				Name: "readers",
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			tt.rule.Claims = map[string]string{
+				"repository": "acme/app",
+			}
+
+			err := workload.New(db, nil, slog.New(slog.DiscardHandler)).PutIdentity(ctx, workload.Identity{
+				Name:     "github",
+				Issuer:   "https://token.actions.githubusercontent.com",
+				Audience: "relic",
+				Rules: []workload.Rule{
+					tt.rule,
+				},
+			})
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("PutIdentity = %v, want %v", err, tt.wantErr)
 			}
 		})
 	}

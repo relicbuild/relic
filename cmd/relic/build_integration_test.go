@@ -77,6 +77,23 @@ func scanningServer(t *testing.T) *httptest.Server {
 			Path: grype,
 		},
 	}, scan.Limits{}, log)
+
+	graphQueue := `INSERT INTO river_queue (name, updated_at) VALUES ('scan_graph', now())`
+	if db.SQLite() {
+		graphQueue = `INSERT INTO river_queue (name, updated_at) VALUES ('scan_graph', datetime('now', 'subsec'))`
+	}
+
+	rows, err := db.Query(t.Context(), graphQueue)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows.Close()
+
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+
 	srv := httptest.NewServer(app.NewHandler(db, blobs, tokens, syncQueue{
 		scans: svc,
 	}, app.Options{}, log))
@@ -317,7 +334,7 @@ func TestBuildCommands(t *testing.T) {
 		t.Error("build get of a run that was never published succeeded")
 	}
 
-	if out, _ := relic(
+	if _, err := relic(
 		t,
 		config,
 		"",
@@ -325,12 +342,8 @@ func TestBuildCommands(t *testing.T) {
 		"publish",
 		"app",
 		"7",
-		"--dry-run",
-	); !strings.Contains(
-		out,
-		"0 modules",
-	) {
-		t.Errorf("after publish = %q", out)
+	); err == nil || !strings.Contains(err.Error(), "no run app/7 is recorded locally") {
+		t.Errorf("publish again after publish = %v, want the run reported missing", err)
 	}
 
 	out, err := relic(t, config, "", "build", "scan", "app", "7")
@@ -421,6 +434,20 @@ spec: {active: true, scopes: [{kind: build, names: [app]}], policies: [b-sec]}
 		"8",
 		"9",
 	} {
+		if _, err := relic(
+			t,
+			config,
+			"",
+			"build",
+			"collect-env",
+			"app",
+			n,
+			"--include",
+			"RELIC_TEST_BUILD_*",
+		); err != nil {
+			t.Fatal(err)
+		}
+
 		if _, err := relic(t, config, "", "build", "publish", "app", n); err != nil {
 			t.Fatal(err)
 		}

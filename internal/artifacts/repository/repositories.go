@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -86,6 +87,10 @@ func (s *Service) CreateRepository(ctx context.Context, r Repository) error {
 		return err
 	}
 
+	if err := s.checkKeyPairs(ctx, r); err != nil {
+		return err
+	}
+
 	config, err := s.encodeConfig(r)
 	if err != nil {
 		return err
@@ -96,15 +101,17 @@ func (s *Service) CreateRepository(ctx context.Context, r Repository) error {
 			return err
 		}
 
-		return s.db.CreateRepository(ctx, database.CreateRepositoryParams{
-			Key:     r.Name,
-			Class:   string(r.Class),
-			Format:  string(r.Format),
-			Project: r.Project,
-			Config:  config,
+		return s.withProject(ctx, r.Project, "", func() error {
+			return s.db.CreateRepository(ctx, database.CreateRepositoryParams{
+				Key:     r.Name,
+				Class:   string(r.Class),
+				Format:  string(r.Format),
+				Project: r.Project,
+				Config:  config,
+			})
 		})
 	})
-	if errors.Is(err, ErrRepositoryKeyCaseConflict) {
+	if errors.Is(err, ErrRepositoryKeyCaseConflict) || errors.Is(err, ErrInvalidRepository) {
 		return err
 	}
 
@@ -120,6 +127,39 @@ func (s *Service) CreateRepository(ctx context.Context, r Repository) error {
 }
 
 const repositoryKeysLock = "repository:keys"
+
+// SameOrigin reports whether two URLs have the same scheme, host and port,
+// so that a stored credential for one may be sent to the other.
+func SameOrigin(stored, updated string) bool {
+	a, errA := url.Parse(stored)
+	b, errB := url.Parse(updated)
+
+	return errA == nil && errB == nil && a.Host != "" &&
+		strings.EqualFold(a.Scheme, b.Scheme) && strings.EqualFold(a.Host, b.Host)
+}
+
+func (s *Service) withProject(ctx context.Context, key, current string, save func() error) error {
+	if project.IsDefault(key) || key == current {
+		return save()
+	}
+
+	if !project.ValidKey(key) {
+		return fmt.Errorf("%w: project key %q is not valid", ErrInvalidRepository, key)
+	}
+
+	return s.db.WithLock(ctx, project.Lock(key), func() error {
+		_, err := s.db.GetProject(ctx, key)
+		if errors.Is(database.NotFound(err), database.ErrNotFound) {
+			return fmt.Errorf("%w: project %s does not exist", ErrInvalidRepository, key)
+		}
+
+		if err != nil {
+			return fmt.Errorf("look up project %s: %w", key, err)
+		}
+
+		return save()
+	})
+}
 
 func (s *Service) refuseCaseVariant(ctx context.Context, key string) error {
 	repos, err := s.ListRepositories(ctx, "", "")
@@ -163,10 +203,18 @@ func (s *Service) UpdateRepository(ctx context.Context, r Repository) error {
 		return err
 	}
 
+	if err := s.checkKeyPairs(ctx, r); err != nil {
+		return err
+	}
+
 	if r.Config.Remote != nil && r.Config.Remote.Password == "" && existing.Config.Remote != nil {
 		stored, err := s.storedPassword(ctx, r.Name)
 		if err != nil {
 			return err
+		}
+
+		if stored != "" && !SameOrigin(existing.Config.Remote.URL, r.Config.Remote.URL) {
+			return fmt.Errorf("%w: the remote URL's host changed: give the password again", ErrInvalidRepository)
 		}
 
 		r.Config.Remote.Password = stored
@@ -177,15 +225,21 @@ func (s *Service) UpdateRepository(ctx context.Context, r Repository) error {
 		return err
 	}
 
-	err = s.db.UpdateRepository(
-		ctx,
-		database.UpdateRepositoryParams{
-			Key:     r.Name,
-			Format:  string(r.Format),
-			Project: r.Project,
-			Config:  config,
-		},
-	)
+	err = s.withProject(ctx, r.Project, existing.Project, func() error {
+		return s.db.UpdateRepository(
+			ctx,
+			database.UpdateRepositoryParams{
+				Key:     r.Name,
+				Format:  string(r.Format),
+				Project: r.Project,
+				Config:  config,
+			},
+		)
+	})
+	if errors.Is(err, ErrInvalidRepository) {
+		return err
+	}
+
 	if err != nil {
 		return fmt.Errorf("update repository %s: %w", r.Name, err)
 	}
@@ -442,16 +496,81 @@ func (r Repository) KeyPairRef() string {
 	}
 }
 
+// KeyPairRefs names the key pairs that sign the repository's metadata: its
+// key pair, then its secondary signing key, if any.
+func (r Repository) KeyPairRefs() []string {
+	refs := []string{
+		r.KeyPairRef(),
+	}
+	if r.Config.SecondarySigningKey != "" {
+		refs = append(refs, r.Config.SecondarySigningKey)
+	}
+
+	return refs
+}
+
+// KeyPairKind is the kind of key pair that signs format's metadata: rsa for
+// Alpine, gpg for Debian and RPM, else "".
+func KeyPairKind(format Format) string {
+	switch format {
+	case FormatAlpine:
+		return "rsa"
+	case FormatDebian, FormatRPM:
+		return "gpg"
+	default:
+		return ""
+	}
+}
+
+func (s *Service) checkKeyPairs(ctx context.Context, r Repository) error {
+	kind := KeyPairKind(r.Format)
+	if kind == "" {
+		return nil
+	}
+
+	repos, err := s.ListRepositories(ctx, "", "")
+	if err != nil {
+		return err
+	}
+
+	for _, name := range r.KeyPairRefs() {
+		stored, err := s.db.GetKeyPair(ctx, name)
+		if err == nil && stored.Kind != kind {
+			return fmt.Errorf("%w: key pair %s is %s; a %s repository is signed with %s",
+				ErrInvalidRepository, name, stored.Kind, r.Format, kind)
+		}
+
+		if err != nil && !errors.Is(database.NotFound(err), database.ErrNotFound) {
+			return fmt.Errorf("key pair %s: %w", name, err)
+		}
+
+		for _, other := range repos {
+			otherKind := KeyPairKind(other.Format)
+			if other.Name != r.Name && otherKind != "" && otherKind != kind &&
+				slices.Contains(other.KeyPairRefs(), name) {
+				return fmt.Errorf(
+					"%w: key pair %s signs %s, a %s repository, with %s; a %s repository is signed with %s",
+					ErrInvalidRepository,
+					name,
+					other.Name,
+					other.Format,
+					otherKind,
+					r.Format,
+					kind,
+				)
+			}
+		}
+	}
+
+	return nil
+}
+
 // OwnRepositories names the repositories Relic writes itself: build
 // information, releases and evidence.
 func (s *Service) OwnRepositories(ctx context.Context) ([]string, error) {
 	var names []string
 
-	for _, f := range []Format{
-		FormatBuild,
-		FormatRelease,
-		FormatEvidence,
-	} {
+	for _, f := range OwnFormats {
 		repos, err := s.ListRepositories(ctx, "", f)
 		if err != nil {
 			return nil, err

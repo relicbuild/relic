@@ -218,6 +218,9 @@ enum ScanStatus {
   SCAN_STATUS_FAILED = 5;
   // SCAN_STATUS_SKIPPED: the file is too large or not a package.
   SCAN_STATUS_SKIPPED = 6;
+  // SCAN_STATUS_UNAVAILABLE: the file waits for a scan, but Relic Scan is
+  // off: no worker that runs it reported lately.
+  SCAN_STATUS_UNAVAILABLE = 7;
 }
 
 // Cvss is one CVSS rating of a finding.
@@ -777,6 +780,9 @@ message ImportVexResponse {
   // skipped counts the statements left out: other statuses, and those
   // naming no package URL.
   int32 skipped = 2;
+  // existing counts the statements whose ignore rule is already stored;
+  // they create no rule.
+  int32 existing = 3;
 }
 
 message ExplainDownloadRequest {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"uuid"
 
@@ -114,16 +115,49 @@ func (s *Service) CreateLdapServer(ctx context.Context, st Server) error {
 	})
 }
 
+func (s *Service) keepManagerPassword(ctx context.Context, st *Server) error {
+	if st.Search.ManagerPassword != "" {
+		return nil
+	}
+
+	old, err := s.Server(ctx, st.Name)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+
+	if err != nil {
+		return err
+	}
+
+	if old.Search.ManagerPassword == "" || old.Search.ManagerDN != st.Search.ManagerDN {
+		return nil
+	}
+
+	if !sameOrigin(old.URL, st.URL) {
+		return fmt.Errorf("%w: the URL's host changed: give the manager password again", ErrInvalid)
+	}
+
+	st.Search.ManagerPassword = old.Search.ManagerPassword
+
+	return nil
+}
+
+func sameOrigin(stored, updated string) bool {
+	a, errA := url.Parse(stored)
+	b, errB := url.Parse(updated)
+
+	return errA == nil && errB == nil && a.Host != "" &&
+		strings.EqualFold(a.Scheme, b.Scheme) && strings.EqualFold(a.Host, b.Host)
+}
+
 // PutLdapServer stores an LDAP server.
 func (s *Service) PutLdapServer(ctx context.Context, st Server) error {
 	if err := st.Validate(); err != nil {
 		return err
 	}
 
-	if st.Search.ManagerPassword == "" {
-		if old, err := s.Server(ctx, st.Name); err == nil && old.Search.ManagerDN == st.Search.ManagerDN {
-			st.Search.ManagerPassword = old.Search.ManagerPassword
-		}
+	if err := s.keepManagerPassword(ctx, &st); err != nil {
+		return err
 	}
 
 	if pw := st.Search.ManagerPassword; pw != "" && s.box.Enabled() {
@@ -393,10 +427,8 @@ func (s *Service) Test(ctx context.Context, st Server, username, password string
 		return Entry{}, err
 	}
 
-	if st.Search.ManagerPassword == "" {
-		if old, err := s.Server(ctx, st.Name); err == nil && old.Search.ManagerDN == st.Search.ManagerDN {
-			st.Search.ManagerPassword = old.Search.ManagerPassword
-		}
+	if err := s.keepManagerPassword(ctx, &st); err != nil {
+		return Entry{}, err
 	}
 
 	groups, err := s.GroupMappings(ctx)

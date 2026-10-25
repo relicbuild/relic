@@ -58,8 +58,14 @@ func (h *Handler) npmAPI(w http.ResponseWriter, r *http.Request, m Mount) {
 		})
 	case strings.HasPrefix(rest, "-/user/org.couchdb.user:") && r.Method == http.MethodPut:
 		h.npmLogin(w, r)
+	case strings.HasPrefix(rest, "-/user/token/") && r.Method == http.MethodDelete:
+		h.npmLogout(w, r, strings.TrimPrefix(rest, "-/user/token/"))
 	case strings.HasPrefix(rest, "-/npm/v1/security/") && r.Method == http.MethodPost:
 		h.npmAudit(w, r, req, rest)
+	case rest == "-/npm/v1/keys" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
+		h.npmSigningKeys(w, r, req)
+	case strings.HasPrefix(rest, "-/npm/v1/attestations/") && (r.Method == http.MethodGet || r.Method == http.MethodHead):
+		h.npmAttestations(w, r, req, strings.TrimPrefix(rest, "-/npm/v1/attestations/"))
 	case rest == "-/v1/search" && r.Method == http.MethodGet:
 		h.npmSearch(w, r, req)
 	case strings.HasPrefix(rest, "-/package/"):
@@ -95,6 +101,11 @@ func (h *Handler) npmPackageRequest(w http.ResponseWriter, r *http.Request, req 
 		writeJSON(w, http.StatusOK, doc)
 	case tail == "" && r.Method == http.MethodPut:
 		h.npmPublish(w, r, req, name)
+	case strings.HasPrefix(tail, "-rev/") && (r.Method == http.MethodPut || r.Method == http.MethodDelete):
+		h.npmUnpublish(w, r, req, name)
+	case strings.HasPrefix(tail, "-/") && strings.Contains(tail, "/-rev/") && r.Method == http.MethodDelete:
+		file, _, _ := strings.Cut(strings.TrimPrefix(tail, "-/"), "/-rev/")
+		h.npmDeleteTarball(w, r, req, name, file)
 	case strings.HasPrefix(tail, "-/") && (r.Method == http.MethodGet || r.Method == http.MethodHead):
 		// Scoped local tarballs repeat the scope: @s/p/-/@s/p-1.0.0.tgz.
 		file, err := url.PathUnescape(strings.TrimPrefix(tail, "-/"))
@@ -170,6 +181,89 @@ func (h *Handler) npmPublish(w http.ResponseWriter, r *http.Request, req npmRequ
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"ok": true,
 		"id": name,
+	})
+}
+
+func (h *Handler) npmUnpublish(w http.ResponseWriter, r *http.Request, req npmRequest, name string) {
+	dest, err := h.repos.DeployTarget(r.Context(), req.repo)
+	if err != nil {
+		h.npmError(w, r, err)
+		return
+	}
+
+	if !h.RequireRepo(w, r, RepoCheck{
+		dest,
+		name,
+		auth.ActionDelete,
+	}) {
+		return
+	}
+
+	var (
+		doc  npm.PublishDocument
+		keep func(version string) bool
+	)
+
+	if r.Method == http.MethodPut {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxPublishBytes)).Decode(&doc); err != nil ||
+			doc.Name != name || len(doc.Versions) == 0 {
+			httperror.Write(w, r, http.StatusBadRequest, "the packument must name the package and keep a version")
+			return
+		}
+
+		keep = func(version string) bool {
+			_, kept := doc.Versions[version]
+			return kept
+		}
+	}
+
+	user := auth.FromContext(r.Context()).Name()
+	if err := h.npm.Unpublish(r.Context(), dest, name, user, keep); err != nil {
+		h.npmError(w, r, err)
+		return
+	}
+
+	for tag, version := range doc.DistTags {
+		if err := h.npm.SetTag(r.Context(), dest, name, tag, version); err != nil && !errors.Is(err, npm.ErrNotFound) {
+			h.npmError(w, r, err)
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{
+		"ok": true,
+	})
+}
+
+func (h *Handler) npmDeleteTarball(w http.ResponseWriter, r *http.Request, req npmRequest, name, escapedFile string) {
+	file, err := url.PathUnescape(escapedFile)
+	if err != nil || file == "" || strings.Contains(file, "..") {
+		httperror.Write(w, r, http.StatusBadRequest, "invalid tarball name")
+		return
+	}
+
+	dest, err := h.repos.DeployTarget(r.Context(), req.repo)
+	if err != nil {
+		h.npmError(w, r, err)
+		return
+	}
+
+	p := name + "/-/" + file
+	if !h.RequireRepo(w, r, RepoCheck{
+		dest,
+		p,
+		auth.ActionDelete,
+	}) {
+		return
+	}
+
+	if err := h.repos.DeleteToTrash(r.Context(), dest, p, auth.FromContext(r.Context()).Name()); err != nil {
+		h.npmError(w, r, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{
+		"ok": true,
 	})
 }
 
@@ -372,6 +466,7 @@ func (h *Handler) npmLogin(w http.ResponseWriter, r *http.Request) {
 	tok, err := h.tokens.Issue(r.Context(), p.LimitIssue(auth.IssueParams{
 		Username:    p.Username,
 		Scope:       auth.UserScope,
+		ExpiresIn:   npmLoginTokenLifetime,
 		Description: "npm login",
 	}, time.Now()))
 	if err != nil {
@@ -390,6 +485,41 @@ func (h *Handler) npmLogin(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
+const npmLoginTokenLifetime = 90 * 24 * time.Hour
+
+func (h *Handler) npmLogout(w http.ResponseWriter, r *http.Request, escaped string) {
+	caller := auth.FromContext(r.Context())
+	if caller.Anonymous() {
+		httperror.Write(w, r, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	token, err := url.PathUnescape(escaped)
+	if err != nil {
+		httperror.Write(w, r, http.StatusNotFound, "Not Found")
+		return
+	}
+
+	tok, err := h.tokens.Verify(r.Context(), token)
+	if errors.Is(err, auth.ErrInvalidToken) || err == nil && tok.Username != caller.Username {
+		httperror.Write(w, r, http.StatusNotFound, "Not Found")
+		return
+	}
+
+	if err == nil {
+		err = h.tokens.RevokeID(r.Context(), tok.ID, caller.Username)
+	}
+
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{
+		"ok": true,
+	})
+}
+
 func (h *Handler) npmError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, npm.ErrNotFound), errors.Is(err, repository.ErrNotFound):
@@ -402,6 +532,69 @@ func (h *Handler) npmError(w http.ResponseWriter, r *http.Request, err error) {
 	default:
 		h.writeError(w, r, err)
 	}
+}
+
+func (h *Handler) npmSigningKeys(w http.ResponseWriter, r *http.Request, req npmRequest) {
+	if !h.RequireRepo(w, r, RepoCheck{
+		req.repo,
+		"",
+		auth.ActionRead,
+	}) {
+		return
+	}
+
+	rp, err := h.repos.GetRepository(r.Context(), req.repo)
+	if err != nil {
+		h.npmError(w, r, err)
+		return
+	}
+
+	keys, err := h.npm.SigningKeys(r.Context(), rp)
+	if err != nil {
+		h.npmError(w, r, err)
+		return
+	}
+
+	writeRegistryDocument(w, keys)
+}
+
+func (h *Handler) npmAttestations(w http.ResponseWriter, r *http.Request, req npmRequest, spec string) {
+	unescaped, err := url.PathUnescape(spec)
+	at := strings.LastIndex(unescaped, "@")
+
+	if err != nil || at <= 0 {
+		httperror.Write(w, r, http.StatusBadRequest, "invalid package version")
+		return
+	}
+
+	name, version := unescaped[:at], unescaped[at+1:]
+	if !h.RequireRepo(w, r, RepoCheck{
+		req.repo,
+		name,
+		auth.ActionRead,
+	}) {
+		return
+	}
+
+	rp, err := h.repos.GetRepository(r.Context(), req.repo)
+	if err != nil {
+		h.npmError(w, r, err)
+		return
+	}
+
+	attestations, err := h.npm.Attestations(r.Context(), rp, name, version)
+	if err != nil {
+		h.npmError(w, r, err)
+		return
+	}
+
+	writeRegistryDocument(w, attestations)
+}
+
+func writeRegistryDocument(w http.ResponseWriter, document []byte) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(document) //nolint:gosec // G705: the upstream registry's JSON, served as JSON
 }
 
 func (h *Handler) npmAudit(w http.ResponseWriter, r *http.Request, req npmRequest, apiPath string) {

@@ -30,6 +30,7 @@ import (
 	"relic/internal/delivery/release"
 	"relic/internal/delivery/replication"
 	"relic/internal/delivery/webhook"
+	"relic/internal/platform/localdisk"
 	"relic/internal/platform/objectstore"
 	"relic/internal/scanning/cvecatalog"
 	"relic/internal/scanning/scan"
@@ -206,6 +207,7 @@ var notFound = []error{
 	signingkey.ErrNotFound,
 	auth.ErrTokenNotFound,
 	auth.ErrUnknownUser,
+	auth.ErrUnknownGroup,
 	sso.ErrNotFound,
 	workload.ErrNotFound,
 	webhook.ErrNotFound,
@@ -230,6 +232,8 @@ func codeOf(err error) *connect.Error {
 	}
 
 	switch {
+	case errors.Is(err, repository.ErrUpstream):
+		return connect.NewError(connect.CodeUnavailable, err.Error()).WithCause(err)
 	case errors.Is(err, repository.ErrRepositoryExists),
 		errors.Is(err, repository.ErrRepositoryKeyCaseConflict),
 		errors.Is(err, security.ErrExists),
@@ -271,6 +275,7 @@ func codeOf(err error) *connect.Error {
 	case errors.Is(err, blocking.ErrInvalid):
 		return connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
 	case errors.Is(err, policy.ErrInUse),
+		errors.Is(err, project.ErrHasRepositories),
 		errors.Is(err, policy.ErrDecided),
 		errors.Is(err, release.ErrRefused),
 		errors.Is(err, repository.ErrNotLocal),
@@ -278,15 +283,16 @@ func codeOf(err error) *connect.Error {
 		errors.Is(err, repository.ErrHeld),
 		errors.Is(err, repository.ErrImmutable),
 		errors.Is(err, release.ErrNotDraft),
-		errors.Is(err, signingkey.ErrKind):
+		errors.Is(err, signingkey.ErrKind),
+		errors.Is(err, signingkey.ErrInUse):
 		return connect.NewError(connect.CodeFailedPrecondition, err.Error()).WithCause(err)
-	case errors.Is(err, repository.ErrUpstream):
-		return connect.NewError(connect.CodeUnavailable, err.Error()).WithCause(err)
 	case errors.Is(err, repository.ErrTooLarge), errors.Is(err, repository.ErrQuotaExceeded):
 		return connect.NewError(connect.CodeResourceExhausted, err.Error()).WithCause(err)
 	case errors.Is(err, objectstore.ErrStorageFull):
 		return connect.NewError(connect.CodeResourceExhausted, objectstore.ErrStorageFull.Error()).
 			WithCause(objectstore.ErrStorageFull)
+	case errors.Is(err, localdisk.ErrFull):
+		return connect.NewError(connect.CodeResourceExhausted, localdisk.ErrFull.Error()).WithCause(localdisk.ErrFull)
 	case errors.Is(err, context.Canceled):
 		return connect.NewError(connect.CodeCanceled, err.Error()).WithCause(err)
 	case errors.Is(err, context.DeadlineExceeded):

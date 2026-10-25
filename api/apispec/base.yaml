@@ -8,7 +8,9 @@ info:
     `POST /api/relic.v1.<Service>/<Method>`, by the same handler with the same
     access checks. Errors map to HTTP statuses, with a
     `{"code": <number>, "message": "..."}` body. File contents are plain HTTP
-    under `/api/v1/files/` and `/api/v1/archive/`.
+    under `/api/v1/files/` and `/api/v1/archive/`. A `{path}` parameter is an
+    item's path in its repository; send its slashes as they are or
+    percent-encoded as `%2F`.
 
     Authenticate with basic credentials (a password or an access token) or a
     bearer token. The web UI's session cookie works under `/api/` only, and

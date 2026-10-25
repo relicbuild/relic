@@ -20,8 +20,10 @@ import (
 	"relic/internal/platform/telemetry"
 	"relic/internal/platform/telemetry/telemetrytest"
 
+	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func observed(t *testing.T) http.Handler {
@@ -178,6 +180,41 @@ func TestRoutedNamesServerSpan(t *testing.T) {
 	ended := spans.Ended()
 	if len(ended) != 1 || ended[0].Name() != "PUT /observe-test/{id}" {
 		t.Fatalf("spans %v", ended)
+	}
+}
+
+func TestObserveRedactsATokenInThePath(t *testing.T) {
+	t.Parallel()
+
+	var logs lockedBuffer
+
+	h := observe(
+		slog.New(slog.NewJSONHandler(&logs, nil)),
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+		time.Minute,
+		time.Minute,
+	)
+
+	spans := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spans))
+	path := "/npm/npm/-/user/token/secret-token"
+	ctx, span := tp.Tracer("test").Start(t.Context(), "relic", trace.WithAttributes(attribute.String("url.path", path)))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(ctx, http.MethodDelete, path, nil))
+	span.End()
+
+	if strings.Contains(logs.String(), "secret-token") ||
+		!strings.Contains(logs.String(), `"path":"/npm/npm/-/user/token/REDACTED"`) {
+		t.Errorf("logs = %s; want the path with its token redacted", logs.String())
+	}
+
+	for _, ended := range spans.Ended() {
+		for _, attr := range ended.Attributes() {
+			if strings.Contains(attr.Value.String(), "secret-token") {
+				t.Errorf("span attribute %s = %s", attr.Key, attr.Value.String())
+			}
+		}
 	}
 }
 

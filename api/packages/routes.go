@@ -101,6 +101,7 @@ func (h *Handler) Register(rt *httpserver.Router, registry Mount) {
 	h.RegisterHuggingFace(rt, h.native("/huggingface/"))
 	h.RegisterHelm(rt, h.native("/helm/"))
 	h.RegisterGo(rt, h.native("/go/"))
+	h.RegisterGitLFS(rt, h.native("/lfs/"))
 
 	terraform := h.native("/terraform/")
 	h.RegisterTerraform(rt, terraform)
@@ -112,6 +113,8 @@ func (h *Handler) Register(rt *httpserver.Router, registry Mount) {
 	}
 
 	h.RegisterContainerRegistry(rt, registry)
+	rt.HandleFunc("GET "+RegistryV1Prefix+"_ping", auth.Public, h.dockerV1Ping)
+	rt.HandleFunc("GET "+RegistryV1Prefix+"search", auth.Public, h.dockerSearch)
 }
 
 var rawPrefixes = []string{
@@ -136,6 +139,7 @@ var NativePrefixes = append([]string{
 	"/helm/",
 	"/go/",
 	"/terraform/",
+	"/lfs/",
 }, rawPrefixes...)
 
 func (h *Handler) native(prefix string) Mount {
@@ -154,13 +158,17 @@ func (h *Handler) native(prefix string) Mount {
 // ConfigureAuth teaches the authenticator what the package clients send at Relic's mounts.
 func ConfigureAuth(a *auth.Authenticator) {
 	a.AcceptAPIKey("X-NuGet-ApiKey", "/nuget/")
+	a.AcceptBareToken("/gems/")
 	a.LeaveBearer(hfXetTokenPrefix, hfXetCASPath+"/")
 }
 
 // RegisterPaths counts the requests under Relic's mounts toward the
-// packages family in the HTTP metrics.
+// packages family in the HTTP metrics, and the registry v1 API's toward the
+// container registry's.
 func RegisterPaths() {
 	for _, p := range NativePrefixes {
 		telemetry.RegisterFamily(p, "packages")
 	}
+
+	telemetry.RegisterFamily(RegistryV1Prefix, "container-registry")
 }

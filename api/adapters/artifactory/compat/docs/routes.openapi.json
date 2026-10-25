@@ -1222,6 +1222,154 @@
         "x-relic-access": "public"
       }
     },
+    "/artifactory/api/lfs/{repo}/locks": {
+      "get": {
+        "operationId": "getArtifactoryApiLfsRepoLocks",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /artifactory/api/lfs/{repo}/locks",
+        "tags": [
+          "Artifactory: lfs"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/lfs/{repo}/locks/verify": {
+      "post": {
+        "operationId": "postArtifactoryApiLfsRepoLocksVerify",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /artifactory/api/lfs/{repo}/locks/verify",
+        "tags": [
+          "Artifactory: lfs"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/lfs/{repo}/objects/batch": {
+      "post": {
+        "operationId": "postArtifactoryApiLfsRepoObjectsBatch",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /artifactory/api/lfs/{repo}/objects/batch",
+        "tags": [
+          "Artifactory: lfs"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/artifactory/api/lfs/{repo}/objects/{oid}": {
+      "get": {
+        "operationId": "getArtifactoryApiLfsRepoObjectsOid",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "oid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "GET /artifactory/api/lfs/{repo}/objects/{oid}",
+        "tags": [
+          "Artifactory: lfs"
+        ],
+        "x-relic-access": "public"
+      },
+      "put": {
+        "operationId": "putArtifactoryApiLfsRepoObjectsOid",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "oid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "PUT /artifactory/api/lfs/{repo}/objects/{oid}",
+        "tags": [
+          "Artifactory: lfs"
+        ],
+        "x-relic-access": "public"
+      }
+    },
     "/artifactory/api/move/{path}": {
       "post": {
         "operationId": "postArtifactoryApiMovePath",
@@ -2640,6 +2788,154 @@
         "x-relic-access": "authenticated"
       }
     },
+    "/lfs/{repo}/locks": {
+      "get": {
+        "operationId": "getLfsRepoLocks",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "GET /lfs/{repo}/locks",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/lfs/{repo}/locks/verify": {
+      "post": {
+        "operationId": "postLfsRepoLocksVerify",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /lfs/{repo}/locks/verify",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/lfs/{repo}/objects/batch": {
+      "post": {
+        "operationId": "postLfsRepoObjectsBatch",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "POST /lfs/{repo}/objects/batch",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "authenticated"
+      }
+    },
+    "/lfs/{repo}/objects/{oid}": {
+      "get": {
+        "operationId": "getLfsRepoObjectsOid",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "oid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "GET /lfs/{repo}/objects/{oid}",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "public"
+      },
+      "put": {
+        "operationId": "putLfsRepoObjectsOid",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "oid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "PUT /lfs/{repo}/objects/{oid}",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "public"
+      }
+    },
     "/lifecycle/api/v2/distribution/distribute/{name}/{version}": {
       "post": {
         "operationId": "postLifecycleApiV2DistributionDistributeNameVersion",
@@ -3640,6 +3936,38 @@
         },
         "security": [],
         "summary": "GET /ui/",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/v1/_ping": {
+      "get": {
+        "operationId": "getV1_ping",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "GET /v1/_ping",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/v1/search": {
+      "get": {
+        "operationId": "getV1Search",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "GET /v1/search",
         "tags": [
           "System"
         ],

@@ -51,7 +51,7 @@ func (q *Queries) DeleteWebLoginSession(ctx context.Context, id string) (int64, 
 }
 
 const getAccessToken = `-- name: GetAccessToken :one
-SELECT id, username, scope_kind, refresh_token_hash, expires, created, revoked, description, project, scope_groups, workload_identity FROM access_tokens WHERE id = $1
+SELECT id, username, scope_kind, refresh_token_hash, expires, created, revoked, description, project, scope_groups, workload_identity, bound_by, sign_in FROM access_tokens WHERE id = $1
 `
 
 func (q *Queries) GetAccessToken(ctx context.Context, id uuid.UUID) (AccessToken, error) {
@@ -69,12 +69,14 @@ func (q *Queries) GetAccessToken(ctx context.Context, id uuid.UUID) (AccessToken
 		&i.Project,
 		&i.ScopeGroups,
 		&i.WorkloadIdentity,
+		&i.BoundBy,
+		&i.SignIn,
 	)
 	return i, err
 }
 
 const getAccessTokenByRefreshHash = `-- name: GetAccessTokenByRefreshHash :one
-SELECT id, username, scope_kind, refresh_token_hash, expires, created, revoked, description, project, scope_groups, workload_identity FROM access_tokens WHERE refresh_token_hash = $1 FOR UPDATE
+SELECT id, username, scope_kind, refresh_token_hash, expires, created, revoked, description, project, scope_groups, workload_identity, bound_by, sign_in FROM access_tokens WHERE refresh_token_hash = $1 FOR UPDATE
 `
 
 func (q *Queries) GetAccessTokenByRefreshHash(ctx context.Context, refreshTokenHash *string) (AccessToken, error) {
@@ -92,6 +94,8 @@ func (q *Queries) GetAccessTokenByRefreshHash(ctx context.Context, refreshTokenH
 		&i.Project,
 		&i.ScopeGroups,
 		&i.WorkloadIdentity,
+		&i.BoundBy,
+		&i.SignIn,
 	)
 	return i, err
 }
@@ -133,11 +137,12 @@ func (q *Queries) GetWebLoginSession(ctx context.Context, id string) (WebLoginSe
 
 const insertAccessToken = `-- name: InsertAccessToken :exec
 INSERT INTO access_tokens (
-    id, username, scope_kind, scope_groups, refresh_token_hash, expires, description, project, workload_identity
+    id, username, scope_kind, scope_groups, refresh_token_hash, expires, description, project, workload_identity,
+    bound_by, sign_in
 )
 VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
-    $9
+    $9, $10, $11
 )
 `
 
@@ -151,6 +156,8 @@ type InsertAccessTokenParams struct {
 	Description      string
 	Project          string
 	WorkloadIdentity string
+	BoundBy          string
+	SignIn           bool
 }
 
 func (q *Queries) InsertAccessToken(ctx context.Context, arg InsertAccessTokenParams) error {
@@ -164,6 +171,8 @@ func (q *Queries) InsertAccessToken(ctx context.Context, arg InsertAccessTokenPa
 		arg.Description,
 		arg.Project,
 		arg.WorkloadIdentity,
+		arg.BoundBy,
+		arg.SignIn,
 	)
 	return err
 }
@@ -192,7 +201,7 @@ func (q *Queries) InsertWebLoginSession(ctx context.Context, id string) error {
 }
 
 const listAccessTokens = `-- name: ListAccessTokens :many
-SELECT id, username, scope_kind, refresh_token_hash, expires, created, revoked, description, project, scope_groups, workload_identity FROM access_tokens
+SELECT id, username, scope_kind, refresh_token_hash, expires, created, revoked, description, project, scope_groups, workload_identity, bound_by, sign_in FROM access_tokens
 WHERE ($1::text IS NULL OR username = $1)
   AND ($2::boolean OR NOT revoked)
 ORDER BY created DESC
@@ -224,6 +233,8 @@ func (q *Queries) ListAccessTokens(ctx context.Context, arg ListAccessTokensPara
 			&i.Project,
 			&i.ScopeGroups,
 			&i.WorkloadIdentity,
+			&i.BoundBy,
+			&i.SignIn,
 		); err != nil {
 			return nil, err
 		}
@@ -235,12 +246,40 @@ func (q *Queries) ListAccessTokens(ctx context.Context, arg ListAccessTokensPara
 	return items, nil
 }
 
+const rebindAccessTokens = `-- name: RebindAccessTokens :exec
+UPDATE access_tokens SET bound_by = $1 WHERE bound_by = $2
+`
+
+type RebindAccessTokensParams struct {
+	NewBoundBy string
+	BoundBy    string
+}
+
+func (q *Queries) RebindAccessTokens(ctx context.Context, arg RebindAccessTokensParams) error {
+	_, err := q.db.Exec(ctx, rebindAccessTokens, arg.NewBoundBy, arg.BoundBy)
+	return err
+}
+
 const revokeAccessToken = `-- name: RevokeAccessToken :exec
 UPDATE access_tokens SET revoked = true, refresh_token_hash = NULL WHERE id = $1
 `
 
 func (q *Queries) RevokeAccessToken(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, revokeAccessToken, id)
+	return err
+}
+
+const revokeBoundAccessTokens = `-- name: RevokeBoundAccessTokens :exec
+WITH RECURSIVE bound (id) AS (
+    SELECT t.id FROM access_tokens t WHERE t.bound_by = $1
+    UNION
+    SELECT t.id FROM access_tokens t JOIN bound b ON t.bound_by = b.id::text
+)
+UPDATE access_tokens SET revoked = true, refresh_token_hash = NULL WHERE id IN (SELECT id FROM bound)
+`
+
+func (q *Queries) RevokeBoundAccessTokens(ctx context.Context, boundBy string) error {
+	_, err := q.db.Exec(ctx, revokeBoundAccessTokens, boundBy)
 	return err
 }
 

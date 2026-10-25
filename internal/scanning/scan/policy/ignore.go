@@ -54,6 +54,24 @@ func (r IgnoreRule) Empty() bool {
 		len(r.Packages)+len(r.ArtifactPaths)+len(r.Builds) == 0
 }
 
+// SameScope reports whether the rule and other have the same filters and
+// expiry; their IDs and notes may differ.
+func (r IgnoreRule) SameScope(other IgnoreRule) bool {
+	if (r.Expires == nil) != (other.Expires == nil) ||
+		r.Expires != nil && !r.Expires.Equal(*other.Expires) {
+		return false
+	}
+
+	return slices.Equal(r.Vulnerabilities, other.Vulnerabilities) &&
+		slices.Equal(r.CVEs, other.CVEs) &&
+		slices.Equal(r.Licenses, other.Licenses) &&
+		slices.Equal(r.Watches, other.Watches) &&
+		slices.Equal(r.Policies, other.Policies) &&
+		slices.Equal(r.Packages, other.Packages) &&
+		slices.Equal(r.ArtifactPaths, other.ArtifactPaths) &&
+		slices.Equal(r.Builds, other.Builds)
+}
+
 // Ignores reports whether the rule, unexpired at now, ignores s.
 func (r IgnoreRule) Ignores(s Subject, now time.Time) bool {
 	if r.Empty() || (r.Expires != nil && !now.Before(*r.Expires)) {

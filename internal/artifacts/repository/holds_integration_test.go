@@ -155,6 +155,17 @@ func TestImmutableRepositoryRefusesChangedContent(t *testing.T) {
 		t.Errorf("overwrite with other content = %v, want ErrImmutable", err)
 	}
 
+	deploy(t, s, "root.bin", "release one")
+
+	_, err = s.Deploy(ctx, DeployInput{
+		Repository: "generic-local",
+		Path:       "root.bin",
+		Body:       strings.NewReader("something else"),
+	})
+	if !errors.Is(err, ErrImmutable) || !strings.HasSuffix(err.Error(), ": generic-local/root.bin exists") {
+		t.Errorf("overwrite of a file at the root = %v, want ErrImmutable naming generic-local/root.bin", err)
+	}
+
 	other := deploy(t, s, "v2/app.bin", "release two")
 	if err := s.Copy(ctx, CopyInput{
 		Source:                other,

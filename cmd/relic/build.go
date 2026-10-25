@@ -8,11 +8,13 @@ import (
 	"crypto/sha1" //nolint:gosec // build info records SHA-1 checksums; nothing is trusted on them
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash"
 	"io"
 	"io/fs"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -27,6 +29,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relicv1 "relic/api/gen/relic/v1"
+	"relic/internal/artifacts/formats/docker"
 	"relic/internal/platform/localdisk"
 
 	"relic/internal/platform/terminal"
@@ -59,16 +62,8 @@ func (g *globals) buildFile(name, number string) (string, error) {
 }
 
 func (g *globals) loadBuild(name, number string) (*relicv1.PublishedBuildRun, error) {
-	f, err := g.buildFile(name, number)
-	if err != nil {
-		return nil, err
-	}
-
-	run := &relicv1.PublishedBuildRun{}
-
-	b, err := os.ReadFile(f) //nolint:gosec // the user's own build directory
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
+	run, err := g.recordedBuild(name, number)
+	if errors.Is(err, fs.ErrNotExist) {
 		return &relicv1.PublishedBuildRun{
 			Name:         name,
 			Number:       number,
@@ -76,10 +71,23 @@ func (g *globals) loadBuild(name, number string) (*relicv1.PublishedBuildRun, er
 			AgentName:    "relic",
 			AgentVersion: "cli",
 		}, nil
-	case err != nil:
+	}
+
+	return run, err
+}
+
+func (g *globals) recordedBuild(name, number string) (*relicv1.PublishedBuildRun, error) {
+	f, err := g.buildFile(name, number)
+	if err != nil {
 		return nil, err
 	}
 
+	b, err := os.ReadFile(f) //nolint:gosec // the user's own build directory
+	if err != nil {
+		return nil, err
+	}
+
+	run := &relicv1.PublishedBuildRun{}
 	if err := protojson.Unmarshal(b, run); err != nil {
 		return nil, fmt.Errorf("read %s: %w", f, err)
 	}
@@ -746,13 +754,108 @@ func imageRef(s string) (repo, image, tag string, err error) {
 	return repo, rest[:i], rest[i+1:], nil
 }
 
+func (c *client) imageFiles(ctx context.Context, repo, image, tag string) ([]*relicv1.Item, error) {
+	folder := image + "/" + tag
+
+	items, err := c.files(ctx, repo, folder)
+	if err != nil {
+		return nil, err
+	}
+
+	named := func(name string) func(*relicv1.Item) bool {
+		return func(it *relicv1.Item) bool {
+			return it.GetName() == name
+		}
+	}
+
+	if slices.ContainsFunc(items, named(docker.ManifestFile)) {
+		return items, nil
+	}
+
+	if !slices.ContainsFunc(items, named(docker.ListFile)) {
+		return nil, fmt.Errorf("no image manifest in %s/%s", repo, folder)
+	}
+
+	digests, err := c.indexDigests(ctx, repo, folder+"/"+docker.ListFile)
+	if err != nil {
+		return nil, err
+	}
+
+	platforms := 0
+
+	for _, digest := range digests {
+		hexDigest, ok := strings.CutPrefix(digest, "sha256:")
+		if !ok {
+			continue
+		}
+
+		files, err := c.files(ctx, repo, image+"/"+docker.LayerName(hexDigest))
+		if isNotFound(err) {
+			continue
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		if slices.ContainsFunc(files, named(docker.ManifestFile)) {
+			platforms++
+		}
+
+		items = append(items, files...)
+	}
+
+	if platforms == 0 {
+		return nil, fmt.Errorf("no platform manifest of the index in %s/%s is stored", repo, folder)
+	}
+
+	return items, nil
+}
+
+func (c *client) indexDigests(ctx context.Context, repo, p string) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.fileURL(repo, p), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("download %s/%s: %w", repo, p, httpError(resp))
+	}
+
+	var index struct {
+		Manifests []struct {
+			Digest string `json:"digest"`
+		} `json:"manifests"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&index); err != nil {
+		return nil, fmt.Errorf("read %s/%s: %w", repo, p, err)
+	}
+
+	digests := make([]string, 0, len(index.Manifests))
+	for _, m := range index.Manifests {
+		digests = append(digests, m.Digest)
+	}
+
+	return digests, nil
+}
+
 func buildAddImageCmd(g *globals) *cobra.Command {
 	var moduleID string
 
 	cmd := &cobra.Command{
 		Use:   "add-image <name> <number> <repository>/<image>:<tag>",
 		Short: "Record a container image in Relic as artifacts of the run",
-		Long: "Records the image's manifest and layers, read from Relic, as a docker module " +
+		Long: "Records the image's manifest and layers (for a multi-platform image, its index and each stored " +
+			"platform manifest with its layers), read from Relic, as a docker module " +
 			"(default id: <image>:<tag>), so promotion and scanning of the run include the image.",
 		Example: "  relic build add-image app 42 docker-local/team/app:1.4.0",
 		Args:    cobra.ExactArgs(3),
@@ -769,17 +872,9 @@ func buildAddImageCmd(g *globals) *cobra.Command {
 				return err
 			}
 
-			folder := image + "/" + tag
-
-			items, err := c.files(cmd.Context(), repo, folder)
+			items, err := c.imageFiles(cmd.Context(), repo, image, tag)
 			if err != nil {
 				return fmt.Errorf("add-image %s: %w", args[2], err)
-			}
-
-			if !slices.ContainsFunc(items, func(it *relicv1.Item) bool {
-				return it.GetName() == "manifest.json"
-			}) {
-				return fmt.Errorf("add-image %s: no image manifest in %s/%s", args[2], repo, folder)
 			}
 
 			var arts []*relicv1.BuildArtifact
@@ -879,7 +974,7 @@ func buildPublishCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "publish <name> <number>",
 		Short:   "Publish the run assembled so far",
-		Long:    "Publishes the run and forgets it locally (unless --keep). --dry-run prints it without publishing.",
+		Long:    "Publishes the run recorded locally and forgets it (unless --keep); it fails when none is recorded. --dry-run prints it without publishing.",
 		Example: "  relic build publish app 42\n  relic build publish app 42 --dry-run -o yaml",
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -893,7 +988,11 @@ func buildPublishCmd(g *globals) *cobra.Command {
 				defer unlock()
 			}
 
-			run, err := g.loadBuild(name, number)
+			run, err := g.recordedBuild(name, number)
+			if errors.Is(err, fs.ErrNotExist) {
+				return fmt.Errorf("no run %s/%s is recorded locally", name, number)
+			}
+
 			if err != nil {
 				return err
 			}
@@ -1292,7 +1391,8 @@ func imagePromoteCmd(g *globals) *cobra.Command {
 		Example: "  relic image promote docker-dev/team/app:1.4.0 docker-prod --copy\n" +
 			"  relic image promote docker-dev/team/app:1.4.0 docker-prod/release/app:stable\n" +
 			"  relic image promote docker-dev/team/app:any docker-archive --all-tags",
-		Args: cobra.ExactArgs(2),
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: completeTargetArg(g, 0),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			repo, image, tag, err := imageRef(args[0])
 			if err != nil {

@@ -227,3 +227,71 @@ func TestRESTDecodeErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestMultiSegmentPaths(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name, method, path, want string
+	}{
+		{
+			name:   "an item path's encoded slashes are decoded",
+			method: http.MethodGet,
+			path:   "/api/v1/repositories/libs-local/details/org%2Fapp%2F1.0%2Fapp.jar",
+			want:   "/api/v1/repositories/libs-local/details/org/app/1.0/app.jar",
+		},
+		{
+			name:   "lower-case escapes too",
+			method: http.MethodDelete,
+			path:   "/api/v1/repositories/libs-local/items/org%2fa.txt",
+			want:   "/api/v1/repositories/libs-local/items/org/a.txt",
+		},
+		{
+			name:   "a custom verb after the path stays",
+			method: http.MethodPost,
+			path:   "/api/v1/repositories/docker-local/images/team%2Fapp:promote",
+			want:   "/api/v1/repositories/docker-local/images/team/app:promote",
+		},
+		{
+			name:   "other escapes stay escaped",
+			method: http.MethodGet,
+			path:   "/api/v1/repositories/libs-local/items/a%2Fb%20c%25d",
+			want:   "/api/v1/repositories/libs-local/items/a/b%20c%25d",
+		},
+		{
+			name:   "a single-segment name keeps its encoded slash",
+			method: http.MethodGet,
+			path:   "/api/v1/builds/team%2Fapp/runs",
+			want:   "/api/v1/builds/team%2Fapp/runs",
+		},
+		{
+			name:   "the repository segment keeps its encoded slash",
+			method: http.MethodGet,
+			path:   "/api/v1/repositories/libs%2Flocal",
+			want:   "/api/v1/repositories/libs%2Flocal",
+		},
+		{
+			name:   "another method on the same path is left alone",
+			method: http.MethodPut,
+			path:   "/api/v1/repositories/libs-local/details/org%2Fa.txt",
+			want:   "/api/v1/repositories/libs-local/details/org%2Fa.txt",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var seen string
+
+			h := multiSegmentPaths(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				seen = r.URL.EscapedPath()
+			}))
+			h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, nil))
+
+			if seen != tt.want {
+				t.Errorf("%s %s reached the transcoder as %s, want %s", tt.method, tt.path, seen, tt.want)
+			}
+		})
+	}
+}

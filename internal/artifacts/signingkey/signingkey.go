@@ -28,6 +28,9 @@ var ErrKind = errors.New("key pair is of another kind")
 // ErrNotFound is returned for a key pair that does not exist.
 var ErrNotFound = errors.New("key pair not found")
 
+// ErrInUse is returned for deleting a key pair that still signs.
+var ErrInUse = errors.New("key pair in use")
+
 // Service reads and creates key pairs.
 type Service struct {
 	db  *database.DB
@@ -126,6 +129,20 @@ func (s *Service) PublicKey(ctx context.Context, name string) (string, error) {
 	}
 
 	return row.PublicKey, nil
+}
+
+// Delete deletes the named key pair.
+func (s *Service) Delete(ctx context.Context, name string) error {
+	deleted, err := s.db.DeleteKeyPair(ctx, name)
+	if err != nil {
+		return fmt.Errorf("delete key pair %s: %w", name, err)
+	}
+
+	if deleted == 0 {
+		return fmt.Errorf("%w: %s", ErrNotFound, name)
+	}
+
+	return nil
 }
 
 // KeyPair is a stored key pair without its private key.

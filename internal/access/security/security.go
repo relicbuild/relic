@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 	"uuid"
 
 	"relic/internal/access/auth"
@@ -95,12 +96,31 @@ func (s *Service) ReplaceUser(ctx context.Context, u User) (created bool, err er
 
 var username = regexp.MustCompile(`^[\w.@-]{1,64}$`)
 
-// ValidUsername reports whether name can be a Relic username: 1 to 64 letters, digits or . @ _ -.
-func ValidUsername(name string) bool { return username.MatchString(name) }
+// ValidUsername reports whether name can be a Relic username: 1 to 64 letters, digits or . @ _ -, and not the
+// name of unauthenticated requests in any case.
+func ValidUsername(name string) bool {
+	return username.MatchString(name) && !strings.EqualFold(name, auth.AnonymousUser)
+}
 
 // InvalidUsername is the ErrInvalid that refuses name as a new username.
 func InvalidUsername(name string) error {
+	if strings.EqualFold(name, auth.AnonymousUser) {
+		return fmt.Errorf("%w: username %q names unauthenticated requests", ErrInvalid, name)
+	}
+
 	return fmt.Errorf("%w: username %q must be 1 to 64 letters, digits or the characters . @ _ -", ErrInvalid, name)
+}
+
+// MinPasswordLength is the fewest characters a user's password may have.
+const MinPasswordLength = 8
+
+// CheckPassword refuses a password shorter than MinPasswordLength characters with ErrInvalid.
+func CheckPassword(password string) error {
+	if utf8.RuneCountInString(password) < MinPasswordLength {
+		return fmt.Errorf("%w: password must be at least %d characters", ErrInvalid, MinPasswordLength)
+	}
+
+	return nil
 }
 
 const usernamesLock = "security:usernames"
@@ -129,6 +149,34 @@ type userWrite struct {
 	withDisabled bool
 }
 
+// ChangePassword sets the password of username, a user whose password Relic
+// keeps; ErrInvalid for a short password or a user of a directory or an
+// identity provider.
+func (s *Service) ChangePassword(ctx context.Context, username, password string) error {
+	if err := CheckPassword(password); err != nil {
+		return err
+	}
+
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return err
+	}
+
+	n, err := s.db.SetUserPassword(ctx, database.SetUserPasswordParams{
+		Username:     username,
+		PasswordHash: hash,
+	})
+	if err != nil {
+		return fmt.Errorf("change password: %w", err)
+	}
+
+	if n == 0 {
+		return fmt.Errorf("%w: the password of %s is not kept by Relic", ErrInvalid, username)
+	}
+
+	return nil
+}
+
 func (s *Service) putUser(ctx context.Context, u User, w userWrite) (created bool, err error) {
 	existing, err := s.db.GetUserByUsername(ctx, u.Name)
 
@@ -149,6 +197,10 @@ func (s *Service) putUser(ctx context.Context, u User, w userWrite) (created boo
 
 	switch {
 	case u.Password != "":
+		if err := CheckPassword(u.Password); err != nil {
+			return false, err
+		}
+
 		if hash, err = auth.HashPassword(u.Password); err != nil {
 			return false, err
 		}
@@ -459,38 +511,59 @@ func (s *Service) putGroup(ctx context.Context, g Group, members []string, creat
 		return false, fmt.Errorf("%w: name is required", ErrInvalid)
 	}
 
-	err = s.db.WithTx(ctx, func(q database.Querier) error {
-		created, err = q.UpsertGroup(
-			ctx,
-			database.UpsertGroupParams{
-				Name:               g.Name,
-				Description:        g.Description,
-				DefaultForNewUsers: g.DefaultForNewUsers,
-				Admin:              g.Admin,
-				Viewer:             g.Viewer,
-			},
-		)
-		if err != nil {
+	err = s.db.WithLock(ctx, groupNamesLock, func() error {
+		return s.db.WithTx(ctx, func(q database.Querier) error {
+			created, err = saveGroup(ctx, q, g, members, createOnly)
+
 			return err
-		}
-
-		if createOnly && !created {
-			return fmt.Errorf("%w: group %q", ErrExists, g.Name)
-		}
-
-		if members == nil {
-			return nil
-		}
-
-		if err := q.ClearInternalGroupMembers(ctx, g.Name); err != nil {
-			return err
-		}
-
-		return addMembers(ctx, q, g.Name, members)
+		})
 	})
 	s.invalidate()
 
 	return created, err
+}
+
+const groupNamesLock = "security:group-names"
+
+func saveGroup(ctx context.Context, q database.Querier, g Group, members []string, createOnly bool) (bool, error) {
+	groups, err := q.ListGroups(ctx)
+	if err != nil {
+		return false, fmt.Errorf("list groups: %w", err)
+	}
+
+	for _, other := range groups {
+		if other.Name != g.Name && strings.EqualFold(other.Name, g.Name) {
+			return false, fmt.Errorf("%w: group %q differs from %q only by case", ErrExists, other.Name, g.Name)
+		}
+	}
+
+	created, err := q.UpsertGroup(
+		ctx,
+		database.UpsertGroupParams{
+			Name:               g.Name,
+			Description:        g.Description,
+			DefaultForNewUsers: g.DefaultForNewUsers,
+			Admin:              g.Admin,
+			Viewer:             g.Viewer,
+		},
+	)
+	if err != nil {
+		return false, err
+	}
+
+	if createOnly && !created {
+		return false, fmt.Errorf("%w: group %q", ErrExists, g.Name)
+	}
+
+	if members == nil {
+		return created, nil
+	}
+
+	if err := q.ClearInternalGroupMembers(ctx, g.Name); err != nil {
+		return false, err
+	}
+
+	return created, addMembers(ctx, q, g.Name, members)
 }
 
 // AddMembers adds users to an existing group, keeping current members.

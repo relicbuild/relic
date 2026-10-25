@@ -35,7 +35,7 @@ func (h *Handler) gemsAPI(w http.ResponseWriter, r *http.Request, m Mount) {
 		h.gemYank(w, r, rp)
 		return
 	case r.Method == http.MethodGet && (rest == "api/v1/api_key" || rest == "api/v1/api_key.yaml"):
-		h.gemAPIKey(w, r, rest)
+		h.gemAPIKey(w, r, rest, m.base(r)+"/"+rp.Name)
 		return
 	}
 
@@ -53,6 +53,8 @@ func (h *Handler) gemsAPI(w http.ResponseWriter, r *http.Request, m Mount) {
 	}
 
 	switch {
+	case rest == "":
+		writeBody(w, r, "text/plain; charset=utf-8", []byte("RubyGems repository "+rp.Name+"\n"))
 	case strings.HasPrefix(rest, "gems/") && strings.HasSuffix(rest, ".gem"):
 		item, err := h.gems.Gem(r.Context(), rp, strings.TrimPrefix(rest, "gems/"))
 		if h.gemsFail(w, r, err) || !h.allowDownload(w, r, item) {
@@ -104,7 +106,16 @@ func (h *Handler) gemsAPI(w http.ResponseWriter, r *http.Request, m Mount) {
 			return
 		}
 
+		upstream, ok, err := h.gems.RemoteSpecsIndex(r.Context(), rp, rest)
+		if h.gemsFail(w, r, err) {
+			return
+		}
+
 		body, err := gems.SpecsIndex(selectSpecs(locals, rest))
+		if ok {
+			body, err = gems.SpecsIndexAfter(upstream, selectSpecs(locals, rest))
+		}
+
 		if h.gemsFail(w, r, err) {
 			return
 		}
@@ -280,7 +291,7 @@ func (h *Handler) gemsFail(w http.ResponseWriter, r *http.Request, err error) bo
 	return true
 }
 
-func (h *Handler) gemAPIKey(w http.ResponseWriter, r *http.Request, rest string) {
+func (h *Handler) gemAPIKey(w http.ResponseWriter, r *http.Request, rest, repositoryURL string) {
 	p := auth.FromContext(r.Context())
 	if p.Anonymous() {
 		auth.Unauthorized(w, r)
@@ -298,9 +309,9 @@ func (h *Handler) gemAPIKey(w http.ResponseWriter, r *http.Request, rest string)
 		return
 	}
 
-	key := "Bearer " + tok.AccessToken
+	key := tok.AccessToken
 	if rest == "api/v1/api_key.yaml" {
-		writeBody(w, r, "application/x-yaml", []byte("---\n:rubygems_api_key: "+key+"\n"))
+		writeBody(w, r, "application/x-yaml", []byte(repositoryURL+": "+key+"\n"))
 		return
 	}
 

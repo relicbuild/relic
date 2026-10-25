@@ -31,9 +31,11 @@ import (
 	"relic/internal/artifacts/formats/rpm"
 	"relic/internal/artifacts/formats/terraform"
 	"relic/internal/artifacts/repository"
+	"relic/internal/artifacts/signingkey"
 	"relic/internal/artifacts/usage"
 	"relic/internal/platform/httperror"
 	"relic/internal/platform/httpserver"
+	"relic/internal/platform/localdisk"
 	"relic/internal/platform/objectstore"
 	"relic/internal/scanning/scan/blocking"
 )
@@ -189,12 +191,14 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, err error) 
 			"error",
 			err,
 		)
-	case errors.Is(err, repository.ErrChecksumMismatch):
+	case errors.Is(err, repository.ErrChecksumMismatch), errors.Is(err, signingkey.ErrKind):
 		status, msg = http.StatusConflict, err.Error()
 	case errors.Is(err, repository.ErrTooLarge), errors.Is(err, repository.ErrQuotaExceeded):
 		status, msg = http.StatusRequestEntityTooLarge, err.Error()
 	case errors.Is(err, objectstore.ErrStorageFull):
 		status, msg = http.StatusInsufficientStorage, objectstore.ErrStorageFull.Error()
+	case errors.Is(err, localdisk.ErrFull):
+		status, msg = http.StatusInsufficientStorage, localdisk.ErrFull.Error()
 	case errors.Is(err, repository.ErrContentMissing):
 		msg = repository.ErrContentMissing.Error()
 	default:

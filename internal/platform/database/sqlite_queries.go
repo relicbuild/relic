@@ -335,6 +335,9 @@ DELETE FROM item_properties WHERE item_id = @item_id;`
 const sqliteDeleteItemPropertyKeys = `-- name: DeleteItemPropertyKeys :exec
 DELETE FROM item_properties WHERE item_id = @item_id AND key IN (SELECT value FROM json_each(@keys));`
 
+const sqliteDeleteKeyPair = `-- name: DeleteKeyPair :execrows
+DELETE FROM key_pairs WHERE name = @name;`
+
 const sqliteDeleteLdapGroupMapping = `-- name: DeleteLdapGroupMapping :execrows
 DELETE FROM ldap_group_mappings WHERE name = @name;`
 
@@ -479,6 +482,7 @@ SELECT i.*,
 FROM items i
 WHERE i.type = 'file' AND i.sha1 IN (SELECT value FROM json_each(@sha1s))
   AND (@source_repo = '' OR i.repo_key = @source_repo)
+  AND NOT EXISTS (SELECT 1 FROM repositories r WHERE r.key = i.repo_key AND r.format IN (SELECT value FROM json_each(@excluded_formats)))
 ORDER BY i.repo_key, i.path, i.name;`
 
 const sqliteFindingCounts = `-- name: FindingCounts :many
@@ -506,6 +510,9 @@ UPDATE webhook_deliveries
 SET status = @status, attempts = @attempts, next_attempt = @next_attempt, response_status = @response_status,
     error = @error, delivered = @delivered
 WHERE id = @id;`
+
+const sqliteForgetFailedMatches = `-- name: ForgetFailedMatches :execrows
+DELETE FROM scan_artifacts WHERE status = 'failed' AND reason LIKE 'match:%';`
 
 const sqliteForgetFailedScans = `-- name: ForgetFailedScans :many
 DELETE FROM scan_artifacts WHERE sha256 IN (SELECT value FROM json_each(@sha256s)) AND status = 'failed'
@@ -536,6 +543,9 @@ SELECT * FROM cve_feeds WHERE name = @name;`
 
 const sqliteGetCleanupPolicy = `-- name: GetCleanupPolicy :one
 SELECT * FROM cleanup_policies WHERE name = @name;`
+
+const sqliteGetDebianReleaseDate = `-- name: GetDebianReleaseDate :one
+SELECT * FROM debian_release_dates WHERE repo_key = @repo_key AND distribution = @distribution;`
 
 const sqliteGetDepsDevVersion = `-- name: GetDepsDevVersion :one
 SELECT * FROM deps_dev_versions WHERE system = @system AND name = @name AND version = @version;`
@@ -663,19 +673,20 @@ const sqliteImportScanSbom = `-- name: ImportScanSbom :exec
 -- Replaces an artifact's SBOM with an imported one; matching it comes next,
 -- and until then it counts as matched against no database (stale).
 INSERT INTO scan_artifacts (sha256, file_name, status, reason, sbom, components, db_built, updated)
-VALUES (@sha256, @file_name, 'done', 'SBOM imported', @sbom, @components, NULL, @now)
+VALUES (@sha256, @file_name, 'queued', 'SBOM imported, not matched yet', @sbom, @components, NULL, @now)
 ON CONFLICT (sha256) DO UPDATE
-SET status = 'done', reason = 'SBOM imported', sbom = excluded.sbom, components = excluded.components,
+SET status = 'queued', reason = 'SBOM imported, not matched yet', sbom = excluded.sbom, components = excluded.components,
     db_built = NULL, updated = excluded.updated;`
 
 const sqliteInsertAccessToken = `-- name: InsertAccessToken :exec
 -- scope_groups arrives as a JSON array, which is how the column stores it.
 INSERT INTO access_tokens (
-    id, username, scope_kind, scope_groups, refresh_token_hash, expires, description, project, workload_identity
+    id, username, scope_kind, scope_groups, refresh_token_hash, expires, description, project, workload_identity,
+    bound_by, sign_in
 )
 VALUES (
     @id, @username, @scope_kind, @scope_groups, @refresh_token_hash, @expires, @description, @project,
-    @workload_identity
+    @workload_identity, @bound_by, @sign_in
 );`
 
 const sqliteInsertAuditEvent = `-- name: InsertAuditEvent :exec
@@ -912,6 +923,9 @@ SELECT * FROM items WHERE repo_key = @repo_key AND path = @path ORDER BY name;`
 
 const sqliteListCleanupPolicies = `-- name: ListCleanupPolicies :many
 SELECT * FROM cleanup_policies ORDER BY name;`
+
+const sqliteListContentFolders = `-- name: ListContentFolders :many
+SELECT DISTINCT path FROM items WHERE sha256 = @sha256 AND type = 'file' ORDER BY path LIMIT 20;`
 
 const sqliteListEndOfLifeCycles = `-- name: ListEndOfLifeCycles :many
 -- The release cycles of the products these package URLs (without a version)
@@ -1204,7 +1218,7 @@ LIMIT @max;`
 
 const sqliteListStaleScans = `-- name: ListStaleScans :many
 SELECT sha256 FROM scan_artifacts
-WHERE status IN ('done', 'partial') AND sbom IS NOT NULL AND (db_built IS NULL OR db_built < @db_built)
+WHERE status IN ('done', 'partial', 'queued') AND sbom IS NOT NULL AND (db_built IS NULL OR db_built < @db_built)
 ORDER BY sha256
 LIMIT @max_rows;`
 
@@ -1345,6 +1359,11 @@ VALUES (@repo_key, @path, @sha256, @approved_by, @approved)
 ON CONFLICT (repo_key, path) DO UPDATE SET sha256 = excluded.sha256, approved_by = excluded.approved_by,
     approved = excluded.approved;`
 
+const sqlitePutDebianReleaseDate = `-- name: PutDebianReleaseDate :exec
+INSERT INTO debian_release_dates (repo_key, distribution, digest, date)
+VALUES (@repo_key, @distribution, @digest, @date)
+ON CONFLICT (repo_key, distribution) DO UPDATE SET digest = excluded.digest, date = excluded.date;`
+
 const sqlitePutHold = `-- name: PutHold :exec
 INSERT INTO item_holds (repo_key, path, reason, created_by, created)
 VALUES (@repo_key, @path, @reason, @created_by, @created)
@@ -1359,6 +1378,9 @@ SET decision = excluded.decision, reason = excluded.reason, decided_by = exclude
 const sqlitePutTombstone = `-- name: PutTombstone :exec
 INSERT INTO replication_tombstones (repo_key, path, deleted) VALUES (@repo_key, @path, @deleted)
 ON CONFLICT (repo_key, path) DO UPDATE SET deleted = excluded.deleted;`
+
+const sqliteRebindAccessTokens = `-- name: RebindAccessTokens :exec
+UPDATE access_tokens SET bound_by = @new_bound_by WHERE bound_by = @bound_by;`
 
 const sqliteRecordCleanupRun = `-- name: RecordCleanupRun :exec
 UPDATE cleanup_policies SET last_run = @last_run, last_moved = @last_moved, last_error = @last_error
@@ -1393,6 +1415,12 @@ ON CONFLICT (kind, subject, policy, watch, rule) DO UPDATE SET reason = excluded
 const sqliteRecordReplicationRun = `-- name: RecordReplicationRun :exec
 UPDATE replications SET last_run = @last_run, last_status = @last_status, last_error = @last_error
 WHERE repository = @repository;`
+
+const sqliteRegisterCVEs = `-- name: RegisterCVEs :exec
+INSERT INTO cves (id)
+SELECT DISTINCT upper(j.value) FROM json_each(@ids) j
+WHERE lower(j.value) LIKE 'cve-%'
+ON CONFLICT (id) DO NOTHING;`
 
 const sqliteRegisterFindingCVEs = `-- name: RegisterFindingCVEs :execrows
 INSERT INTO cves (id)
@@ -1453,6 +1481,14 @@ SELECT CAST(coalesce(sum(size), 0) AS INTEGER) AS bytes FROM items WHERE repo_ke
 
 const sqliteRevokeAccessToken = `-- name: RevokeAccessToken :exec
 UPDATE access_tokens SET revoked = true, refresh_token_hash = NULL WHERE id = @id;`
+
+const sqliteRevokeBoundAccessTokens = `-- name: RevokeBoundAccessTokens :exec
+WITH RECURSIVE bound (id) AS (
+    SELECT t.id FROM access_tokens t WHERE t.bound_by = @bound_by
+    UNION
+    SELECT t.id FROM access_tokens t JOIN bound b ON t.bound_by = b.id
+)
+UPDATE access_tokens SET revoked = true, refresh_token_hash = NULL WHERE id IN (SELECT id FROM bound);`
 
 const sqliteRevokeUserAccessTokens = `-- name: RevokeUserAccessTokens :exec
 UPDATE access_tokens SET revoked = true, refresh_token_hash = NULL WHERE username = @username;`
@@ -1575,6 +1611,9 @@ UPDATE users SET disabled = @disabled WHERE username = @username;`
 
 const sqliteSetUserEmail = `-- name: SetUserEmail :exec
 UPDATE users SET email = @email WHERE username = @username AND email <> @email;`
+
+const sqliteSetUserPassword = `-- name: SetUserPassword :execrows
+UPDATE users SET password_hash = @password_hash WHERE username = @username AND realm = 'internal';`
 
 const sqliteSeverityCountsForContents = `-- name: SeverityCountsForContents :many
 SELECT sha256, severity, count(*) AS count
@@ -2542,6 +2581,15 @@ func (q *sqliteQueries) DeleteItemPropertyKeys(ctx context.Context, arg DeleteIt
 	return err
 }
 
+func (q *sqliteQueries) DeleteKeyPair(ctx context.Context, arg string) (int64, error) {
+	res, err := q.db.ExecContext(ctx, sqliteDeleteKeyPair, sql.Named("name", arg))
+	if err != nil {
+		return 0, err
+	}
+
+	return res.RowsAffected()
+}
+
 func (q *sqliteQueries) DeleteLdapGroupMapping(ctx context.Context, arg string) (int64, error) {
 	res, err := q.db.ExecContext(ctx, sqliteDeleteLdapGroupMapping, sql.Named("name", arg))
 	if err != nil {
@@ -2990,7 +3038,7 @@ func (q *sqliteQueries) FindFilesNamed(ctx context.Context, arg FindFilesNamedPa
 }
 
 func (q *sqliteQueries) FindItemsBySHA1(ctx context.Context, arg FindItemsBySHA1Params) ([]FindItemsBySHA1Row, error) {
-	rows, err := q.query(ctx, "FindItemsBySHA1", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated", "hasbuildname", "hasbuildnumber", "hasotherbuild"}, sqliteFindItemsBySHA1, sql.Named("build_name", arg.BuildName), sql.Named("build_number", arg.BuildNumber), sql.Named("sha1s", sqliteJSON(arg.Sha1s)), sql.Named("source_repo", arg.SourceRepo))
+	rows, err := q.query(ctx, "FindItemsBySHA1", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated", "hasbuildname", "hasbuildnumber", "hasotherbuild"}, sqliteFindItemsBySHA1, sql.Named("build_name", arg.BuildName), sql.Named("build_number", arg.BuildNumber), sql.Named("sha1s", sqliteJSON(arg.Sha1s)), sql.Named("source_repo", arg.SourceRepo), sql.Named("excluded_formats", sqliteJSON(arg.ExcludedFormats)))
 	if err != nil {
 		return nil, err
 	}
@@ -3076,6 +3124,15 @@ func (q *sqliteQueries) FinishWebhookDelivery(ctx context.Context, arg FinishWeb
 	return err
 }
 
+func (q *sqliteQueries) ForgetFailedMatches(ctx context.Context) (int64, error) {
+	res, err := q.db.ExecContext(ctx, sqliteForgetFailedMatches)
+	if err != nil {
+		return 0, err
+	}
+
+	return res.RowsAffected()
+}
+
 func (q *sqliteQueries) ForgetFailedScans(ctx context.Context, arg []string) ([]string, error) {
 	rows, err := q.query(ctx, "ForgetFailedScans", nil, sqliteForgetFailedScans, sql.Named("sha256s", sqliteJSON(arg)))
 	if err != nil {
@@ -3109,7 +3166,7 @@ func (q *sqliteQueries) ForgetFailedScans(ctx context.Context, arg []string) ([]
 func (q *sqliteQueries) GetAccessToken(ctx context.Context, arg uuid.UUID) (AccessToken, error) {
 	var i AccessToken
 
-	rows, err := q.query(ctx, "GetAccessToken", []string{"id", "username", "scopekind", "refreshtokenhash", "expires", "created", "revoked", "description", "project", "scopegroups", "workloadidentity"}, sqliteGetAccessToken, sql.Named("id", arg.String()))
+	rows, err := q.query(ctx, "GetAccessToken", []string{"id", "username", "scopekind", "refreshtokenhash", "expires", "created", "revoked", "description", "project", "scopegroups", "workloadidentity", "boundby", "signin"}, sqliteGetAccessToken, sql.Named("id", arg.String()))
 	if err != nil {
 		return i, err
 	}
@@ -3124,7 +3181,7 @@ func (q *sqliteQueries) GetAccessToken(ctx context.Context, arg uuid.UUID) (Acce
 		return i, sql.ErrNoRows
 	}
 
-	err = rows.Scan(sqliteUUIDScanner{&i.ID}, &i.Username, &i.ScopeKind, &i.RefreshTokenHash, sqliteNullTimeScanner{&i.Expires}, sqliteTimeScanner{&i.Created}, &i.Revoked, &i.Description, &i.Project, sqliteJSONScanner[[]string]{&i.ScopeGroups}, &i.WorkloadIdentity)
+	err = rows.Scan(sqliteUUIDScanner{&i.ID}, &i.Username, &i.ScopeKind, &i.RefreshTokenHash, sqliteNullTimeScanner{&i.Expires}, sqliteTimeScanner{&i.Created}, &i.Revoked, &i.Description, &i.Project, sqliteJSONScanner[[]string]{&i.ScopeGroups}, &i.WorkloadIdentity, &i.BoundBy, &i.SignIn)
 
 	return i, err
 }
@@ -3132,7 +3189,7 @@ func (q *sqliteQueries) GetAccessToken(ctx context.Context, arg uuid.UUID) (Acce
 func (q *sqliteQueries) GetAccessTokenByRefreshHash(ctx context.Context, arg *string) (AccessToken, error) {
 	var i AccessToken
 
-	rows, err := q.query(ctx, "GetAccessTokenByRefreshHash", []string{"id", "username", "scopekind", "refreshtokenhash", "expires", "created", "revoked", "description", "project", "scopegroups", "workloadidentity"}, sqliteGetAccessTokenByRefreshHash, sql.Named("refresh_token_hash", arg))
+	rows, err := q.query(ctx, "GetAccessTokenByRefreshHash", []string{"id", "username", "scopekind", "refreshtokenhash", "expires", "created", "revoked", "description", "project", "scopegroups", "workloadidentity", "boundby", "signin"}, sqliteGetAccessTokenByRefreshHash, sql.Named("refresh_token_hash", arg))
 	if err != nil {
 		return i, err
 	}
@@ -3147,7 +3204,7 @@ func (q *sqliteQueries) GetAccessTokenByRefreshHash(ctx context.Context, arg *st
 		return i, sql.ErrNoRows
 	}
 
-	err = rows.Scan(sqliteUUIDScanner{&i.ID}, &i.Username, &i.ScopeKind, &i.RefreshTokenHash, sqliteNullTimeScanner{&i.Expires}, sqliteTimeScanner{&i.Created}, &i.Revoked, &i.Description, &i.Project, sqliteJSONScanner[[]string]{&i.ScopeGroups}, &i.WorkloadIdentity)
+	err = rows.Scan(sqliteUUIDScanner{&i.ID}, &i.Username, &i.ScopeKind, &i.RefreshTokenHash, sqliteNullTimeScanner{&i.Expires}, sqliteTimeScanner{&i.Created}, &i.Revoked, &i.Description, &i.Project, sqliteJSONScanner[[]string]{&i.ScopeGroups}, &i.WorkloadIdentity, &i.BoundBy, &i.SignIn)
 
 	return i, err
 }
@@ -3286,6 +3343,29 @@ func (q *sqliteQueries) GetCleanupPolicy(ctx context.Context, arg string) (Clean
 	}
 
 	err = rows.Scan(&i.Name, &i.Doc, sqliteTimeScanner{&i.Created}, sqliteTimeScanner{&i.Updated}, sqliteNullTimeScanner{&i.LastRun}, &i.LastMoved, &i.LastError)
+
+	return i, err
+}
+
+func (q *sqliteQueries) GetDebianReleaseDate(ctx context.Context, arg GetDebianReleaseDateParams) (DebianReleaseDate, error) {
+	var i DebianReleaseDate
+
+	rows, err := q.query(ctx, "GetDebianReleaseDate", []string{"repokey", "distribution", "digest", "date"}, sqliteGetDebianReleaseDate, sql.Named("repo_key", arg.RepoKey), sql.Named("distribution", arg.Distribution))
+	if err != nil {
+		return i, err
+	}
+
+	defer rows.Close()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return i, err
+		}
+
+		return i, sql.ErrNoRows
+	}
+
+	err = rows.Scan(&i.RepoKey, &i.Distribution, &i.Digest, sqliteTimeScanner{&i.Date})
 
 	return i, err
 }
@@ -4183,7 +4263,7 @@ func (q *sqliteQueries) ImportScanSbom(ctx context.Context, arg ImportScanSbomPa
 }
 
 func (q *sqliteQueries) InsertAccessToken(ctx context.Context, arg InsertAccessTokenParams) error {
-	_, err := q.db.ExecContext(ctx, sqliteInsertAccessToken, sql.Named("id", arg.ID.String()), sql.Named("username", arg.Username), sql.Named("scope_kind", arg.ScopeKind), sql.Named("scope_groups", sqliteJSON(arg.ScopeGroups)), sql.Named("refresh_token_hash", arg.RefreshTokenHash), sql.Named("expires", sqliteNullTime(arg.Expires)), sql.Named("description", arg.Description), sql.Named("project", arg.Project), sql.Named("workload_identity", arg.WorkloadIdentity))
+	_, err := q.db.ExecContext(ctx, sqliteInsertAccessToken, sql.Named("id", arg.ID.String()), sql.Named("username", arg.Username), sql.Named("scope_kind", arg.ScopeKind), sql.Named("scope_groups", sqliteJSON(arg.ScopeGroups)), sql.Named("refresh_token_hash", arg.RefreshTokenHash), sql.Named("expires", sqliteNullTime(arg.Expires)), sql.Named("description", arg.Description), sql.Named("project", arg.Project), sql.Named("workload_identity", arg.WorkloadIdentity), sql.Named("bound_by", arg.BoundBy), sql.Named("sign_in", arg.SignIn))
 
 	return err
 }
@@ -4467,7 +4547,7 @@ func (q *sqliteQueries) LatestMaliciousChange(ctx context.Context) (time.Time, e
 }
 
 func (q *sqliteQueries) ListAccessTokens(ctx context.Context, arg ListAccessTokensParams) ([]AccessToken, error) {
-	rows, err := q.query(ctx, "ListAccessTokens", []string{"id", "username", "scopekind", "refreshtokenhash", "expires", "created", "revoked", "description", "project", "scopegroups", "workloadidentity"}, sqliteListAccessTokens, sql.Named("username", arg.Username), sql.Named("include_revoked", arg.IncludeRevoked))
+	rows, err := q.query(ctx, "ListAccessTokens", []string{"id", "username", "scopekind", "refreshtokenhash", "expires", "created", "revoked", "description", "project", "scopegroups", "workloadidentity", "boundby", "signin"}, sqliteListAccessTokens, sql.Named("username", arg.Username), sql.Named("include_revoked", arg.IncludeRevoked))
 	if err != nil {
 		return nil, err
 	}
@@ -4478,7 +4558,7 @@ func (q *sqliteQueries) ListAccessTokens(ctx context.Context, arg ListAccessToke
 
 	for rows.Next() {
 		var i AccessToken
-		if err := rows.Scan(sqliteUUIDScanner{&i.ID}, &i.Username, &i.ScopeKind, &i.RefreshTokenHash, sqliteNullTimeScanner{&i.Expires}, sqliteTimeScanner{&i.Created}, &i.Revoked, &i.Description, &i.Project, sqliteJSONScanner[[]string]{&i.ScopeGroups}, &i.WorkloadIdentity); err != nil {
+		if err := rows.Scan(sqliteUUIDScanner{&i.ID}, &i.Username, &i.ScopeKind, &i.RefreshTokenHash, sqliteNullTimeScanner{&i.Expires}, sqliteTimeScanner{&i.Created}, &i.Revoked, &i.Description, &i.Project, sqliteJSONScanner[[]string]{&i.ScopeGroups}, &i.WorkloadIdentity, &i.BoundBy, &i.SignIn); err != nil {
 			return nil, err
 		}
 
@@ -4869,6 +4949,36 @@ func (q *sqliteQueries) ListCleanupPolicies(ctx context.Context) ([]CleanupPolic
 	for rows.Next() {
 		var i CleanupPolicy
 		if err := rows.Scan(&i.Name, &i.Doc, sqliteTimeScanner{&i.Created}, sqliteTimeScanner{&i.Updated}, sqliteNullTimeScanner{&i.LastRun}, &i.LastMoved, &i.LastError); err != nil {
+			return nil, err
+		}
+
+		items = append(items, i)
+	}
+
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
+
+func (q *sqliteQueries) ListContentFolders(ctx context.Context, arg *string) ([]string, error) {
+	rows, err := q.query(ctx, "ListContentFolders", nil, sqliteListContentFolders, sql.Named("sha256", arg))
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	items := []string{}
+
+	for rows.Next() {
+		var i string
+		if err := rows.Scan(&i); err != nil {
 			return nil, err
 		}
 
@@ -6935,6 +7045,12 @@ func (q *sqliteQueries) PutApproval(ctx context.Context, arg PutApprovalParams) 
 	return err
 }
 
+func (q *sqliteQueries) PutDebianReleaseDate(ctx context.Context, arg PutDebianReleaseDateParams) error {
+	_, err := q.db.ExecContext(ctx, sqlitePutDebianReleaseDate, sql.Named("repo_key", arg.RepoKey), sql.Named("distribution", arg.Distribution), sql.Named("digest", arg.Digest), sql.Named("date", sqliteTime(arg.Date)))
+
+	return err
+}
+
 func (q *sqliteQueries) PutHold(ctx context.Context, arg PutHoldParams) error {
 	_, err := q.db.ExecContext(ctx, sqlitePutHold, sql.Named("repo_key", arg.RepoKey), sql.Named("path", arg.Path), sql.Named("reason", arg.Reason), sql.Named("created_by", arg.CreatedBy), sql.Named("created", sqliteTime(arg.Created)))
 
@@ -6949,6 +7065,12 @@ func (q *sqliteQueries) PutQuarantineDecision(ctx context.Context, arg PutQuaran
 
 func (q *sqliteQueries) PutTombstone(ctx context.Context, arg PutTombstoneParams) error {
 	_, err := q.db.ExecContext(ctx, sqlitePutTombstone, sql.Named("repo_key", arg.RepoKey), sql.Named("path", arg.Path), sql.Named("deleted", sqliteTime(arg.Deleted)))
+
+	return err
+}
+
+func (q *sqliteQueries) RebindAccessTokens(ctx context.Context, arg RebindAccessTokensParams) error {
+	_, err := q.db.ExecContext(ctx, sqliteRebindAccessTokens, sql.Named("new_bound_by", arg.NewBoundBy), sql.Named("bound_by", arg.BoundBy))
 
 	return err
 }
@@ -6973,6 +7095,12 @@ func (q *sqliteQueries) RecordPolicyDecision(ctx context.Context, arg RecordPoli
 
 func (q *sqliteQueries) RecordReplicationRun(ctx context.Context, arg RecordReplicationRunParams) error {
 	_, err := q.db.ExecContext(ctx, sqliteRecordReplicationRun, sql.Named("last_run", sqliteNullTime(arg.LastRun)), sql.Named("last_status", arg.LastStatus), sql.Named("last_error", arg.LastError), sql.Named("repository", arg.Repository))
+
+	return err
+}
+
+func (q *sqliteQueries) RegisterCVEs(ctx context.Context, arg []string) error {
+	_, err := q.db.ExecContext(ctx, sqliteRegisterCVEs, sql.Named("ids", sqliteJSON(arg)))
 
 	return err
 }
@@ -7064,6 +7192,12 @@ func (q *sqliteQueries) RepositoryUsedBytes(ctx context.Context, arg string) (in
 
 func (q *sqliteQueries) RevokeAccessToken(ctx context.Context, arg uuid.UUID) error {
 	_, err := q.db.ExecContext(ctx, sqliteRevokeAccessToken, sql.Named("id", arg.String()))
+
+	return err
+}
+
+func (q *sqliteQueries) RevokeBoundAccessTokens(ctx context.Context, arg string) error {
+	_, err := q.db.ExecContext(ctx, sqliteRevokeBoundAccessTokens, sql.Named("bound_by", arg))
 
 	return err
 }
@@ -7291,6 +7425,15 @@ func (q *sqliteQueries) SetUserEmail(ctx context.Context, arg SetUserEmailParams
 	_, err := q.db.ExecContext(ctx, sqliteSetUserEmail, sql.Named("email", arg.Email), sql.Named("username", arg.Username))
 
 	return err
+}
+
+func (q *sqliteQueries) SetUserPassword(ctx context.Context, arg SetUserPasswordParams) (int64, error) {
+	res, err := q.db.ExecContext(ctx, sqliteSetUserPassword, sql.Named("password_hash", arg.PasswordHash), sql.Named("username", arg.Username))
+	if err != nil {
+		return 0, err
+	}
+
+	return res.RowsAffected()
 }
 
 func (q *sqliteQueries) SeverityCountsForContents(ctx context.Context, arg []string) ([]SeverityCountsForContentsRow, error) {

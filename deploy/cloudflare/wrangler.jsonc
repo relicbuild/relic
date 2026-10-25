@@ -11,7 +11,7 @@
       "class_name": "Relic",
       "image": "./Dockerfile",
       "image_vars": {
-        "RELIC_VERSION": "latest"
+        "RELIC_VERSION": "vX.Y.Z"
       },
       "instance_type": "standard-2",
       "max_instances": 1

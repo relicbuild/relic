@@ -11,9 +11,10 @@ REMOTE=relic-scenario-rpm-remote
 VIRTUAL=relic-scenario-rpm
 ALL=("$VIRTUAL" "$LOCAL" "$REMOTE")
 for r in "${ALL[@]}"; do delete_repo "$r"; done
+arch=$(uname -m)
 cat >repos.json <<JSON
 [{"key":"$LOCAL","rclass":"local","packageType":"yum"},
- {"key":"$REMOTE","rclass":"remote","packageType":"rpm","url":"https://dl.rockylinux.org/pub/rocky/10/BaseOS/x86_64/os"},
+ {"key":"$REMOTE","rclass":"remote","packageType":"rpm","url":"https://dl.rockylinux.org/pub/rocky/10/BaseOS/$arch/os"},
  {"key":"$VIRTUAL","rclass":"virtual","packageType":"rpm","repositories":"$LOCAL,$REMOTE","defaultDeploymentRepo":"$LOCAL"}]
 JSON
 jf rt rc repos.json

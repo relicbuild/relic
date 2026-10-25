@@ -50,6 +50,8 @@ func (h *Handler) nugetAPI(w http.ResponseWriter, r *http.Request, m Mount) {
 		h.nugetRegistration(w, r, rp, base, strings.TrimPrefix(rest, "registration/"))
 	case rest == "query":
 		h.nugetQuery(w, r, rp, base)
+	case strings.HasPrefix(rest, "symbols/"):
+		h.nugetSymbol(w, r, rp, strings.TrimPrefix(rest, "symbols/"))
 	default:
 		http.NotFound(w, r)
 	}
@@ -87,6 +89,10 @@ func (h *Handler) nugetIndex(w http.ResponseWriter, base string) {
 			{
 				base,
 				"PackagePublish/2.0.0",
+			},
+			{
+				base,
+				"SymbolPackagePublish/4.9.0",
 			},
 		},
 	})
@@ -330,9 +336,14 @@ func (h *Handler) nugetPush(w http.ResponseWriter, r *http.Request, rp repositor
 		return
 	}
 
+	stored := nuget.Path(spec.Metadata.ID, spec.Metadata.Version)
+	if spec.SymbolsPackage() {
+		stored = nuget.SymbolsPath(spec.Metadata.ID, spec.Metadata.Version)
+	}
+
 	if !h.RequireRepo(w, r, RepoCheck{
 		target,
-		nuget.Path(spec.Metadata.ID, spec.Metadata.Version),
+		stored,
 		auth.ActionWrite,
 	}) {
 		return
@@ -359,6 +370,25 @@ func (h *Handler) nugetPush(w http.ResponseWriter, r *http.Request, rp repositor
 	}
 
 	w.WriteHeader(http.StatusCreated)
+}
+
+func (h *Handler) nugetSymbol(w http.ResponseWriter, r *http.Request, rp repository.Repository, rest string) {
+	parts := strings.Split(rest, "/")
+	if len(parts) != 3 {
+		http.NotFound(w, r)
+		return
+	}
+
+	item, body, err := h.nuget.Symbol(r.Context(), rp, parts[0]+"/"+parts[1], parts[2])
+	if h.nugetFail(w, r, err) || !h.RequireRepo(w, r, RepoCheck{
+		rp.Name,
+		item.Path(),
+		auth.ActionRead,
+	}) || !h.allowDownload(w, r, item) {
+		return
+	}
+
+	writeBody(w, r, "application/octet-stream", body)
 }
 
 func (h *Handler) nugetDownload(w http.ResponseWriter, r *http.Request, rp repository.Repository, id, version string) {

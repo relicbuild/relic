@@ -1,8 +1,11 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"regexp"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -12,6 +15,9 @@ import (
 // version is the release this binary was built from, set by the release
 // workflow (-ldflags "-X main.version=v1.2.3").
 var version = "dev"
+
+// Set with -ldflags "-X main.revision=<commit>" where the build has no VCS information.
+var revision string
 
 type globals struct {
 	getenv      func(string) string
@@ -73,6 +79,7 @@ func rootCmd(g *globals) *cobra.Command {
 		group("auth", "Sign in, switch contexts and manage access tokens", "",
 			loginCmd(g),
 			logoutCmd(g),
+			passwordCmd(g),
 			authStatusCmd(g),
 			contextCmd(g),
 			tokenCmd(g),
@@ -155,9 +162,46 @@ func rootCmd(g *globals) *cobra.Command {
 		root.AddCommand(c)
 	}
 
+	refuseUnknownSubcommands(root)
+	g.completeNames(root)
 	g.showProgress(root)
 
 	return root
+}
+
+func refuseUnknownSubcommands(root *cobra.Command) {
+	for _, c := range root.Commands() {
+		refuseUnknownSubcommands(c)
+
+		if !c.HasSubCommands() || c.Runnable() {
+			continue
+		}
+
+		c.Args = unknownSubcommand
+		c.SuggestionsMinimumDistance = 2
+		c.RunE = func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		}
+
+		if c.Annotations == nil {
+			c.Annotations = map[string]string{}
+		}
+
+		c.Annotations[progressAnnotation] = "off"
+	}
+}
+
+func unknownSubcommand(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+
+	message := fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath())
+	if suggestions := cmd.SuggestionsFor(args[0]); len(suggestions) > 0 {
+		message += "\n\nDid you mean this?\n\t" + strings.Join(suggestions, "\n\t")
+	}
+
+	return errors.New(message)
 }
 
 func group(use, short, groupID string, cmds ...*cobra.Command) *cobra.Command {
@@ -212,6 +256,8 @@ func serviceCmd(use, process string, getenv func(string) string) *cobra.Command 
 				app.Version = version
 			}
 
+			app.Revision = revision
+
 			return app.Run(cmd.Context(), args, getenv, cmd.ErrOrStderr())
 		},
 	}
@@ -229,13 +275,14 @@ func serviceCmd(use, process string, getenv func(string) string) *cobra.Command 
 			false,
 			"serve plain HTTP instead of HTTPS (behind a proxy that terminates TLS)",
 		)
-		cmd.Flags().StringVar(
-			&settings,
-			"settings",
-			"",
-			"a file of KEY=value lines to set in the environment first, over the variables already set",
-		)
 	}
+
+	cmd.Flags().StringVar(
+		&settings,
+		"settings",
+		"",
+		"a file of KEY=value lines to set in the environment first, over the variables already set",
+	)
 
 	return cmd
 }
@@ -246,11 +293,42 @@ func loadSettings(path string) error {
 		return fmt.Errorf("settings: %w", err)
 	}
 
-	for key, value := range keyValues(string(b), "=") {
+	settings, err := parseSettings(string(b))
+	if err != nil {
+		return fmt.Errorf("settings %s: %w", path, err)
+	}
+
+	for key, value := range settings {
 		if err := os.Setenv(key, value); err != nil {
 			return fmt.Errorf("settings: %s: %w", key, err)
 		}
 	}
 
 	return nil
+}
+
+var variableName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+func parseSettings(text string) (map[string]string, error) {
+	settings := map[string]string{}
+
+	var errs []error
+
+	for i, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		key, value, ok := strings.Cut(line, "=")
+		if !ok || !variableName.MatchString(key) {
+			errs = append(errs, fmt.Errorf("line %d: %q is not KEY=value (no export, no spaces around =)", i+1, line))
+
+			continue
+		}
+
+		settings[key] = strings.Trim(value, `"'`)
+	}
+
+	return settings, errors.Join(errs...)
 }

@@ -21,6 +21,7 @@ import (
 	"relic/internal/delivery/replication"
 	"relic/internal/platform/httperror"
 	"relic/internal/platform/httpserver"
+	"relic/internal/platform/localdisk"
 	"relic/internal/platform/objectstore"
 	"relic/internal/platform/sealing"
 	"relic/internal/platform/telemetry"
@@ -165,6 +166,7 @@ func (h *Handler) Register(rt *httpserver.Router) {
 	h.packages.RegisterHelm(rt, h.mount("/artifactory/api/helm/"))
 	h.packages.RegisterPyPI(rt, h.mount("/artifactory/api/pypi/"))
 	h.packages.RegisterGo(rt, h.mount("/artifactory/api/go/"))
+	h.packages.RegisterGitLFS(rt, h.mount("/artifactory/api/lfs/"))
 	rt.HandleFunc("/artifactory/api/docker/", auth.Public, h.dockerAPI)
 
 	rt.HandleFunc(curationAuditPrefix, auth.Authenticated, curationAudit(rt))
@@ -219,6 +221,8 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, err error) 
 		status, msg = http.StatusRequestEntityTooLarge, err.Error()
 	case errors.Is(err, objectstore.ErrStorageFull):
 		status, msg = http.StatusInsufficientStorage, objectstore.ErrStorageFull.Error()
+	case errors.Is(err, localdisk.ErrFull):
+		status, msg = http.StatusInsufficientStorage, localdisk.ErrFull.Error()
 	default:
 		h.log.ErrorContext(r.Context(), "request failed", "request_id", httpserver.RequestID(r.Context()), "error", err)
 	}
@@ -267,6 +271,7 @@ const registryPrefix = "/v2/"
 // ConfigureAuth teaches the authenticator what the adapter's clients send.
 func ConfigureAuth(a *auth.Authenticator) {
 	a.AcceptAPIKey("X-NuGet-ApiKey", "/artifactory/api/nuget/")
+	a.AcceptBareToken("/artifactory/api/gems/")
 	a.AllowExpiredBearer("/artifactory/api/security/token")
 	a.AllowExpiredBearer("/access/api/v1/tokens")
 }

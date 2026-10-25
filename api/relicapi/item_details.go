@@ -48,6 +48,29 @@ func scanStatusMessage(status string) relicv1.ScanStatus {
 
 var scannable = regexp.MustCompile(`(?i)` + scan.ScannablePattern)
 
+const scanOffReason = "Relic Scan is off: no worker with Syft and Grype reported lately"
+
+func (d Dependencies) scanning(ctx context.Context) (bool, error) {
+	if d.ScanWorkers == nil {
+		return true, nil
+	}
+
+	return d.ScanWorkers(ctx)
+}
+
+func waitingScan(ctx context.Context, d Dependencies, reason string) (relicv1.ScanStatus, string, error) {
+	on, err := d.scanning(ctx)
+	if err != nil {
+		return 0, "", err
+	}
+
+	if !on {
+		return relicv1.ScanStatus_SCAN_STATUS_UNAVAILABLE, scanOffReason, nil
+	}
+
+	return relicv1.ScanStatus_SCAN_STATUS_QUEUED, reason, nil
+}
+
 func itemScan(ctx context.Context, d Dependencies, it repository.Item) (*relicv1.ItemScan, error) {
 	out := &relicv1.ItemScan{
 		Status: relicv1.ScanStatus_SCAN_STATUS_NONE,
@@ -61,8 +84,12 @@ func itemScan(ctx context.Context, d Dependencies, it repository.Item) (*relicv1
 
 	a, err := d.ScanResults.Artifact(ctx, target.Checksums.SHA256)
 	if errors.Is(err, scan.ErrNoScan) {
-		if scannable.MatchString(target.Name) {
-			out.Status, out.Reason = relicv1.ScanStatus_SCAN_STATUS_QUEUED, "not picked up by the scanner yet"
+		if !scannable.MatchString(target.Name) {
+			return out, nil
+		}
+
+		if out.Status, out.Reason, err = waitingScan(ctx, d, "not picked up by the scanner yet"); err != nil {
+			return nil, err
 		}
 
 		return out, nil
@@ -74,6 +101,13 @@ func itemScan(ctx context.Context, d Dependencies, it repository.Item) (*relicv1
 
 	out.Status = scanStatusMessage(a.Status)
 	out.Reason = a.Reason
+
+	if a.Status == scan.StatusQueued {
+		if out.Status, out.Reason, err = waitingScan(ctx, d, a.Reason); err != nil {
+			return nil, err
+		}
+	}
+
 	out.Components = int32(a.Components) //nolint:gosec // a component count
 	out.VulnerabilityDatabaseBuilt = ts(a.DBBuilt)
 	out.Source = source

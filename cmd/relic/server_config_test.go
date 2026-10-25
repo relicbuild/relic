@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -140,6 +143,88 @@ func TestWithSetting(t *testing.T) {
 
 			if got := keyValues(withSetting(tt.content, "RELIC_LOG_LEVEL", "debug", true), "=")["RELIC_LOG_LEVEL"]; got != "debug" {
 				t.Errorf("the setting that applies is %q, want debug", got)
+			}
+		})
+	}
+}
+
+func TestServerConfigSetChangesSeveralSettingsWithOneRestart(t *testing.T) {
+	t.Parallel()
+
+	m, ran, _ := testMachineSetup(t, "")
+	m.yes = true
+
+	if err := m.runSetup(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	*ran = nil
+	path := filepath.Join(m.configDir(), "server.env")
+
+	if err := m.setServiceSettings(t.Context(), &bytes.Buffer{}, path, setting{
+		key:   "RELIC_SCAN_SYFT_PATH",
+		value: "/opt/bin/syft",
+	}, setting{
+		key:   "RELIC_SCAN_GRYPE_PATH",
+		value: "/opt/bin/grype",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	settings := readFile(t, path)
+	if !strings.Contains(settings, "RELIC_SCAN_SYFT_PATH=/opt/bin/syft\n") ||
+		!strings.Contains(settings, "RELIC_SCAN_GRYPE_PATH=/opt/bin/grype\n") {
+		t.Errorf("settings:\n%s", settings)
+	}
+
+	want := []string{
+		"systemctl --user reset-failed relic.service",
+		"systemctl --user restart relic.service",
+	}
+	if strings.Join(*ran, "\n") != strings.Join(want, "\n") {
+		t.Errorf("ran:\n%s\nwant:\n%s", strings.Join(*ran, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestServerConfigSetArguments(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "two keys with --value-stdin",
+			args: []string{
+				"RELIC_LOG_LEVEL",
+				"RELIC_TRASH_ENABLED",
+				"--value-stdin",
+			},
+			want: "give one key",
+		},
+		{
+			name: "the first administrator's password",
+			args: []string{
+				"RELIC_LOG_LEVEL=debug",
+				"RELIC_ADMIN_PASSWORD=Another-pass-123",
+			},
+			want: "first administrator",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := runRelic(t, map[string]string{
+				"HOME": t.TempDir(),
+			}, append([]string{
+				"server",
+				"config",
+				"set",
+			}, tt.args...)...)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("relic server config set %s = %v, want %q", strings.Join(tt.args, " "), err, tt.want)
 			}
 		})
 	}

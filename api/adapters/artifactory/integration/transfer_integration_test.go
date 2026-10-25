@@ -72,9 +72,15 @@ func TestImportArtifactory(t *testing.T) {
 			body:   `{"description":"developers"}`,
 		},
 		{
+			method: "PUT",
+			path:   "/artifactory/api/security/users/carol",
+			body:   `{"email":"carol@example.com","password":"Carol-pass-1"}`,
+		},
+		{
 			method: "POST",
 			path:   "/artifactory/api/v2/security/permissions/devs-libs",
-			body:   `{"name":"devs-libs","repo":{"repositories":["libs-local"],"include-patterns":["**"],"actions":{"groups":{"devs":["read","write"]}}}}`,
+			body: `{"name":"devs-libs","repo":{"repositories":["libs-local"],"include-patterns":["**"],` +
+				`"actions":{"groups":{"devs":["read","write"]},"users":{"carol":["read"]}}}}`,
 		},
 		{
 			method: "PUT",
@@ -138,6 +144,12 @@ func TestImportArtifactory(t *testing.T) {
 	if err != nil || len(report.Errors) == 0 || report.Groups.Created < 1 || report.Repositories.Created != 3 ||
 		report.Permissions.Created != 1 || report.Files.Copied != 1 {
 		t.Fatalf("import without the jar's properties = %+v %v, want the jar refused", report, err)
+	}
+
+	if !slices.ContainsFunc(report.Notes, func(n string) bool {
+		return strings.Contains(n, "devs-libs") && strings.Contains(n, "carol")
+	}) {
+		t.Errorf("notes = %v; want one that says the grant to carol, who was not imported, is left out", report.Notes)
 	}
 
 	report, err = transfer.Import(t.Context(), s, d, transfer.Options{})
@@ -275,5 +287,57 @@ func TestImportArtifactoryNestedVirtualRepositories(t *testing.T) {
 				t.Errorf("notes = %v; want one that names %s", report.Notes, tt.wantNote)
 			}
 		})
+	}
+}
+
+func TestImportArtifactoryLeavesOutProjectsRelicDoesNotHave(t *testing.T) {
+	t.Parallel()
+
+	src, dst := server(t), server(t)
+
+	for _, c := range []call{
+		{
+			method: "PUT",
+			path:   "/api/v1/projects/acme",
+			body:   `{"key":"acme"}`,
+		},
+		{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/acme-libs",
+			body:   `{"rclass":"local","packageType":"generic","projectKey":"acme"}`,
+		},
+	} {
+		if resp, body := do(t, src, c); resp.StatusCode/100 != 2 {
+			t.Fatalf("%s %s = %d %s", c.method, c.path, resp.StatusCode, body)
+		}
+	}
+
+	report, err := transfer.Import(t.Context(), transfer.Server{
+		URL: src.URL,
+		Client: &http.Client{
+			Transport: asAdmin{},
+		},
+	}, transfer.Server{
+		URL: dst.URL,
+		Client: &http.Client{
+			Transport: relicAPIOnly{},
+		},
+	}, transfer.Options{})
+	if err != nil || len(report.Errors) != 0 || report.Repositories.Created != 1 {
+		t.Fatalf("import = %+v %v; want acme-libs created", report, err)
+	}
+
+	if !slices.ContainsFunc(report.Notes, func(n string) bool {
+		return strings.Contains(n, "acme-libs") && strings.Contains(n, "project acme")
+	}) {
+		t.Errorf("notes = %v; want one that says acme-libs is copied without project acme", report.Notes)
+	}
+
+	resp, body := do(t, dst, call{
+		method: "GET",
+		path:   "/api/v1/repositories/acme-libs",
+	})
+	if resp.StatusCode != 200 || strings.Contains(body, `"project":"acme"`) {
+		t.Errorf("GET acme-libs = %d %s; want it without a project", resp.StatusCode, body)
 	}
 }

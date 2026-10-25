@@ -39,6 +39,7 @@ const onLandingPage = computed(() => route.path === '/')
           label="API"
         />
         <SiteAccountButton
+          compact
           color="neutral"
           variant="ghost"
         />

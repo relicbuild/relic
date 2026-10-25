@@ -12,6 +12,7 @@ vars:
   DEV_KEY: cmVsaWMtZGV2LXNlY3JldHMta2V5LW5vdC1wcm9kISE=
   TEST_PACKAGE_PARALLELISM:
     sh: echo $(( ($(getconf _NPROCESSORS_ONLN) + 3) / 4 ))
+  E2E_PARALLELISM: '{{.E2E_PARALLELISM | default "4"}}'
 
 env:
   RYUK_RECONNECTION_TIMEOUT: 10m
@@ -190,6 +191,7 @@ tasks:
   test:integration:postgresql:
     internal: true
     cmds:
+      - defer: docker rm -f -v relic-test-postgresql >/dev/null 2>&1 || true
       - RELIC_TEST_POSTGRESQL_URL="$(test/postgresql.sh)" go test -p {{.TEST_PACKAGE_PARALLELISM}} -tags=integration ./...
 
   test:integration:sqlite:
@@ -206,6 +208,7 @@ tasks:
   test:race:postgresql:
     internal: true
     cmds:
+      - defer: docker rm -f -v relic-test-postgresql >/dev/null 2>&1 || true
       - RELIC_TEST_POSTGRESQL_URL="$(test/postgresql.sh)" go test -p {{.TEST_PACKAGE_PARALLELISM}} -race -tags=integration ./...
 
   test:race:sqlite:
@@ -222,17 +225,26 @@ tasks:
   e2e:core:
     internal: true
     cmds:
-      - go test -tags e2e -count=1 -v -timeout 90m ./test/e2e -run TestStack -tier core
+      - go test -tags e2e -count=1 -v -timeout 90m ./test/e2e -run TestStack -tier core -parallel {{.E2E_PARALLELISM}}
 
   test:platform:
     desc: "Tier 2: the platform scenarios on the Compose stack (PostgreSQL, SeaweedFS, a separate worker)"
     cmds:
-      - go test -tags e2e -count=1 -v -timeout 90m ./test/e2e -run TestStack -tier platform
+      - go test -tags e2e -count=1 -v -timeout 90m ./test/e2e -run TestStack -tier platform -parallel {{.E2E_PARALLELISM}}
 
   test:k8s:
     desc: "The k8s tier: one kind cluster, the Helm chart, Kubernetes pulls, a rolling restart and an upgrade, HA, and the restore drill"
     cmds:
       - go test -tags e2e -count=1 -v -timeout 120m ./test/e2e -run TestKubernetes -tier k8s
+
+  test:clean:
+    desc: "Remove what the tests keep between runs: any stack or cluster left by -keep or an interrupted run, the images the suite built, and the vulnerability database cache"
+    cmds:
+      - for p in relic-e2e-core relic-e2e-platform; do docker compose -p "$p" down --volumes --remove-orphans; done
+      - docker rm -f -v relic-test-postgresql >/dev/null 2>&1 || true
+      - kind delete cluster --name relic-k8s >/dev/null 2>&1 || true
+      - docker images -q --filter label=build.relic.e2e=true | sort -u | xargs -r docker rmi -f >/dev/null
+      - rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/relic-e2e" "$HOME/Library/Caches/relic-e2e"
 
   test:all:
     desc: "The full gate before a merge request: the integration suite with the race detector, then tiers 1 and 2 at once"

@@ -7,7 +7,7 @@ set -euo pipefail
 name=relic-test-postgresql
 image=postgres:18-alpine
 if [[ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null)" != true ]]; then
-  docker rm -f "$name" >/dev/null 2>&1 || true
+  docker rm -f -v "$name" >/dev/null 2>&1 || true
   docker run -d --name "$name" -e POSTGRES_USER=relic -e POSTGRES_PASSWORD=relic -e POSTGRES_DB=relic \
     -p 127.0.0.1::5432 "$image" -c max_connections=2000 >/dev/null
 fi

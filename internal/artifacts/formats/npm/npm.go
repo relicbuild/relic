@@ -64,6 +64,9 @@ func NewService(db *database.DB, repos *repository.Service, log *slog.Logger) *S
 			},
 		},
 	}
+	repos.RegisterMetadata(func(name string) bool {
+		return strings.HasSuffix(name, packumentCacheSuffix)
+	})
 	repos.RegisterHook(Format, s.indexTarball)
 	repos.SetUpstreamCheck(Format, s.checkTarball)
 
@@ -213,7 +216,7 @@ func (s *Service) localPackument(ctx context.Context, repoKey, name, tarballBase
 	}
 
 	versions := map[string]any{}
-	times := map[string]string{}
+	times := map[string]any{}
 
 	var (
 		latest            string
@@ -321,37 +324,9 @@ func (s *Service) remotePackument(
 
 	upstream := strings.TrimSuffix(cfg.URL, "/")
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, upstream+"/"+escapeName(name), nil)
+	doc, err := s.cachedPackument(ctx, r, upstream+"/"+escapeName(name), name)
 	if err != nil {
 		return nil, err
-	}
-
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", repository.UserAgent)
-
-	if cfg.Username != "" {
-		req.SetBasicAuth(cfg.Username, cfg.Password)
-	}
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", repository.ErrUpstream, err)
-	}
-
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	switch {
-	case resp.StatusCode == http.StatusNotFound:
-		return nil, ErrNotFound
-	case resp.StatusCode != http.StatusOK:
-		return nil, fmt.Errorf("%w: %s returned %s", repository.ErrUpstream, req.URL.Redacted(), resp.Status)
-	}
-
-	var doc Packument
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 256<<20)).Decode(&doc); err != nil {
-		return nil, fmt.Errorf("%w: invalid packument: %w", repository.ErrUpstream, err)
 	}
 
 	versions, _ := doc["versions"].(map[string]any)
@@ -360,6 +335,10 @@ func (s *Service) remotePackument(
 	for ver, v := range versions {
 		m, _ := v.(map[string]any)
 		dist, _ := m["dist"].(map[string]any)
+
+		if attestations, ok := dist["attestations"].(map[string]any); ok {
+			attestations["url"] = tarballBase + "/-/npm/v1/attestations/" + escapeName(name) + "@" + ver
+		}
 
 		tarball, _ := dist["tarball"].(string)
 		if tarball == "" {
@@ -414,6 +393,41 @@ func (s *Service) remotePackument(
 		}
 
 		dropMissing(doc, versions)
+	}
+
+	return doc, nil
+}
+
+const maxPackumentBytes = 256 << 20
+
+const packumentCacheSuffix = ".npm.json"
+
+func (s *Service) cachedPackument(
+	ctx context.Context,
+	r repository.Repository,
+	upstreamURL, name string,
+) (Packument, error) {
+	item, err := s.repos.ResolveURL(ctx, r, upstreamURL, ".npm/"+name+packumentCacheSuffix)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil, ErrNotFound
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	rc, err := s.repos.Open(ctx, item, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		_ = rc.Close()
+	}()
+
+	var doc Packument
+	if err := json.NewDecoder(io.LimitReader(rc, maxPackumentBytes)).Decode(&doc); err != nil {
+		return nil, fmt.Errorf("%w: invalid packument: %w", repository.ErrUpstream, err)
 	}
 
 	return doc, nil
@@ -747,6 +761,64 @@ func (s *Service) DeleteTag(ctx context.Context, repoKey, name, tag string) erro
 	return nil
 }
 
+// Unpublish moves the versions of name that keep rejects (all of them when keep is nil) to the trash can.
+func (s *Service) Unpublish(ctx context.Context, repoKey, name, user string, keep func(version string) bool) error {
+	rows, err := s.db.ListNpmVersions(ctx, database.ListNpmVersionsParams{
+		RepoKey: repoKey,
+		Name:    name,
+	})
+	if err != nil {
+		return err
+	}
+
+	removed := map[string]bool{}
+
+	for _, row := range rows {
+		if keep != nil && keep(row.Version) {
+			continue
+		}
+
+		if err := s.repos.DeleteToTrash(
+			ctx,
+			repoKey,
+			repository.JoinPath(row.ItemPath, row.ItemName),
+			user,
+		); err != nil {
+			return fmt.Errorf("unpublish %s@%s: %w", name, row.Version, err)
+		}
+
+		removed[row.Version] = true
+	}
+
+	if len(removed) == 0 {
+		return ErrNotFound
+	}
+
+	tags, err := s.db.ListNpmDistTags(ctx, database.ListNpmDistTagsParams{
+		RepoKey: repoKey,
+		Name:    name,
+	})
+	if err != nil {
+		return err
+	}
+
+	for _, tag := range tags {
+		if !removed[tag.Version] {
+			continue
+		}
+
+		if _, err := s.db.DeleteNpmDistTag(ctx, database.DeleteNpmDistTagParams{
+			RepoKey: repoKey,
+			Name:    name,
+			Tag:     tag.Tag,
+		}); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // SearchResult is one npm search hit.
 type SearchResult struct {
 	Name        string
@@ -938,7 +1010,7 @@ func (s *Service) Audit(
 	body io.Reader,
 	header http.Header,
 ) (*http.Response, error) {
-	remote, ok := s.auditRemote(ctx, r, 0)
+	remote, ok := s.onlineRemote(ctx, r, 0)
 	if !ok {
 		return nil, ErrNoAuditSource
 	}
@@ -979,7 +1051,7 @@ func (s *Service) Audit(
 	return resp, nil
 }
 
-func (s *Service) auditRemote(ctx context.Context, r repository.Repository, depth int) (repository.Repository, bool) {
+func (s *Service) onlineRemote(ctx context.Context, r repository.Repository, depth int) (repository.Repository, bool) {
 	switch {
 	case r.Class == "remote":
 		return r, !s.repos.UpstreamOf(r).Offline
@@ -989,13 +1061,47 @@ func (s *Service) auditRemote(ctx context.Context, r repository.Repository, dept
 
 	for _, key := range r.Members() {
 		if m, err := s.repos.GetRepository(ctx, key); err == nil {
-			if remote, ok := s.auditRemote(ctx, m, depth+1); ok {
+			if remote, ok := s.onlineRemote(ctx, m, depth+1); ok {
 				return remote, true
 			}
 		}
 	}
 
 	return repository.Repository{}, false
+}
+
+const maxRegistryDocumentBytes = 16 << 20
+
+// SigningKeys returns the signing keys of the upstream registry of r's first online npm remote.
+func (s *Service) SigningKeys(ctx context.Context, r repository.Repository) ([]byte, error) {
+	return s.registryDocument(ctx, r, "-/npm/v1/keys")
+}
+
+// Attestations returns the provenance attestations of a version from the same upstream registry.
+func (s *Service) Attestations(ctx context.Context, r repository.Repository, name, version string) ([]byte, error) {
+	if !ValidName(name) || !validVersion.MatchString(version) {
+		return nil, fmt.Errorf("%w: invalid package version", ErrInvalid)
+	}
+
+	return s.registryDocument(ctx, r, "-/npm/v1/attestations/"+escapeName(name)+"@"+version)
+}
+
+var validVersion = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z.+-]*$`)
+
+func (s *Service) registryDocument(ctx context.Context, r repository.Repository, apiPath string) ([]byte, error) {
+	remote, ok := s.onlineRemote(ctx, r, 0)
+	if !ok {
+		return nil, ErrNotFound
+	}
+
+	upstream := strings.TrimSuffix(remote.Upstream().URL, "/")
+
+	body, err := s.repos.FetchUpstream(ctx, remote, upstream+"/"+apiPath, "application/json", maxRegistryDocumentBytes)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil, ErrNotFound
+	}
+
+	return body, err
 }
 
 // Offers reports whether repoKey's metadata for name offers version: a

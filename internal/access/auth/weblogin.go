@@ -100,6 +100,7 @@ func (l *WebLogins) Poll(ctx context.Context, session, description string) (Issu
 		ExpiresIn:   webLoginTokenTTL,
 		Refreshable: true,
 		Description: description,
+		SignIn:      true,
 	}
 
 	err = l.db.WithTx(ctx, func(q database.Querier) error {

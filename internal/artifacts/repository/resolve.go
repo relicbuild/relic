@@ -458,7 +458,7 @@ func (s *Service) httpClient(timeout time.Duration) *http.Client {
 
 	client, ok := s.upstreams.Load(timeout)
 	if !ok {
-		client, _ = s.upstreams.LoadOrStore(timeout, newUpstreamClient(timeout, s.allowPrivate))
+		client, _ = s.upstreams.LoadOrStore(timeout, newUpstreamClient(timeout, s.allowPrivate, s.upstreamRoots))
 	}
 
 	return client.(*http.Client)

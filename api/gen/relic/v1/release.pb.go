@@ -2088,14 +2088,14 @@ const file_relic_v1_release_proto_rawDesc = "" +
 	"\x19RELEASE_STATUS_PROCESSING\x10\x01\x12\x1c\n" +
 	"\x18RELEASE_STATUS_COMPLETED\x10\x02\x12\x18\n" +
 	"\x14RELEASE_STATUS_DRAFT\x10\x03\x12\x19\n" +
-	"\x15RELEASE_STATUS_FAILED\x10\x042\x8d\x0e\n" +
+	"\x15RELEASE_STATUS_FAILED\x10\x042\x93\x0e\n" +
 	"\x0eReleaseService\x12k\n" +
 	"\fListReleases\x12\x1d.relic.v1.ListReleasesRequest\x1a\x1e.relic.v1.ListReleasesResponse\"\x1c\x88\xb5\x18\x02\x82\xd3\xe4\x93\x02\x12\x12\x10/api/v1/releases\x12\x90\x01\n" +
 	"\x13ListReleaseVersions\x12$.relic.v1.ListReleaseVersionsRequest\x1a%.relic.v1.ListReleaseVersionsResponse\",\x88\xb5\x18\x02\x82\xd3\xe4\x93\x02\"\x12 /api/v1/releases/{name}/versions\x12\x7f\n" +
 	"\n" +
-	"GetRelease\x12\x1b.relic.v1.GetReleaseRequest\x1a\x1c.relic.v1.GetReleaseResponse\"6\x88\xb5\x18\x02\x82\xd3\xe4\x93\x02,\x12*/api/v1/releases/{name}/versions/{version}\x12\x86\x01\n" +
-	"\rCreateRelease\x12\x1e.relic.v1.CreateReleaseRequest\x1a\x1f.relic.v1.CreateReleaseResponse\"4\x88\xb5\x18\x02\x82\xd3\xe4\x93\x02*:\x01*\"%/api/v1/releases/{spec.name}/versions\x12\x95\x01\n" +
-	"\rUpdateRelease\x12\x1e.relic.v1.UpdateReleaseRequest\x1a\x1f.relic.v1.UpdateReleaseResponse\"C\x88\xb5\x18\x02\x82\xd3\xe4\x93\x029:\x01*24/api/v1/releases/{spec.name}/versions/{spec.version}\x12\x9a\x01\n" +
+	"GetRelease\x12\x1b.relic.v1.GetReleaseRequest\x1a\x1c.relic.v1.GetReleaseResponse\"6\x88\xb5\x18\x02\x82\xd3\xe4\x93\x02,\x12*/api/v1/releases/{name}/versions/{version}\x12\x89\x01\n" +
+	"\rCreateRelease\x12\x1e.relic.v1.CreateReleaseRequest\x1a\x1f.relic.v1.CreateReleaseResponse\"7\x88\xb5\x18\x02\x82\xd3\xe4\x93\x02-:\x04spec\"%/api/v1/releases/{spec.name}/versions\x12\x98\x01\n" +
+	"\rUpdateRelease\x12\x1e.relic.v1.UpdateReleaseRequest\x1a\x1f.relic.v1.UpdateReleaseResponse\"F\x88\xb5\x18\x02\x82\xd3\xe4\x93\x02<:\x04spec24/api/v1/releases/{spec.name}/versions/{spec.version}\x12\x9a\x01\n" +
 	"\x0fFinalizeRelease\x12 .relic.v1.FinalizeReleaseRequest\x1a!.relic.v1.FinalizeReleaseResponse\"B\x88\xb5\x18\x02\x82\xd3\xe4\x93\x028:\x01*\"3/api/v1/releases/{name}/versions/{version}:finalize\x12\x88\x01\n" +
 	"\rDeleteRelease\x12\x1e.relic.v1.DeleteReleaseRequest\x1a\x1f.relic.v1.DeleteReleaseResponse\"6\x88\xb5\x18\x02\x82\xd3\xe4\x93\x02,**/api/v1/releases/{name}/versions/{version}\x12\x8f\x01\n" +
 	"\rSetReleaseTag\x12\x1e.relic.v1.SetReleaseTagRequest\x1a\x1f.relic.v1.SetReleaseTagResponse\"=\x88\xb5\x18\x02\x82\xd3\xe4\x93\x023:\x01*\x1a./api/v1/releases/{name}/versions/{version}/tag\x12\x99\x01\n" +

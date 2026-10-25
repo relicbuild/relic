@@ -79,6 +79,7 @@ type Querier interface {
 	DeleteIssues(ctx context.Context, sha256 string) error
 	DeleteItemProperties(ctx context.Context, itemID uuid.UUID) error
 	DeleteItemPropertyKeys(ctx context.Context, arg DeleteItemPropertyKeysParams) error
+	DeleteKeyPair(ctx context.Context, name string) (int64, error)
 	DeleteLdapGroupMapping(ctx context.Context, name string) (int64, error)
 	DeleteLdapServer(ctx context.Context, name string) (int64, error)
 	DeleteMaliciousAdvisory(ctx context.Context, id string) error
@@ -124,6 +125,7 @@ type Querier interface {
 	// (an SBOM import, or a newer claim).
 	FinishUnchangedScanArtifact(ctx context.Context, arg FinishUnchangedScanArtifactParams) (int64, error)
 	FinishWebhookDelivery(ctx context.Context, arg FinishWebhookDeliveryParams) error
+	ForgetFailedMatches(ctx context.Context) (int64, error)
 	ForgetFailedScans(ctx context.Context, sha256s []string) ([]string, error)
 	GetAccessToken(ctx context.Context, id uuid.UUID) (AccessToken, error)
 	GetAccessTokenByRefreshHash(ctx context.Context, refreshTokenHash *string) (AccessToken, error)
@@ -133,6 +135,7 @@ type Querier interface {
 	GetCVE(ctx context.Context, id string) (CVE, error)
 	GetCVEFeed(ctx context.Context, name string) (CveFeed, error)
 	GetCleanupPolicy(ctx context.Context, name string) (CleanupPolicy, error)
+	GetDebianReleaseDate(ctx context.Context, arg GetDebianReleaseDateParams) (DebianReleaseDate, error)
 	GetDepsDevVersion(ctx context.Context, arg GetDepsDevVersionParams) (DepsDevVersion, error)
 	GetDownloadStats(ctx context.Context, itemID uuid.UUID) (DownloadStat, error)
 	GetEndOfLifeFeed(ctx context.Context, source string) (EndOfLifeFeed, error)
@@ -225,6 +228,7 @@ type Querier interface {
 	ListCVEPage(ctx context.Context, arg ListCVEPageParams) ([]ListCVEPageRow, error)
 	ListChildren(ctx context.Context, arg ListChildrenParams) ([]Item, error)
 	ListCleanupPolicies(ctx context.Context) ([]CleanupPolicy, error)
+	ListContentFolders(ctx context.Context, sha256 *string) ([]string, error)
 	// The release cycles of the products these package URLs (without a version)
 	// name.
 	ListEndOfLifeCycles(ctx context.Context, purls []string) ([]ListEndOfLifeCyclesRow, error)
@@ -321,13 +325,16 @@ type Querier interface {
 	PurgeUserUsage(ctx context.Context, before string) error
 	PurgeWebhookDeliveries(ctx context.Context, before time.Time) (int64, error)
 	PutApproval(ctx context.Context, arg PutApprovalParams) error
+	PutDebianReleaseDate(ctx context.Context, arg PutDebianReleaseDateParams) error
 	PutHold(ctx context.Context, arg PutHoldParams) error
 	PutQuarantineDecision(ctx context.Context, arg PutQuarantineDecisionParams) error
 	PutTombstone(ctx context.Context, arg PutTombstoneParams) error
+	RebindAccessTokens(ctx context.Context, arg RebindAccessTokensParams) error
 	RecordCleanupRun(ctx context.Context, arg RecordCleanupRunParams) error
 	RecordDownloads(ctx context.Context, arg RecordDownloadsParams) error
 	RecordPolicyDecision(ctx context.Context, arg RecordPolicyDecisionParams) error
 	RecordReplicationRun(ctx context.Context, arg RecordReplicationRunParams) error
+	RegisterCVEs(ctx context.Context, ids []string) error
 	RegisterFindingCVEs(ctx context.Context) (int64, error)
 	// Whether the registry entry at a path is indexed with the content sha256 and
 	// has an approval of it; no row when the path is not an entry.
@@ -344,6 +351,7 @@ type Querier interface {
 	ReplaceSsoMemberships(ctx context.Context, arg ReplaceSsoMembershipsParams) error
 	RepositoryUsedBytes(ctx context.Context, repoKey string) (int64, error)
 	RevokeAccessToken(ctx context.Context, id uuid.UUID) error
+	RevokeBoundAccessTokens(ctx context.Context, boundBy string) error
 	RevokeUserAccessTokens(ctx context.Context, username string) error
 	SaveCVEFeed(ctx context.Context, arg SaveCVEFeedParams) error
 	SaveCVERecord(ctx context.Context, arg SaveCVERecordParams) error
@@ -367,6 +375,7 @@ type Querier interface {
 	SetRisksChecked(ctx context.Context, arg SetRisksCheckedParams) error
 	SetUserDisabled(ctx context.Context, arg SetUserDisabledParams) error
 	SetUserEmail(ctx context.Context, arg SetUserEmailParams) error
+	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) (int64, error)
 	SeverityCountsForContents(ctx context.Context, sha256s []string) ([]SeverityCountsForContentsRow, error)
 	SnapshotRepositoryUsage(ctx context.Context, day string) error
 	// The members an identity provider manages, with their user IDs.

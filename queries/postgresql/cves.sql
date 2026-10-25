@@ -6,6 +6,12 @@ SELECT DISTINCT upper(c) FROM (
 WHERE c ILIKE 'CVE-%'
 ON CONFLICT (id) DO NOTHING;
 
+-- name: RegisterCVEs :exec
+INSERT INTO cves (id)
+SELECT DISTINCT upper(c) FROM unnest(@ids::text[]) AS c
+WHERE c ILIKE 'CVE-%'
+ON CONFLICT (id) DO NOTHING;
+
 -- name: KnownCVEIDs :many
 SELECT id FROM cves ORDER BY id;
 

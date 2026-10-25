@@ -117,6 +117,20 @@ func TestUninstallPurge(t *testing.T) {
 
 	writeCertificateAuthority(t, filepath.Join(m.configDir(), "tls"))
 
+	run := filepath.Join(filepath.Dir(m.configPath), "builds", "app", "1.json")
+	for _, p := range []string{
+		run,
+		m.configPath + ".lock",
+	} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.WriteFile(p, []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	u, _, _ := testMachineSetup(t, "")
 	u.home, u.configPath, u.executable, u.yes = m.home, m.configPath, m.executable, true
 
@@ -129,6 +143,10 @@ func TestUninstallPurge(t *testing.T) {
 		filepath.Join(m.configDir(), "server.env"),
 		filepath.Join(m.configDir(), "tls"),
 		m.dataDir(),
+		run,
+		m.configPath + ".lock",
+		m.configDir(),
+		filepath.Dir(m.configPath),
 	} {
 		if exists(p) {
 			t.Errorf("%s is still there", p)
@@ -260,5 +278,9 @@ func TestUninstallSystem(t *testing.T) {
 
 	if exists(filepath.Join(m.root, systemTLSDir)) {
 		t.Error("--purge left the certificate authority")
+	}
+
+	if exists(filepath.Join(m.root, "etc", "relic")) {
+		t.Error("--purge left an empty /etc/relic")
 	}
 }

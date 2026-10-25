@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"regexp"
 	"slices"
@@ -79,6 +80,11 @@ type Nuspec struct {
 		Version      string `xml:"version"`
 		Description  string `xml:"description"`
 		Authors      string `xml:"authors"`
+		PackageTypes struct {
+			Types []struct {
+				Name string `xml:"name,attr"`
+			} `xml:"packageType"`
+		} `xml:"packageTypes"`
 		Dependencies struct {
 			Groups []struct {
 				TargetFramework string `xml:"targetFramework,attr"`
@@ -131,7 +137,8 @@ func ReadNuspec(r io.ReaderAt, size int64) (Nuspec, []byte, error) {
 }
 
 // Push stores a pushed package (a .nupkg spooled to file) at its layout
-// path.
+// path, and a symbol package (.snupkg) at SymbolsPath with the symbol server
+// keys of its portable PDBs.
 func (s *Service) Push(ctx context.Context, repoKey string, file *os.File, user string) (Nuspec, error) {
 	info, err := file.Stat()
 	if err != nil {
@@ -145,6 +152,10 @@ func (s *Service) Push(ctx context.Context, repoKey string, file *os.File, user 
 
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return Nuspec{}, err
+	}
+
+	if n.SymbolsPackage() {
+		return n, s.pushSymbols(ctx, repoKey, n, file, user)
 	}
 
 	id, version := n.Metadata.ID, normalizeVersion(n.Metadata.Version)
@@ -550,8 +561,9 @@ func (s *Service) Nuspec(ctx context.Context, item repository.Item) ([]byte, Nus
 	return raw, n, err
 }
 
-// Search lists packages in r's local members whose id contains q, with
-// their versions.
+// Search lists packages whose id contains q, with their versions: those
+// stored in r's members (a remote's cached ones too), then what each remote
+// member's upstream search service finds for the first skip+take results.
 func (s *Service) Search(
 	ctx context.Context,
 	r repository.Repository,
@@ -560,13 +572,27 @@ func (s *Service) Search(
 ) ([]SearchResult, int, error) {
 	q = strings.ToLower(q)
 	byID := map[string]*SearchResult{}
+	upstreamTotal := 0
 
 	for _, m := range s.members(ctx, r, 0) {
 		if m.Class == "remote" {
-			continue
+			found, total, err := s.remoteSearch(ctx, m, q, skip+take)
+			if err != nil {
+				s.log.WarnContext(ctx, "nuget: upstream search", "repo", m.Name, "error", err)
+			}
+
+			upstreamTotal += total - len(found)
+
+			for _, res := range found {
+				addSearchResult(byID, res.ID, res.Versions...)
+			}
 		}
 
 		root, err := s.repos.Stat(ctx, m.Name, "")
+		if errors.Is(err, repository.ErrNotFound) && m.Class == "remote" {
+			continue
+		}
+
 		if err != nil {
 			return nil, 0, err
 		}
@@ -591,15 +617,7 @@ func (s *Service) Search(
 				continue
 			}
 
-			res, ok := byID[strings.ToLower(id)]
-			if !ok {
-				res = &SearchResult{
-					ID: id,
-				}
-				byID[strings.ToLower(id)] = res
-			}
-
-			res.Versions = append(res.Versions, v)
+			addSearchResult(byID, id, v)
 		}
 	}
 
@@ -616,7 +634,7 @@ func (s *Service) Search(
 			return strings.Compare(strings.ToLower(a.ID), strings.ToLower(b.ID))
 		},
 	)
-	total := len(out)
+	total := len(out) + max(upstreamTotal, 0)
 	skip = min(skip, len(out))
 
 	out = out[skip:]
@@ -625,6 +643,138 @@ func (s *Service) Search(
 	}
 
 	return out, total, nil
+}
+
+func addSearchResult(byID map[string]*SearchResult, id string, versions ...string) {
+	res, ok := byID[strings.ToLower(id)]
+	if !ok {
+		res = &SearchResult{
+			ID: id,
+		}
+		byID[strings.ToLower(id)] = res
+	}
+
+	for _, v := range versions {
+		res.Versions = append(res.Versions, strings.ToLower(v))
+	}
+}
+
+const maxUpstreamSearchBytes = 16 << 20
+
+func (s *Service) remoteSearch(
+	ctx context.Context,
+	r repository.Repository,
+	q string,
+	take int,
+) ([]SearchResult, int, error) {
+	if r.Upstream().Offline || take <= 0 {
+		return nil, 0, nil
+	}
+
+	searchURL, err := s.searchService(ctx, r)
+	if err != nil || searchURL == "" {
+		return nil, 0, err
+	}
+
+	query := url.Values{
+		"q": {
+			q,
+		},
+		"skip": {
+			"0",
+		},
+		"take": {
+			strconv.Itoa(take),
+		},
+		"prerelease": {
+			"true",
+		},
+		"semVerLevel": {
+			"2.0.0",
+		},
+	}
+
+	body, err := s.repos.FetchUpstream(ctx, r, searchURL+"?"+query.Encode(), "application/json", maxUpstreamSearchBytes)
+	if err != nil {
+		return nil, 0, fmt.Errorf("search %s: %w", r.Name, err)
+	}
+
+	var doc struct {
+		TotalHits int `json:"totalHits"`
+		Data      []struct {
+			ID       string `json:"id"`
+			Versions []struct {
+				Version string `json:"version"`
+			} `json:"versions"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return nil, 0, fmt.Errorf("%w: search answer of %s: %w", repository.ErrUpstream, r.Name, err)
+	}
+
+	out := make([]SearchResult, 0, len(doc.Data))
+
+	for _, d := range doc.Data {
+		if !ValidID(d.ID) {
+			continue
+		}
+
+		res := SearchResult{
+			ID: d.ID,
+		}
+
+		for _, v := range d.Versions {
+			lower := strings.ToLower(v.Version)
+			if ValidVersion(lower) &&
+				repository.Visible(ctx, r.Name, strings.ToLower(d.ID)+"."+normalizeVersion(lower)+".nupkg") {
+				res.Versions = append(res.Versions, lower)
+			}
+		}
+
+		if len(res.Versions) > 0 {
+			out = append(out, res)
+		}
+	}
+
+	return out, doc.TotalHits, nil
+}
+
+func (s *Service) searchService(ctx context.Context, r repository.Repository) (string, error) {
+	index := strings.TrimSuffix(s.repos.UpstreamOf(r).URL, "/")
+	switch {
+	case strings.Contains(index, "nuget.org"):
+		index = "https://api.nuget.org/v3/index.json"
+	case !strings.HasSuffix(index, "/index.json"):
+		index += "/index.json"
+	}
+
+	body, err := s.repos.FetchUpstream(ctx, r, index, "application/json", maxUpstreamSearchBytes)
+	if errors.Is(err, repository.ErrNotFound) {
+		return "", nil
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("service index of %s: %w", r.Name, err)
+	}
+
+	var doc struct {
+		Resources []struct {
+			ID   string `json:"@id"`
+			Type string `json:"@type"`
+		} `json:"resources"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return "", fmt.Errorf("%w: service index of %s: %w", repository.ErrUpstream, r.Name, err)
+	}
+
+	for _, res := range doc.Resources {
+		if strings.HasPrefix(res.Type, "SearchQueryService") &&
+			(strings.HasPrefix(res.ID, "https://") || strings.HasPrefix(res.ID, "http://")) {
+			return res.ID, nil
+		}
+	}
+
+	return "", nil
 }
 
 // SearchResult is one package in search results.

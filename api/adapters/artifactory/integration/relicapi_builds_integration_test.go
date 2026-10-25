@@ -467,6 +467,13 @@ func TestRelicAPIVex(t *testing.T) {
 		t.Fatalf("import = %v %v", imported, err)
 	}
 
+	again, err := admin.ImportVex(ctx, &relicv1.ImportVexRequest{
+		Document: exported.GetDocument(),
+	})
+	if err != nil || len(again.GetRules()) != 0 || again.GetExisting() != 1 {
+		t.Errorf("second import of the document = %v %v, want its rule already stored", again, err)
+	}
+
 	list, err := admin.ListIgnoreRules(ctx, &relicv1.ListIgnoreRulesRequest{})
 	if err != nil || len(list.GetRules()) != 2 {
 		t.Errorf("rules = %v %v", list, err)

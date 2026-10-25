@@ -56,9 +56,13 @@ func New(bundles *rb.Service, perms Permissions, log *slog.Logger) *Handler {
 // Register mounts the API on rt.
 func (h *Handler) Register(rt *httpserver.Router) {
 	p := prefix + "release_bundle"
-	rt.HandleFunc("POST "+p, auth.Authenticated, h.create)
+	rt.HandleFunc("POST "+p, auth.Authenticated, signedWithReleaseKey(h.create))
 	rt.HandleFunc("PATCH "+p, auth.Authenticated, h.update)
-	rt.HandleFunc("POST "+p+"/{name}/{version}/finalize", auth.Authenticated, h.release(auth.ActionWrite, h.finalize))
+	rt.HandleFunc(
+		"POST "+p+"/{name}/{version}/finalize",
+		auth.Authenticated,
+		h.release(auth.ActionWrite, signedWithReleaseKey(h.finalize)),
+	)
 	rt.HandleFunc("GET "+p+"/statuses/{name}/{version}", auth.Authenticated, h.release(auth.ActionRead, h.status))
 	rt.HandleFunc("GET "+p+"/existence/{name}/{version}", auth.Authenticated, h.release(auth.ActionRead, h.existence))
 	rt.HandleFunc("GET "+p+"/groups", auth.Authenticated, h.groups)
@@ -72,7 +76,7 @@ func (h *Handler) Register(rt *httpserver.Router) {
 	rt.HandleFunc("PUT "+p+"/records/{name}/{version}/tag", auth.Authenticated, h.release(auth.ActionAnnotate, h.tag))
 
 	p = prefix + "promotion/records/{name}/{version}"
-	rt.HandleFunc("POST "+p, auth.Authenticated, h.release(auth.ActionPromote, h.promote))
+	rt.HandleFunc("POST "+p, auth.Authenticated, h.release(auth.ActionPromote, signedWithReleaseKey(h.promote)))
 	rt.HandleFunc("GET "+p, auth.Authenticated, h.release(auth.ActionRead, h.promotions))
 	rt.HandleFunc("DELETE "+p+"/{created}", auth.Authenticated, h.release(auth.ActionPromote, h.deletePromotion))
 
@@ -100,6 +104,24 @@ func (h *Handler) Register(rt *httpserver.Router) {
 	rt.HandleFunc("POST "+p+"export/{name}/{version}", auth.Authenticated, h.release(auth.ActionWrite, h.export))
 
 	rt.HandleFunc("POST /artifactory/api/release/import/", auth.Admin, h.importArchive)
+}
+
+const signingKeyHeader = "X-JFrog-Signing-Key"
+
+func signedWithReleaseKey(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if key := r.Header.Get(signingKeyHeader); key != "" && key != rb.SigningKey {
+			wire.WriteError(
+				w,
+				http.StatusBadRequest,
+				"signing key "+strconv.Quote(key)+" is not available: release bundles are signed with "+rb.SigningKey,
+			)
+
+			return
+		}
+
+		next(w, r)
+	}
 }
 
 func (h *Handler) can(w http.ResponseWriter, r *http.Request, name, version string, a auth.Action) (bool, error) {

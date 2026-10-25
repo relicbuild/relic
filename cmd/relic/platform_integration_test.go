@@ -3,13 +3,22 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
+
+	relicv1 "relic/api/gen/relic/v1"
+	"relic/api/gen/relic/v1/relicv1connect"
 )
 
 func TestStatus(t *testing.T) {
@@ -39,6 +48,57 @@ func TestStatus(t *testing.T) {
 
 	if _, err := relic(t, anon, "", "--url", "http://127.0.0.1:1", "auth", "status"); err == nil {
 		t.Error("status of an unreachable server succeeded")
+	}
+}
+
+type databaseDownSystem struct {
+	relicv1connect.UnimplementedSystemServiceHandler
+}
+
+func (databaseDownSystem) GetVersion(context.Context, *relicv1.GetVersionRequest) (*relicv1.GetVersionResponse, error) {
+	return &relicv1.GetVersionResponse{
+		Version: "v1.2.3",
+	}, nil
+}
+
+type databaseDownSessions struct {
+	relicv1connect.UnimplementedSessionServiceHandler
+}
+
+func (databaseDownSessions) GetCurrentUser(
+	context.Context,
+	*relicv1.GetCurrentUserRequest,
+) (*relicv1.GetCurrentUserResponse, error) {
+	return nil, connect.NewError(connect.CodeUnavailable, "database unavailable")
+}
+
+func TestStatusShowsADatabaseThatIsDown(t *testing.T) {
+	t.Parallel()
+
+	server := connect.NewServer()
+	relicv1connect.RegisterSystemServiceHandler(server, databaseDownSystem{})
+	relicv1connect.RegisterSessionServiceHandler(server, databaseDownSessions{})
+
+	mux := http.NewServeMux()
+	connecthttp.Mount(mux, server)
+
+	srv := httptest.NewServer(http.StripPrefix("/api", mux))
+	t.Cleanup(srv.Close)
+
+	config := filepath.Join(t.TempDir(), "config.yaml")
+
+	out, err := relic(t, config, "", "--url", srv.URL, "auth", "status", "-o", "json")
+	if !errors.Is(err, exitCode1) {
+		t.Errorf("status with the database down = %v, want exit status 1", err)
+	}
+
+	var got statusResult
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("status -o json = %q: %v", out, err)
+	}
+
+	if got.Healthy || len(got.Checks) != 1 || got.Checks[0].GetName() != "database" || got.Checks[0].GetOk() {
+		t.Errorf("status with the database down = %+v, want an unhealthy database check", got)
 	}
 }
 

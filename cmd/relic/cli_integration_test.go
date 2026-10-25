@@ -348,7 +348,14 @@ func TestCLI(t *testing.T) {
 		t.Errorf("apply of get = %q %v", out, err)
 	}
 
-	if out, err := relic(t, config, "", "get", "users"); err != nil || !hasTableRow(out, "cli-user") {
+	if out, err := relic(
+		t,
+		config,
+		"",
+		"get",
+		"users",
+	); err != nil ||
+		!hasTableRowWith(out, "cli-user", "cli@example.com") {
 		t.Errorf("get users = %q %v", out, err)
 	}
 
@@ -808,7 +815,17 @@ func TestSBOMCommands(t *testing.T) {
 		}
 	}
 
-	out, err := relic(t, config, "", "security", "sbom", "export", "sbom-cli/app/app.jar", "--format", "spdx")
+	out, err := relic(t, config, "", "security", "sbom", "import", "sbom-cli/app/app.jar", bom)
+	if err != nil || !strings.Contains(out, "imported the SBOM of sbom-cli/app/app.jar") {
+		t.Errorf("import = %q %v; want the result on standard output", out, err)
+	}
+
+	out, err = relic(t, config, "", "security", "report", "sbom-cli/app/app.jar")
+	if err != nil || strings.Contains(out, "app.jar: done") {
+		t.Errorf("report right after the import = %q %v; want it not done until matched", out, err)
+	}
+
+	out, err = relic(t, config, "", "security", "sbom", "export", "sbom-cli/app/app.jar", "--format", "spdx")
 	if err != nil || !strings.Contains(out, `"spdxVersion": "SPDX-2.3"`) ||
 		!strings.Contains(out, "pkg:maven/com.google.guava/guava@31.0") {
 		t.Errorf("export as SPDX = %q %v", out, err)
@@ -835,5 +852,103 @@ func TestSBOMCommands(t *testing.T) {
 
 	if _, err := relic(t, config, "", "security", "sbom", "import", "sbom-cli/app/app.jar", file); err == nil {
 		t.Error("a file that is no SBOM was imported")
+	}
+}
+
+func TestCompletionOffersServerNames(t *testing.T) {
+	t.Parallel()
+
+	srv := testServer(t)
+	dir := t.TempDir()
+	config := filepath.Join(dir, "config.yaml")
+	file := filepath.Join(dir, "resources.yaml")
+
+	if err := os.WriteFile(file, []byte(`apiVersion: relic.build/v1
+kind: Repository
+metadata: {name: complete-local}
+spec: {class: local, format: generic}
+---
+apiVersion: relic.build/v1
+kind: CleanupPolicy
+metadata: {name: complete-policy}
+spec: {repositories: [complete-local], pathPattern: "**", olderThanDays: 30}
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := relic(
+		t,
+		config,
+		"password\n",
+		"auth",
+		"login",
+		srv.URL,
+		"--user",
+		"admin",
+		"--password-stdin",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := relic(t, config, "", "apply", "-f", file); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "a resource name",
+			args: []string{
+				"get",
+				"repository",
+				"",
+			},
+			want: "complete-local",
+		},
+		{
+			name: "a package manager's repository",
+			args: []string{
+				"package",
+				"setup",
+				"npm",
+				"",
+			},
+			want: "complete-local",
+		},
+		{
+			name: "a --repository flag",
+			args: []string{
+				"artifact",
+				"search",
+				"app",
+				"--repository",
+				"",
+			},
+			want: "complete-local",
+		},
+		{
+			name: "a cleanup policy",
+			args: []string{
+				"cleanup",
+				"preview",
+				"",
+			},
+			want: "complete-policy",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			out, err := relic(t, config, "", append([]string{
+				"__complete",
+			}, tt.args...)...)
+			if err != nil || !slices.Contains(strings.Split(out, "\n"), tt.want) {
+				t.Errorf("relic __complete %s = %q, %v; want %s", strings.Join(tt.args, " "), out, err, tt.want)
+			}
+		})
 	}
 }

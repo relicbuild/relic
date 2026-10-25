@@ -61,6 +61,7 @@ SELECT sqlc.embed(i),
 FROM items i
 WHERE i.type = 'file' AND i.sha1 = ANY(@sha1s::text[])
   AND (@source_repo::text = '' OR i.repo_key = @source_repo::text)
+  AND NOT EXISTS (SELECT 1 FROM repositories r WHERE r.key = i.repo_key AND r.format = ANY(@excluded_formats::text[]))
 ORDER BY i.repo_key, i.path, i.name;
 
 -- name: BuildsProducing :many

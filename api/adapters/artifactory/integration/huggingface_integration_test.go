@@ -70,6 +70,108 @@ func TestHuggingFaceRepository(t *testing.T) {
 		t.Errorf("create model repo = %d %s", resp.StatusCode, body)
 	}
 
+	if resp, body := do(t, srv, call{
+		method: "GET",
+		path:   EP + "/api/models/org/demo/revision/main",
+	}); resp.StatusCode != 200 || !strings.Contains(body, `"rfilename": ".gitattributes"`) {
+		t.Errorf("a created repo = %d %s, want its first commit, with .gitattributes", resp.StatusCode, body)
+	}
+
+	if resp, body := do(t, srv, call{
+		method: "POST",
+		path:   EP + "/api/repos/create",
+		body:   `{"name":"demo","organization":"org"}`,
+	}); resp.StatusCode != 409 || !strings.Contains(body, `/artifactory/api/huggingfaceml/hf/org/demo"`) {
+		t.Errorf("create an existing repo = %d %s, want 409 with its url, which exist_ok reads", resp.StatusCode, body)
+	}
+
+	for _, tc := range []struct {
+		method, path, body string
+		want               int
+		contains           []string
+	}{
+		{
+			method: "GET",
+			path:   "/huggingface/hf/api/whoami-v2",
+			want:   200,
+			contains: []string{
+				`"name": "admin"`,
+				`"role": "write"`,
+			},
+		},
+		{
+			method: "GET",
+			path:   EP + "/api/models/org/demo/refs",
+			want:   200,
+			contains: []string{
+				`"name": "main"`,
+				`"ref": "refs/heads/main"`,
+			},
+		},
+		{
+			method: "GET",
+			path:   EP + "/api/models/org/demo/commits/main",
+			want:   200,
+			contains: []string{
+				`"id": "`,
+				`"date": "`,
+			},
+		},
+		{
+			method: "POST",
+			path:   EP + "/api/models/org/demo/paths-info/main",
+			body:   "paths=.gitattributes&paths=missing.txt&expand=false",
+			want:   200,
+			contains: []string{
+				`"path": ".gitattributes"`,
+			},
+		},
+		{
+			method: "POST",
+			path:   EP + "/api/models/org/demo/branch/dev",
+			want:   501,
+			contains: []string{
+				"does not support",
+			},
+		},
+		{
+			method: "GET",
+			path:   EP + "/api/models?author=org",
+			want:   501,
+		},
+		{
+			method: "DELETE",
+			path:   EP + "/api/repos/delete",
+			want:   501,
+		},
+	} {
+		c := call{
+			method: tc.method,
+			path:   tc.path,
+			body:   tc.body,
+		}
+		if tc.body != "" {
+			c.headers = map[string]string{
+				"Content-Type": "application/x-www-form-urlencoded",
+			}
+		}
+
+		resp, body := do(t, srv, c)
+		if resp.StatusCode != tc.want {
+			t.Errorf("%s %s = %d %s, want %d", tc.method, tc.path, resp.StatusCode, body, tc.want)
+		}
+
+		for _, want := range tc.contains {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s %s = %s, want %s in it", tc.method, tc.path, body, want)
+			}
+		}
+
+		if tc.path == EP+"/api/models/org/demo/paths-info/main" && strings.Contains(body, "missing.txt") {
+			t.Errorf("paths-info = %s, want no entry for a missing path", body)
+		}
+	}
+
 	if _, body = do(
 		t,
 		srv,

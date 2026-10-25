@@ -58,8 +58,7 @@ type Config struct {
 	// (RELIC_MAX_CONNECTIONS, default 8192; 0 turns it off).
 	MaxConnections int
 	// FailedSignInsBeforeBackoff is how many failed password attempts a
-	// client address gets within ten minutes before each further one makes
-	// it wait (RELIC_FAILED_SIGN_INS_BEFORE_BACKOFF, default 20; threat
+	// client address may make within ten minutes before it has to wait (RELIC_FAILED_SIGN_INS_BEFORE_BACKOFF, default 20; threat
 	// model M3).
 	FailedSignInsBeforeBackoff int
 	// TrustedProxies are the reverse proxies whose X-Forwarded-* headers
@@ -73,7 +72,11 @@ type Config struct {
 	// system roots, for LDAP servers over ldaps:// and StartTLS
 	// (RELIC_LDAP_CA_CERTIFICATE_FILE).
 	LDAPCACertificateFile string
-	TLS                   TLS
+	// UpstreamCACertificateFile is a PEM file of CA certificates trusted,
+	// besides the system roots, for the servers remote repositories and
+	// replication connect to (RELIC_UPSTREAM_CA_CERTIFICATE_FILE).
+	UpstreamCACertificateFile string
+	TLS                       TLS
 }
 
 // TLS configures HTTPS on the server's listen address, which serves plain
@@ -450,6 +453,7 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.SignInNote = getenv("RELIC_SIGN_IN_NOTE")
 
 	cfg.LDAPCACertificateFile = getenv("RELIC_LDAP_CA_CERTIFICATE_FILE")
+	cfg.UpstreamCACertificateFile = getenv("RELIC_UPSTREAM_CA_CERTIFICATE_FILE")
 	cfg.TLS = TLS{
 		CertificateFile: getenv("RELIC_TLS_CERTIFICATE_FILE"),
 		KeyFile:         getenv("RELIC_TLS_KEY_FILE"),

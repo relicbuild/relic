@@ -85,6 +85,14 @@ service SessionService {
       get: "/api/v1/session/user"
     };
   }
+  // ChangePassword sets the caller's own password, given the current one.
+  rpc ChangePassword(ChangePasswordRequest) returns (ChangePasswordResponse) {
+    option (relic.v1.access) = ACCESS_AUTHENTICATED;
+    option (google.api.http) = {
+      post: "/api/v1/session/password"
+      body: "*"
+    };
+  }
 }
 
 message LoginRequest {
@@ -122,6 +130,14 @@ message Principal {
 message GetCurrentUserResponse {
   Principal principal = 1;
 }
+
+message ChangePasswordRequest {
+  string current_password = 1;
+  // new_password needs at least 8 characters.
+  string new_password = 2;
+}
+
+message ChangePasswordResponse {}
 
 message ListSignInProvidersRequest {}
 

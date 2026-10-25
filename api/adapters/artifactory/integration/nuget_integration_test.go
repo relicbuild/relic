@@ -5,6 +5,7 @@ package integration
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"io"
 	"mime/multipart"
@@ -567,5 +568,129 @@ func TestNuGetDelete(t *testing.T) {
 		},
 	}); resp.StatusCode != 403 {
 		t.Errorf("push of an excluded package file = %d, want 403", resp.StatusCode)
+	}
+}
+
+func portablePDB(id []byte) []byte {
+	const (
+		versionLength = 12
+		pdbStart      = 48
+	)
+
+	pdb := binary.LittleEndian.AppendUint32(nil, 0x424A5342)
+	pdb = binary.LittleEndian.AppendUint32(pdb, 0x00010001)
+	pdb = binary.LittleEndian.AppendUint32(pdb, 0)
+	pdb = binary.LittleEndian.AppendUint32(pdb, versionLength)
+	pdb = append(pdb, "PDB v1.0\x00\x00\x00\x00"...)
+	pdb = binary.LittleEndian.AppendUint32(pdb, 1<<16)
+	pdb = binary.LittleEndian.AppendUint32(pdb, pdbStart)
+	pdb = binary.LittleEndian.AppendUint32(pdb, 20)
+	pdb = append(pdb, "#Pdb\x00\x00\x00\x00"...)
+
+	return append(pdb, id...)
+}
+
+func snupkg(t *testing.T, id, version string, pdb []byte) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+
+	zw := zip.NewWriter(&buf)
+	w, _ := zw.Create(id + ".nuspec")
+	_, _ = io.WriteString(w, `<?xml version="1.0"?><package><metadata><id>`+id+`</id><version>`+version+
+		`</version><packageTypes><packageType name="SymbolsPackage" /></packageTypes></metadata></package>`)
+	lib, _ := zw.Create("lib/net8.0/" + id + ".pdb")
+	_, _ = lib.Write(pdb)
+	_ = zw.Close()
+
+	return buf.Bytes()
+}
+
+func TestNuGetSymbolPackages(t *testing.T) {
+	t.Parallel()
+
+	srv := server(t)
+	do(t, srv, call{
+		method: "PUT",
+		path:   "/artifactory/api/repositories/nuget-local",
+		body:   `{"rclass":"local","packageType":"nuget"}`,
+	})
+
+	if _, index := do(t, srv, call{
+		method: "GET",
+		path:   "/nuget/v3/nuget-local/index.json",
+	}); !strings.Contains(index, `"SymbolPackagePublish/4.9.0"`) {
+		t.Errorf("service index = %s, want a SymbolPackagePublish resource", index)
+	}
+
+	pdbID := bytes.Repeat([]byte{
+		0xab,
+	}, 20)
+	pdb := portablePDB(pdbID)
+	symbols := snupkg(t, "Acme.Lib", "1.3.0", pdb)
+	pkg := nupkg(t, "Acme.Lib", "1.3.0")
+
+	for _, push := range []struct {
+		name string
+		body []byte
+		want int
+	}{
+		{
+			name: "the symbol package first",
+			body: symbols,
+			want: 201,
+		},
+		{
+			name: "the package after its symbols",
+			body: pkg,
+			want: 201,
+		},
+		{
+			name: "the symbol package again",
+			body: symbols,
+			want: 409,
+		},
+	} {
+		if got := nugetPush(t, srv, "/nuget/v3/nuget-local/", push.body); got != push.want {
+			t.Errorf("push %s = %d, want %d", push.name, got, push.want)
+		}
+	}
+
+	if resp, got := do(t, srv, call{
+		method: "GET",
+		path:   "/nuget/v3/nuget-local/flatcontainer/acme.lib/1.3.0/acme.lib.1.3.0.nupkg",
+	}); resp.StatusCode != 200 || got != string(pkg) {
+		t.Errorf("package download = %d, want the package, not its symbols", resp.StatusCode)
+	}
+
+	key := "acme.lib.pdb/" + strings.Repeat("ab", 16) + "ffffffff"
+	for _, tc := range []struct {
+		path string
+		want int
+	}{
+		{
+			path: "/nuget/nuget-local/symbols/" + key + "/acme.lib.pdb",
+			want: 200,
+		},
+		{
+			path: "/nuget/v3/nuget-local/symbols/" + strings.ToUpper(key) + "/Acme.Lib.pdb",
+			want: 200,
+		},
+		{
+			path: "/nuget/nuget-local/symbols/acme.lib.pdb/" + strings.Repeat("cd", 16) + "ffffffff/acme.lib.pdb",
+			want: 404,
+		},
+		{
+			path: "/nuget/nuget-local/symbols/" + key + "/other.pdb",
+			want: 404,
+		},
+	} {
+		resp, got := do(t, srv, call{
+			method: "GET",
+			path:   tc.path,
+		})
+		if resp.StatusCode != tc.want || tc.want == 200 && got != string(pdb) {
+			t.Errorf("GET %s = %d, want %d with the PDB", tc.path, resp.StatusCode, tc.want)
+		}
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -30,9 +31,21 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// ScannablePattern selects the file names the sweep catalogs (a PostgreSQL
-// regular expression, case-insensitive).
-const ScannablePattern = `(\.(jar|war|ear|tgz|tar\.gz|whl|zip|nupkg|crate|egg|tar\.bz2|tar\.xz|txz|pkl|pickle|joblib|dill|pt|pth|bin|ckpt|npy)|^manifest\.json)$`
+// PackagePattern selects the names of package, image and model files, which quarantine and blockUnscanned hold
+// until they are scanned (a PostgreSQL regular expression, case-insensitive).
+const PackagePattern = `(\.(jar|war|ear|tgz|tar\.gz|whl|zip|nupkg|crate|egg|gem|deb|rpm|apk|tar\.bz2|tar\.xz|txz|` +
+	`pkl|pickle|joblib|dill|pt|pth|bin|ckpt|npy)|^manifest\.json)$`
+
+// ConfigurationPattern selects the names of configuration files and dependency lock files the sweep scans for
+// secrets, misconfigurations and declared packages (a PostgreSQL regular expression, case-insensitive).
+const ConfigurationPattern = `(\.(ya?ml|tf|tfvars|env|dockerfile)|^(dockerfile|containerfile|package-lock\.json|` +
+	`npm-shrinkwrap\.json|yarn\.lock|gemfile\.lock|cargo\.lock|composer\.lock|poetry\.lock|pipfile\.lock|` +
+	`requirements[^/]*\.txt|go\.mod))$`
+
+// ScannablePattern selects the file names the sweep scans (a PostgreSQL regular expression, case-insensitive).
+const ScannablePattern = PackagePattern + "|" + ConfigurationPattern
+
+var configuration = regexp.MustCompile(`(?i)` + ConfigurationPattern)
 
 const retryWaitingAfter = 10 * time.Minute
 
@@ -194,11 +207,11 @@ func (s *Service) ScanArtifact(ctx context.Context, sha256Hex, fileName string) 
 		name = "artifact"
 	}
 
-	var source, reason string
+	var source, reason, file string
 	if name == imageManifestName {
 		source, err = s.prepareImage(ctx, sha256Hex, filepath.Join(dir, "oci"))
 	} else {
-		file := filepath.Join(dir, "in", name)
+		file = filepath.Join(dir, "in", name)
 		if err := s.download(ctx, sha256Hex, file); err != nil {
 			return err
 		}
@@ -233,9 +246,22 @@ func (s *Service) ScanArtifact(ctx context.Context, sha256Hex, fileName string) 
 
 	sbom = withArchivePackage(sbom, name, source)
 
+	if file != "" {
+		var unmatched string
+
+		sbom = withFilePackage(sbom, name, file)
+		if sbom, unmatched, err = s.withOSDistro(ctx, sha256Hex, name, sbom); err != nil {
+			return err
+		}
+
+		if unmatched != "" {
+			reason = strings.TrimPrefix(reason+"; "+unmatched, "; ")
+		}
+	}
+
 	rep, err := s.matchSBOM(ctx, dir, sbom)
 	if err != nil {
-		return err
+		return fmt.Errorf("match: %w", err)
 	}
 
 	issues, failed := s.analyze(ctx, source)
@@ -298,6 +324,39 @@ func (s *Service) ScanArtifact(ctx context.Context, sha256Hex, fileName string) 
 	}
 
 	return s.saveIssues(ctx, sha256Hex, issues)
+}
+
+// FailArtifact records a queued scan whose job gave up as failed, with failure as the reason.
+func (s *Service) FailArtifact(ctx context.Context, sha256Hex string, failure error) error {
+	a, err := s.db.GetScanArtifact(ctx, sha256Hex)
+	if errors.Is(database.NotFound(err), database.ErrNotFound) {
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("load scan %s: %w", sha256Hex, err)
+	}
+
+	if a.Status != StatusQueued {
+		return nil
+	}
+
+	return s.finish(ctx, sha256Hex, a.Updated, StatusFailed, failure.Error(), nil, nil)
+}
+
+func (s *Service) withOSDistro(ctx context.Context, sha256Hex, fileName string, sbom []byte) ([]byte, string, error) {
+	if osPackageType(fileName) == "" {
+		return sbom, "", nil
+	}
+
+	folders, err := s.db.ListContentFolders(ctx, &sha256Hex)
+	if err != nil {
+		return nil, "", fmt.Errorf("folders of %s: %w", sha256Hex, err)
+	}
+
+	sbom, unmatched := osPackageDistro(sbom, fileName, folders)
+
+	return sbom, unmatched, nil
 }
 
 func (s *Service) analyze(ctx context.Context, source string) (issues []Issue, failed string) {
@@ -415,7 +474,12 @@ func (s *Service) Rematch(ctx context.Context, sha256Hex string) error {
 		return err
 	}
 
-	err = s.save(ctx, sha256Hex, a.Updated, a.Status, a.Reason, sbom, &rep)
+	status, reason := a.Status, a.Reason
+	if status == StatusQueued {
+		status, reason = StatusDone, "SBOM imported"
+	}
+
+	err = s.save(ctx, sha256Hex, a.Updated, status, reason, sbom, &rep)
 	if errors.Is(err, errSuperseded) {
 		return nil
 	}
@@ -478,8 +542,15 @@ func (s *Service) prepare(file, dest string) (source, partial string, err error)
 	switch {
 	case strings.HasSuffix(lower, ".jar"), strings.HasSuffix(lower, ".war"), strings.HasSuffix(lower, ".ear"):
 		return "file:" + file, "", nil
-	case strings.HasSuffix(lower, ".tgz"), strings.HasSuffix(lower, ".tar.gz"), strings.HasSuffix(lower, ".crate"):
+	case strings.HasSuffix(lower, ".tgz"),
+		strings.HasSuffix(lower, ".tar.gz"),
+		strings.HasSuffix(lower, ".crate"),
+		strings.HasSuffix(lower, ".apk"):
 		extract = s.untarGz
+	case strings.HasSuffix(lower, ".gem"):
+		extract = s.untarGem
+	case configuration.MatchString(filepath.Base(file)):
+		extract = s.copyInto
 	case strings.HasSuffix(lower, ".tar.xz"), strings.HasSuffix(lower, ".txz"):
 		extract = s.untarXz
 	case strings.HasSuffix(lower, ".tar.bz2"):
@@ -685,6 +756,47 @@ func (s *Service) untarXz(file, dest string) error {
 	})
 }
 
+func (s *Service) untarGem(file, dest string) error {
+	f, err := os.Open(file) //nolint:gosec // Relic's own temp file
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = f.Close()
+	}()
+
+	tr := tar.NewReader(f)
+
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+
+		if err != nil {
+			return err
+		}
+
+		if hdr.Typeflag == tar.TypeReg && hdr.Name == "data.tar.gz" {
+			return s.untarStream(tr, dest, func(r io.Reader) (io.Reader, error) {
+				return gzip.NewReader(r)
+			})
+		}
+	}
+}
+
+func (s *Service) copyInto(file, dest string) error {
+	f, err := os.Open(file) //nolint:gosec // Relic's own temp file
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = f.Close()
+	}()
+
+	return s.budget().write(filepath.Join(dest, filepath.Base(file)), f)
+}
+
 func (s *Service) untarBz2(file, dest string) error {
 	return s.untar(file, dest, func(r io.Reader) (io.Reader, error) {
 		return bzip2.NewReader(r), nil
@@ -700,7 +812,11 @@ func (s *Service) untar(file, dest string, decompress func(io.Reader) (io.Reader
 		_ = f.Close()
 	}()
 
-	zr, err := decompress(f)
+	return s.untarStream(f, dest, decompress)
+}
+
+func (s *Service) untarStream(r io.Reader, dest string, decompress func(io.Reader) (io.Reader, error)) error {
+	zr, err := decompress(r)
 	if err != nil {
 		return err
 	}
@@ -887,10 +1003,18 @@ func (s *Service) save(
 		}
 
 		if rep != nil {
+			var cves []string
+
 			for _, f := range append(slices.Clone(rep.Findings), found...) {
 				if err := insertFinding(ctx, q, sha256Hex, f); err != nil {
 					return err
 				}
+
+				cves = append(cves, f.CVEs()...)
+			}
+
+			if err := q.RegisterCVEs(ctx, nonNil(cves)); err != nil {
+				return fmt.Errorf("register the findings' CVEs: %w", err)
 			}
 		}
 

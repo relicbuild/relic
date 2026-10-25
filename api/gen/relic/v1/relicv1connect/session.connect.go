@@ -49,6 +49,9 @@ const (
 	// SessionServiceGetCurrentUserProcedure is the procedure name of the SessionService's
 	// GetCurrentUser RPC.
 	SessionServiceGetCurrentUserProcedure = "/relic.v1.SessionService/GetCurrentUser"
+	// SessionServiceChangePasswordProcedure is the procedure name of the SessionService's
+	// ChangePassword RPC.
+	SessionServiceChangePasswordProcedure = "/relic.v1.SessionService/ChangePassword"
 )
 
 var (
@@ -115,6 +118,13 @@ var (
 			Procedure:  SessionServiceGetCurrentUserProcedure,
 		}
 	})
+	sessionServiceChangePasswordSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_session_proto.Services().ByName("SessionService").Methods().ByName("ChangePassword"),
+			Procedure:  SessionServiceChangePasswordProcedure,
+		}
+	})
 )
 
 // SessionServiceClient is a client for the relic.v1.SessionService service.
@@ -146,6 +156,8 @@ type SessionServiceClient interface {
 	PollWebLogin(context.Context, *v1.PollWebLoginRequest) (*v1.PollWebLoginResponse, error)
 	// GetCurrentUser returns the caller.
 	GetCurrentUser(context.Context, *v1.GetCurrentUserRequest) (*v1.GetCurrentUserResponse, error)
+	// ChangePassword sets the caller's own password, given the current one.
+	ChangePassword(context.Context, *v1.ChangePasswordRequest) (*v1.ChangePasswordResponse, error)
 }
 
 // NewSessionServiceClient constructs a client for the relic.v1.SessionService service. Multiple
@@ -183,6 +195,8 @@ type SessionServiceHandler interface {
 	PollWebLogin(context.Context, *v1.PollWebLoginRequest) (*v1.PollWebLoginResponse, error)
 	// GetCurrentUser returns the caller.
 	GetCurrentUser(context.Context, *v1.GetCurrentUserRequest) (*v1.GetCurrentUserResponse, error)
+	// ChangePassword sets the caller's own password, given the current one.
+	ChangePassword(context.Context, *v1.ChangePasswordRequest) (*v1.ChangePasswordResponse, error)
 }
 
 // RegisterSessionServiceHandler registers svc as the relic.v1.SessionService implementation on
@@ -199,6 +213,7 @@ func RegisterSessionServiceHandler(server *connect.Server, svc SessionServiceHan
 		connect.Method{Spec: sessionServiceStartWebLoginSpec(), Handler: adapter.startWebLogin},
 		connect.Method{Spec: sessionServicePollWebLoginSpec(), Handler: adapter.pollWebLogin},
 		connect.Method{Spec: sessionServiceGetCurrentUserSpec(), Handler: adapter.getCurrentUser},
+		connect.Method{Spec: sessionServiceChangePasswordSpec(), Handler: adapter.changePassword},
 	)
 }
 
@@ -239,6 +254,10 @@ func (UnimplementedSessionServiceHandler) PollWebLogin(context.Context, *v1.Poll
 
 func (UnimplementedSessionServiceHandler) GetCurrentUser(context.Context, *v1.GetCurrentUserRequest) (*v1.GetCurrentUserResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.SessionService.GetCurrentUser is not implemented")
+}
+
+func (UnimplementedSessionServiceHandler) ChangePassword(context.Context, *v1.ChangePasswordRequest) (*v1.ChangePasswordResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.SessionService.ChangePassword is not implemented")
 }
 
 type sessionServiceClient struct {
@@ -312,6 +331,14 @@ func (c *sessionServiceClient) PollWebLogin(ctx context.Context, req *v1.PollWeb
 func (c *sessionServiceClient) GetCurrentUser(ctx context.Context, req *v1.GetCurrentUserRequest) (*v1.GetCurrentUserResponse, error) {
 	var res v1.GetCurrentUserResponse
 	if err := c.client.CallUnary(ctx, sessionServiceGetCurrentUserSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) ChangePassword(ctx context.Context, req *v1.ChangePasswordRequest) (*v1.ChangePasswordResponse, error) {
+	var res v1.ChangePasswordResponse
+	if err := c.client.CallUnary(ctx, sessionServiceChangePasswordSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -421,6 +448,18 @@ func (h sessionServiceHandler) getCurrentUser(ctx context.Context, _ connect.Spe
 		return err
 	}
 	res, err := h.svc.GetCurrentUser(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) changePassword(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ChangePasswordRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ChangePassword(ctx, &req)
 	if err != nil {
 		return err
 	}

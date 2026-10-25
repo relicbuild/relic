@@ -12,3 +12,6 @@ SELECT * FROM key_pairs ORDER BY name;
 
 -- name: UpdateKeyPairPrivateKey :exec
 UPDATE key_pairs SET private_key = @private_key WHERE name = @name;
+
+-- name: DeleteKeyPair :execrows
+DELETE FROM key_pairs WHERE name = @name;

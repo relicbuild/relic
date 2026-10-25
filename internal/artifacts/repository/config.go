@@ -3,6 +3,7 @@ package repository
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"reflect"
 	"regexp"
 	"slices"
@@ -127,23 +128,34 @@ var Formats = []Format{
 	FormatEvidence,
 }
 
+// OwnFormats lists the formats of the repositories Relic writes itself.
+var OwnFormats = []Format{
+	FormatBuild,
+	FormatRelease,
+	FormatEvidence,
+}
+
 // Known reports whether f is one of Formats.
 func (f Format) Known() bool { return slices.Contains(Formats, f) }
 
 // Config is a repository's settings, in Relic's own terms.
 type Config struct {
-	Description   string                     `json:"description,omitempty"`
-	Notes         string                     `json:"notes,omitempty"`
-	Environments  []string                   `json:"environments,omitempty"`
-	SigningKey    string                     `json:"signingKey,omitempty"`
-	Architectures []string                   `json:"architectures,omitempty"`
-	MetadataDepth int32                      `json:"metadataDepth,omitempty"`
-	MaxUploadSize int64                      `json:"maxUploadSize,omitempty"`
-	MaxStorage    int64                      `json:"maxStorage,omitempty"`
-	Immutable     bool                       `json:"immutable,omitempty"`
-	Remote        *RemoteConfig              `json:"remote,omitempty"`
-	Virtual       *VirtualConfig             `json:"virtual,omitempty"`
-	Extensions    map[string]json.RawMessage `json:"extensions,omitempty"`
+	Description  string   `json:"description,omitempty"`
+	Notes        string   `json:"notes,omitempty"`
+	Environments []string `json:"environments,omitempty"`
+	SigningKey   string   `json:"signingKey,omitempty"`
+	// SecondarySigningKey names a second key pair of an Alpine, Debian or RPM
+	// repository: it also signs Alpine and Debian metadata, and its public key
+	// is published with SigningKey's.
+	SecondarySigningKey string                     `json:"secondarySigningKey,omitempty"`
+	Architectures       []string                   `json:"architectures,omitempty"`
+	MetadataDepth       int32                      `json:"metadataDepth,omitempty"`
+	MaxUploadSize       int64                      `json:"maxUploadSize,omitempty"`
+	MaxStorage          int64                      `json:"maxStorage,omitempty"`
+	Immutable           bool                       `json:"immutable,omitempty"`
+	Remote              *RemoteConfig              `json:"remote,omitempty"`
+	Virtual             *VirtualConfig             `json:"virtual,omitempty"`
+	Extensions          map[string]json.RawMessage `json:"extensions,omitempty"`
 }
 
 // RemoteConfig is how a remote repository reaches its upstream.
@@ -240,8 +252,9 @@ func (r Repository) Upstream() RemoteConfig {
 }
 
 var (
-	repoKeyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
-	reservedKeys   = []string{
+	keyPairNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+	repoKeyPattern     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+	reservedKeys       = []string{
 		"api",
 		"ui",
 		"list",
@@ -277,6 +290,10 @@ func (r *Repository) Validate() error {
 		return fmt.Errorf("%w: maxUploadSize and maxStorage cannot be negative", ErrInvalidRepository)
 	}
 
+	if err := r.validateSigningKeys(); err != nil {
+		return err
+	}
+
 	if r.Config.Remote != nil && r.Class != ClassRemote {
 		return fmt.Errorf("%w: a %s repository takes no remote settings", ErrInvalidRepository, r.Class)
 	}
@@ -289,6 +306,15 @@ func (r *Repository) Validate() error {
 	case ClassRemote:
 		if r.Config.Remote == nil {
 			r.Config.Remote = &RemoteConfig{}
+		}
+
+		for _, raw := range []string{
+			r.Config.Remote.URL,
+			r.Config.Remote.IndexURL,
+		} {
+			if u, err := url.Parse(raw); err == nil && u.User != nil {
+				return fmt.Errorf("%w: put credentials in username and password, not the URL", ErrInvalidRepository)
+			}
 		}
 	case ClassVirtual:
 		if r.Config.Virtual == nil {
@@ -311,6 +337,40 @@ func (r *Repository) Validate() error {
 
 	if !storableFields(reflect.ValueOf(r.Config)) {
 		return fmt.Errorf("%w: the settings hold text that is not UTF-8 or holds NUL", ErrInvalidRepository)
+	}
+
+	return nil
+}
+
+func (r *Repository) validateSigningKeys() error {
+	for _, name := range []string{
+		r.Config.SigningKey,
+		r.Config.SecondarySigningKey,
+	} {
+		if name != "" && !keyPairNamePattern.MatchString(name) {
+			return fmt.Errorf(
+				"%w: invalid key pair name %q: letters, digits, '.', '_' and '-', up to 64",
+				ErrInvalidRepository,
+				name,
+			)
+		}
+	}
+
+	secondary := r.Config.SecondarySigningKey
+	if secondary == "" {
+		return nil
+	}
+
+	if KeyPairKind(r.Format) == "" {
+		return fmt.Errorf(
+			"%w: a %s repository is not signed, so it takes no secondarySigningKey",
+			ErrInvalidRepository,
+			r.Format,
+		)
+	}
+
+	if secondary == r.KeyPairRef() {
+		return fmt.Errorf("%w: secondarySigningKey %s is the signing key", ErrInvalidRepository, secondary)
 	}
 
 	return nil

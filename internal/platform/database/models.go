@@ -22,6 +22,8 @@ type AccessToken struct {
 	Project          string
 	ScopeGroups      []string
 	WorkloadIdentity string
+	BoundBy          string
+	SignIn           bool
 }
 
 type Approval struct {
@@ -140,6 +142,13 @@ type CveFeed struct {
 	Name    string
 	Version string
 	Fetched time.Time
+}
+
+type DebianReleaseDate struct {
+	RepoKey      string
+	Distribution string
+	Digest       string
+	Date         time.Time
 }
 
 type DepsDevVersion struct {

@@ -203,9 +203,14 @@ func replaceInvalidDB(ctx context.Context, err error) error {
 	return river.JobSnooze(dbWait)
 }
 
+type artifactScanner interface {
+	ScanArtifact(ctx context.Context, sha256Hex, fileName string) error
+	FailArtifact(ctx context.Context, sha256Hex string, failure error) error
+}
+
 type scanArtifactWorker struct {
 	river.WorkerDefaults[ScanArtifactArgs]
-	scans *scan.Service
+	scans artifactScanner
 	hasDB func() bool
 }
 
@@ -214,7 +219,16 @@ func (w *scanArtifactWorker) Work(ctx context.Context, job *river.Job[ScanArtifa
 		return err
 	}
 
-	return replaceInvalidDB(ctx, w.scans.ScanArtifact(ctx, job.Args.SHA256, job.Args.FileName))
+	err := replaceInvalidDB(ctx, w.scans.ScanArtifact(ctx, job.Args.SHA256, job.Args.FileName))
+	if _, snoozed := errors.AsType[*river.JobSnoozeError](err); err == nil || snoozed || job.Attempt < job.MaxAttempts {
+		return err
+	}
+
+	if failErr := w.scans.FailArtifact(context.WithoutCancel(ctx), job.Args.SHA256, err); failErr != nil {
+		return errors.Join(err, fmt.Errorf("record the failed scan: %w", failErr))
+	}
+
+	return err
 }
 
 // Timeout implements river.Worker.
@@ -270,6 +284,11 @@ func rematchStale(ctx context.Context, grype scan.Grype, db *database.DB, log *s
 
 	client := database.JobInserterFromContext(ctx)
 
+	retried, err := db.ForgetFailedMatches(ctx)
+	if err != nil {
+		return fmt.Errorf("retry the scans that failed matching: %w", err)
+	}
+
 	stale, err := db.ListStaleScans(ctx, database.ListStaleScansParams{
 		DbBuilt: &built,
 		MaxRows: rematchBatch,
@@ -298,7 +317,8 @@ func rematchStale(ctx context.Context, grype scan.Grype, db *database.DB, log *s
 	}
 
 	telemetry.ScannerDBBuilt(built, time.Now())
-	log.InfoContext(ctx, "vulnerability database current", "built", built, "rematching", len(stale))
+	log.InfoContext(ctx, "vulnerability database current", "built", built, "rematching", len(stale),
+		"retrying_failed_matches", retried)
 
 	return nil
 }
@@ -312,7 +332,7 @@ type ScanDBImportArgs struct {
 }
 
 // Kind implements river.JobArgs.
-func (ScanDBImportArgs) Kind() string { return "scan_db_import" }
+func (ScanDBImportArgs) Kind() string { return scan.DatabaseImportJob }
 
 // InsertOpts implements river.JobArgsWithInsertOpts.
 func (ScanDBImportArgs) InsertOpts() river.InsertOpts {

@@ -246,6 +246,18 @@ func (q *Queries) FinishUnchangedScanArtifact(ctx context.Context, arg FinishUnc
 	return result.RowsAffected(), nil
 }
 
+const forgetFailedMatches = `-- name: ForgetFailedMatches :execrows
+DELETE FROM scan_artifacts WHERE status = 'failed' AND reason LIKE 'match:%'
+`
+
+func (q *Queries) ForgetFailedMatches(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, forgetFailedMatches)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const forgetFailedScans = `-- name: ForgetFailedScans :many
 DELETE FROM scan_artifacts WHERE sha256 = ANY($1::text[]) AND status = 'failed'
 RETURNING sha256
@@ -387,9 +399,9 @@ func (q *Queries) ImageManifestsInFolders(ctx context.Context, arg ImageManifest
 
 const importScanSbom = `-- name: ImportScanSbom :exec
 INSERT INTO scan_artifacts (sha256, file_name, status, reason, sbom, components, db_built, updated)
-VALUES ($1, $2, 'done', 'SBOM imported', $3, $4, NULL, $5)
+VALUES ($1, $2, 'queued', 'SBOM imported, not matched yet', $3, $4, NULL, $5)
 ON CONFLICT (sha256) DO UPDATE
-SET status = 'done', reason = 'SBOM imported', sbom = EXCLUDED.sbom, components = EXCLUDED.components,
+SET status = 'queued', reason = 'SBOM imported, not matched yet', sbom = EXCLUDED.sbom, components = EXCLUDED.components,
     db_built = NULL, updated = EXCLUDED.updated
 `
 
@@ -523,6 +535,30 @@ func (q *Queries) LatestDBBuilt(ctx context.Context) (time.Time, error) {
 	var column_1 time.Time
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const listContentFolders = `-- name: ListContentFolders :many
+SELECT DISTINCT path FROM items WHERE sha256 = $1 AND type = 'file' ORDER BY path LIMIT 20
+`
+
+func (q *Queries) ListContentFolders(ctx context.Context, sha256 *string) ([]string, error) {
+	rows, err := q.db.Query(ctx, listContentFolders, sha256)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		items = append(items, path)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listFindings = `-- name: ListFindings :many
@@ -761,7 +797,7 @@ func (q *Queries) ListIssues(ctx context.Context, sha256 string) ([]ScanIssue, e
 
 const listStaleScans = `-- name: ListStaleScans :many
 SELECT sha256 FROM scan_artifacts
-WHERE status IN ('done', 'partial') AND sbom IS NOT NULL AND (db_built IS NULL OR db_built < $1)
+WHERE status IN ('done', 'partial', 'queued') AND sbom IS NOT NULL AND (db_built IS NULL OR db_built < $1)
 ORDER BY sha256
 LIMIT $2
 `

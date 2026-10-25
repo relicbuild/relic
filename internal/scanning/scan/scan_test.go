@@ -97,6 +97,50 @@ func TestExecLimitsAndEnvironment(t *testing.T) { //nolint:paralleltest // uses 
 	}
 }
 
+func TestExecErrorsCarryTheScannersOwnError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		script string
+		want   string
+	}{
+		{
+			name:   "an error on stderr",
+			script: "#!/bin/sh\necho 'ERROR failed to load vulnerability db' >&2\nexit 1\n",
+			want:   "grype: exit status 1: ERROR failed to load vulnerability db",
+		},
+		{
+			name:   "nothing on stderr",
+			script: "#!/bin/sh\nexit 1\n",
+			want:   "grype: exit status 1",
+		},
+		{
+			name:   "grype told to keep its errors to itself",
+			script: "#!/bin/sh\nfor a; do [ \"$a\" = -q ] && exit 1; done\necho 'ERROR no database' >&2\nexit 1\n",
+			want:   "grype: exit status 1: ERROR no database",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			script := filepath.Join(t.TempDir(), "grype")
+			scripttest.Write(t, script, tt.script)
+
+			_, err := Grype{
+				Exec: Exec{
+					Path: script,
+				},
+				DatabaseDir: t.TempDir(),
+			}.Match(t.Context(), "sbom.json")
+			if err == nil || err.Error() != tt.want {
+				t.Errorf("Match = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestSyftCatalogsPackageManifestsOfExtractedArchives(t *testing.T) {
 	t.Parallel()
 
@@ -165,6 +209,90 @@ func TestGrypeHasDB(t *testing.T) {
 
 	if !g.HasDB() {
 		t.Fatal("installed database not found")
+	}
+
+	partial := t.TempDir()
+
+	download := filepath.Join(partial, "grype-db-download3750882657")
+	if err := os.MkdirAll(download, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(download, "import.json"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if (Grype{
+		DatabaseDir: partial,
+	}).HasDB() {
+		t.Error("an abandoned download counts as an installed database")
+	}
+}
+
+func TestGrypeDatabaseCommandsOutlastTheDefaultTimeout(t *testing.T) { //nolint:paralleltest // sets defaultExecTimeout
+	saved := defaultExecTimeout
+	defaultExecTimeout = 200 * time.Millisecond
+
+	t.Cleanup(func() {
+		defaultExecTimeout = saved
+	})
+
+	script := filepath.Join(t.TempDir(), "grype")
+	scripttest.Write(t, script, "#!/bin/sh\nsleep 0.6\n")
+
+	g := Grype{
+		Exec: Exec{
+			Path: script,
+		},
+		DatabaseDir: t.TempDir(),
+	}
+
+	if err := g.UpdateDB(t.Context()); err != nil {
+		t.Errorf("UpdateDB = %v, want it to run past the default timeout", err)
+	}
+
+	if err := g.ImportDB(t.Context(), "archive.tar.zst"); err != nil {
+		t.Errorf("ImportDB = %v, want it to run past the default timeout", err)
+	}
+
+	if _, err := g.Match(t.Context(), "sbom.json"); err == nil {
+		t.Error("Match ran past the default timeout")
+	}
+}
+
+func TestGrypeUpdateDBRemovesAbandonedDownloads(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	for _, sub := range []string{
+		"grype-db-download891423730",
+		"6",
+	} {
+		if err := os.MkdirAll(filepath.Join(dir, sub), 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.WriteFile(filepath.Join(dir, sub, "import.json"), []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	script := filepath.Join(t.TempDir(), "grype")
+	scripttest.Write(t, script, "#!/bin/sh\nmkdir \"$GRYPE_DB_CACHE_DIR/grype-db-download42\"\nexit 1\n")
+
+	err := Grype{
+		Exec: Exec{
+			Path: script,
+		},
+		DatabaseDir: dir,
+	}.UpdateDB(t.Context())
+	if err == nil {
+		t.Fatal("UpdateDB of a failing grype succeeded")
+	}
+
+	left, _ := filepath.Glob(filepath.Join(dir, "*"))
+	if len(left) != 1 || filepath.Base(left[0]) != "6" {
+		t.Errorf("database directory holds %v, want only the installed database", left)
 	}
 }
 

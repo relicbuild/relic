@@ -2,6 +2,7 @@ package gems
 
 import (
 	"bytes"
+	"errors"
 	"sort"
 )
 
@@ -54,6 +55,58 @@ func Marshal(v any) []byte {
 	e.value(v)
 
 	return e.buf.Bytes()
+}
+
+func marshalAppended(values []any) []byte {
+	// No symbol links: they would index the symbol table of the stream these values follow.
+	e := &encoder{}
+	for _, v := range values {
+		e.value(v)
+	}
+
+	return e.buf.Bytes()
+}
+
+var errMarshalInt = errors.New("marshal: truncated int")
+
+func readInt(b []byte) (int, []byte, error) {
+	if len(b) == 0 {
+		return 0, nil, errMarshalInt
+	}
+
+	c := int(b[0])
+	if c > 127 {
+		c -= 256
+	}
+
+	switch {
+	case c == 0:
+		return 0, b[1:], nil
+	case c > 4:
+		return c - 5, b[1:], nil
+	case c < -4:
+		return c + 5, b[1:], nil
+	}
+
+	size := c
+	if size < 0 {
+		size = -size
+	}
+
+	if len(b) < 1+size {
+		return 0, nil, errMarshalInt
+	}
+
+	n := 0
+	for i := size; i >= 1; i-- {
+		n = n<<8 | int(b[i])
+	}
+
+	if c < 0 {
+		n -= 1 << (8 * size)
+	}
+
+	return n, b[1+size:], nil
 }
 
 type encoder struct {
@@ -157,7 +210,10 @@ func (e *encoder) symbol(s string) {
 		return
 	}
 
-	e.symbols[s] = len(e.symbols)
+	if e.symbols != nil {
+		e.symbols[s] = len(e.symbols)
+	}
+
 	e.buf.WriteByte(':')
 	e.bytes([]byte(s))
 }

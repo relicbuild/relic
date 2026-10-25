@@ -9,6 +9,18 @@ import (
 	"context"
 )
 
+const deleteKeyPair = `-- name: DeleteKeyPair :execrows
+DELETE FROM key_pairs WHERE name = $1
+`
+
+func (q *Queries) DeleteKeyPair(ctx context.Context, name string) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteKeyPair, name)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getKeyPair = `-- name: GetKeyPair :one
 SELECT name, kind, private_key, public_key, created FROM key_pairs WHERE name = $1
 `

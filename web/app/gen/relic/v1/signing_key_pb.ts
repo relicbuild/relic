@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file relic/v1/signing_key.proto.
  */
 export const file_relic_v1_signing_key: GenFile = /*@__PURE__*/
-  fileDesc("ChpyZWxpYy92MS9zaWduaW5nX2tleS5wcm90bxIIcmVsaWMudjEiZgoHS2V5UGFpchIMCgRuYW1lGAEgASgJEgwKBGtpbmQYAiABKAkSEgoKcHVibGljX2tleRgDIAEoCRIrCgdjcmVhdGVkGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCIVChNMaXN0S2V5UGFpcnNSZXF1ZXN0IjwKFExpc3RLZXlQYWlyc1Jlc3BvbnNlEiQKCWtleV9wYWlycxgBIAMoCzIRLnJlbGljLnYxLktleVBhaXIiIwoTR2V0UHVibGljS2V5UmVxdWVzdBIMCgRuYW1lGAEgASgJIioKFEdldFB1YmxpY0tleVJlc3BvbnNlEhIKCnB1YmxpY19rZXkYASABKAkygQIKEVNpZ25pbmdLZXlTZXJ2aWNlEmwKDExpc3RLZXlQYWlycxIdLnJlbGljLnYxLkxpc3RLZXlQYWlyc1JlcXVlc3QaHi5yZWxpYy52MS5MaXN0S2V5UGFpcnNSZXNwb25zZSIdiLUYBILT5JMCExIRL2FwaS92MS9rZXktcGFpcnMSfgoMR2V0UHVibGljS2V5Eh0ucmVsaWMudjEuR2V0UHVibGljS2V5UmVxdWVzdBoeLnJlbGljLnYxLkdldFB1YmxpY0tleVJlc3BvbnNlIi+ItRgCgtPkkwIlEiMvYXBpL3YxL2tleS1wYWlycy97bmFtZX0vcHVibGljLWtleWIGcHJvdG8z", [file_google_api_annotations, file_google_protobuf_timestamp, file_relic_v1_options]);
+  fileDesc("ChpyZWxpYy92MS9zaWduaW5nX2tleS5wcm90bxIIcmVsaWMudjEiZgoHS2V5UGFpchIMCgRuYW1lGAEgASgJEgwKBGtpbmQYAiABKAkSEgoKcHVibGljX2tleRgDIAEoCRIrCgdjcmVhdGVkGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCIVChNMaXN0S2V5UGFpcnNSZXF1ZXN0IjwKFExpc3RLZXlQYWlyc1Jlc3BvbnNlEiQKCWtleV9wYWlycxgBIAMoCzIRLnJlbGljLnYxLktleVBhaXIiIwoTR2V0UHVibGljS2V5UmVxdWVzdBIMCgRuYW1lGAEgASgJIioKFEdldFB1YmxpY0tleVJlc3BvbnNlEhIKCnB1YmxpY19rZXkYASABKAkiJAoURGVsZXRlS2V5UGFpclJlcXVlc3QSDAoEbmFtZRgBIAEoCSIXChVEZWxldGVLZXlQYWlyUmVzcG9uc2Uy+QIKEVNpZ25pbmdLZXlTZXJ2aWNlEmwKDExpc3RLZXlQYWlycxIdLnJlbGljLnYxLkxpc3RLZXlQYWlyc1JlcXVlc3QaHi5yZWxpYy52MS5MaXN0S2V5UGFpcnNSZXNwb25zZSIdiLUYBILT5JMCExIRL2FwaS92MS9rZXktcGFpcnMSfgoMR2V0UHVibGljS2V5Eh0ucmVsaWMudjEuR2V0UHVibGljS2V5UmVxdWVzdBoeLnJlbGljLnYxLkdldFB1YmxpY0tleVJlc3BvbnNlIi+ItRgCgtPkkwIlEiMvYXBpL3YxL2tleS1wYWlycy97bmFtZX0vcHVibGljLWtleRJ2Cg1EZWxldGVLZXlQYWlyEh4ucmVsaWMudjEuRGVsZXRlS2V5UGFpclJlcXVlc3QaHy5yZWxpYy52MS5EZWxldGVLZXlQYWlyUmVzcG9uc2UiJIi1GAOC0+STAhoqGC9hcGkvdjEva2V5LXBhaXJzL3tuYW1lfWIGcHJvdG8z", [file_google_api_annotations, file_google_protobuf_timestamp, file_relic_v1_options]);
 
 /**
  * KeyPair is a signing key pair, without its private key.
@@ -117,6 +117,36 @@ export const GetPublicKeyResponseSchema: GenMessage<GetPublicKeyResponse> = /*@_
   messageDesc(file_relic_v1_signing_key, 4);
 
 /**
+ * @generated from message relic.v1.DeleteKeyPairRequest
+ */
+export type DeleteKeyPairRequest = Message<"relic.v1.DeleteKeyPairRequest"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+};
+
+/**
+ * Describes the message relic.v1.DeleteKeyPairRequest.
+ * Use `create(DeleteKeyPairRequestSchema)` to create a new message.
+ */
+export const DeleteKeyPairRequestSchema: GenMessage<DeleteKeyPairRequest> = /*@__PURE__*/
+  messageDesc(file_relic_v1_signing_key, 5);
+
+/**
+ * @generated from message relic.v1.DeleteKeyPairResponse
+ */
+export type DeleteKeyPairResponse = Message<"relic.v1.DeleteKeyPairResponse"> & {
+};
+
+/**
+ * Describes the message relic.v1.DeleteKeyPairResponse.
+ * Use `create(DeleteKeyPairResponseSchema)` to create a new message.
+ */
+export const DeleteKeyPairResponseSchema: GenMessage<DeleteKeyPairResponse> = /*@__PURE__*/
+  messageDesc(file_relic_v1_signing_key, 6);
+
+/**
  * KeyService shows the key pairs Relic signs repository metadata with (Debian
  * and Alpine indexes, Helm and release manifests). Relic creates a key pair
  * the first time a repository that names it is signed.
@@ -143,6 +173,17 @@ export const SigningKeyService: GenService<{
     methodKind: "unary";
     input: typeof GetPublicKeyRequestSchema;
     output: typeof GetPublicKeyResponseSchema;
+  },
+  /**
+   * DeleteKeyPair deletes a key pair no repository signs with and Relic does
+   * not sign release manifests with.
+   *
+   * @generated from rpc relic.v1.SigningKeyService.DeleteKeyPair
+   */
+  deleteKeyPair: {
+    methodKind: "unary";
+    input: typeof DeleteKeyPairRequestSchema;
+    output: typeof DeleteKeyPairResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_relic_v1_signing_key, 0);

@@ -69,7 +69,7 @@ export const reachabilityBadges: Record<Exclude<Reachability, 'unknown'>, { labe
 }
 
 export interface ScanView {
-  status: 'none' | 'queued' | 'done' | 'partial' | 'failed' | 'skipped'
+  status: 'none' | 'queued' | 'done' | 'partial' | 'failed' | 'skipped' | 'unavailable'
   reason?: string
   components: number
   vulnerabilityDatabaseBuilt?: string
@@ -255,7 +255,7 @@ export interface SystemView {
   jobs: JobKindView[]
   workers: { id: string, running: number, lastActive?: string, leader: boolean }[]
   queues: { name: string, updated?: string, paused: boolean, waiting: number, running: number }[]
-  scanner: { vulnerabilityDatabaseBuilt?: string, scans: Partial<Record<ScanView['status'], number>> }
+  scanner: { available: boolean, vulnerabilityDatabaseBuilt?: string, importError?: string, importFailed?: string, scans: Partial<Record<ScanView['status'], number>> }
 }
 
 // River job states, as the job queue reports them.

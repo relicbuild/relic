@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect/v2"
 
@@ -372,6 +373,215 @@ func TestNpmRegistry(t *testing.T) {
 	}
 }
 
+func TestNpmUnpublish(t *testing.T) {
+	t.Parallel()
+
+	srv := server(t)
+	for _, r := range []struct {
+		name, config string
+	}{
+		{
+			name:   "npm-local",
+			config: `{"rclass":"local","packageType":"npm"}`,
+		},
+		{
+			name:   "npm",
+			config: `{"rclass":"virtual","packageType":"npm","repositories":["npm-local"],"defaultDeploymentRepo":"npm-local"}`,
+		},
+	} {
+		if resp, body := do(t, srv, call{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/" + r.name,
+			body:   r.config,
+		}); resp.StatusCode/100 != 2 {
+			t.Fatalf("create %s = %d %s", r.name, resp.StatusCode, body)
+		}
+	}
+
+	base := "/artifactory/api/npm/npm"
+	for _, version := range []string{
+		"1.0.0",
+		"1.1.0",
+	} {
+		if resp, body := do(t, srv, call{
+			method: "PUT",
+			path:   base + "/@acme%2fhello",
+			body:   publishDoc("@acme/hello", version, npmTarball(t, "@acme/hello", version)),
+		}); resp.StatusCode != 201 {
+			t.Fatalf("publish %s = %d %s", version, resp.StatusCode, body)
+		}
+	}
+
+	var doc packument
+	if code := getJSON(t, srv, base+"/@acme%2fhello", &doc); code != 200 {
+		t.Fatalf("packument = %d", code)
+	}
+
+	kept := map[string]any{
+		"name": "@acme/hello",
+		"dist-tags": map[string]string{
+			"latest": "1.0.0",
+		},
+		"versions": map[string]any{
+			"1.0.0": doc.Versions["1.0.0"],
+		},
+	}
+	body, _ := json.Marshal(kept)
+
+	steps := []struct {
+		name   string
+		call   call
+		status int
+	}{
+		{
+			name: "a packument update without versions",
+			call: call{
+				method: "PUT",
+				path:   base + "/@acme%2fhello/-rev/undefined",
+				body:   `{"name":"@acme/hello","versions":{}}`,
+			},
+			status: 400,
+		},
+		{
+			name: "the packument without 1.1.0",
+			call: call{
+				method: "PUT",
+				path:   base + "/@acme%2fhello/-rev/undefined",
+				body:   string(body),
+			},
+			status: 200,
+		},
+		{
+			name: "the tarball of 1.1.0, already gone",
+			call: call{
+				method: "DELETE",
+				path:   base + "/@acme/hello/-/@acme/hello-1.1.0.tgz/-rev/undefined",
+			},
+			status: 404,
+		},
+	}
+	for _, step := range steps {
+		if resp, body := do(t, srv, step.call); resp.StatusCode != step.status {
+			t.Fatalf("%s = %d %s, want %d", step.name, resp.StatusCode, body, step.status)
+		}
+	}
+
+	var after packument
+	if code := getJSON(t, srv, base+"/@acme%2fhello", &after); code != 200 || len(after.Versions) != 1 ||
+		after.DistTags["latest"] != "1.0.0" {
+		t.Errorf("after unpublishing 1.1.0 = %d %+v", code, after)
+	}
+
+	if resp, body := do(t, srv, call{
+		method: "DELETE",
+		path:   base + "/@acme%2fhello/-rev/undefined",
+	}); resp.StatusCode != 200 {
+		t.Fatalf("unpublish the package = %d %s", resp.StatusCode, body)
+	}
+
+	if code := getJSON(t, srv, base+"/@acme%2fhello", &after); code != 404 {
+		t.Errorf("an unpublished package = %d, want 404", code)
+	}
+}
+
+func TestNpmLogoutRevokesTheLoginToken(t *testing.T) {
+	t.Parallel()
+
+	srv := server(t)
+	base := "/artifactory/api/npm/npm-local"
+
+	login := func() string {
+		t.Helper()
+
+		resp, body := do(t, srv, call{
+			method: "PUT",
+			path:   base + "/-/user/org.couchdb.user:admin",
+			body:   `{"name":"admin","password":"password"}`,
+			noAuth: true,
+		})
+
+		var issued struct {
+			Token string
+		}
+		if err := json.Unmarshal([]byte(body), &issued); err != nil || resp.StatusCode != 201 || issued.Token == "" {
+			t.Fatalf("npm login = %d %s", resp.StatusCode, body)
+		}
+
+		return issued.Token
+	}
+
+	bearer := func(token string) map[string]string {
+		return map[string]string{
+			"Authorization": "Bearer " + token,
+		}
+	}
+
+	token, other := login(), login()
+
+	tokens, err := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL)).
+		ListTokens(t.Context(), &relicv1.ListTokensRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tok := range tokens.GetTokens() {
+		if tok.GetDescription() != "npm login" {
+			continue
+		}
+
+		lifetime := tok.GetExpires().AsTime().Sub(tok.GetCreated().AsTime())
+		if tok.GetExpires() == nil || lifetime.Round(time.Minute) != 90*24*time.Hour {
+			t.Errorf(
+				"an npm login token expires at %v, %v after it was issued; want 90 days",
+				tok.GetExpires(),
+				lifetime,
+			)
+		}
+	}
+
+	if resp, body := do(t, srv, call{
+		method:  "DELETE",
+		path:    base + "/-/user/token/not-a-token",
+		headers: bearer(token),
+	}); resp.StatusCode != 404 {
+		t.Errorf("logout of an unknown token = %d %s, want 404", resp.StatusCode, body)
+	}
+
+	if resp, body := do(t, srv, call{
+		method:  "DELETE",
+		path:    base + "/-/user/token/" + token,
+		headers: bearer(token),
+	}); resp.StatusCode != 200 {
+		t.Errorf("npm logout = %d %s", resp.StatusCode, body)
+	}
+
+	if resp, _ := do(t, srv, call{
+		method:  "GET",
+		path:    base + "/-/whoami",
+		noAuth:  true,
+		headers: bearer(token),
+	}); resp.StatusCode != 401 {
+		t.Errorf("whoami with the revoked token = %d, want 401", resp.StatusCode)
+	}
+
+	if resp, _ := do(t, srv, call{
+		method:  "GET",
+		path:    base + "/-/whoami",
+		noAuth:  true,
+		headers: bearer(other),
+	}); resp.StatusCode != 200 {
+		t.Errorf("whoami with another login's token = %d, want 200", resp.StatusCode)
+	}
+
+	if resp, _ := do(t, srv, call{
+		method: "DELETE",
+		path:   base + "/-/user/token/" + other,
+		noAuth: true,
+	}); resp.StatusCode != 401 {
+		t.Errorf("anonymous logout = %d, want 401", resp.StatusCode)
+	}
+}
+
 func TestNpmRemoteAndVirtual(t *testing.T) {
 	t.Parallel()
 	tgz := npmTarball(t, "upstream-pkg", "3.0.0")
@@ -481,6 +691,132 @@ func TestNpmRemoteAndVirtual(t *testing.T) {
 		},
 	); resp.StatusCode != 200 {
 		t.Errorf("cached remote tarball = %d", resp.StatusCode)
+	}
+}
+
+func TestNpmSigningKeysAndAttestationsComeFromTheUpstream(t *testing.T) {
+	t.Parallel()
+
+	keys := `{"keys":[{"keyid":"SHA256:example","keytype":"ecdsa-sha2-nistp256","key":"MFkw"}]}`
+	attestations := `{"attestations":[{"predicateType":"https://slsa.dev/provenance/v1"}]}`
+
+	var upstreamURL string
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.URL.EscapedPath() {
+		case "/@acme%2Fsigned", "/@acme%2fsigned":
+			_, _ = io.WriteString(w, `{"name":"@acme/signed","dist-tags":{"latest":"1.0.0"},"versions":{"1.0.0":{
+			  "dist":{"tarball":"`+upstreamURL+`/@acme/signed/-/signed-1.0.0.tgz",
+			  "attestations":{"url":"`+upstreamURL+`/-/npm/v1/attestations/@acme%2fsigned@1.0.0"}}}}}`)
+		case "/-/npm/v1/keys":
+			_, _ = io.WriteString(w, keys)
+		case "/-/npm/v1/attestations/@acme%2Fsigned@1.0.0":
+			_, _ = io.WriteString(w, attestations)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(upstream.Close)
+
+	upstreamURL = upstream.URL
+
+	srv := server(t)
+	for _, r := range []struct {
+		name, config string
+	}{
+		{
+			name:   "npm-remote",
+			config: `{"rclass":"remote","packageType":"npm","url":"` + upstream.URL + `"}`,
+		},
+		{
+			name:   "npm-local",
+			config: `{"rclass":"local","packageType":"npm"}`,
+		},
+		{
+			name:   "npm",
+			config: `{"rclass":"virtual","packageType":"npm","repositories":["npm-local","npm-remote"]}`,
+		},
+	} {
+		if resp, body := do(t, srv, call{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/" + r.name,
+			body:   r.config,
+		}); resp.StatusCode/100 != 2 {
+			t.Fatalf("create %s = %d %s", r.name, resp.StatusCode, body)
+		}
+	}
+
+	var signed struct {
+		Versions map[string]struct {
+			Dist struct {
+				Attestations struct {
+					URL string `json:"url"`
+				} `json:"attestations"`
+			} `json:"dist"`
+		} `json:"versions"`
+	}
+	if code := getJSON(t, srv, "/artifactory/api/npm/npm/@acme%2fsigned", &signed); code != 200 {
+		t.Fatalf("packument = %d", code)
+	}
+
+	want := srv.URL + "/artifactory/api/npm/npm/-/npm/v1/attestations/@acme%2Fsigned@1.0.0"
+	if got := signed.Versions["1.0.0"].Dist.Attestations.URL; got != want {
+		t.Errorf("attestations URL = %s, want %s", got, want)
+	}
+
+	tests := []struct {
+		name, path string
+		status     int
+		want       string
+	}{
+		{
+			name:   "keys through the virtual",
+			path:   "/artifactory/api/npm/npm/-/npm/v1/keys",
+			status: 200,
+			want:   keys,
+		},
+		{
+			name:   "keys of the remote",
+			path:   "/artifactory/api/npm/npm-remote/-/npm/v1/keys",
+			status: 200,
+			want:   keys,
+		},
+		{
+			name:   "attestations of a scoped package",
+			path:   "/artifactory/api/npm/npm/-/npm/v1/attestations/@acme%2fsigned@1.0.0",
+			status: 200,
+			want:   attestations,
+		},
+		{
+			name:   "attestations the upstream does not have",
+			path:   "/artifactory/api/npm/npm/-/npm/v1/attestations/unsigned@1.0.0",
+			status: 404,
+		},
+		{
+			name:   "attestations without a version",
+			path:   "/artifactory/api/npm/npm/-/npm/v1/attestations/unsigned",
+			status: 400,
+		},
+		{
+			name:   "keys of a local repository",
+			path:   "/artifactory/api/npm/npm-local/-/npm/v1/keys",
+			status: 404,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resp, body := do(t, srv, call{
+				method: "GET",
+				path:   tt.path,
+			})
+			if resp.StatusCode != tt.status || tt.want != "" && body != tt.want {
+				t.Errorf("GET %s = %d %s, want %d %s", tt.path, resp.StatusCode, body, tt.status, tt.want)
+			}
+		})
 	}
 }
 

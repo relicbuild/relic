@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 
 	"google.golang.org/protobuf/proto"
@@ -96,5 +97,69 @@ func TestPrintResourcesAsJSON(t *testing.T) {
 				t.Errorf("names = %v, want %v", names, tt.wantNames)
 			}
 		})
+	}
+}
+
+func TestPrintResourcesAsATableWithColumns(t *testing.T) {
+	t.Parallel()
+
+	repository, err := kindNamed("Repository")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	items := []proto.Message{
+		&relicv1.Repository{
+			Name:    "maven-remote",
+			Class:   relicv1.RepositoryClass_REPOSITORY_CLASS_REMOTE,
+			Format:  relicv1.Format_FORMAT_MAVEN,
+			Project: "acme",
+			Remote: &relicv1.RemoteRepositorySettings{
+				Url: "https://repo.maven.apache.org/maven2",
+			},
+		},
+	}
+
+	var out bytes.Buffer
+	if err := printResources(&out, repository, items, "text", false); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{
+		"NAME",
+		"CLASS",
+		"FORMAT",
+		"PROJECT",
+		"URL",
+		"maven-remote",
+		"remote",
+		"maven",
+		"acme",
+		"https://repo.maven.apache.org/maven2",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the table lacks %q:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestEveryKindColumnIsAField(t *testing.T) {
+	t.Parallel()
+
+	for _, k := range kinds {
+		for _, column := range k.columns {
+			d := k.new().ProtoReflect().Descriptor()
+
+			for part := range strings.SplitSeq(column, ".") {
+				fd := d.Fields().ByJSONName(part)
+				if fd == nil {
+					t.Errorf("%s column %q names no field", k.name, column)
+
+					break
+				}
+
+				d = fd.Message()
+			}
+		}
 	}
 }

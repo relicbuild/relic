@@ -2,12 +2,15 @@ package transfer
 
 import (
 	"bufio"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 
@@ -39,22 +42,45 @@ func (c credentials) RoundTrip(r *http.Request) (*http.Response, error) {
 	return c.next.RoundTrip(r)
 }
 
-func client(c credentials) *http.Client {
+func client(c credentials, certificateAuthority []byte) (*http.Client, error) {
 	c.next = http.DefaultTransport
+
+	if certificateAuthority != nil {
+		roots, err := x509.SystemCertPool()
+		if err != nil {
+			roots = x509.NewCertPool()
+		}
+
+		if !roots.AppendCertsFromPEM(certificateAuthority) {
+			return nil, errors.New("--ca-file holds no PEM certificate")
+		}
+
+		transport, ok := http.DefaultTransport.(*http.Transport)
+		if !ok {
+			return nil, errors.New("the default HTTP transport is not an *http.Transport")
+		}
+
+		transport = transport.Clone()
+		transport.TLSClientConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			RootCAs:    roots,
+		}
+		c.next = transport
+	}
 
 	return &http.Client{
 		Transport: c,
-	}
+	}, nil
 }
 
 // Command is the import command of the relic CLI.
 func Command(destination func() (Server, error), status func(step string)) *cobra.Command {
 	var (
-		user                      string
-		passwordStdin, tokenStdin bool
-		opts                      Options
-		output                    string
-		verbose                   bool
+		user, certificateAuthorityFile string
+		passwordStdin, tokenStdin      bool
+		opts                           Options
+		output                         string
+		verbose                        bool
 	)
 
 	cmd := &cobra.Command{
@@ -111,6 +137,20 @@ func Command(destination func() (Server, error), status func(step string)) *cobr
 				return errors.New("sign in to the source with --user and --password-stdin, or with --token-stdin")
 			}
 
+			var certificateAuthority []byte
+
+			if certificateAuthorityFile != "" {
+				//nolint:gosec // G304: the certificate authority file the user names
+				if certificateAuthority, err = os.ReadFile(certificateAuthorityFile); err != nil {
+					return fmt.Errorf("--ca-file: %w", err)
+				}
+			}
+
+			sourceClient, err := client(src, certificateAuthority)
+			if err != nil {
+				return err
+			}
+
 			opts.Progress = func(format string, a ...any) {
 				if verbose {
 					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), format+"\n", a...)
@@ -123,7 +163,7 @@ func Command(destination func() (Server, error), status func(step string)) *cobr
 				cmd.Context(),
 				Server{
 					URL:    normalize(args[0]),
-					Client: client(src),
+					Client: sourceClient,
 				},
 				relic,
 				opts,
@@ -165,6 +205,12 @@ func Command(destination func() (Server, error), status func(step string)) *cobr
 	cmd.Flags().StringVar(&user, "user", "", "the source user")
 	cmd.Flags().BoolVar(&passwordStdin, "password-stdin", false, "read the source user's password from standard input")
 	cmd.Flags().BoolVar(&tokenStdin, "token-stdin", false, "read a source access token from standard input")
+	cmd.Flags().StringVar(
+		&certificateAuthorityFile,
+		"ca-file",
+		"",
+		"a PEM certificate authority to trust for the source, besides the system's",
+	)
 	cmd.Flags().StringSliceVar(&opts.Repositories, "repository", nil, "import only these repositories (repeatable)")
 	cmd.Flags().BoolVar(&opts.Update, "update", false, "replace the configuration Relic already has")
 	cmd.Flags().BoolVar(&opts.DryRun, "dry-run", false, "report what would be copied, copy nothing")

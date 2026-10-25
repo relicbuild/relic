@@ -3,7 +3,10 @@
 package repository
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"testing"
 	"time"
 )
@@ -291,5 +294,117 @@ func TestRestoreDropsTrashPropertiesOfNestedEntries(t *testing.T) {
 				t.Errorf("%s keeps %s=%v after the restore", path, key, values)
 			}
 		}
+	}
+}
+
+func TestTrashingALargeFolderCommitsItInBatches(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	s, _, _ := newTestService(t)
+	files := largeFolder(t, s, "big")
+	last := files[len(files)-1]
+
+	var committedBeforeTheEnd bool
+
+	if err := s.DeleteToTrashChecked(ctx, "generic-local", "big", "alice", func(ctx context.Context, file Item) error {
+		if file.Path() == last && firstFileTrashed(ctx, s, files) {
+			committedBeforeTheEnd = true
+		}
+
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if !committedBeforeTheEnd {
+		t.Error(
+			"the first files reached the trash only when the whole folder had moved; want them committed in batches",
+		)
+	}
+
+	assertLargeFolderTrashed(t, s, files)
+}
+
+func TestTrashingALargeFolderAgainAfterAFailureKeepsWhatMoved(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	s, _, _ := newTestService(t)
+	deploy(t, s, "big/old.txt", "an earlier entry")
+
+	if err := s.DeleteToTrash(ctx, "generic-local", "big", "alice"); err != nil {
+		t.Fatal(err)
+	}
+
+	files := largeFolder(t, s, "big")
+	last := files[len(files)-1]
+	refusal := errors.New("refused")
+
+	err := s.DeleteToTrashChecked(ctx, "generic-local", "big", "alice", func(ctx context.Context, file Item) error {
+		if file.Path() == last && firstFileTrashed(ctx, s, files) {
+			return refusal
+		}
+
+		return nil
+	})
+	if !errors.Is(err, refusal) {
+		t.Fatalf("delete refused in a later batch = %v, want the refusal", err)
+	}
+
+	if _, err := s.Stat(ctx, "generic-local", last); err != nil {
+		t.Fatalf("refused file after the failed delete: %v", err)
+	}
+
+	if err := s.DeleteToTrash(ctx, "generic-local", "big", "alice"); err != nil {
+		t.Fatal(err)
+	}
+
+	assertLargeFolderTrashed(t, s, files)
+}
+
+func largeFolder(t *testing.T, s *Service, folder string) []string {
+	t.Helper()
+
+	files := make([]string, 0, 2*moveBatchItems+10)
+	for i := range cap(files) {
+		path := fmt.Sprintf("%s/d%d/f-%03d.txt", folder, i%3, i)
+		deploy(t, s, path, path)
+		files = append(files, path)
+	}
+
+	slices.Sort(files)
+
+	return files
+}
+
+func firstFileTrashed(ctx context.Context, s *Service, files []string) bool {
+	_, err := s.Stat(ctx, s.TrashRepository(), "generic-local/"+files[0])
+
+	return err == nil
+}
+
+func assertLargeFolderTrashed(t *testing.T, s *Service, files []string) {
+	t.Helper()
+
+	ctx := t.Context()
+
+	if _, err := s.Stat(ctx, "generic-local", "big"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("folder after its delete = %v, want ErrNotFound", err)
+	}
+
+	for _, f := range files {
+		it, err := s.Stat(ctx, s.TrashRepository(), "generic-local/"+f)
+		if err != nil || it.Checksums.SHA256 != sha256Hex(f) {
+			t.Errorf("%s in the trash = %+v, %v", f, it, err)
+		}
+	}
+
+	entries, _, err := s.TrashEntries(ctx, TrashQuery{
+		Max: 10,
+	})
+	if err != nil || len(entries) != 1 || entries[0].Item.Path() != "generic-local/big" ||
+		entries[0].OriginalPath != "big" || entries[0].DeletedBy != "alice" {
+		t.Errorf("trash entries = %+v, %v; want the folder", entries, err)
 	}
 }

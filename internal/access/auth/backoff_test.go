@@ -16,24 +16,24 @@ func TestBackoff(t *testing.T) {
 	}
 	client, other := netip.MustParseAddr("198.51.100.7"), netip.MustParseAddr("198.51.100.8")
 
-	for range freeFailures {
+	for range freeFailures - 1 {
 		b.Fail(client)
 	}
 
 	if w := b.Wait(client); w != 0 {
-		t.Fatalf("wait after %d failures = %v, want 0", freeFailures, w)
+		t.Fatalf("wait after %d failures = %v, want 0", freeFailures-1, w)
 	}
 
 	b.Fail(client)
 
 	if w := b.Wait(client); w != minDelay {
-		t.Errorf("wait after the first extra failure = %v, want %v", w, minDelay)
+		t.Errorf("wait after the last free failure = %v, want %v", w, minDelay)
 	}
 
 	b.Fail(client)
 
 	if w := b.Wait(client); w != 2*minDelay {
-		t.Errorf("wait after the second extra failure = %v, want %v", w, 2*minDelay)
+		t.Errorf("wait after the first extra failure = %v, want %v", w, 2*minDelay)
 	}
 
 	for range 40 {
@@ -111,12 +111,12 @@ func TestBackoffSetFree(t *testing.T) {
 	b.SetFree(100)
 
 	client := netip.MustParseAddr("198.51.100.9")
-	for range 100 {
+	for range 99 {
 		b.Fail(client)
 	}
 
 	if w := b.Wait(client); w != 0 {
-		t.Fatalf("wait after 100 of 100 free failures = %v, want 0", w)
+		t.Fatalf("wait after 99 of 100 free failures = %v, want 0", w)
 	}
 
 	b.Fail(client)

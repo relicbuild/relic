@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installs the latest relic release: curl -fsSL https://relic.build/install.sh | sh
 #
-#   RELIC_VERSION      a release tag (v0.2.0); the latest release by default
+#   RELIC_VERSION      a release tag (v0.2.0 or 0.2.0); the latest release by default
 #   RELIC_INSTALL_DIR  where the binary goes; ~/.local/bin by default
 #   RELIC_REPOSITORY   the GitHub repository URL the releases come from
 set -eu
@@ -28,8 +28,18 @@ esac
 
 command -v curl >/dev/null || fail "curl is required"
 
+mkdir -p "$install_dir" 2>/dev/null && [ -w "$install_dir" ] ||
+  fail "cannot write to $install_dir; set RELIC_INSTALL_DIR to a directory you can write to"
+
 version=${RELIC_VERSION:-}
-if [ -z "$version" ]; then
+if [ -n "$version" ]; then
+  case $version in
+    v*) ;;
+    *) version=v$version ;;
+  esac
+  curl -fsSLI -o /dev/null "$repository/releases/tag/$version" ||
+    fail "no release $version at $repository/releases"
+else
   latest=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$repository/releases/latest") ||
     fail "cannot reach $repository/releases/latest"
   version=${latest##*/}
@@ -71,7 +81,6 @@ fi
 [ "$actual" = "$expected" ] || fail "checksum mismatch for $name.tar.gz"
 
 tar -xzf "$tmp/$name.tar.gz" -C "$tmp"
-mkdir -p "$install_dir"
 install -m 0755 "$tmp/$name/relic" "$install_dir/relic"
 echo "Installed $("$install_dir/relic" --version) to $install_dir/relic"
 

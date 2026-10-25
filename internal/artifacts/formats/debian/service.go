@@ -2,17 +2,21 @@ package debian
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"path"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
+	"relic/internal/artifacts/formats/indexcache"
 	"relic/internal/artifacts/repository"
 	"relic/internal/artifacts/signingkey"
+	"relic/internal/platform/database"
+	"relic/internal/platform/telemetry"
 )
 
 // Format is the repository format this package serves.
@@ -33,35 +37,30 @@ var defaultArchitectures = []string{
 	"arm64",
 }
 
-const cacheTTL = 30 * time.Second
-
 // Service indexes and serves Debian repositories.
 type Service struct {
-	repos *repository.Service
-	keys  *signingkey.Service
-	log   *slog.Logger
-	now   func() time.Time
-
-	mu    sync.Mutex
-	cache map[string]cached
-}
-
-type cached struct {
-	idx     *Dist
-	expires time.Time
+	db      *database.DB
+	repos   *repository.Service
+	keys    *signingkey.Service
+	log     *slog.Logger
+	now     func() time.Time
+	indexes *indexcache.Cache[*Dist]
 }
 
 // NewService returns a Service; it reads the control file of .deb files
 // deployed to Debian repositories, and remotes refresh dists/ like other
 // metadata.
-func NewService(repos *repository.Service, keySvc *signingkey.Service, log *slog.Logger) *Service {
+func NewService(db *database.DB, repos *repository.Service, keySvc *signingkey.Service, log *slog.Logger) *Service {
 	s := &Service{
+		db:    db,
 		repos: repos,
 		keys:  keySvc,
 		log:   log,
 		now:   time.Now,
-		cache: map[string]cached{},
 	}
+	s.indexes = indexcache.New[*Dist](string(Format), indexcache.DefaultSettings, func() time.Time {
+		return s.now()
+	})
 	repos.RegisterHook(Format, s.indexPackage)
 	repos.RegisterMetadata(func(name string) bool {
 		return slices.Contains([]string{
@@ -128,25 +127,41 @@ type Dist struct {
 	Release                   []byte
 }
 
-// Distribution builds dist's indexes for r: its own packages, or for a
+// Distribution returns dist's indexes for r: its own packages, or for a
 // virtual repository its members' (remote members' upstream indexes,
 // limited to the configured architectures).
 func (s *Service) Distribution(ctx context.Context, r repository.Repository, dist string) (*Dist, error) {
-	shared := r.Class == "virtual" && !repository.Filtered(ctx)
-	if shared {
-		s.mu.Lock()
-		c, ok := s.cache[r.Name+"\x00"+dist]
-		s.mu.Unlock()
-
-		if ok && s.now().Before(c.expires) {
-			return c.idx, nil
-		}
+	if r.Class != repository.ClassVirtual || repository.Filtered(ctx) {
+		return s.buildDistribution(ctx, r, dist)
 	}
+
+	return s.indexes.Get(ctx, r.Name+"\x00"+dist, func(ctx context.Context) (*Dist, error) {
+		return s.buildDistribution(ctx, r, dist)
+	})
+}
+
+func (s *Service) buildDistribution(ctx context.Context, r repository.Repository, dist string) (idx *Dist, err error) {
+	ctx, span := telemetry.Tracer().Start(ctx, "debian.Distribution")
+	started := time.Now()
+
+	defer func() {
+		telemetry.End(span, err)
+		telemetry.IndexBuilt(ctx, string(Format), string(r.Class), err, time.Since(started))
+	}()
 
 	paras := map[string]map[string][]string{}
 	seen := map[string]bool{}
 	add := func(comp, arch, p string) {
-		id := comp + "\x00" + Field(p, "Package") + "\x00" + Field(p, "Version") + "\x00" + Field(p, "Architecture")
+		id := comp + "\x00" + arch + "\x00" + Field(
+			p,
+			"Package",
+		) + "\x00" + Field(
+			p,
+			"Version",
+		) + "\x00" + Field(
+			p,
+			"Architecture",
+		)
 		if seen[id] {
 			return
 		}
@@ -212,24 +227,65 @@ func (s *Service) Distribution(ctx context.Context, r repository.Repository, dis
 		return nil, repository.ErrNotFound
 	}
 
-	idx, err := assemble(r.Name, dist, paras, modified)
+	idx, release, err := assemble(r.Name, dist, paras)
 	if err != nil {
 		return nil, err
 	}
 
-	if shared {
-		s.mu.Lock()
-		s.cache[r.Name+"\x00"+dist] = cached{
-			idx:     idx,
-			expires: s.now().Add(cacheTTL),
-		}
-		s.mu.Unlock()
+	digest := sha256.Sum256(release(time.Time{}))
+
+	date, err := s.releaseDate(ctx, r.Name, dist, hex.EncodeToString(digest[:]), modified)
+	if err != nil {
+		return nil, err
 	}
+
+	idx.Release = release(date)
 
 	return idx, nil
 }
 
-func assemble(label, dist string, paras map[string]map[string][]string, now time.Time) (*Dist, error) {
+func (s *Service) releaseDate(
+	ctx context.Context,
+	repoKey, dist, digest string,
+	modified time.Time,
+) (time.Time, error) {
+	stored, err := s.db.GetDebianReleaseDate(ctx, database.GetDebianReleaseDateParams{
+		RepoKey:      repoKey,
+		Distribution: dist,
+	})
+
+	found := err == nil
+	if err != nil && !errors.Is(database.NotFound(err), database.ErrNotFound) {
+		return time.Time{}, fmt.Errorf("release date of %s %s: %w", repoKey, dist, err)
+	}
+
+	switch {
+	case found && stored.Digest == digest:
+		return stored.Date, nil
+	case repository.Filtered(ctx) && found && stored.Date.After(modified):
+		return stored.Date, nil
+	case repository.Filtered(ctx):
+		return modified, nil
+	}
+
+	date := s.now().UTC().Truncate(time.Second)
+	if found && !date.After(stored.Date) {
+		date = stored.Date.Add(time.Second)
+	}
+
+	if err := s.db.PutDebianReleaseDate(ctx, database.PutDebianReleaseDateParams{
+		RepoKey:      repoKey,
+		Distribution: dist,
+		Digest:       digest,
+		Date:         date,
+	}); err != nil {
+		return time.Time{}, fmt.Errorf("release date of %s %s: %w", repoKey, dist, err)
+	}
+
+	return date, nil
+}
+
+func assemble(label, dist string, paras map[string]map[string][]string) (*Dist, func(time.Time) []byte, error) {
 	comps, archSet := map[string]bool{}, map[string]bool{}
 	for comp, byArch := range paras {
 		comps[comp] = true
@@ -264,7 +320,7 @@ func assemble(label, dist string, paras map[string]map[string][]string, now time
 
 			gz, err := Gzip(data)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 
 			base := comp + "/binary-" + arch + "/Packages"
@@ -285,9 +341,9 @@ func assemble(label, dist string, paras map[string]map[string][]string, now time
 		}
 	}
 
-	d.Release = Release(label, dist, d.Components, archs, files, now)
-
-	return d, nil
+	return d, func(date time.Time) []byte {
+		return Release(label, dist, d.Components, archs, files, date)
+	}, nil
 }
 
 func (s *Service) localParagraphs(
@@ -318,30 +374,33 @@ func (s *Service) localParagraphs(
 			continue
 		}
 
-		comp := first(props[PropComponent])
-		if comp == "" {
-			comp = "main"
-		}
-
-		arch := first(props[PropArchitecture])
-		if arch == "" {
-			arch = Field(ctl, "Architecture")
-		}
-
-		for c := range strings.SplitSeq(comp, ",") {
-			c = strings.TrimSpace(c)
-			if c == "" {
-				continue
+		components := listedValues(props[PropComponent])
+		if len(components) == 0 {
+			components = []string{
+				"main",
 			}
+		}
 
-			add(c, arch, File{
-				Control:  ctl,
-				Filename: it.Path(),
-				Size:     it.Size,
-				MD5:      it.Checksums.MD5,
-				SHA1:     it.Checksums.SHA1,
-				SHA256:   it.Checksums.SHA256,
-			}.Paragraph())
+		archs := listedValues(props[PropArchitecture])
+		if len(archs) == 0 {
+			archs = []string{
+				Field(ctl, "Architecture"),
+			}
+		}
+
+		paragraph := File{
+			Control:  ctl,
+			Filename: it.Path(),
+			Size:     it.Size,
+			MD5:      it.Checksums.MD5,
+			SHA1:     it.Checksums.SHA1,
+			SHA256:   it.Checksums.SHA256,
+		}.Paragraph()
+
+		for _, component := range components {
+			for _, arch := range archs {
+				add(component, arch, paragraph)
+			}
 		}
 	}
 
@@ -464,6 +523,20 @@ func (s *Service) members(ctx context.Context, r repository.Repository, depth in
 	return out
 }
 
+func listedValues(values []string) []string {
+	var out []string
+
+	for _, v := range values {
+		for part := range strings.SplitSeq(v, ",") {
+			if part = strings.TrimSpace(part); part != "" && !slices.Contains(out, part) {
+				out = append(out, part)
+			}
+		}
+	}
+
+	return out
+}
+
 func first(v []string) string {
 	if len(v) == 0 {
 		return ""
@@ -473,16 +546,16 @@ func first(v []string) string {
 }
 
 // Sign returns InRelease (clear-signed) or Release.gpg (detached) for a
-// Release, with r's key pair.
+// Release, with each of r's key pairs.
 func (s *Service) Sign(ctx context.Context, r repository.Repository, release []byte, detached bool) ([]byte, error) {
-	key, _, err := s.keys.GPG(ctx, r.KeyPairRef())
+	keys, _, err := s.keys.GPGKeys(ctx, r.KeyPairRefs()...)
 	if err != nil {
 		return nil, err
 	}
 
 	if detached {
-		return signingkey.DetachSign(release, key)
+		return signingkey.DetachSign(release, keys...)
 	}
 
-	return signingkey.ClearSign(release, key)
+	return signingkey.ClearSign(release, keys...)
 }

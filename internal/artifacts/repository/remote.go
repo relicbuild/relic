@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"relic/internal/platform/telemetry"
 )
 
 // ErrCoolingDown refuses a version its upstream published more recently than
@@ -168,7 +170,7 @@ func (s *Service) FetchUpstream(
 		timeout = time.Duration(cfg.TimeoutMilliseconds) * time.Millisecond
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := context.WithTimeout(telemetry.WithUpstream(ctx, r.Name, string(r.Format)), timeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, upstreamURL, nil)

@@ -70,7 +70,10 @@ watch(vexFile, async (file) => {
     const r = await scans.importVex({ document: await file.text() })
     toast.add({
       title: `${pluralize(r.rules.length, 'ignore rule')} created from ${file.name}`,
-      description: r.skipped ? `${pluralize(r.skipped, 'statement')} left out: affected, under investigation, or naming no package.` : undefined,
+      description: [
+        r.existing ? `${pluralize(r.existing, 'statement')} already stored as ignore rules.` : '',
+        r.skipped ? `${pluralize(r.skipped, 'statement')} left out: affected, under investigation, or naming no package.` : ''
+      ].filter(Boolean).join(' ') || undefined,
       color: 'success',
       icon: 'i-lucide-check-circle'
     })

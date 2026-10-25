@@ -101,6 +101,12 @@ type Dependencies struct {
 	QueueStorageCheck      func(context.Context) (int64, error)
 	QueueReplication       func(context.Context, string) error
 	QueueGraphScan         func(context.Context, uuid.UUID) error
+	// GraphScanWorkers reports whether a worker runs the graph scans
+	// QueueGraphScan queues.
+	GraphScanWorkers func(context.Context) (bool, error)
+	// ScanWorkers reports whether a worker that runs Relic Scan reported
+	// lately; nil counts as one.
+	ScanWorkers func(context.Context) (bool, error)
 	// QueueRematch matches a content's SBOM again.
 	QueueRematch                     func(context.Context, string) error
 	VulnerabilityDatabases           *scan.DatabaseImports
@@ -256,7 +262,7 @@ func Handler(d Dependencies) http.Handler {
 	mux.HandleFunc("GET "+SSOPath+"{provider}/callback", d.ssoCallback)
 	mux.HandleFunc("POST "+SSOPath+"{provider}/acs", d.ssoAssertion)
 	mux.HandleFunc("GET "+SSOPath+"{provider}/metadata", d.ssoMetadata)
-	mux.Handle(Prefix, restDecodeErrors(connectPaths(api)))
+	mux.Handle(Prefix, restDecodeErrors(connectPaths(multiSegmentPaths(api))))
 
 	return withRequest(mux)
 }

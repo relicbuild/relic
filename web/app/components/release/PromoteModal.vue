@@ -45,7 +45,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
 <template>
   <UModal
     :title="`Promote ${name}/${version}`"
-    description="Relic copies the artifacts to every repository assigned to the environment, if its promotion gates allow."
+    description="Relic copies each artifact into one local repository assigned to the environment: the only one, else the first of the artifact's format, else the first generic one. The promotion gates must allow it."
     :close="{ onClick: () => emit('close', false) }"
   >
     <template #body>

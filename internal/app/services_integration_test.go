@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -139,6 +140,35 @@ func TestRelicAPIServices(t *testing.T) {
 		admin.call(http.MethodGet, "/api/v1/key-pairs", "", http.StatusOK)
 		bob.call(http.MethodGet, "/api/v1/key-pairs", "", http.StatusForbidden)
 		bob.call(http.MethodGet, "/api/v1/key-pairs/nope/public-key", "", http.StatusNotFound)
+
+		rotating := `{"name":"deb-rotating","class":"REPOSITORY_CLASS_LOCAL","format":"FORMAT_DEBIAN",` +
+			`"signingKey":"deb-old"%s}`
+		admin.call(http.MethodPost, "/api/v1/repositories", fmt.Sprintf(rotating, `,"secondarySigningKey":"deb-new"`),
+			http.StatusOK)
+
+		var keys struct {
+			KeyPair            string `json:"keyPair"`
+			PublicKey          string `json:"publicKey"`
+			SecondaryKeyPair   string `json:"secondaryKeyPair"`
+			SecondaryPublicKey string `json:"secondaryPublicKey"`
+		}
+		if err := json.Unmarshal([]byte(admin.call(
+			http.MethodGet,
+			"/api/v1/repositories/deb-rotating/signing-key",
+			"",
+			http.StatusOK,
+		)), &keys); err != nil || keys.KeyPair != "deb-old" || keys.SecondaryKeyPair != "deb-new" ||
+			keys.PublicKey == "" || keys.SecondaryPublicKey == "" || keys.PublicKey == keys.SecondaryPublicKey {
+			t.Errorf("the signing keys of a repository with a secondary key = %+v, %v", keys, err)
+		}
+
+		bob.call(http.MethodDelete, "/api/v1/key-pairs/deb-new", "", http.StatusForbidden)
+		admin.call(http.MethodDelete, "/api/v1/key-pairs/deb-new", "", http.StatusBadRequest)
+		admin.call(http.MethodDelete, "/api/v1/key-pairs/release-bundles", "", http.StatusBadRequest)
+		admin.call(http.MethodPut, "/api/v1/repositories/deb-rotating", fmt.Sprintf(rotating, ""), http.StatusOK)
+		admin.call(http.MethodDelete, "/api/v1/key-pairs/deb-new", "", http.StatusOK)
+		admin.call(http.MethodGet, "/api/v1/key-pairs/deb-new/public-key", "", http.StatusNotFound)
+		admin.call(http.MethodDelete, "/api/v1/key-pairs/deb-new", "", http.StatusNotFound)
 	})
 
 	t.Run("trusted keys and evidence", func(t *testing.T) {
@@ -250,9 +280,9 @@ func TestRelicAPIServices(t *testing.T) {
 			"2",
 			"3",
 		} {
-			run := `{"run":{"name":"svc","number":"` + n + `","started":"2026-09-2` + n + `T10:00:00Z",` +
+			run := `{"name":"svc","number":"` + n + `","started":"2026-09-2` + n + `T10:00:00Z",` +
 				`"modules":[{"id":"svc:app",` +
-				`"artifacts":[{"name":"app.jar","type":"jar","sha1":"` + hex.EncodeToString(sum[:]) + `"}]}]}}`
+				`"artifacts":[{"name":"app.jar","type":"jar","sha1":"` + hex.EncodeToString(sum[:]) + `"}]}]}`
 			admin.call(http.MethodPost, "/api/v1/builds/svc/runs", run, http.StatusOK)
 		}
 
@@ -311,7 +341,7 @@ func TestRelicAPIServices(t *testing.T) {
 		})
 
 		created := admin.call(http.MethodPost, "/api/v1/releases/shop/versions",
-			`{"spec":{"name":"shop","version":"1.0","sources":[{"files":[{"path":"rel-src/a.txt"}]}]}}`, http.StatusOK)
+			`{"name":"shop","version":"1.0","sources":[{"files":[{"path":"rel-src/a.txt"}]}]}`, http.StatusOK)
 		if !strings.Contains(created, "RELEASE_STATUS_COMPLETED") || !strings.Contains(created, `"path":"a.txt"`) {
 			t.Errorf("created release = %s", created)
 		}
@@ -319,26 +349,26 @@ func TestRelicAPIServices(t *testing.T) {
 		admin.call(
 			http.MethodPost,
 			"/api/v1/releases/shop/versions",
-			`{"spec":{"name":"shop","version":"1.0","sources":[{"files":[{"path":"rel-src/a.txt"}]}]}}`,
+			`{"name":"shop","version":"1.0","sources":[{"files":[{"path":"rel-src/a.txt"}]}]}`,
 			http.StatusConflict,
 		)
 		admin.call(
 			http.MethodPost,
 			"/api/v1/releases/shop/versions",
-			`{"spec":{"name":"shop","version":"bad","sources":[{"query":{},"files":[{"path":"rel-src/a.txt"}]}]}}`,
+			`{"name":"shop","version":"bad","sources":[{"query":{},"files":[{"path":"rel-src/a.txt"}]}]}`,
 			http.StatusBadRequest,
 		)
 
 		admin.call(
 			http.MethodPost,
 			"/api/v1/releases/shop/versions",
-			`{"spec":{"name":"shop","version":"2.0","draft":true,"sources":[{"files":[{"path":"rel-src/a.txt"}]}]}}`,
+			`{"name":"shop","version":"2.0","draft":true,"sources":[{"files":[{"path":"rel-src/a.txt"}]}]}`,
 			http.StatusOK,
 		)
 		admin.call(
 			http.MethodPatch,
 			"/api/v1/releases/shop/versions/2.0",
-			`{"spec":{"name":"shop","version":"2.0","sources":[{"files":[{"path":"rel-src/b.txt"}]}]}}`,
+			`{"name":"shop","version":"2.0","sources":[{"files":[{"path":"rel-src/b.txt"}]}]}`,
 			http.StatusOK,
 		)
 

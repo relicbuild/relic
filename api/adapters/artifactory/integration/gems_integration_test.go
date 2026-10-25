@@ -10,8 +10,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+
+	"relic/internal/artifacts/formats/gems"
 )
 
 func gemFile(t *testing.T, name, version string) []byte {
@@ -269,16 +274,24 @@ func TestGemsAPIKeyAndYank(t *testing.T) {
 		path:   api + "api_key.yaml",
 	})
 
-	key, ok := strings.CutPrefix(strings.TrimSpace(yml), "---\n:rubygems_api_key: ")
-	if resp.StatusCode != 200 || !ok || !strings.HasPrefix(key, "Bearer ") || strings.Contains(yml, "password") {
-		t.Fatalf("api_key.yaml = %d %q", resp.StatusCode, yml)
+	key, ok := strings.CutPrefix(strings.TrimSpace(yml), srv.URL+"/artifactory/api/gems/gems: ")
+	if resp.StatusCode != 200 || !ok || key == "" || strings.Contains(yml, "rubygems_api_key") ||
+		strings.Contains(yml, "password") {
+		t.Fatalf("api_key.yaml = %d %q, want a credentials entry for the repository's URL alone", resp.StatusCode, yml)
+	}
+
+	if _, native := do(t, srv, call{
+		method: "GET",
+		path:   "/gems/gems/api/v1/api_key.yaml",
+	}); !strings.HasPrefix(native, srv.URL+"/gems/gems: ") {
+		t.Errorf("native api_key.yaml = %q", native)
 	}
 
 	if _, plain := do(t, srv, call{
 		method: "GET",
 		path:   api + "api_key",
-	}); !strings.HasPrefix(plain, "Bearer ") {
-		t.Errorf("api_key = %q", plain)
+	}); plain == "" || strings.Contains(plain, " ") {
+		t.Errorf("api_key = %q, want a token", plain)
 	}
 
 	if resp, body := do(
@@ -295,6 +308,23 @@ func TestGemsAPIKeyAndYank(t *testing.T) {
 		},
 	); resp.StatusCode != 200 {
 		t.Fatalf("push with the key = %d %s", resp.StatusCode, body)
+	}
+
+	for i, path := range []string{
+		api + "gems",
+		"/gems/gems/api/v1/gems",
+	} {
+		if resp, body := do(t, srv, call{
+			method: "POST",
+			path:   path,
+			body:   string(gemFile(t, "rawkey", "1.0."+strconv.Itoa(i))),
+			noAuth: true,
+			headers: map[string]string{
+				"Authorization": strings.TrimPrefix(key, "Bearer "),
+			},
+		}); resp.StatusCode != 200 {
+			t.Errorf("push to %s with the token alone as the key, as gem sends it = %d %s", path, resp.StatusCode, body)
+		}
 	}
 
 	if resp, _ := do(t, srv, call{
@@ -460,5 +490,157 @@ func TestGemsInfoFile(t *testing.T) {
 		},
 	); resp.StatusCode != 404 {
 		t.Errorf("unknown gem = %d", resp.StatusCode)
+	}
+}
+
+func TestGemsThroughARemote(t *testing.T) {
+	t.Parallel()
+
+	upstreamSpecs, err := gems.SpecsIndex([]gems.Spec{
+		{
+			Name:     "rack",
+			Version:  "3.1.8",
+			Platform: "ruby",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rack := gemFile(t, "rack", "3.1.8")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/versions":
+			_, _ = io.WriteString(
+				w,
+				"created_at: 2026-01-01T00:00:00Z\n---\nrack 3.1.8 0123456789abcdef0123456789abcdef\n",
+			)
+		case "/info/rack":
+			_, _ = io.WriteString(w, "---\n3.1.8 |checksum:00\n")
+		case "/specs.4.8.gz", "/latest_specs.4.8.gz":
+			_, _ = w.Write(upstreamSpecs)
+		case "/gems/rack-3.1.8.gem":
+			_, _ = w.Write(rack)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(upstream.Close)
+
+	srv := server(t)
+	for key, body := range map[string]string{
+		"gems-local":  `{"rclass":"local","packageType":"gems"}`,
+		"gems-remote": `{"rclass":"remote","packageType":"gems","url":"` + upstream.URL + `"}`,
+	} {
+		if resp, got := do(t, srv, call{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/" + key,
+			body:   body,
+		}); resp.StatusCode >= 300 {
+			t.Fatalf("create %s = %d %s", key, resp.StatusCode, got)
+		}
+	}
+
+	if resp, got := do(t, srv, call{
+		method: "PUT",
+		path:   "/artifactory/api/repositories/gems",
+		body: `{"rclass":"virtual","packageType":"gems","repositories":["gems-local","gems-remote"],` +
+			`"defaultDeploymentRepo":"gems-local"}`,
+	}); resp.StatusCode >= 300 {
+		t.Fatalf("create gems = %d %s", resp.StatusCode, got)
+	}
+
+	if resp, got := do(t, srv, call{
+		method: "POST",
+		path:   "/gems/gems/api/v1/gems",
+		body:   string(gemFile(t, "relic_app", "1.0.0")),
+	}); resp.StatusCode != 200 {
+		t.Fatalf("push = %d %s", resp.StatusCode, got)
+	}
+
+	for _, repo := range []string{
+		"gems",
+		"gems-remote",
+	} {
+		for _, method := range []string{
+			"HEAD",
+			"GET",
+		} {
+			if resp, _ := do(t, srv, call{
+				method: method,
+				path:   "/gems/" + repo + "/",
+			}); resp.StatusCode != 200 {
+				t.Errorf("%s /gems/%s/ = %d, want 200, which makes RubyGems use the compact index", method, repo,
+					resp.StatusCode)
+			}
+		}
+	}
+
+	for _, tc := range []struct {
+		repo           string
+		listed, absent []string
+	}{
+		{
+			repo: "gems",
+			listed: []string{
+				"rack",
+				"relic_app",
+			},
+		},
+		{
+			repo: "gems-remote",
+			listed: []string{
+				"rack",
+			},
+			absent: []string{
+				"relic_app",
+			},
+		},
+		{
+			repo: "gems-local",
+			listed: []string{
+				"relic_app",
+			},
+			absent: []string{
+				"rack",
+			},
+		},
+	} {
+		resp, body := do(t, srv, call{
+			method: "GET",
+			path:   "/gems/" + tc.repo + "/specs.4.8.gz",
+		})
+
+		zr, err := gzip.NewReader(strings.NewReader(body))
+		if resp.StatusCode != 200 || err != nil {
+			t.Fatalf("%s specs.4.8.gz = %d %v", tc.repo, resp.StatusCode, err)
+		}
+
+		raw, _ := io.ReadAll(zr)
+		for _, name := range tc.listed {
+			if !bytes.Contains(raw, []byte(name)) {
+				t.Errorf("%s specs.4.8.gz = %q, want %s", tc.repo, raw, name)
+			}
+		}
+
+		for _, name := range tc.absent {
+			if bytes.Contains(raw, []byte(name)) {
+				t.Errorf("%s specs.4.8.gz = %q, want no %s", tc.repo, raw, name)
+			}
+		}
+	}
+
+	if resp, got := do(t, srv, call{
+		method: "GET",
+		path:   "/gems/gems/info/rack",
+	}); resp.StatusCode != 200 || !strings.Contains(got, "3.1.8 ") {
+		t.Errorf("info/rack = %d %q", resp.StatusCode, got)
+	}
+
+	if resp, got := do(t, srv, call{
+		method: "GET",
+		path:   "/gems/gems/gems/rack-3.1.8.gem",
+	}); resp.StatusCode != 200 || got != string(rack) {
+		t.Errorf("rack download through the virtual = %d", resp.StatusCode)
 	}
 }

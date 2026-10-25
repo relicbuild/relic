@@ -1,6 +1,7 @@
 package relicapi
 
 import (
+	"cmp"
 	"context"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/internal/access/audit"
 	"relic/internal/access/auth"
+	"relic/internal/platform/httpserver"
 )
 
 // auditedMethods are audited although they are not administrator methods:
@@ -20,6 +22,7 @@ var auditedMethods = map[string]bool{
 	"/relic.v1.SessionService/Login":               true,
 	"/relic.v1.SessionService/Logout":              true,
 	"/relic.v1.SessionService/ApproveLogin":        true,
+	"/relic.v1.SessionService/ChangePassword":      true,
 	"/relic.v1.SecurityService/CreateToken":        true,
 	"/relic.v1.SecurityService/RevokeToken":        true,
 	"/relic.v1.RepositoryService/CreateRepository": true,
@@ -97,6 +100,8 @@ func audited(spec connect.Spec) bool {
 func auditInterceptor(a audit.Recorder) connect.ServerInterceptor {
 	return func(next connect.ServerFunc) connect.ServerFunc {
 		return func(ctx context.Context, spec connect.Spec, stream connect.ServerStream) error {
+			ctx = httpserver.WithAuditTarget(ctx)
+
 			err := next(ctx, spec, stream)
 			if a == nil || !audited(spec) {
 				return err
@@ -107,7 +112,7 @@ func auditInterceptor(a audit.Recorder) connect.ServerInterceptor {
 			e := audit.Event{
 				Actor:   auth.FromContext(ctx).Name(),
 				Action:  strings.TrimPrefix(spec.Procedure, "/"),
-				Target:  auditTarget(msg),
+				Target:  cmp.Or(httpserver.AuditTarget(ctx), auditTarget(msg)),
 				Outcome: rpcOutcome(err),
 			}
 			if login, ok := msg.(*relicv1.LoginRequest); ok {

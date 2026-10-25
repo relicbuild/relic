@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # covers:
 source "$(dirname "$0")/lib.sh"
+platform="linux_$(dpkg --print-architecture)"
 if [[ -z "${SCENARIO_TLS_URL:-}" || -z "${SCENARIO_USER:-}" ]] || ! command -v terraform >/dev/null || ! command -v tofu >/dev/null; then
   echo "skipped: SCENARIO_TLS_URL/SCENARIO_USER, terraform or tofu missing" >&2
   exit 0
@@ -55,10 +56,10 @@ TF
 terraform init -input=false -no-color
 terraform apply -auto-approve -input=false -no-color >apply.txt
 grep -q "pet = " apply.txt
-jf rt s "$HASHI/registry.terraform.io/hashicorp/random/terraform-provider-random_3.6.3_linux_amd64.zip" | expect_count 1
+jf rt s "$HASHI/registry.terraform.io/hashicorp/random/terraform-provider-random_3.6.3_$platform.zip" | expect_count 1
 
 step "a multi-platform lockfile, then an init that only reads it"
-terraform providers lock -net-mirror="$api/$VIRTUAL/providers/" -platform=linux_amd64 -platform=darwin_arm64 -no-color
+terraform providers lock -net-mirror="$api/$VIRTUAL/providers/" -platform="$platform" -platform=darwin_arm64 -no-color
 # It downloads each platform's package, so it records h1: hashes for both.
 [[ "$(grep -c '"h1:' .terraform.lock.hcl)" -ge 4 ]]
 rm -rf .terraform
@@ -74,7 +75,7 @@ terraform {
   }
 }
 TF
-terraform providers mirror -platform=linux_amd64 ../mirror >/dev/null
+terraform providers mirror -platform="$platform" ../mirror >/dev/null
 cd ../mirror
 find . -name '*.zip' | while read -r f; do
   curl -sf -H "Authorization: Bearer $token" -T "$f" "$SCENARIO_TLS_URL/api/v1/files/$LOCAL/${f#./}" >/dev/null
@@ -115,4 +116,4 @@ TF
 tofu init -input=false -no-color
 tofu apply -auto-approve -input=false -no-color >/dev/null
 cd ..
-jf rt s "$TOFU/registry.opentofu.org/hashicorp/random/terraform-provider-random_3.6.3_linux_amd64.zip" | expect_count 1
+jf rt s "$TOFU/registry.opentofu.org/hashicorp/random/terraform-provider-random_3.6.3_$platform.zip" | expect_count 1

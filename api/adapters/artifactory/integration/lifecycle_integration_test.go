@@ -521,6 +521,103 @@ func TestReleaseBundles(t *testing.T) {
 	}
 }
 
+func TestReleaseBundlesAreSignedWithTheReleaseKey(t *testing.T) {
+	t.Parallel()
+	srv := server(t)
+
+	const lc = "/lifecycle/api/v2/"
+
+	for _, c := range []call{
+		{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/dev-local",
+			body:   `{"rclass":"local","packageType":"generic"}`,
+		},
+		{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/prod-local",
+			body:   `{"rclass":"local","packageType":"generic","environments":"PROD"}`,
+		},
+		{
+			method: "PUT",
+			path:   "/artifactory/dev-local/app/app.bin",
+			body:   "binary v1",
+		},
+	} {
+		if resp, body := do(t, srv, c); resp.StatusCode >= 300 {
+			t.Fatalf("%s %s = %d %s", c.method, c.path, resp.StatusCode, body)
+		}
+	}
+
+	create := func(version string) string {
+		return `{"release_bundle_name":"app","release_bundle_version":"` + version + `","source_type":"artifacts",` +
+			`"source":{"artifacts":[{"path":"dev-local/app/app.bin"}]}}`
+	}
+	signedWith := func(key string) map[string]string {
+		return map[string]string{
+			"X-JFrog-Signing-Key": key,
+		}
+	}
+
+	tests := []struct {
+		name       string
+		call       call
+		wantStatus int
+	}{
+		{
+			name: "create naming a key that does not exist",
+			call: call{
+				method:  "POST",
+				path:    lc + "release_bundle?async=false",
+				body:    create("1"),
+				headers: signedWith("no-such-key"),
+			},
+			wantStatus: 400,
+		},
+		{
+			name: "create naming the release key",
+			call: call{
+				method:  "POST",
+				path:    lc + "release_bundle?async=false",
+				body:    create("2"),
+				headers: signedWith("release-bundles"),
+			},
+			wantStatus: 201,
+		},
+		{
+			name: "promote naming another key",
+			call: call{
+				method:  "POST",
+				path:    lc + "promotion/records/app/2?async=false",
+				body:    `{"environment":"PROD"}`,
+				headers: signedWith("no-such-key"),
+			},
+			wantStatus: 400,
+		},
+		{
+			name: "promote without a key",
+			call: call{
+				method: "POST",
+				path:   lc + "promotion/records/app/2?async=false",
+				body:   `{"environment":"PROD"}`,
+			},
+			wantStatus: 201,
+		},
+	}
+	for _, tt := range tests {
+		if resp, body := do(t, srv, tt.call); resp.StatusCode != tt.wantStatus {
+			t.Errorf("%s = %d %s, want %d", tt.name, resp.StatusCode, body, tt.wantStatus)
+		}
+	}
+
+	if resp, _ := do(t, srv, call{
+		method: "GET",
+		path:   lc + "release_bundle/statuses/app/1",
+	}); resp.StatusCode != 404 {
+		t.Errorf("status of the refused bundle = %d, want 404", resp.StatusCode)
+	}
+}
+
 func jsonNumber(n int64) string {
 	b, _ := json.Marshal(n)
 	return string(b)

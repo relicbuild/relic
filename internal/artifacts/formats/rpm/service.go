@@ -12,12 +12,12 @@ import (
 	"log/slog"
 	"path"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/ulikunitz/xz"
 
+	"relic/internal/artifacts/formats/indexcache"
 	"relic/internal/artifacts/repository"
 	"relic/internal/artifacts/signingkey"
 	"relic/internal/platform/telemetry"
@@ -44,24 +44,15 @@ const (
 	PropMetadata = "rpm.metadata"
 )
 
-const cacheTTL = 30 * time.Second
-
 const maxRepoMDBytes = 1 << 20
 
 // Service indexes and serves RPM repositories.
 type Service struct {
-	repos *repository.Service
-	keys  *signingkey.Service
-	log   *slog.Logger
-
-	mu    sync.Mutex
-	cache map[string]cachedRepodata
-	now   func() time.Time
-}
-
-type cachedRepodata struct {
-	files   Repodata
-	expires time.Time
+	repos   *repository.Service
+	keys    *signingkey.Service
+	log     *slog.Logger
+	now     func() time.Time
+	indexes *indexcache.Cache[Repodata]
 }
 
 // NewService returns a Service; it indexes .rpm files deployed to RPM
@@ -71,9 +62,11 @@ func NewService(repos *repository.Service, keySvc *signingkey.Service, log *slog
 		repos: repos,
 		keys:  keySvc,
 		log:   log,
-		cache: map[string]cachedRepodata{},
 		now:   time.Now,
 	}
+	s.indexes = indexcache.New[Repodata](string(Format), indexcache.DefaultSettings, func() time.Time {
+		return s.now()
+	})
 	repos.RegisterHook(Format, s.indexPackage)
 	repos.RegisterMetadata(isRepodataFile)
 
@@ -148,14 +141,9 @@ func (s *Service) indexPackage(ctx context.Context, r repository.Repository, ite
 }
 
 // ServesRepodata reports whether r generates repodata in folder root: a
-// local repository at its metadata depth, a virtual one at its root.
+// local or virtual repository at its metadata depth.
 func ServesRepodata(r repository.Repository, root string) bool {
-	switch {
-	case r.Format != Format:
-		return false
-	case r.Class == "virtual":
-		return root == ""
-	case r.Class == "remote":
+	if r.Format != Format || r.Class == repository.ClassRemote {
 		return false
 	}
 
@@ -167,29 +155,26 @@ func ServesRepodata(r repository.Repository, root string) bool {
 	return depth == int(r.Config.MetadataDepth)
 }
 
-// Repodata builds the repodata of folder root in r: the packages below it,
+// Repodata returns the repodata of folder root in r: the packages below it,
 // or for a virtual repository its members' packages and remote members'
 // upstream repodata.
-func (s *Service) Repodata(ctx context.Context, r repository.Repository, root string) (files Repodata, err error) {
-	shared := r.Class == "virtual" && !repository.Filtered(ctx)
-	key := r.Name + "\x00" + root
-
-	if shared {
-		s.mu.Lock()
-		c, ok := s.cache[key]
-		s.mu.Unlock()
-
-		if ok && s.now().Before(c.expires) {
-			return c.files, nil
-		}
+func (s *Service) Repodata(ctx context.Context, r repository.Repository, root string) (Repodata, error) {
+	if r.Class != repository.ClassVirtual || repository.Filtered(ctx) {
+		return s.buildRepodata(ctx, r, root)
 	}
 
+	return s.indexes.Get(ctx, r.Name+"\x00"+root, func(ctx context.Context) (Repodata, error) {
+		return s.buildRepodata(ctx, r, root)
+	})
+}
+
+func (s *Service) buildRepodata(ctx context.Context, r repository.Repository, root string) (files Repodata, err error) {
 	ctx, span := telemetry.Tracer().Start(ctx, "rpm.Repodata")
 	started := time.Now()
 
 	defer func() {
 		telemetry.End(span, err)
-		telemetry.RPMRepodataGenerated(ctx, string(r.Class), err, time.Since(started))
+		telemetry.IndexBuilt(ctx, string(Format), string(r.Class), err, time.Since(started))
 	}()
 
 	var (
@@ -202,7 +187,7 @@ func (s *Service) Repodata(ctx context.Context, r repository.Repository, root st
 
 	for _, m := range s.members(ctx, r, 0) {
 		if m.Class == "remote" {
-			u, changed, ok, err := s.upstream(ctx, m)
+			u, changed, ok, err := s.upstream(ctx, m, root)
 			if err != nil {
 				s.log.WarnContext(ctx, "skipping member repodata", "repo", r.Name, "member", m.Name, "error", err)
 				continue
@@ -216,12 +201,7 @@ func (s *Service) Repodata(ctx context.Context, r repository.Repository, root st
 			continue
 		}
 
-		memberRoot := root
-		if m.Name != r.Name {
-			memberRoot = ""
-		}
-
-		local, changed, err := s.entries(ctx, m, memberRoot)
+		local, changed, err := s.entries(ctx, m, root)
 		if err != nil {
 			return nil, err
 		}
@@ -237,21 +217,7 @@ func (s *Service) Repodata(ctx context.Context, r repository.Repository, root st
 		}
 	}
 
-	files, err = Build(entries, upstreams, modified)
-	if err != nil {
-		return nil, err
-	}
-
-	if shared {
-		s.mu.Lock()
-		s.cache[key] = cachedRepodata{
-			files:   files,
-			expires: s.now().Add(cacheTTL),
-		}
-		s.mu.Unlock()
-	}
-
-	return files, nil
+	return Build(entries, upstreams, modified)
 }
 
 func latest(a, b time.Time) time.Time {
@@ -322,12 +288,12 @@ type repoMDData struct {
 	} `xml:"data"`
 }
 
-func (s *Service) upstream(ctx context.Context, m repository.Repository) (UpstreamMetadata, time.Time, bool, error) {
-	if repository.Restricted(ctx, m.Name) {
-		return UpstreamMetadata{}, time.Time{}, false, nil
-	}
-
-	item, err := s.repos.Resolve(ctx, m.Name, path.Join(RepodataFolder, RepoMD))
+func (s *Service) upstream(
+	ctx context.Context,
+	m repository.Repository,
+	root string,
+) (UpstreamMetadata, time.Time, bool, error) {
+	item, err := s.repos.Resolve(ctx, m.Name, path.Join(root, RepodataFolder, RepoMD))
 	if errors.Is(err, repository.ErrNotFound) {
 		return UpstreamMetadata{}, time.Time{}, false, nil
 	}
@@ -349,7 +315,7 @@ func (s *Service) upstream(ctx context.Context, m repository.Repository) (Upstre
 	u := UpstreamMetadata{}
 
 	for _, d := range md.Data {
-		open := s.opener(ctx, m.Name, d.Location.Href)
+		open := s.opener(ctx, m.Name, path.Join(root, d.Location.Href))
 
 		switch d.Type {
 		case "primary":
@@ -363,6 +329,14 @@ func (s *Service) upstream(ctx context.Context, m repository.Repository) (Upstre
 
 	if u.Primary == nil {
 		return UpstreamMetadata{}, time.Time{}, false, fmt.Errorf("upstream %s lists no primary metadata", RepoMD)
+	}
+
+	if repository.Restricted(ctx, m.Name) {
+		if u.Hidden, err = hiddenPackages(u.Primary, func(location string) bool {
+			return !repository.Visible(ctx, m.Name, path.Join(root, location))
+		}); err != nil {
+			return UpstreamMetadata{}, time.Time{}, false, fmt.Errorf("upstream primary: %w", err)
+		}
 	}
 
 	return u, item.Modified, true, nil
@@ -494,8 +468,7 @@ func (s *Service) members(ctx context.Context, r repository.Repository, depth in
 	return out
 }
 
-// Sign returns repomd.xml.asc: repomd's detached signature with r's key
-// pair.
+// Sign returns repomd.xml.asc: repomd's detached signature by r's key pair.
 func (s *Service) Sign(ctx context.Context, r repository.Repository, repoMD []byte) ([]byte, error) {
 	key, _, err := s.keys.GPG(ctx, r.KeyPairRef())
 	if err != nil {
@@ -505,9 +478,9 @@ func (s *Service) Sign(ctx context.Context, r repository.Repository, repoMD []by
 	return signingkey.DetachSign(repoMD, key)
 }
 
-// PublicKey returns the armored public key that checks r's repomd.xml.asc.
+// PublicKey returns the armored public keys that check r's repomd.xml.asc.
 func (s *Service) PublicKey(ctx context.Context, r repository.Repository) (string, error) {
-	_, public, err := s.keys.GPG(ctx, r.KeyPairRef())
+	_, public, err := s.keys.GPGKeys(ctx, r.KeyPairRefs()...)
 
 	return public, err
 }

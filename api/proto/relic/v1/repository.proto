@@ -205,6 +205,10 @@ message Repository {
   // metadata_depth is how many folders below the root an RPM repository's
   // repodata folders are; each indexes the packages beneath it.
   int32 metadata_depth = 18;
+  // secondary_signing_key names a second key pair of an Alpine, Debian or RPM
+  // repository: it also signs Alpine and Debian metadata, and its public key
+  // is published with signing_key's.
+  string secondary_signing_key = 19;
 }
 
 message ListRepositoriesRequest {
@@ -229,6 +233,9 @@ message GetRepositorySigningKeyResponse {
   // key_pair names the key pair; Alpine clients name the key file after it.
   string key_pair = 1;
   string public_key = 2;
+  // secondary_key_pair names the repository's secondary signing key, if any.
+  string secondary_key_pair = 3;
+  string secondary_public_key = 4;
 }
 
 message GetRepositoryResponse {

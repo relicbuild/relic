@@ -184,3 +184,120 @@ func TestV2Entries(t *testing.T) {
 		t.Errorf("V2Entries with unreadable package metadata = %+v, nil; want the error", entries)
 	}
 }
+
+func TestSearchThroughARemote(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	repos, svc, _, local := newNuGet(t)
+	cached := nupkgOf(t, "Acme.Cached", "2.0.0")
+
+	var upstreamURL string
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/index.json":
+			_, _ = io.WriteString(w, `{"version":"3.0.0","resources":[`+
+				`{"@id":"`+upstreamURL+`/query","@type":"SearchQueryService/3.5.0"}]}`)
+		case "/query":
+			if r.URL.Query().Get("q") != "newtonsoft" {
+				_, _ = io.WriteString(w, `{"totalHits":0,"data":[]}`)
+				return
+			}
+
+			_, _ = io.WriteString(w, `{"totalHits":3,"data":[{"id":"Newtonsoft.Json","version":"13.0.3",`+
+				`"versions":[{"version":"12.0.1"},{"version":"13.0.3"}]}]}`)
+		case "/flatcontainer/acme.cached/2.0.0/acme.cached.2.0.0.nupkg":
+			_, _ = w.Write(cached)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(upstream.Close)
+
+	upstreamURL = upstream.URL
+
+	repos.AllowPrivateUpstreams(true)
+
+	remote := repository.Repository{
+		Name:   "nuget-remote",
+		Class:  repository.ClassRemote,
+		Format: nuget.Format,
+		Config: repository.Config{
+			Remote: &repository.RemoteConfig{
+				URL: upstream.URL,
+			},
+		},
+	}
+	virtual := repository.Repository{
+		Name:   "nuget",
+		Class:  repository.ClassVirtual,
+		Format: nuget.Format,
+		Config: repository.Config{
+			Virtual: &repository.VirtualConfig{
+				Members: []string{
+					local.Name,
+					remote.Name,
+				},
+			},
+		},
+	}
+
+	for _, r := range []repository.Repository{
+		remote,
+		virtual,
+	} {
+		if err := repos.CreateRepository(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := svc.Package(ctx, remote, "Acme.Cached", "2.0.0"); err != nil {
+		t.Fatalf("fetch through the remote: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name      string
+		repo      repository.Repository
+		q         string
+		want      string
+		versions  int
+		wantTotal int
+	}{
+		{
+			name:      "the upstream's search service through the virtual",
+			repo:      virtual,
+			q:         "newtonsoft",
+			want:      "Newtonsoft.Json",
+			versions:  2,
+			wantTotal: 3,
+		},
+		{
+			name:      "the upstream's search service through the remote",
+			repo:      remote,
+			q:         "NEWTONSOFT",
+			want:      "Newtonsoft.Json",
+			versions:  2,
+			wantTotal: 3,
+		},
+		{
+			name:      "a cached package the upstream's search does not list",
+			repo:      virtual,
+			q:         "cached",
+			want:      "Acme.Cached",
+			versions:  1,
+			wantTotal: 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			results, total, err := svc.Search(ctx, tc.repo, tc.q, 0, 20)
+			if err != nil || total != tc.wantTotal || len(results) != 1 || results[0].ID != tc.want ||
+				len(results[0].Versions) != tc.versions {
+				t.Errorf("Search(%s, %q) = %+v, %d, %v; want %s with %d versions of %d hits", tc.repo.Name, tc.q,
+					results, total, err, tc.want, tc.versions, tc.wantTotal)
+			}
+		})
+	}
+}

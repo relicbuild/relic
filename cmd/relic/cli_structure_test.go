@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -164,6 +167,16 @@ func TestAuthContextShowAndLogout(t *testing.T) {
 		t.Fatalf("show = %q, %v", out, err)
 	}
 
+	out, err = runRelic(t, nil, "--config", path, "auth", "context", "show", "-o", "json")
+	if err != nil || !strings.Contains(out, `"name": "dev"`) || strings.Contains(out, "token") {
+		t.Errorf("show -o json = %q, %v", out, err)
+	}
+
+	out, err = runRelic(t, nil, "--config", path, "auth", "context", "list", "-o", "yaml")
+	if err != nil || !strings.Contains(out, "name: prod") || !strings.Contains(out, "current: true") {
+		t.Errorf("list -o yaml = %q, %v", out, err)
+	}
+
 	if _, err := runRelic(
 		t,
 		nil,
@@ -189,6 +202,59 @@ func TestAuthContextShowAndLogout(t *testing.T) {
 
 	if _, err := runRelic(t, nil, "--config", path, "auth", "logout", "staging"); err == nil {
 		t.Error("logging out of a missing context succeeded")
+	}
+}
+
+func TestAuthLogoutSaysWhatItDid(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", r.Header.Get("Content-Type"))
+
+		if strings.Contains(r.Header.Get("Content-Type"), "json") {
+			_, _ = io.WriteString(w, "{}")
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+
+	var c cliConfig
+	c.set(cliContext{
+		Name:  "dev",
+		URL:   srv.URL,
+		Token: "dev-token",
+	})
+
+	if err := saveConfig(path, c); err != nil {
+		t.Fatal(err)
+	}
+
+	logout := func() (string, error) {
+		var errOut bytes.Buffer
+
+		root := newRootCmd(func(string) string {
+			return ""
+		})
+		root.SetOut(&bytes.Buffer{})
+		root.SetErr(&errOut)
+		root.SetArgs([]string{
+			"--config",
+			path,
+			"auth",
+			"logout",
+		})
+		err := root.ExecuteContext(t.Context())
+
+		return errOut.String(), err
+	}
+
+	if out, err := logout(); err != nil || !strings.Contains(out, "Signed out of "+srv.URL+" (context dev)") {
+		t.Errorf("logout = %q, %v", out, err)
+	}
+
+	if _, err := logout(); err == nil || !strings.Contains(err.Error(), "no current context") {
+		t.Errorf("logout without a current context = %v", err)
 	}
 }
 
@@ -235,6 +301,14 @@ func TestServerConfigMasksSecrets(t *testing.T) {
 		!strings.Contains(out, "RELIC_ADMIN_PASSWORD=********") ||
 		!strings.Contains(out, "RELIC_HTTP_LISTEN_ADDRESS=127.0.0.1:8090") {
 		t.Errorf("server config = %q", out)
+	}
+
+	out, err = runRelic(t, map[string]string{
+		"HOME": home,
+	}, "server", "config", "-o", "json")
+	if err != nil || strings.Contains(out, "hunter2") || !strings.Contains(out, `"RELIC_ADMIN_PASSWORD": "********"`) ||
+		!strings.Contains(out, `"RELIC_HTTP_LISTEN_ADDRESS": "127.0.0.1:8090"`) {
+		t.Errorf("server config -o json = %q, %v", out, err)
 	}
 }
 

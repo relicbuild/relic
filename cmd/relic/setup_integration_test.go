@@ -3,10 +3,13 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ProtonMail/go-crypto/openpgp"
 )
 
 func TestSetupCommands(t *testing.T) {
@@ -61,6 +64,31 @@ apiVersion: relic.build/v1
 kind: Repository
 metadata: {name: go-local}
 spec: {class: local, format: gomod}
+---
+apiVersion: relic.build/v1
+kind: Repository
+metadata: {name: deb-remote}
+spec: {class: remote, format: debian, remote: {url: "https://deb.example.org/debian"}}
+---
+apiVersion: relic.build/v1
+kind: Repository
+metadata: {name: rpm-remote}
+spec: {class: remote, format: rpm, remote: {url: "https://rpm.example.org/fedora"}}
+---
+apiVersion: relic.build/v1
+kind: Repository
+metadata: {name: rpm-deep}
+spec: {class: local, format: rpm, metadataDepth: 1}
+---
+apiVersion: relic.build/v1
+kind: Repository
+metadata: {name: apk-rotating}
+spec: {class: local, format: alpine, signingKey: apk-old, secondarySigningKey: apk-new}
+---
+apiVersion: relic.build/v1
+kind: Repository
+metadata: {name: deb-rotating}
+spec: {class: local, format: debian, signingKey: deb-old, secondarySigningKey: deb-new}
 `, "apply", "-f", "-"); err != nil {
 		t.Fatal(err)
 	}
@@ -205,6 +233,75 @@ spec: {class: local, format: gomod}
 
 	if !strings.Contains(string(dnfRepo), "repo_gpgcheck=1\n") {
 		t.Errorf("dnf repository file of a repository with the default key pair = %q, want repo_gpgcheck=1", dnfRepo)
+	}
+
+	if _, err := setup("apt", "deb-remote", "--distribution", "bookworm", "--write"); err != nil {
+		t.Fatal(err)
+	}
+
+	remoteList, _ := os.ReadFile(filepath.Join(root, "etc/apt/sources.list.d/relic-deb-remote.list"))
+	if !strings.HasPrefix(string(remoteList), "deb "+srv.URL) || strings.Contains(string(remoteList), "signed-by") {
+		t.Errorf("apt source of a remote = %q, want no signed-by, so the upstream's key applies", remoteList)
+	}
+
+	if _, err := os.Stat(filepath.Join(root, "etc/apt/keyrings/relic-deb-remote.asc")); !os.IsNotExist(err) {
+		t.Errorf("apt setup of a remote wrote Relic's key: %v", err)
+	}
+
+	if _, err := setup("dnf", "rpm-remote", "--write"); err != nil {
+		t.Fatal(err)
+	}
+
+	remoteRepo, _ := os.ReadFile(filepath.Join(root, "etc/yum.repos.d/relic-rpm-remote.repo"))
+	if !strings.Contains(string(remoteRepo), "repo_gpgcheck=0\n") || strings.Contains(string(remoteRepo), "gpgkey=") {
+		t.Errorf("dnf repository file of a remote = %q, want no check of Relic's signature", remoteRepo)
+	}
+
+	if _, err := setup("dnf", "rpm-deep", "--write"); err == nil || !strings.Contains(err.Error(), "--folder") {
+		t.Errorf("dnf for a repository with metadataDepth 1 and no folder = %v, want a --folder error", err)
+	}
+
+	if _, err := setup("dnf", "rpm-deep", "--folder", "f44", "--write"); err != nil {
+		t.Fatal(err)
+	}
+
+	deepRepo, _ := os.ReadFile(filepath.Join(root, "etc/yum.repos.d/relic-rpm-deep.repo"))
+	if !strings.Contains(string(deepRepo), "baseurl="+srv.URL+"/rpm/rpm-deep/f44\n") {
+		t.Errorf("dnf repository file of f44 = %q", deepRepo)
+	}
+
+	if _, err := setup("dnf", "rpm-local", "--folder", "f44"); err == nil {
+		t.Error("dnf took a folder for a repository with its repodata at its root")
+	}
+
+	out, err = setup("apk", "apk-local", "--branch", "v3.22", "--alpine-repositories", "main community")
+	if err != nil || !strings.Contains(out, ":<token>@") || strings.Contains(out, "%3C") ||
+		!strings.Contains(out, "/alpine/apk-local/v3.22/main\n") ||
+		!strings.Contains(out, "/alpine/apk-local/v3.22/community\n") {
+		t.Errorf("apk with two Alpine repositories = %q %v", out, err)
+	}
+
+	if _, err := setup("apk", "apk-rotating", "--branch", "v3.22", "--write"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range []string{
+		"apk-old",
+		"apk-new",
+	} {
+		if key, err := os.ReadFile(filepath.Join(root, "etc/apk/keys/"+name+".rsa.pub")); err != nil ||
+			!strings.Contains(string(key), "BEGIN PUBLIC KEY") {
+			t.Errorf("apk key %s of a repository with a secondary key = %q %v", name, key, err)
+		}
+	}
+
+	if _, err := setup("apt", "deb-rotating", "--distribution", "bookworm", "--write"); err != nil {
+		t.Fatal(err)
+	}
+
+	keyring, _ := os.ReadFile(filepath.Join(root, "etc/apt/keyrings/relic-deb-rotating.asc"))
+	if ring, err := openpgp.ReadArmoredKeyRing(bytes.NewReader(keyring)); err != nil || len(ring) != 2 {
+		t.Errorf("apt keyring of a repository with a secondary key holds %d keys, %v", len(ring), err)
 	}
 
 	out, err = setup("go", "go-local", "--private", "git.example.com/*")

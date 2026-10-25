@@ -18,6 +18,7 @@ import (
 	"relic/api/gen/relic/v1/relicv1connect"
 	"relic/internal/platform/database"
 	"relic/internal/scanning/scan"
+	"relic/internal/scanning/scan/blocking"
 )
 
 func TestQuarantineAppliesAsSoonAsItIsTurnedOn(t *testing.T) {
@@ -168,6 +169,16 @@ func TestQuarantine(t *testing.T) {
 		t.Errorf("a file Relic Scan does not scan = %d, want served", status)
 	}
 
+	explained, err := relicv1connect.NewScanServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL)).
+		ExplainDownload(ctx, &relicv1.ExplainDownloadRequest{
+			Repository: "held-remote",
+			Path:       "g/a/1.0/a-1.0.pom",
+		})
+	if err != nil || explained.GetBlocked() || explained.GetPolicy() != "quarantine" ||
+		explained.GetRule() != blocking.RuleNotHeld {
+		t.Errorf("explanation of a file quarantine does not hold = %v, %v; want it served and said so", explained, err)
+	}
+
 	quarantine := relicv1connect.NewQuarantineServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
 	list, err := quarantine.ListQuarantined(ctx, &relicv1.ListQuarantinedRequest{})
@@ -180,7 +191,7 @@ func TestQuarantine(t *testing.T) {
 		RepoKeys: []string{
 			"held-remote",
 		},
-		NamePattern: scan.ScannablePattern,
+		NamePattern: scan.PackagePattern,
 		MaxRows:     100,
 	})
 	if err != nil || len(candidates) != 4 {
@@ -204,20 +215,12 @@ func TestQuarantine(t *testing.T) {
 		t.Errorf("a released file = %d", status)
 	}
 
-	results := scan.NewResults(db)
 	for _, p := range []string{
 		"g/b/1.0/b-1.0.jar",
 		"g/c/1.0/c-1.0.jar",
 		"g/d/1.0/d-1.0.jar",
 	} {
-		if err := results.ImportSBOM(
-			ctx,
-			sha[p],
-			"x.jar",
-			[]byte(`{"bomFormat":"CycloneDX","components":[]}`),
-		); err != nil {
-			t.Fatal(err)
-		}
+		importMatchedSBOM(t, db, sha[p], "x.jar", `{"bomFormat":"CycloneDX","components":[]}`)
 	}
 
 	if err := db.InsertFinding(ctx, database.InsertFindingParams{

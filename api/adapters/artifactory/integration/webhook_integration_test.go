@@ -121,6 +121,54 @@ func TestWebhooks(t *testing.T) {
 		t.Errorf("the deploy's event = %s, %v", d[1].GetPayload(), err)
 	}
 
+	//nolint:gosec // G101: a made-up URL whose user info is refused
+	if _, err := hooks.PutWebhook(ctx, &relicv1.PutWebhookRequest{
+		Webhook: &relicv1.Webhook{
+			Name: "userinfo",
+			Url:  "https://u:pw@hooks.example.com/x",
+			Events: []string{
+				"artifact.deployed",
+			},
+		},
+	}); code(err) != connect.CodeInvalidArgument {
+		t.Errorf("a URL with a user and password: %v, want invalid argument", err)
+	}
+
+	if _, err := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL)).
+		PutUser(ctx, &relicv1.PutUserRequest{
+			User: &relicv1.User{
+				Name:     "watcher",
+				Email:    "watcher@example.com",
+				Password: "Watcher-pass-1",
+				Viewer:   true,
+			},
+		}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range []struct {
+		user, password, want string
+	}{
+		{
+			user:     "watcher",
+			password: "Watcher-pass-1",
+			want:     "https://hooks.example.com/",
+		},
+		{
+			user:     "admin",
+			password: "password",
+			want:     "https://hooks.example.com/relic",
+		},
+	} {
+		got, err := relicv1connect.NewWebhookServiceClient(apiClient(relicHTTP(tt.user, tt.password), srv.URL)).
+			GetWebhook(ctx, &relicv1.GetWebhookRequest{
+				Name: "deploys",
+			})
+		if err != nil || got.GetWebhook().GetUrl() != tt.want {
+			t.Errorf("%s reads the URL %q, %v; want %q", tt.user, got.GetWebhook().GetUrl(), err, tt.want)
+		}
+	}
+
 	if _, err := relicv1connect.NewWebhookServiceClient(apiClient(relicHTTP("", ""), srv.URL)).ListWebhooks(
 		ctx,
 		&relicv1.ListWebhooksRequest{},

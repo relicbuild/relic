@@ -262,6 +262,10 @@ func validate(w *Webhook) error {
 		return fmt.Errorf("%w: url must be an absolute http or https URL", ErrInvalid)
 	}
 
+	if u.User != nil {
+		return fmt.Errorf("%w: the URL cannot hold a user or password", ErrInvalid)
+	}
+
 	if w.Format == "" {
 		w.Format = FormatJSON
 	}

@@ -8,6 +8,12 @@ SELECT DISTINCT upper(c) FROM (
 WHERE lower(c) LIKE 'cve-%'
 ON CONFLICT (id) DO NOTHING;
 
+-- name: RegisterCVEs :exec
+INSERT INTO cves (id)
+SELECT DISTINCT upper(j.value) FROM json_each(@ids) j
+WHERE lower(j.value) LIKE 'cve-%'
+ON CONFLICT (id) DO NOTHING;
+
 -- name: KnownCVEIDs :many
 SELECT id FROM cves ORDER BY id;
 

@@ -10,6 +10,7 @@ import (
 
 	"relic/internal/access/auth"
 	"relic/internal/platform/database"
+	"relic/internal/platform/telemetry"
 )
 
 // ErrSelfCopy is returned when a copy or move targets its own source, a path
@@ -109,29 +110,7 @@ func (s *Service) CopyAll(ctx context.Context, inputs []CopyInput) error {
 	}
 
 	for _, plan := range plans {
-		for _, f := range plan.files {
-			it, err := s.Stat(ctx, plan.destination.Name, f)
-			if errors.Is(err, ErrNotFound) {
-				continue
-			}
-
-			if err != nil {
-				s.log.WarnContext(
-					ctx,
-					"skipping the hook of a copied file",
-					"repo",
-					plan.destination.Name,
-					"path",
-					f,
-					"error",
-					err,
-				)
-
-				continue
-			}
-
-			s.runHook(ctx, it)
-		}
+		s.runHooksOfCopies(ctx, plan.destination.Name, plan.files)
 
 		if plan.in.Move {
 			s.runHookOf(ctx, s.deleteHooks, plan.in.Source)
@@ -139,6 +118,23 @@ func (s *Service) CopyAll(ctx context.Context, inputs []CopyInput) error {
 	}
 
 	return nil
+}
+
+func (s *Service) runHooksOfCopies(ctx context.Context, repoKey string, files []string) {
+	for _, f := range files {
+		it, err := s.Stat(ctx, repoKey, f)
+		if errors.Is(err, ErrNotFound) {
+			continue
+		}
+
+		if err != nil {
+			s.log.WarnContext(ctx, "skipping the hook of a copied file", "repo", repoKey, "path", f, "error", err)
+
+			continue
+		}
+
+		s.runHook(ctx, it)
+	}
 }
 
 func (s *Service) planCopy(ctx context.Context, in CopyInput) (copyPlan, error) {
@@ -236,55 +232,8 @@ func copyInTx(ctx context.Context, q database.Querier, plan *copyPlan, now time.
 	}
 
 	for _, it := range items {
-		target := plan.path
-		if it.Path() != src.Path() {
-			target += "/" + strings.TrimPrefix(it.Path(), src.Path()+"/")
-		}
-
-		if plan.uploadLimit > 0 && !it.IsFolder() && it.Size > plan.uploadLimit {
-			return fmt.Errorf(
-				"%w: %s/%s has %d bytes, the limit is %d",
-				ErrTooLarge,
-				it.Repository,
-				it.Path(),
-				it.Size,
-				plan.uploadLimit,
-			)
-		}
-
-		if in.merge {
-			if err := deleteOtherKind(ctx, q, destination.Name, target, it.IsFolder()); err != nil {
-				return err
-			}
-		}
-
-		if in.keepFiles && !it.IsFolder() {
-			if err := checkVacant(ctx, q, destination.Name, target); err != nil {
-				return err
-			}
-		}
-
-		if in.Permits != nil && !it.IsFolder() {
-			if err := permitFileCopy(ctx, q, in, it, destination.Name, target); err != nil {
-				return err
-			}
-		}
-
-		if err := refuseOverwrite(ctx, q, in, it, destination.Name, target); err != nil {
-			return err
-		}
-
-		if err := copyItem(
-			ctx,
-			q,
-			it,
-			destination.Name,
-			target,
-			in.User,
-			now,
-			destination.Config.Immutable,
-			in.Move,
-		); err != nil {
+		target, err := copyEntry(ctx, q, plan, it, now)
+		if err != nil {
 			return err
 		}
 
@@ -321,6 +270,207 @@ func copyInTx(ctx context.Context, q database.Querier, plan *copyPlan, now time.
 	}
 
 	return nil
+}
+
+func copyEntry(ctx context.Context, q database.Querier, plan *copyPlan, it Item, now time.Time) (string, error) {
+	in, destination := plan.in, plan.destination
+
+	target := plan.path
+	if it.Path() != in.Source.Path() {
+		target += "/" + strings.TrimPrefix(it.Path(), in.Source.Path()+"/")
+	}
+
+	if plan.uploadLimit > 0 && !it.IsFolder() && it.Size > plan.uploadLimit {
+		return "", fmt.Errorf(
+			"%w: %s/%s has %d bytes, the limit is %d",
+			ErrTooLarge,
+			it.Repository,
+			it.Path(),
+			it.Size,
+			plan.uploadLimit,
+		)
+	}
+
+	if in.merge {
+		if err := deleteOtherKind(ctx, q, destination.Name, target, it.IsFolder()); err != nil {
+			return "", err
+		}
+	}
+
+	if in.keepFiles && !it.IsFolder() {
+		if err := checkVacant(ctx, q, destination.Name, target); err != nil {
+			return "", err
+		}
+	}
+
+	if in.Permits != nil && !it.IsFolder() {
+		if err := permitFileCopy(ctx, q, in, it, destination.Name, target); err != nil {
+			return "", err
+		}
+	}
+
+	if err := refuseOverwrite(ctx, q, in, it, destination.Name, target); err != nil {
+		return "", err
+	}
+
+	if err := copyItem(
+		ctx,
+		q,
+		it,
+		destination.Name,
+		target,
+		in.User,
+		now,
+		destination.Config.Immutable,
+		in.Move,
+	); err != nil {
+		return "", err
+	}
+
+	return target, nil
+}
+
+const (
+	moveBatchItems    = 100
+	moveBatchDuration = 250 * time.Millisecond
+)
+
+func (s *Service) moveFilesInBatches(ctx context.Context, in CopyInput) (batched bool, err error) {
+	items, err := subtree(ctx, s.db, in.Source)
+	if err != nil {
+		return false, err
+	}
+
+	if len(items) <= moveBatchItems {
+		return false, nil
+	}
+
+	ctx, span := telemetry.Tracer().Start(ctx, "repository.move_in_batches")
+	defer func() {
+		telemetry.End(span, err)
+	}()
+
+	plan, err := s.planCopy(ctx, in)
+	if err != nil {
+		return true, err
+	}
+
+	now := s.now()
+	prepare := in.before
+
+	for len(items) > 0 {
+		start := time.Now()
+
+		done, moved, err := s.moveBatch(ctx, &plan, items, prepare, now)
+		if err != nil {
+			return true, err
+		}
+
+		telemetry.MoveBatch(ctx, done, time.Since(start))
+
+		prepare = nil
+		items = items[done:]
+
+		s.runHooksOfCopies(ctx, plan.destination.Name, moved)
+	}
+
+	return true, nil
+}
+
+func (s *Service) moveBatch(
+	ctx context.Context,
+	plan *copyPlan,
+	items []Item,
+	prepare func(q database.Querier) error,
+	now time.Time,
+) (int, []string, error) {
+	var (
+		done  int
+		moved []string
+	)
+
+	err := s.db.WithTx(ctx, func(q database.Querier) error {
+		done, moved = 0, nil
+
+		if prepare != nil {
+			if err := prepare(q); err != nil {
+				return err
+			}
+		}
+
+		if err := checkHolds(ctx, q, plan.in.Source.Repository, plan.in.Source.Path()); err != nil {
+			return err
+		}
+
+		start := time.Now()
+
+		for _, it := range items {
+			if done == moveBatchItems || time.Since(start) > moveBatchDuration {
+				break
+			}
+
+			target, err := moveBatchEntry(ctx, q, plan, it, now)
+			if err != nil {
+				return err
+			}
+
+			done++
+
+			if target != "" {
+				moved = append(moved, target)
+			}
+		}
+
+		return nil
+	})
+
+	return done, moved, err
+}
+
+func moveBatchEntry(
+	ctx context.Context,
+	q database.Querier,
+	plan *copyPlan,
+	listed Item,
+	now time.Time,
+) (string, error) {
+	row, err := q.GetItem(ctx, database.GetItemParams{
+		RepoKey: listed.Repository,
+		Path:    listed.Parent,
+		Name:    listed.Name,
+	})
+	if database.IsNoRows(err) {
+		return "", nil
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("get %s/%s: %w", listed.Repository, listed.Path(), err)
+	}
+
+	it := domainItem(row)
+
+	if it.IsFolder() {
+		_, err := copyEntry(ctx, q, plan, it, now)
+
+		return "", err
+	}
+
+	if plan.in.RefuseFile != nil {
+		if err := plan.in.RefuseFile(ctx, it); err != nil {
+			return "", err
+		}
+	}
+
+	target, err := copyEntry(ctx, q, plan, it, now)
+	if err != nil {
+		return "", err
+	}
+
+	if _, err := deleteItem(ctx, q, it); err != nil {
+		return "", err
+	}
+
+	return target, nil
 }
 
 var errDryRun = errors.New("dry run")

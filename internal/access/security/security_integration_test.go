@@ -340,6 +340,156 @@ func TestDeletingAPrincipalRemovesItsGrants(t *testing.T) {
 	}
 }
 
+func TestPermissionsRefuseGrantsToPrincipalsThatDoNotExist(t *testing.T) {
+	t.Parallel()
+
+	read := []auth.Action{
+		auth.ActionRead,
+	}
+	permission := func(grants ...security.Grant) security.Permission {
+		return security.Permission{
+			Name: "libs-readers",
+			Rules: []security.Rule{
+				{
+					Resource: security.ResourceRepository,
+					Selector: auth.Selector{
+						Repositories: []string{
+							"libs",
+						},
+					},
+					Grants: grants,
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name    string
+		grant   security.Grant
+		wantErr error
+	}{
+		{
+			name: "an existing user",
+			grant: security.Grant{
+				User:    "alice",
+				Actions: read,
+			},
+		},
+		{
+			name: "an existing group",
+			grant: security.Grant{
+				Group:   "developers",
+				Actions: read,
+			},
+		},
+		{
+			name: "a user that does not exist",
+			grant: security.Grant{
+				User:    "ghostuser",
+				Actions: read,
+			},
+			wantErr: security.ErrInvalid,
+		},
+		{
+			name: "a group that does not exist",
+			grant: security.Grant{
+				Group:   "ghostgroup",
+				Actions: read,
+			},
+			wantErr: security.ErrInvalid,
+		},
+		{
+			name: "a user named like an existing group",
+			grant: security.Grant{
+				User:    "developers",
+				Actions: read,
+			},
+			wantErr: security.ErrInvalid,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			db := databasetest.NewDB(t)
+			s := security.NewService(db, slog.New(slog.DiscardHandler))
+
+			if err := db.CreateUser(ctx, database.CreateUserParams{
+				ID:           uuid.NewV7(),
+				Username:     "alice",
+				PasswordHash: "x",
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := s.CreateGroup(ctx, security.Group{
+				Name: "developers",
+			}, nil); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := s.CreatePermission(ctx, permission(tt.grant)); !errors.Is(err, tt.wantErr) {
+				t.Errorf("CreatePermission = %v, want %v", err, tt.wantErr)
+			}
+
+			if err := s.CreatePermission(ctx, permission(security.Grant{
+				User:    "alice",
+				Actions: read,
+			})); err != nil && !errors.Is(err, security.ErrExists) {
+				t.Fatal(err)
+			}
+
+			if err := s.UpdatePermission(ctx, permission(tt.grant)); !errors.Is(err, tt.wantErr) {
+				t.Errorf("UpdatePermission = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestUpdatePermissionKeepsAStoredGrantToAMissingPrincipal(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db := databasetest.NewDB(t)
+	s := security.NewService(db, slog.New(slog.DiscardHandler))
+
+	if err := db.InsertPermission(ctx, database.InsertPermissionParams{
+		Name: "legacy",
+		Config: []byte(
+			`{"rules":[{"resource":"repository","selector":{"repositories":["libs"]},"grants":[{"user":"gone","actions":["read"]}]}]}`,
+		),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := s.UpdatePermission(ctx, security.Permission{
+		Name: "legacy",
+		Rules: []security.Rule{
+			{
+				Resource: security.ResourceRepository,
+				Selector: auth.Selector{
+					Repositories: []string{
+						"libs",
+						"docs",
+					},
+				},
+				Grants: []security.Grant{
+					{
+						User: "gone",
+						Actions: []auth.Action{
+							auth.ActionRead,
+						},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Errorf("UpdatePermission keeping a stored grant = %v", err)
+	}
+}
+
 func TestUserChangesKeepAnEnabledAdministrator(t *testing.T) {
 	t.Parallel()
 
@@ -532,6 +682,16 @@ func TestPutUserRefusesNamesThatCannotSignIn(t *testing.T) {
 			wantErr: security.ErrInvalid,
 		},
 		{
+			name:    "the name of unauthenticated requests",
+			user:    "anonymous",
+			wantErr: security.ErrInvalid,
+		},
+		{
+			name:    "the name of unauthenticated requests in capitals",
+			user:    "Anonymous",
+			wantErr: security.ErrInvalid,
+		},
+		{
 			name:    "differs from an existing user only by case",
 			user:    "Existing",
 			wantErr: security.ErrExists,
@@ -571,6 +731,146 @@ func TestPutUserRefusesNamesThatCannotSignIn(t *testing.T) {
 
 			if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
 				t.Fatalf("PutUser(%q) = %v, want %v", tt.user, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestPutUserRefusesShortPasswords(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		password string
+		wantErr  error
+	}{
+		{
+			name:     "one character",
+			password: "a",
+			wantErr:  security.ErrInvalid,
+		},
+		{
+			name:     "one character short",
+			password: strings.Repeat("a", security.MinPasswordLength-1),
+			wantErr:  security.ErrInvalid,
+		},
+		{
+			name:     "short in characters, long in bytes",
+			password: strings.Repeat("é", security.MinPasswordLength-1),
+			wantErr:  security.ErrInvalid,
+		},
+		{
+			name:     "the minimum length",
+			password: strings.Repeat("a", security.MinPasswordLength),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			s := security.NewService(databasetest.NewDB(t), slog.New(slog.DiscardHandler))
+
+			_, err := s.PutUser(ctx, security.User{
+				Name:     "new",
+				Email:    "new@example.com",
+				Password: tt.password,
+			})
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("PutUser of a new user = %v, want %v", err, tt.wantErr)
+			}
+
+			if _, err := s.PutUser(ctx, security.User{
+				Name:     "existing",
+				Email:    "existing@example.com",
+				Password: "Existing-pass-1",
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = s.PutUser(ctx, security.User{
+				Name:     "existing",
+				Email:    "existing@example.com",
+				Password: tt.password,
+			})
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("PutUser of an existing user = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestChangePassword(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		user    string
+		next    string
+		wantErr error
+	}{
+		{
+			name: "an internal user",
+			user: "alice",
+			next: "Alice-new-pass-1",
+		},
+		{
+			name:    "a short password",
+			user:    "alice",
+			next:    "short",
+			wantErr: security.ErrInvalid,
+		},
+		{
+			name:    "a single sign-on user",
+			user:    "sam",
+			next:    "Sam-new-pass-12",
+			wantErr: security.ErrInvalid,
+		},
+		{
+			name:    "a user that does not exist",
+			user:    "nobody",
+			next:    "Nobody-pass-123",
+			wantErr: security.ErrInvalid,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			db := databasetest.NewDB(t)
+			s := security.NewService(db, slog.New(slog.DiscardHandler))
+
+			if _, err := s.PutUser(ctx, security.User{
+				Name:     "alice",
+				Password: "Alice-pass-123",
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := db.CreateSsoUser(ctx, database.CreateSsoUserParams{
+				ID:               uuid.NewV7(),
+				Username:         "sam",
+				IdentityProvider: "corp",
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := s.ChangePassword(ctx, tt.user, tt.next); !errors.Is(err, tt.wantErr) {
+				t.Fatalf("ChangePassword(%s) = %v, want %v", tt.user, err, tt.wantErr)
+			}
+
+			if tt.wantErr != nil {
+				return
+			}
+
+			u, err := db.GetUserByUsername(ctx, tt.user)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if ok, err := auth.VerifyPassword(tt.next, u.PasswordHash); err != nil || !ok {
+				t.Errorf("the new password does not verify: %v %v", ok, err)
 			}
 		})
 	}
@@ -629,6 +929,94 @@ func TestConcurrentCreationsOfCaseVariantsLeaveOneUser(t *testing.T) {
 		if created != 1 {
 			t.Errorf("%d concurrent creations of variants of %s succeeded, want 1", created, base)
 		}
+	}
+}
+
+func TestPutGroupRefusesANameThatDiffersOnlyByCase(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	s := security.NewService(databasetest.NewDB(t), slog.New(slog.DiscardHandler))
+
+	if _, err := s.PutGroup(ctx, security.Group{
+		Name:  "Admins2",
+		Admin: true,
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.PutGroup(ctx, security.Group{
+		Name: "admins2",
+	}, nil); !errors.Is(err, security.ErrExists) {
+		t.Errorf("PutGroup(admins2) beside Admins2 = %v, want %v", err, security.ErrExists)
+	}
+
+	if err := s.CreateGroup(ctx, security.Group{
+		Name: "ADMINS2",
+	}, nil); !errors.Is(err, security.ErrExists) {
+		t.Errorf("CreateGroup(ADMINS2) beside Admins2 = %v, want %v", err, security.ErrExists)
+	}
+
+	if _, err := s.PutGroup(ctx, security.Group{
+		Name:        "Admins2",
+		Description: "administrators",
+		Admin:       true,
+	}, nil); err != nil {
+		t.Errorf("PutGroup(Admins2) under its own name = %v", err)
+	}
+
+	groups, err := s.ListGroups(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(groups) != 1 {
+		t.Errorf("groups = %v, want only Admins2", groups)
+	}
+}
+
+func TestConcurrentCreationsOfCaseVariantsLeaveOneGroup(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	s := security.NewService(databasetest.NewDB(t), slog.New(slog.DiscardHandler))
+	variants := []string{
+		"eng team",
+		"ENG TEAM",
+		"Eng Team",
+		"eNG tEAM",
+	}
+	start := make(chan struct{})
+	results := make(chan error, len(variants))
+
+	var creates sync.WaitGroup
+	for _, name := range variants {
+		creates.Go(func() {
+			<-start
+
+			results <- s.CreateGroup(ctx, security.Group{
+				Name: name,
+			}, nil)
+		})
+	}
+
+	close(start)
+	creates.Wait()
+	close(results)
+
+	created := 0
+
+	for err := range results {
+		switch {
+		case err == nil:
+			created++
+		case !errors.Is(err, security.ErrExists):
+			t.Errorf("create a variant of eng team: %v", err)
+		}
+	}
+
+	if created != 1 {
+		t.Errorf("%d concurrent creations of variants of eng team succeeded, want 1", created)
 	}
 }
 

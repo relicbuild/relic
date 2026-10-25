@@ -171,7 +171,7 @@ func (d Dependencies) archiveEntry(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, connect.NewError(connect.CodeUnauthenticated, "sign in first"))
 		return
 	case r.Method != http.MethodGet:
-		writeHTTPError(w, connect.NewError(connect.CodeUnimplemented, "method not allowed"))
+		writeMethodNotAllowed(w, http.MethodGet)
 		return
 	case entry == "":
 		writeHTTPError(

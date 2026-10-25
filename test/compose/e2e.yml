@@ -1,0 +1,18 @@
+services:
+  relic-server:
+    build:
+      labels:
+        build.relic.e2e: "true"
+    mem_limit: 1536m
+    environment:
+      RELIC_SCAN_VULNERABILITY_DATABASE_URL: http://grype-mirror/latest.json
+  relic-worker:
+    mem_limit: 1536m
+    environment:
+      RELIC_SCAN_VULNERABILITY_DATABASE_URL: http://grype-mirror/latest.json
+  postgresql:
+    mem_limit: 512m
+  seaweedfs-master:
+    mem_limit: 256m
+  seaweedfs-filer:
+    mem_limit: 512m

@@ -213,6 +213,17 @@ func (h *Handler) dockerAllowed(w http.ResponseWriter, r *http.Request, repoKey,
 		return false
 	}
 
+	usable, err := h.usable(r, repoKey)
+	if err != nil {
+		h.writeError(w, r, err)
+		return false
+	}
+
+	if !usable {
+		RegistryError(w, http.StatusNotFound, "NAME_UNKNOWN", "repository name not known to registry")
+		return false
+	}
+
 	RegistryError(w, http.StatusForbidden, "DENIED", "requested access to the resource is denied")
 
 	return false
@@ -806,10 +817,94 @@ func (h *Handler) dockerTags(w http.ResponseWriter, r *http.Request, req dockerR
 }
 
 func (h *Handler) dockerCatalog(w http.ResponseWriter, r *http.Request, only string) {
-	all, err := h.repos.ListRepositories(r.Context(), "", "")
+	names, err := h.readableImages(r, only)
 	if err != nil {
 		h.writeError(w, r, err)
 		return
+	}
+
+	names = paginate(names, r)
+	if names == nil {
+		names = []string{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"repositories": names,
+	})
+}
+
+// RegistryV1Prefix is where Relic serves the registry v1 search API, which
+// docker search uses, and its ping.
+const RegistryV1Prefix = "/v1/"
+
+func (h *Handler) dockerV1Ping(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]bool{
+		"standalone": true,
+	})
+}
+
+const (
+	defaultSearchResults = 25
+	maxSearchResults     = 100
+)
+
+func (h *Handler) dockerSearch(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	query := strings.ToLower(q.Get("q"))
+
+	perPage, err := strconv.Atoi(q.Get("n"))
+	if err != nil || perPage < 1 {
+		perPage = defaultSearchResults
+	}
+
+	perPage = min(perPage, maxSearchResults)
+
+	page, err := strconv.Atoi(q.Get("page"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+
+	names, err := h.readableImages(r, "")
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+
+	names = slices.DeleteFunc(names, func(name string) bool {
+		return !strings.Contains(strings.ToLower(name), query)
+	})
+
+	type result struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		StarCount   int    `json:"star_count"`
+		IsOfficial  bool   `json:"is_official"`
+		IsAutomated bool   `json:"is_automated"`
+	}
+
+	results := []result{}
+
+	start := min((page-1)*perPage, len(names))
+	for _, name := range names[start:min(start+perPage, len(names))] {
+		results = append(results, result{
+			Name: name,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"query":       q.Get("q"),
+		"num_results": len(names),
+		"num_pages":   (len(names) + perPage - 1) / perPage,
+		"page":        page,
+		"page_size":   perPage,
+		"results":     results,
+	})
+}
+
+func (h *Handler) readableImages(r *http.Request, only string) ([]string, error) {
+	all, err := h.repos.ListRepositories(r.Context(), "", "")
+	if err != nil {
+		return nil, err
 	}
 
 	repos := slices.DeleteFunc(all, func(rp repository.Repository) bool {
@@ -826,8 +921,7 @@ func (h *Handler) dockerCatalog(w http.ResponseWriter, r *http.Request, only str
 		for _, member := range h.ReadRepos(r.Context(), rp) {
 			images, err := h.docker.Images(r.Context(), member.Name)
 			if err != nil {
-				h.writeError(w, r, err)
-				return
+				return nil, err
 			}
 
 			for _, image := range images {
@@ -846,14 +940,7 @@ func (h *Handler) dockerCatalog(w http.ResponseWriter, r *http.Request, only str
 
 	slices.Sort(names)
 
-	names = paginate(slices.Compact(names), r)
-	if names == nil {
-		names = []string{}
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"repositories": names,
-	})
+	return slices.Compact(names), nil
 }
 
 func paginate(list []string, r *http.Request) []string {

@@ -5,6 +5,7 @@ package backgroundjobs_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -274,5 +275,134 @@ func TestWorkerTelemetry(t *testing.T) {
 		"kind": "not-a-kind",
 	}) != 0 {
 		t.Error("an unregistered kind became a label value")
+	}
+}
+
+func TestWorkerFreesTheKindOfAJobLeftRunningByACrash(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db := databasetest.NewDB(t)
+	log := slog.New(slog.DiscardHandler)
+
+	inserter, err := backgroundjobs.NewInsertClient(db, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	abandoned := map[string]time.Duration{
+		backgroundjobs.CleanupArgs{}.Kind():      30 * time.Minute,
+		backgroundjobs.StorageCheckArgs{}.Kind(): 3 * time.Hour,
+	}
+	ids := map[string]int64{}
+
+	for _, args := range []river.JobArgs{
+		backgroundjobs.CleanupArgs{},
+		backgroundjobs.StorageCheckArgs{},
+	} {
+		res, err := inserter.Insert(ctx, args, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		ids[args.Kind()] = res.Job.ID
+		markRunningSince(t, db, res.Job.ID, abandoned[args.Kind()])
+	}
+
+	blobs, err := objectstore.NewFilesystem(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	repos := repository.NewService(db, blobs, log)
+
+	worker, err := backgroundjobs.NewWorkerClient(db, repos, replication.NewPusher(db, repos, nil, log), nil, nil,
+		config.GarbageCollection{
+			Interval:    time.Hour,
+			GracePeriod: time.Hour,
+		}, config.Trash{
+			Retention: time.Hour,
+		}, config.Audit{}, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := worker.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+
+		_ = worker.Stop(stopCtx)
+	})
+
+	for kind, id := range ids {
+		waitForJobState(t, db, kind, id, "discarded")
+
+		res, err := inserter.Insert(ctx, kindArgs(kind), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if res.UniqueSkippedAsDuplicate || res.Job.ID == id {
+			t.Errorf("queueing %s after the rescue returned the abandoned job %d", kind, id)
+		}
+	}
+}
+
+func kindArgs(kind string) river.JobArgs {
+	if kind == (backgroundjobs.CleanupArgs{}).Kind() {
+		return backgroundjobs.CleanupArgs{}
+	}
+
+	return backgroundjobs.StorageCheckArgs{}
+}
+
+func markRunningSince(t *testing.T, db *database.DB, id int64, ago time.Duration) {
+	t.Helper()
+
+	query := fmt.Sprintf(`UPDATE river_job
+SET state = 'running', attempt = 1, attempted_at = now() - interval '%d seconds',
+    attempted_by = ARRAY['crashed-worker']
+WHERE id = %d`, int(ago.Seconds()), id)
+	if db.SQLite() {
+		query = fmt.Sprintf(`UPDATE river_job
+SET state = 'running', attempt = 1, attempted_at = datetime('now', '-%d seconds', 'subsec'),
+    attempted_by = json_array('crashed-worker')
+WHERE id = %d`, int(ago.Seconds()), id)
+	}
+
+	rows, err := db.Query(t.Context(), query)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows.Close()
+}
+
+func waitForJobState(t *testing.T, db *database.DB, kind string, id int64, state string) {
+	t.Helper()
+
+	deadline := time.Now().Add(time.Minute)
+
+	for {
+		jobs, err := db.Jobs(t.Context(), kind, "", 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for _, job := range jobs {
+			if job.ID == id && job.State == state {
+				return
+			}
+		}
+
+		if time.Now().After(deadline) {
+			t.Fatalf("%s job %d not %s after a minute: %+v", kind, id, state, jobs)
+		}
+
+		time.Sleep(200 * time.Millisecond)
 	}
 }

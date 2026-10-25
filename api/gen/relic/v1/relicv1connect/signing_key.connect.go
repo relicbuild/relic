@@ -30,6 +30,9 @@ const (
 	// SigningKeyServiceGetPublicKeyProcedure is the procedure name of the SigningKeyService's
 	// GetPublicKey RPC.
 	SigningKeyServiceGetPublicKeyProcedure = "/relic.v1.SigningKeyService/GetPublicKey"
+	// SigningKeyServiceDeleteKeyPairProcedure is the procedure name of the SigningKeyService's
+	// DeleteKeyPair RPC.
+	SigningKeyServiceDeleteKeyPairProcedure = "/relic.v1.SigningKeyService/DeleteKeyPair"
 )
 
 var (
@@ -47,6 +50,13 @@ var (
 			Procedure:  SigningKeyServiceGetPublicKeyProcedure,
 		}
 	})
+	signingKeyServiceDeleteKeyPairSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_relic_v1_signing_key_proto.Services().ByName("SigningKeyService").Methods().ByName("DeleteKeyPair"),
+			Procedure:  SigningKeyServiceDeleteKeyPairProcedure,
+		}
+	})
 )
 
 // SigningKeyServiceClient is a client for the relic.v1.SigningKeyService service.
@@ -55,6 +65,9 @@ type SigningKeyServiceClient interface {
 	ListKeyPairs(context.Context, *v1.ListKeyPairsRequest) (*v1.ListKeyPairsResponse, error)
 	// GetPublicKey returns a key pair's public key, for clients to trust.
 	GetPublicKey(context.Context, *v1.GetPublicKeyRequest) (*v1.GetPublicKeyResponse, error)
+	// DeleteKeyPair deletes a key pair no repository signs with and Relic does
+	// not sign release manifests with.
+	DeleteKeyPair(context.Context, *v1.DeleteKeyPairRequest) (*v1.DeleteKeyPairResponse, error)
 }
 
 // NewSigningKeyServiceClient constructs a client for the relic.v1.SigningKeyService service.
@@ -69,6 +82,9 @@ type SigningKeyServiceHandler interface {
 	ListKeyPairs(context.Context, *v1.ListKeyPairsRequest) (*v1.ListKeyPairsResponse, error)
 	// GetPublicKey returns a key pair's public key, for clients to trust.
 	GetPublicKey(context.Context, *v1.GetPublicKeyRequest) (*v1.GetPublicKeyResponse, error)
+	// DeleteKeyPair deletes a key pair no repository signs with and Relic does
+	// not sign release manifests with.
+	DeleteKeyPair(context.Context, *v1.DeleteKeyPairRequest) (*v1.DeleteKeyPairResponse, error)
 }
 
 // RegisterSigningKeyServiceHandler registers svc as the relic.v1.SigningKeyService implementation
@@ -78,6 +94,7 @@ func RegisterSigningKeyServiceHandler(server *connect.Server, svc SigningKeyServ
 	server.Register(
 		connect.Method{Spec: signingKeyServiceListKeyPairsSpec(), Handler: adapter.listKeyPairs},
 		connect.Method{Spec: signingKeyServiceGetPublicKeySpec(), Handler: adapter.getPublicKey},
+		connect.Method{Spec: signingKeyServiceDeleteKeyPairSpec(), Handler: adapter.deleteKeyPair},
 	)
 }
 
@@ -90,6 +107,10 @@ func (UnimplementedSigningKeyServiceHandler) ListKeyPairs(context.Context, *v1.L
 
 func (UnimplementedSigningKeyServiceHandler) GetPublicKey(context.Context, *v1.GetPublicKeyRequest) (*v1.GetPublicKeyResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.SigningKeyService.GetPublicKey is not implemented")
+}
+
+func (UnimplementedSigningKeyServiceHandler) DeleteKeyPair(context.Context, *v1.DeleteKeyPairRequest) (*v1.DeleteKeyPairResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "relic.v1.SigningKeyService.DeleteKeyPair is not implemented")
 }
 
 type signingKeyServiceClient struct {
@@ -107,6 +128,14 @@ func (c *signingKeyServiceClient) ListKeyPairs(ctx context.Context, req *v1.List
 func (c *signingKeyServiceClient) GetPublicKey(ctx context.Context, req *v1.GetPublicKeyRequest) (*v1.GetPublicKeyResponse, error) {
 	var res v1.GetPublicKeyResponse
 	if err := c.client.CallUnary(ctx, signingKeyServiceGetPublicKeySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *signingKeyServiceClient) DeleteKeyPair(ctx context.Context, req *v1.DeleteKeyPairRequest) (*v1.DeleteKeyPairResponse, error) {
+	var res v1.DeleteKeyPairResponse
+	if err := c.client.CallUnary(ctx, signingKeyServiceDeleteKeyPairSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -132,6 +161,18 @@ func (h signingKeyServiceHandler) getPublicKey(ctx context.Context, _ connect.Sp
 		return err
 	}
 	res, err := h.svc.GetPublicKey(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h signingKeyServiceHandler) deleteKeyPair(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DeleteKeyPairRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.DeleteKeyPair(ctx, &req)
 	if err != nil {
 		return err
 	}

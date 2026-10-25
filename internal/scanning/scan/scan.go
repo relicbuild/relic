@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -278,10 +279,12 @@ type Exec struct {
 	MaxOutput int64
 }
 
+var defaultExecTimeout = 10 * time.Minute
+
 func (e Exec) run(ctx context.Context, args ...string) ([]byte, error) {
 	timeout := e.Timeout
 	if timeout <= 0 {
-		timeout = 10 * time.Minute
+		timeout = defaultExecTimeout
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -319,7 +322,11 @@ func (e Exec) run(ctx context.Context, args ...string) ([]byte, error) {
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w: %s", filepath.Base(e.Path), err, strings.TrimSpace(stderr.String()))
+		if detail := strings.TrimSpace(stderr.String()); detail != "" {
+			return nil, fmt.Errorf("%s: %w: %s", filepath.Base(e.Path), err, detail)
+		}
+
+		return nil, fmt.Errorf("%s: %w", filepath.Base(e.Path), err)
 	}
 
 	return stdout.Bytes(), nil
@@ -383,7 +390,7 @@ func (g Grype) Match(ctx context.Context, sbomPath string) (Report, error) {
 	e := g.Exec
 	e.Env = g.env()
 
-	out, err := e.run(ctx, "sbom:"+sbomPath, "-o", "json", "-q")
+	out, err := e.run(ctx, "sbom:"+sbomPath, "-o", "json")
 	if err != nil {
 		if _, dbErr := g.DBBuilt(ctx); errors.Is(dbErr, ErrInvalidDB) {
 			return Report{}, dbErr
@@ -395,10 +402,71 @@ func (g Grype) Match(ctx context.Context, sbomPath string) (Report, error) {
 	return ParseGrype(out)
 }
 
-// HasDB reports whether a vulnerability database is installed.
+const databaseTimeout = 30 * time.Minute
+
+const abandonedDownloads = "grype-db-download*"
+
+var databaseChanges sync.Mutex
+
+// HasDB reports whether a vulnerability database is installed: an
+// import.json beside it, in a directory named after its schema version.
 func (g Grype) HasDB() bool {
 	found, err := filepath.Glob(filepath.Join(g.DatabaseDir, "*", "import.json"))
-	return err == nil && len(found) > 0
+	if err != nil {
+		return false
+	}
+
+	return slices.ContainsFunc(found, func(path string) bool {
+		schema := filepath.Base(filepath.Dir(path))
+		if schema == "" || strings.Trim(schema, "0123456789") != "" {
+			return false
+		}
+
+		st, err := os.Stat(path)
+
+		return err == nil && st.Size() > 0
+	})
+}
+
+func (g Grype) databaseExec() Exec {
+	e := g.Exec
+	e.Env = g.env()
+
+	if e.Timeout <= 0 {
+		e.Timeout = databaseTimeout
+	}
+
+	return e
+}
+
+func (g Grype) changeDB(ctx context.Context, args ...string) error {
+	databaseChanges.Lock()
+	defer databaseChanges.Unlock()
+
+	if err := g.removeAbandonedDownloads(); err != nil {
+		return err
+	}
+
+	_, err := g.databaseExec().run(ctx, args...)
+
+	return errors.Join(err, g.removeAbandonedDownloads())
+}
+
+func (g Grype) removeAbandonedDownloads() error {
+	found, err := filepath.Glob(filepath.Join(g.DatabaseDir, abandonedDownloads))
+	if err != nil {
+		return fmt.Errorf("find abandoned vulnerability database downloads: %w", err)
+	}
+
+	var errs []error
+
+	for _, dir := range found {
+		if err := os.RemoveAll(dir); err != nil {
+			errs = append(errs, fmt.Errorf("remove an abandoned vulnerability database download: %w", err))
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 // UpdateDB downloads the latest vulnerability database; offline, it does
@@ -408,11 +476,7 @@ func (g Grype) UpdateDB(ctx context.Context) error {
 		return nil
 	}
 
-	e := g.Exec
-	e.Env = g.env()
-	_, err := e.run(ctx, "db", "update")
-
-	return err
+	return g.changeDB(ctx, "db", "update")
 }
 
 // ReplaceInvalidDB deletes an installed database that fails Grype's
@@ -433,14 +497,11 @@ func (g Grype) ReplaceInvalidDB(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("%w; import a new one", err)
 	}
 
-	e := g.Exec
-	e.Env = g.env()
-
-	if _, err := e.run(ctx, "db", "delete"); err != nil {
+	if err := g.changeDB(ctx, "db", "delete"); err != nil {
 		return false, fmt.Errorf("delete the invalid vulnerability database: %w", err)
 	}
 
-	if _, err := e.run(ctx, "db", "update"); err != nil {
+	if err := g.changeDB(ctx, "db", "update"); err != nil {
 		return true, fmt.Errorf("download a vulnerability database to replace the invalid one: %w", err)
 	}
 
@@ -480,11 +541,7 @@ func (g Grype) DBBuilt(ctx context.Context) (time.Time, error) {
 
 // ImportDB loads a database archive (air-gapped mode).
 func (g Grype) ImportDB(ctx context.Context, archive string) error {
-	e := g.Exec
-	e.Env = g.env()
-	_, err := e.run(ctx, "db", "import", archive)
-
-	return err
+	return g.changeDB(ctx, "db", "import", archive)
 }
 
 // limitedBuffer collects output up to limit. It does not embed
