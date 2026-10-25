@@ -144,6 +144,15 @@ func TestCodeOf(t *testing.T) {
 		}
 	}
 
+	upstreamMismatch := fmt.Errorf(
+		"%w: a.txt does not match: %w",
+		repository.ErrUpstream,
+		repository.ErrChecksumMismatch,
+	)
+	if c := codeOf(upstreamMismatch).Code(); c != connect.CodeUnavailable {
+		t.Errorf("a file that does not match its upstream's checksum = %v, want Unavailable", c)
+	}
+
 	if c := codeOf(fmt.Errorf("%w: gate", release.ErrGateNotFound)).Code(); c != connect.CodeNotFound {
 		t.Errorf("promotion gate not found = %v", c)
 	}

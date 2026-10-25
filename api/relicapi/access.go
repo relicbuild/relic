@@ -231,6 +231,8 @@ func codeOf(err error) *connect.Error {
 	}
 
 	switch {
+	case errors.Is(err, repository.ErrUpstream):
+		return connect.NewError(connect.CodeUnavailable, err.Error()).WithCause(err)
 	case errors.Is(err, repository.ErrRepositoryExists),
 		errors.Is(err, repository.ErrRepositoryKeyCaseConflict),
 		errors.Is(err, security.ErrExists),
@@ -283,8 +285,6 @@ func codeOf(err error) *connect.Error {
 		errors.Is(err, signingkey.ErrKind),
 		errors.Is(err, signingkey.ErrInUse):
 		return connect.NewError(connect.CodeFailedPrecondition, err.Error()).WithCause(err)
-	case errors.Is(err, repository.ErrUpstream):
-		return connect.NewError(connect.CodeUnavailable, err.Error()).WithCause(err)
 	case errors.Is(err, repository.ErrTooLarge), errors.Is(err, repository.ErrQuotaExceeded):
 		return connect.NewError(connect.CodeResourceExhausted, err.Error()).WithCause(err)
 	case errors.Is(err, objectstore.ErrStorageFull):

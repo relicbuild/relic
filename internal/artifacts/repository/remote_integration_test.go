@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -151,8 +152,13 @@ func TestRemoteFormatChecksums(t *testing.T) {
 		}, nil
 	})
 
-	if _, err := s.Resolve(t.Context(), "published-remote", "lib.jar"); !errors.Is(err, ErrUpstream) {
+	_, err := s.Resolve(t.Context(), "published-remote", "lib.jar")
+	if !errors.Is(err, ErrUpstream) {
 		t.Fatalf("content that does not match the published checksum = %v, want ErrUpstream", err)
+	}
+
+	if strings.Contains(err.Error(), "client") {
+		t.Errorf("the upstream's checksum mismatch blames a client: %v", err)
 	}
 
 	if _, err := s.Stat(t.Context(), "published-remote", "lib.jar"); !errors.Is(err, ErrNotFound) {

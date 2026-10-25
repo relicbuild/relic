@@ -1415,7 +1415,7 @@ func verify(expected, actual Checksums) error {
 		},
 	} {
 		if c.want != "" && !strings.EqualFold(c.want, c.got) {
-			return fmt.Errorf("%w: client %s %s, actual %s", ErrChecksumMismatch, c.name, c.want, c.got)
+			return fmt.Errorf("%w: expected %s %s, actual %s", ErrChecksumMismatch, c.name, c.want, c.got)
 		}
 	}
 
