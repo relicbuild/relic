@@ -101,6 +101,7 @@ func (h *Handler) Register(rt *httpserver.Router, registry Mount) {
 	h.RegisterHuggingFace(rt, h.native("/huggingface/"))
 	h.RegisterHelm(rt, h.native("/helm/"))
 	h.RegisterGo(rt, h.native("/go/"))
+	h.RegisterGitLFS(rt, h.native("/lfs/"))
 
 	terraform := h.native("/terraform/")
 	h.RegisterTerraform(rt, terraform)
@@ -138,6 +139,7 @@ var NativePrefixes = append([]string{
 	"/helm/",
 	"/go/",
 	"/terraform/",
+	"/lfs/",
 }, rawPrefixes...)
 
 func (h *Handler) native(prefix string) Mount {

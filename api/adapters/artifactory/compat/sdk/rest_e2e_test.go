@@ -817,6 +817,13 @@ func TestArtifactoryREST(t *testing.T) {
 		s.raw(t, http.MethodHead, xorb, nil, 401)
 		s.raw(t, http.MethodPost, xorb, []byte("x"), 401)
 		s.raw(t, http.MethodPost, "api/huggingfaceml/"+local+"/api/xet/v1/shards", []byte("x"), 401)
+		lfs := "api/lfs/" + local + "/"
+		oid := strings.Repeat("0", 64)
+		s.raw(t, http.MethodPost, lfs+"objects/batch", []byte(`{"operation":"download","objects":[]}`), 404)
+		s.raw(t, http.MethodGet, lfs+"objects/"+oid, nil, 403, 404)
+		s.raw(t, http.MethodPut, lfs+"objects/"+oid, []byte("x"), 403, 404)
+		s.raw(t, http.MethodPost, lfs+"locks/verify", []byte("{}"), 404)
+		s.raw(t, http.MethodGet, lfs+"locks", nil, 404)
 		s.raw(t, http.MethodPost, "api/release/import/", []byte("not a bundle"), 400, 415)
 	})
 

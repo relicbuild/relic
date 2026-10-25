@@ -65,6 +65,11 @@ func TestClientEndpoints(t *testing.T) {
 			"",
 		},
 		{
+			repository.FormatGitLFS,
+			"https://r.example/lfs/libs",
+			"",
+		},
+		{
 			repository.FormatDebian,
 			"https://r.example/debian/libs",
 			"",

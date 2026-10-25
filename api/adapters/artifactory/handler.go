@@ -165,6 +165,7 @@ func (h *Handler) Register(rt *httpserver.Router) {
 	h.packages.RegisterHelm(rt, h.mount("/artifactory/api/helm/"))
 	h.packages.RegisterPyPI(rt, h.mount("/artifactory/api/pypi/"))
 	h.packages.RegisterGo(rt, h.mount("/artifactory/api/go/"))
+	h.packages.RegisterGitLFS(rt, h.mount("/artifactory/api/lfs/"))
 	rt.HandleFunc("/artifactory/api/docker/", auth.Public, h.dockerAPI)
 
 	rt.HandleFunc(curationAuditPrefix, auth.Authenticated, curationAudit(rt))

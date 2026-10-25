@@ -49,6 +49,8 @@ func ClientEndpoints(origin string, r repository.Repository) (packageManager, co
 		return origin + "/nix/" + k, ""
 	case repository.FormatHuggingFace:
 		return origin + "/huggingface/" + k, ""
+	case repository.FormatGitLFS:
+		return origin + "/lfs/" + k, ""
 	default:
 		return "", ""
 	}
