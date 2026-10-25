@@ -104,6 +104,9 @@ type Dependencies struct {
 	// GraphScanWorkers reports whether a worker runs the graph scans
 	// QueueGraphScan queues.
 	GraphScanWorkers func(context.Context) (bool, error)
+	// ScanWorkers reports whether a worker that runs Relic Scan reported
+	// lately; nil counts as one.
+	ScanWorkers func(context.Context) (bool, error)
 	// QueueRematch matches a content's SBOM again.
 	QueueRematch                     func(context.Context, string) error
 	VulnerabilityDatabases           *scan.DatabaseImports

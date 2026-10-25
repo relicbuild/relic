@@ -814,8 +814,8 @@ func TestSBOMCommands(t *testing.T) {
 	}
 
 	out, err = relic(t, config, "", "security", "report", "sbom-cli/app/app.jar")
-	if err != nil || !strings.Contains(out, "queued (SBOM imported, not matched yet)") {
-		t.Errorf("report right after the import = %q %v; want it queued until matched", out, err)
+	if err != nil || strings.Contains(out, "app.jar: done") {
+		t.Errorf("report right after the import = %q %v; want it not done until matched", out, err)
 	}
 
 	out, err = relic(t, config, "", "security", "sbom", "export", "sbom-cli/app/app.jar", "--format", "spdx")

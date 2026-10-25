@@ -118,7 +118,7 @@ func TestVulnerabilityDatabaseCommands(t *testing.T) {
 		"database",
 		"status",
 	); err != nil ||
-		out != "no scan has used a vulnerability database yet\n" {
+		out != scanOffLine+"\nno scan has used a vulnerability database yet\n" {
 		t.Errorf("status = %q %v", out, err)
 	}
 

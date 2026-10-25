@@ -51,6 +51,8 @@ const status = computed(() => {
       return { color: 'warning' as const, title: `Partly scanned: ${s.reason}` }
     case 'queued':
       return { color: 'info' as const, title: 'Waiting to be scanned' }
+    case 'unavailable':
+      return { color: 'warning' as const, title: 'Not scanned: Relic Scan is off, since no worker with Syft and Grype reported lately' }
     case 'failed':
       return { color: 'error' as const, title: `Scan failed: ${s.reason}` }
     case 'skipped':

@@ -112,6 +112,9 @@ message ScannerStatus {
   google.protobuf.Timestamp vulnerability_database_built = 1;
   // scans counts scanned contents by status.
   map<string, int32> scans = 2;
+  // available reports a worker that runs Relic Scan (one with Syft and
+  // Grype) seen lately; without one, Relic Scan is off.
+  bool available = 3;
 }
 
 message GetSystemStatusResponse {
@@ -139,6 +142,9 @@ message GetDashboardSummaryResponse {
   // it.
   map<string, int32> findings = 4;
   google.protobuf.Timestamp vulnerability_database_built = 5;
+  // scanner_available reports a worker that runs Relic Scan seen lately;
+  // without one, Relic Scan is off.
+  bool scanner_available = 6;
 }
 
 message CollectGarbageRequest {}

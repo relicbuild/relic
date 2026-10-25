@@ -3087,6 +3087,11 @@
               }
             ],
             "title": "vulnerability_database_built"
+          },
+          "scannerAvailable": {
+            "type": "boolean",
+            "title": "scanner_available",
+            "description": "scanner_available reports a worker that runs Relic Scan seen lately;\n without one, Relic Scan is off."
           }
         },
         "title": "GetDashboardSummaryResponse",
@@ -9459,7 +9464,8 @@
           "SCAN_STATUS_DONE",
           "SCAN_STATUS_PARTIAL",
           "SCAN_STATUS_FAILED",
-          "SCAN_STATUS_SKIPPED"
+          "SCAN_STATUS_SKIPPED",
+          "SCAN_STATUS_UNAVAILABLE"
         ],
         "description": "ScanStatus is where a file's scan stands."
       },
@@ -9484,6 +9490,11 @@
               "format": "int32"
             },
             "description": "scans counts scanned contents by status."
+          },
+          "available": {
+            "type": "boolean",
+            "title": "available",
+            "description": "available reports a worker that runs Relic Scan (one with Syft and\n Grype) seen lately; without one, Relic Scan is off."
           }
         },
         "title": "ScannerStatus",

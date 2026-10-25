@@ -98,6 +98,9 @@ const (
 	ScanStatus_SCAN_STATUS_FAILED  ScanStatus = 5
 	// SCAN_STATUS_SKIPPED: the file is too large or not a package.
 	ScanStatus_SCAN_STATUS_SKIPPED ScanStatus = 6
+	// SCAN_STATUS_UNAVAILABLE: the file waits for a scan, but Relic Scan is
+	// off: no worker that runs it reported lately.
+	ScanStatus_SCAN_STATUS_UNAVAILABLE ScanStatus = 7
 )
 
 // Enum value maps for ScanStatus.
@@ -110,6 +113,7 @@ var (
 		4: "SCAN_STATUS_PARTIAL",
 		5: "SCAN_STATUS_FAILED",
 		6: "SCAN_STATUS_SKIPPED",
+		7: "SCAN_STATUS_UNAVAILABLE",
 	}
 	ScanStatus_value = map[string]int32{
 		"SCAN_STATUS_UNSPECIFIED": 0,
@@ -119,6 +123,7 @@ var (
 		"SCAN_STATUS_PARTIAL":     4,
 		"SCAN_STATUS_FAILED":      5,
 		"SCAN_STATUS_SKIPPED":     6,
+		"SCAN_STATUS_UNAVAILABLE": 7,
 	}
 )
 
@@ -5451,7 +5456,7 @@ const file_relic_v1_scan_proto_rawDesc = "" +
 	"\rSEVERITY_HIGH\x10\x02\x12\x13\n" +
 	"\x0fSEVERITY_MEDIUM\x10\x03\x12\x10\n" +
 	"\fSEVERITY_LOW\x10\x04\x12\x14\n" +
-	"\x10SEVERITY_UNKNOWN\x10\x05*\xb7\x01\n" +
+	"\x10SEVERITY_UNKNOWN\x10\x05*\xd4\x01\n" +
 	"\n" +
 	"ScanStatus\x12\x1b\n" +
 	"\x17SCAN_STATUS_UNSPECIFIED\x10\x00\x12\x14\n" +
@@ -5460,7 +5465,8 @@ const file_relic_v1_scan_proto_rawDesc = "" +
 	"\x10SCAN_STATUS_DONE\x10\x03\x12\x17\n" +
 	"\x13SCAN_STATUS_PARTIAL\x10\x04\x12\x16\n" +
 	"\x12SCAN_STATUS_FAILED\x10\x05\x12\x17\n" +
-	"\x13SCAN_STATUS_SKIPPED\x10\x06*\\\n" +
+	"\x13SCAN_STATUS_SKIPPED\x10\x06\x12\x1b\n" +
+	"\x17SCAN_STATUS_UNAVAILABLE\x10\a*\\\n" +
 	"\n" +
 	"PolicyKind\x12\x1b\n" +
 	"\x17POLICY_KIND_UNSPECIFIED\x10\x00\x12\x18\n" +

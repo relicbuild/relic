@@ -291,7 +291,7 @@ export function systemView(s: GetSystemStatusResponse): SystemView {
     })),
     workers: s.workers.map(w => ({ id: w.id, running: w.running, lastActive: w.lastActive ? toIsoDate(w.lastActive) : undefined, leader: w.leader })),
     queues: s.queues.map(q => ({ name: q.name, updated: q.updated ? toIsoDate(q.updated) : undefined, paused: q.paused, waiting: q.waiting, running: q.running })),
-    scanner: { vulnerabilityDatabaseBuilt: s.scanner?.vulnerabilityDatabaseBuilt ? toIsoDate(s.scanner.vulnerabilityDatabaseBuilt) : undefined, scans: s.scanner?.scans ?? {} }
+    scanner: { available: s.scanner?.available ?? false, vulnerabilityDatabaseBuilt: s.scanner?.vulnerabilityDatabaseBuilt ? toIsoDate(s.scanner.vulnerabilityDatabaseBuilt) : undefined, scans: s.scanner?.scans ?? {} }
   }
 }
 

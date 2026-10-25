@@ -114,6 +114,11 @@ func (s *systemServer) GetSystemStatus(
 	}
 
 	out.Scanner.Scans = counts(scans)
+
+	if out.Scanner.Available, err = s.d.scanning(ctx); err != nil {
+		return nil, err
+	}
+
 	if built, err := s.d.ScanResults.LatestDBBuilt(ctx); err == nil && !built.IsZero() {
 		out.Scanner.VulnerabilityDatabaseBuilt = timestamppb.New(built)
 	}
@@ -317,6 +322,10 @@ func (s *systemServer) GetDashboardSummary(
 		}
 
 		out.Scans, out.Findings = counts(scans), counts(findings)
+	}
+
+	if out.ScannerAvailable, err = s.d.scanning(ctx); err != nil {
+		return nil, err
 	}
 
 	if built, err := s.d.ScanResults.LatestDBBuilt(ctx); err == nil && !built.IsZero() {

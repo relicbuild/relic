@@ -218,6 +218,9 @@ enum ScanStatus {
   SCAN_STATUS_FAILED = 5;
   // SCAN_STATUS_SKIPPED: the file is too large or not a package.
   SCAN_STATUS_SKIPPED = 6;
+  // SCAN_STATUS_UNAVAILABLE: the file waits for a scan, but Relic Scan is
+  // off: no worker that runs it reported lately.
+  SCAN_STATUS_UNAVAILABLE = 7;
 }
 
 // Cvss is one CVSS rating of a finding.

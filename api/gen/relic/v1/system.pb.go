@@ -371,7 +371,10 @@ type ScannerStatus struct {
 	// vulnerability_database_built is when the newest vulnerability database any scan used was built.
 	VulnerabilityDatabaseBuilt *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=vulnerability_database_built,json=vulnerabilityDatabaseBuilt,proto3" json:"vulnerability_database_built,omitempty"`
 	// scans counts scanned contents by status.
-	Scans         map[string]int32 `protobuf:"bytes,2,rep,name=scans,proto3" json:"scans,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	Scans map[string]int32 `protobuf:"bytes,2,rep,name=scans,proto3" json:"scans,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	// available reports a worker that runs Relic Scan (one with Syft and
+	// Grype) seen lately; without one, Relic Scan is off.
+	Available     bool `protobuf:"varint,3,opt,name=available,proto3" json:"available,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -418,6 +421,13 @@ func (x *ScannerStatus) GetScans() map[string]int32 {
 		return x.Scans
 	}
 	return nil
+}
+
+func (x *ScannerStatus) GetAvailable() bool {
+	if x != nil {
+		return x.Available
+	}
+	return false
 }
 
 type GetSystemStatusResponse struct {
@@ -555,8 +565,11 @@ type GetDashboardSummaryResponse struct {
 	// it.
 	Findings                   map[string]int32       `protobuf:"bytes,4,rep,name=findings,proto3" json:"findings,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
 	VulnerabilityDatabaseBuilt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=vulnerability_database_built,json=vulnerabilityDatabaseBuilt,proto3" json:"vulnerability_database_built,omitempty"`
-	unknownFields              protoimpl.UnknownFields
-	sizeCache                  protoimpl.SizeCache
+	// scanner_available reports a worker that runs Relic Scan seen lately;
+	// without one, Relic Scan is off.
+	ScannerAvailable bool `protobuf:"varint,6,opt,name=scanner_available,json=scannerAvailable,proto3" json:"scanner_available,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *GetDashboardSummaryResponse) Reset() {
@@ -622,6 +635,13 @@ func (x *GetDashboardSummaryResponse) GetVulnerabilityDatabaseBuilt() *timestamp
 		return x.VulnerabilityDatabaseBuilt
 	}
 	return nil
+}
+
+func (x *GetDashboardSummaryResponse) GetScannerAvailable() bool {
+	if x != nil {
+		return x.ScannerAvailable
+	}
+	return false
 }
 
 type CollectGarbageRequest struct {
@@ -1716,10 +1736,11 @@ const file_relic_v1_system_proto_rawDesc = "" +
 	"\rlast_error_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\vlastErrorAt\x1a9\n" +
 	"\vStatesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\"\xe1\x01\n" +
+	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\"\xff\x01\n" +
 	"\rScannerStatus\x12\\\n" +
 	"\x1cvulnerability_database_built\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x1avulnerabilityDatabaseBuilt\x128\n" +
-	"\x05scans\x18\x02 \x03(\v2\".relic.v1.ScannerStatus.ScansEntryR\x05scans\x1a8\n" +
+	"\x05scans\x18\x02 \x03(\v2\".relic.v1.ScannerStatus.ScansEntryR\x05scans\x12\x1c\n" +
+	"\tavailable\x18\x03 \x01(\bR\tavailable\x1a8\n" +
 	"\n" +
 	"ScansEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
@@ -1731,13 +1752,14 @@ const file_relic_v1_system_proto_rawDesc = "" +
 	"\ascanner\x18\x04 \x01(\v2\x17.relic.v1.ScannerStatusR\ascanner\x12-\n" +
 	"\aworkers\x18\x05 \x03(\v2\x13.relic.v1.JobWorkerR\aworkers\x12*\n" +
 	"\x06queues\x18\x06 \x03(\v2\x12.relic.v1.JobQueueR\x06queues\"\x1c\n" +
-	"\x1aGetDashboardSummaryRequest\"\xc1\x04\n" +
+	"\x1aGetDashboardSummaryRequest\"\xee\x04\n" +
 	"\x1bGetDashboardSummaryResponse\x12[\n" +
 	"\frepositories\x18\x01 \x03(\v27.relic.v1.GetDashboardSummaryResponse.RepositoriesEntryR\frepositories\x12\x16\n" +
 	"\x06builds\x18\x02 \x01(\x03R\x06builds\x12F\n" +
 	"\x05scans\x18\x03 \x03(\v20.relic.v1.GetDashboardSummaryResponse.ScansEntryR\x05scans\x12O\n" +
 	"\bfindings\x18\x04 \x03(\v23.relic.v1.GetDashboardSummaryResponse.FindingsEntryR\bfindings\x12\\\n" +
-	"\x1cvulnerability_database_built\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x1avulnerabilityDatabaseBuilt\x1a?\n" +
+	"\x1cvulnerability_database_built\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x1avulnerabilityDatabaseBuilt\x12+\n" +
+	"\x11scanner_available\x18\x06 \x01(\bR\x10scannerAvailable\x1a?\n" +
 	"\x11RepositoriesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\x1a8\n" +

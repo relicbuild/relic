@@ -169,7 +169,7 @@ const columns: TableColumn<JobKindView>[] = [
           <UPageCard
             icon="i-lucide-scan-search"
             title="Relic Scan"
-            :description="data.scanner.vulnerabilityDatabaseBuilt ? `Vulnerability database built ${formatDate(data.scanner.vulnerabilityDatabaseBuilt)}` : 'No vulnerability database yet'"
+            :description="!data.scanner.available ? 'Off: no worker with Syft and Grype reported lately' : data.scanner.vulnerabilityDatabaseBuilt ? `Vulnerability database built ${formatDate(data.scanner.vulnerabilityDatabaseBuilt)}` : 'No vulnerability database yet'"
             variant="subtle"
           >
             <div class="flex flex-wrap gap-2">

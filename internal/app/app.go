@@ -798,9 +798,9 @@ func enqueueGraphScan(queue Queue) func(context.Context, uuid.UUID) error {
 }
 
 // River reports a queue it works every ten minutes.
-const graphQueueReportWindow = 20 * time.Minute
+const queueReportWindow = 20 * time.Minute
 
-func graphScanWorkers(status *systemstatus.Service) func(context.Context) (bool, error) {
+func queueWorkers(status *systemstatus.Service, queue string) func(context.Context) (bool, error) {
 	return func(ctx context.Context) (bool, error) {
 		queues, err := status.Queues(ctx)
 		if err != nil {
@@ -808,7 +808,7 @@ func graphScanWorkers(status *systemstatus.Service) func(context.Context) (bool,
 		}
 
 		return slices.ContainsFunc(queues, func(q systemstatus.Queue) bool {
-			return q.Name == backgroundjobs.GraphQueue && time.Since(q.Updated) < graphQueueReportWindow
+			return q.Name == queue && time.Since(q.Updated) < queueReportWindow
 		}), nil
 	}
 }
@@ -1111,7 +1111,8 @@ func newRouter(
 		QueueStorageCheck:                enqueueStorageCheck(queue),
 		QueueReplication:                 enqueueReplication(queue),
 		QueueGraphScan:                   enqueueGraphScan(queue),
-		GraphScanWorkers:                 graphScanWorkers(status),
+		GraphScanWorkers:                 queueWorkers(status, backgroundjobs.GraphQueue),
+		ScanWorkers:                      queueWorkers(status, backgroundjobs.ScanQueue),
 		QueueRematch:                     enqueueRematch(queue),
 		VulnerabilityDatabases:           scan.NewDatabaseImports(blobs, log),
 		QueueVulnerabilityDatabaseImport: enqueueDatabaseImport(queue),

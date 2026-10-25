@@ -30,4 +30,18 @@ describe('dashboard', () => {
     expect(page.text().includes('Scanned artifacts')).toBe(shown)
     expect(page.text().includes('Vulnerability findings')).toBe(shown)
   })
+
+  it.each([
+    { state: 'off', scannerAvailable: false, says: 'Relic Scan is off' },
+    { state: 'on', scannerAvailable: true, says: 'Scan backlog is empty' }
+  ])('says whether Relic Scan is $state', async ({ scannerAvailable, says }) => {
+    useSession().me.value = create(PrincipalSchema, { username: 'admin', admin: true })
+    vi.spyOn(useRelic().system, 'getDashboardSummary').mockResolvedValue(create(GetDashboardSummaryResponseSchema, {
+      scannerAvailable
+    }))
+
+    const page = await mountSuspended(Dashboard)
+
+    expect(page.text()).toContain(says)
+  })
 })

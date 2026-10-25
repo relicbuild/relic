@@ -286,6 +286,71 @@ func TestGraphScansNeedAWorkerThatScans(t *testing.T) {
 	}
 }
 
+func TestRelicAPISaysWhenRelicScanIsOff(t *testing.T) {
+	t.Parallel()
+	srv, db := serverDB(t)
+
+	createRepository(t, srv, "scan-off", "LOCAL", "GENERIC", "")
+	upload(t, srv, "scan-off", "app/app-1.0.jar", "not really a jar")
+
+	ctx := t.Context()
+	client := apiClient(relicHTTP("admin", "password"), srv.URL)
+	scans := relicv1connect.NewScanServiceClient(client)
+	sys := relicv1connect.NewSystemServiceClient(client)
+
+	report := func(step string) (relicv1.ScanStatus, bool, bool) {
+		t.Helper()
+
+		item, err := scans.GetItemScan(ctx, &relicv1.GetItemScanRequest{
+			Repository: "scan-off",
+			Path:       "app/app-1.0.jar",
+		})
+		if err != nil {
+			t.Fatalf("%s: GetItemScan: %v", step, err)
+		}
+
+		st, err := sys.GetSystemStatus(ctx, &relicv1.GetSystemStatusRequest{})
+		if err != nil {
+			t.Fatalf("%s: GetSystemStatus: %v", step, err)
+		}
+
+		summary, err := sys.GetDashboardSummary(ctx, &relicv1.GetDashboardSummaryRequest{})
+		if err != nil {
+			t.Fatalf("%s: GetDashboardSummary: %v", step, err)
+		}
+
+		return item.GetScan().GetStatus(), st.GetScanner().GetAvailable(), summary.GetScannerAvailable()
+	}
+
+	status, available, summarized := report("no worker")
+	if status != relicv1.ScanStatus_SCAN_STATUS_UNAVAILABLE || available || summarized {
+		t.Errorf("without a worker that scans: item %v, system available %v, summary available %v; "+
+			"want unavailable and off", status, available, summarized)
+	}
+
+	fresh := `INSERT INTO river_queue (name, updated_at) VALUES ('scan', now())`
+	if db.SQLite() {
+		fresh = `INSERT INTO river_queue (name, updated_at) VALUES ('scan', datetime('now', 'subsec'))`
+	}
+
+	rows, err := db.Query(ctx, fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows.Close()
+
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	status, available, summarized = report("a worker that scans")
+	if status != relicv1.ScanStatus_SCAN_STATUS_QUEUED || !available || !summarized {
+		t.Errorf("with a worker that scans: item %v, system available %v, summary available %v; "+
+			"want queued and on", status, available, summarized)
+	}
+}
+
 func sameJSON(a, b string) bool {
 	var x, y any
 	if json.Unmarshal([]byte(a), &x) != nil || json.Unmarshal([]byte(b), &y) != nil {

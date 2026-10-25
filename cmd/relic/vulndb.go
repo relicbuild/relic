@@ -94,6 +94,8 @@ func vulnerabilityDatabaseImportCmd(g *globals) *cobra.Command {
 	}
 }
 
+const scanOffLine = "Relic Scan is off: no worker with Syft and Grype reported lately"
+
 // databaseBuiltLine says when the vulnerability database was built, in loc
 // like the other security commands' times.
 func databaseBuiltLine(built, now time.Time, loc *time.Location) string {
@@ -121,6 +123,12 @@ func vulnerabilityDatabaseStatusCmd(g *globals) *cobra.Command {
 			s := r.GetScanner()
 
 			return printMessage(cmd.OutOrStdout(), output, s, func(w io.Writer) error {
+				if !s.GetAvailable() {
+					if _, err := fmt.Fprintln(w, scanOffLine); err != nil {
+						return err
+					}
+				}
+
 				if s.GetVulnerabilityDatabaseBuilt() == nil {
 					_, err := fmt.Fprintln(w, "no scan has used a vulnerability database yet")
 

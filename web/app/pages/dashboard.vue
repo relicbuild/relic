@@ -5,12 +5,18 @@ const { system } = useRelic()
 const { views } = useSession()
 const { data: stats, status, error, refresh } = await useAsyncData('stats', async () => {
   const o = await system.getDashboardSummary({})
-  return { repositories: o.repositories, builds: toNumber(o.builds), scans: o.scans, findings: o.findings, vulnerabilityDatabaseBuilt: o.vulnerabilityDatabaseBuilt ? toIsoDate(o.vulnerabilityDatabaseBuilt) : undefined }
+  return { repositories: o.repositories, builds: toNumber(o.builds), scans: o.scans, findings: o.findings, vulnerabilityDatabaseBuilt: o.vulnerabilityDatabaseBuilt ? toIsoDate(o.vulnerabilityDatabaseBuilt) : undefined, scannerAvailable: o.scannerAvailable }
 })
 
 const repoCount = computed(() => Object.values(stats.value?.repositories ?? {}).reduce((a, b) => a + (b ?? 0), 0))
 const scanned = computed(() => (stats.value?.scans.done ?? 0) + (stats.value?.scans.partial ?? 0))
 const backlog = computed(() => stats.value?.scans.queued ?? 0)
+const scanState = computed(() => {
+  if (!stats.value?.scannerAvailable) {
+    return 'Relic Scan is off: no worker with Syft and Grype reported lately'
+  }
+  return backlog.value ? `${backlog.value} waiting to be scanned` : 'Scan backlog is empty'
+})
 const shown = severities.filter(s => s !== 'unknown')
 </script>
 
@@ -51,7 +57,7 @@ const shown = severities.filter(s => s !== 'unknown')
           v-if="views"
           icon="i-lucide-scan-search"
           title="Scanned artifacts"
-          :description="backlog ? `${backlog} waiting to be scanned` : 'Scan backlog is empty'"
+          :description="scanState"
           variant="subtle"
         >
           <span class="text-3xl font-semibold text-highlighted">{{ scanned }}</span>
