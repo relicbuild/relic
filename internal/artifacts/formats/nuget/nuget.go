@@ -80,6 +80,11 @@ type Nuspec struct {
 		Version      string `xml:"version"`
 		Description  string `xml:"description"`
 		Authors      string `xml:"authors"`
+		PackageTypes struct {
+			Types []struct {
+				Name string `xml:"name,attr"`
+			} `xml:"packageType"`
+		} `xml:"packageTypes"`
 		Dependencies struct {
 			Groups []struct {
 				TargetFramework string `xml:"targetFramework,attr"`
@@ -132,7 +137,8 @@ func ReadNuspec(r io.ReaderAt, size int64) (Nuspec, []byte, error) {
 }
 
 // Push stores a pushed package (a .nupkg spooled to file) at its layout
-// path.
+// path, and a symbol package (.snupkg) at SymbolsPath with the symbol server
+// keys of its portable PDBs.
 func (s *Service) Push(ctx context.Context, repoKey string, file *os.File, user string) (Nuspec, error) {
 	info, err := file.Stat()
 	if err != nil {
@@ -146,6 +152,10 @@ func (s *Service) Push(ctx context.Context, repoKey string, file *os.File, user 
 
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return Nuspec{}, err
+	}
+
+	if n.SymbolsPackage() {
+		return n, s.pushSymbols(ctx, repoKey, n, file, user)
 	}
 
 	id, version := n.Metadata.ID, normalizeVersion(n.Metadata.Version)
