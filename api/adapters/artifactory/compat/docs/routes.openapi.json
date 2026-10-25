@@ -3646,6 +3646,38 @@
         "x-relic-access": "public"
       }
     },
+    "/v1/_ping": {
+      "get": {
+        "operationId": "getV1_ping",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "GET /v1/_ping",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "public"
+      }
+    },
+    "/v1/search": {
+      "get": {
+        "operationId": "getV1Search",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "GET /v1/search",
+        "tags": [
+          "System"
+        ],
+        "x-relic-access": "public"
+      }
+    },
     "/xray/api/v1/artifact/status": {
       "post": {
         "operationId": "postXrayApiV1ArtifactStatus",

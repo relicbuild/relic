@@ -293,6 +293,53 @@ func TestDockerRegistry(t *testing.T) {
 		t.Errorf("catalog = %s", catalog)
 	}
 
+	var search struct {
+		NumResults int `json:"num_results"`
+		Results    []struct {
+			Name string `json:"name"`
+		} `json:"results"`
+	}
+
+	resp, found := do(t, srv, call{
+		method: "GET",
+		path:   "/v1/search?q=ORG%2Fapp&n=25",
+	})
+	err := json.Unmarshal([]byte(found), &search)
+
+	names := make([]string, 0, len(search.Results))
+	for _, result := range search.Results {
+		names = append(names, result.Name)
+	}
+
+	if resp.StatusCode != 200 || err != nil || search.NumResults == 0 || !strings.Contains(
+		strings.Join(names, " ")+" ",
+		"docker-local/org/app ",
+	) {
+		t.Errorf("docker search = %d %s, want docker-local/org/app as JSON", resp.StatusCode, found)
+	}
+
+	if resp, found := do(t, srv, call{
+		method: "GET",
+		path:   "/v1/search?q=no-such-image",
+	}); resp.StatusCode != 200 || !strings.Contains(found, `"results": []`) {
+		t.Errorf("docker search without matches = %d %s", resp.StatusCode, found)
+	}
+
+	if resp, found := do(t, srv, call{
+		method: "GET",
+		path:   "/v1/search?q=app",
+		noAuth: true,
+	}); resp.StatusCode != 200 || strings.Contains(found, "org/app") {
+		t.Errorf("anonymous docker search = %d %s, want no image the caller cannot read", resp.StatusCode, found)
+	}
+
+	if resp, found := do(t, srv, call{
+		method: "GET",
+		path:   "/v1/_ping",
+	}); resp.StatusCode != 200 || !strings.HasPrefix(found, "{") {
+		t.Errorf("v1 ping = %d %q, want JSON", resp.StatusCode, found)
+	}
+
 	req := `{"targetRepo":"docker-prod","dockerRepository":"org/app","targetDockerRepository":"prod/app","tag":"1.0","targetTag":"stable","copy":true}`
 	if resp, body := do(
 		t,

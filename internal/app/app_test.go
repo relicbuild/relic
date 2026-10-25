@@ -281,6 +281,10 @@ func TestAPINotFound(t *testing.T) {
 			"/apis",
 			http.StatusOK,
 		},
+		{
+			"/v1/repositories/app/tags",
+			http.StatusNotFound,
+		},
 	}
 
 	rec := httptest.NewRecorder()

@@ -1392,6 +1392,7 @@ func BootstrapAdmin(ctx context.Context, db *database.DB, username, password str
 var apiPrefixes = append([]string{
 	"/api/",
 	scim.PathPrefix,
+	packages.RegistryV1Prefix,
 }, adapter.PathPrefixes...)
 
 func apiNotFound(next http.Handler) http.Handler {

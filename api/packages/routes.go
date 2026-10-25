@@ -112,6 +112,8 @@ func (h *Handler) Register(rt *httpserver.Router, registry Mount) {
 	}
 
 	h.RegisterContainerRegistry(rt, registry)
+	rt.HandleFunc("GET "+RegistryV1Prefix+"_ping", auth.Public, h.dockerV1Ping)
+	rt.HandleFunc("GET "+RegistryV1Prefix+"search", auth.Public, h.dockerSearch)
 }
 
 var rawPrefixes = []string{
@@ -159,9 +161,12 @@ func ConfigureAuth(a *auth.Authenticator) {
 }
 
 // RegisterPaths counts the requests under Relic's mounts toward the
-// packages family in the HTTP metrics.
+// packages family in the HTTP metrics, and the registry v1 API's toward the
+// container registry's.
 func RegisterPaths() {
 	for _, p := range NativePrefixes {
 		telemetry.RegisterFamily(p, "packages")
 	}
+
+	telemetry.RegisterFamily(RegistryV1Prefix, "container-registry")
 }
