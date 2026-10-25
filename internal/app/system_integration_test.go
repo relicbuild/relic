@@ -209,6 +209,83 @@ func TestRelicAPISystemStatus(t *testing.T) {
 	}
 }
 
+func TestGraphScansNeedAWorkerThatScans(t *testing.T) {
+	t.Parallel()
+	db := databasetest.NewDB(t)
+
+	log := slog.New(slog.DiscardHandler)
+	if err := BootstrapAdmin(t.Context(), db, "admin", "password", log); err != nil {
+		t.Fatal(err)
+	}
+
+	tokens, err := NewTokens(t.Context(), db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queue, err := backgroundjobs.NewInsertClient(db, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv := httptest.NewServer(NewHandler(db, objectstoretest.NewMemory(), tokens, queue, Options{}, log))
+	t.Cleanup(srv.Close)
+
+	ctx := t.Context()
+	scans := relicv1connect.NewScanServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
+	req := &relicv1.ScanPackagesRequest{
+		Purls: []string{
+			"pkg:npm/lodash@4.17.15",
+		},
+	}
+
+	stale := `INSERT INTO river_queue (name, updated_at) VALUES ('scan_graph', now() - interval '1 hour')`
+	fresh := `UPDATE river_queue SET updated_at = now() WHERE name = 'scan_graph'`
+
+	if db.SQLite() {
+		stale = `INSERT INTO river_queue (name, updated_at) VALUES ('scan_graph', datetime('now', '-1 hour', 'subsec'))`
+		fresh = `UPDATE river_queue SET updated_at = datetime('now', 'subsec') WHERE name = 'scan_graph'`
+	}
+
+	for _, step := range []struct {
+		name      string
+		statement string
+		wantCode  connect.Code
+	}{
+		{
+			name:     "no worker ever ran graph scans",
+			wantCode: connect.CodeUnavailable,
+		},
+		{
+			name:      "the last worker stopped an hour ago",
+			statement: stale,
+			wantCode:  connect.CodeUnavailable,
+		},
+		{
+			name:      "a worker reported the queue just now",
+			statement: fresh,
+		},
+	} {
+		if step.statement != "" {
+			rows, err := db.Query(ctx, step.statement)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			rows.Close()
+
+			if err := rows.Err(); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		_, err := scans.ScanPackages(ctx, req)
+		if step.wantCode == 0 && err != nil || step.wantCode != 0 && code(err) != step.wantCode {
+			t.Errorf("%s: ScanPackages = %v, want code %v", step.name, err, step.wantCode)
+		}
+	}
+}
+
 func sameJSON(a, b string) bool {
 	var x, y any
 	if json.Unmarshal([]byte(a), &x) != nil || json.Unmarshal([]byte(b), &y) != nil {

@@ -43,8 +43,8 @@ func (s *scanServer) ScanPackages(
 		}
 	}
 
-	if s.d.Scans == nil || s.d.QueueGraphScan == nil {
-		return nil, connect.NewError(connect.CodeUnavailable, "scanning is not available")
+	if err := graphScanAvailable(ctx, s.d); err != nil {
+		return nil, err
 	}
 
 	if err := s.existingScope(ctx, m.GetWatches(), m.GetRepository()); err != nil {

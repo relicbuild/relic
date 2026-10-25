@@ -762,6 +762,22 @@ func enqueueGraphScan(queue Queue) func(context.Context, uuid.UUID) error {
 	}
 }
 
+// River reports a queue it works every ten minutes.
+const graphQueueReportWindow = 20 * time.Minute
+
+func graphScanWorkers(status *systemstatus.Service) func(context.Context) (bool, error) {
+	return func(ctx context.Context) (bool, error) {
+		queues, err := status.Queues(ctx)
+		if err != nil {
+			return false, err
+		}
+
+		return slices.ContainsFunc(queues, func(q systemstatus.Queue) bool {
+			return q.Name == backgroundjobs.GraphQueue && time.Since(q.Updated) < graphQueueReportWindow
+		}), nil
+	}
+}
+
 func enqueueRematch(queue Queue) func(context.Context, string) error {
 	if queue == nil {
 		return nil
@@ -1003,6 +1019,7 @@ func newRouter(
 	xh.Register(rt)
 	scim.New(sso.NewDirectory(db, sec), log).Register(rt)
 
+	status := systemstatus.NewService(db)
 	version, revision := relicVersion()
 	api := relicapi.Handler(relicapi.Dependencies{ // each method enforces its own access
 		Version:                          version,
@@ -1033,7 +1050,7 @@ func newRouter(
 		Projects:                         projects,
 		AgentRegistry:                    agentRegistry,
 		Usage:                            usagestats.NewService(db, repos.Projects),
-		SystemStatus:                     systemstatus.NewService(db),
+		SystemStatus:                     status,
 		DownloadBlocker:                  blocker,
 		DownloadStats:                    opts.Downloads,
 		ContainerImages:                  dockerSvc,
@@ -1049,6 +1066,7 @@ func newRouter(
 		QueueStorageCheck:                enqueueStorageCheck(queue),
 		QueueReplication:                 enqueueReplication(queue),
 		QueueGraphScan:                   enqueueGraphScan(queue),
+		GraphScanWorkers:                 graphScanWorkers(status),
 		QueueRematch:                     enqueueRematch(queue),
 		VulnerabilityDatabases:           scan.NewDatabaseImports(blobs, log),
 		QueueVulnerabilityDatabaseImport: enqueueDatabaseImport(queue),

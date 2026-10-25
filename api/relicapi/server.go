@@ -101,6 +101,9 @@ type Dependencies struct {
 	QueueStorageCheck      func(context.Context) (int64, error)
 	QueueReplication       func(context.Context, string) error
 	QueueGraphScan         func(context.Context, uuid.UUID) error
+	// GraphScanWorkers reports whether a worker runs the graph scans
+	// QueueGraphScan queues.
+	GraphScanWorkers func(context.Context) (bool, error)
 	// QueueRematch matches a content's SBOM again.
 	QueueRematch                     func(context.Context, string) error
 	VulnerabilityDatabases           *scan.DatabaseImports

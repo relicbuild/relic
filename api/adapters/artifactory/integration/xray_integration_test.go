@@ -76,6 +76,23 @@ func xrayServer(t *testing.T) *httptest.Server {
 			Path: grype,
 		},
 	}, scan.Limits{}, log)
+
+	graphQueue := `INSERT INTO river_queue (name, updated_at) VALUES ('scan_graph', now())`
+	if db.SQLite() {
+		graphQueue = `INSERT INTO river_queue (name, updated_at) VALUES ('scan_graph', datetime('now', 'subsec'))`
+	}
+
+	rows, err := db.Query(t.Context(), graphQueue)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows.Close()
+
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+
 	srv := httptest.NewServer(
 		app.NewHandler(db, blobs, tokens, syncQueue{
 			scans: svc,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -35,6 +36,23 @@ func buildRun(ctx context.Context, d Dependencies, project, name, number string)
 	}
 
 	return run.Document, nil
+}
+
+func graphScanAvailable(ctx context.Context, d Dependencies) error {
+	if d.Scans == nil || d.QueueGraphScan == nil || d.GraphScanWorkers == nil {
+		return connect.NewError(connect.CodeUnavailable, "scanning is not available")
+	}
+
+	running, err := d.GraphScanWorkers(ctx)
+	if err != nil {
+		return fmt.Errorf("graph scan workers: %w", err)
+	}
+
+	if !running {
+		return connect.NewError(connect.CodeUnavailable, "scanning is not available: no worker runs Relic Scan")
+	}
+
+	return nil
 }
 
 func buildScanRequest(ctx context.Context, d Dependencies, doc buildinfo.Document) (scan.GraphRequest, error) {
@@ -93,8 +111,8 @@ func (s *scanServer) ScanBuildRun(
 		return nil, err
 	}
 
-	if s.d.Scans == nil || s.d.QueueGraphScan == nil {
-		return nil, connect.NewError(connect.CodeUnavailable, "scanning is not available")
+	if err := graphScanAvailable(ctx, s.d); err != nil {
+		return nil, err
 	}
 
 	graph, err := buildScanRequest(ctx, s.d, doc)
