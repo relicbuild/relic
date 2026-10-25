@@ -303,6 +303,46 @@ func TestSecurityRegressions(t *testing.T) {
 		}
 	})
 
+	t.Run("properties on an upload need annotate", func(t *testing.T) {
+		for _, tt := range []struct {
+			path string
+			want int
+		}{
+			{
+				path: "/api/v1/files/scratch-local/p/q4.txt?k=v",
+				want: http.StatusForbidden,
+			},
+			{
+				path: "/artifactory/scratch-local/m.txt;k=v;release=approved",
+				want: http.StatusForbidden,
+			},
+			{
+				path: "/api/v1/files/scratch-local/p/plain.txt",
+				want: http.StatusCreated,
+			},
+			{
+				path: "/artifactory/scratch-local/plain.txt",
+				want: http.StatusCreated,
+			},
+		} {
+			if resp, body := as(call{
+				method: "PUT",
+				path:   tt.path,
+				body:   "payload",
+			}); resp.StatusCode != tt.want {
+				t.Errorf("PUT %s without annotate = %d %s, want %d", tt.path, resp.StatusCode, body, tt.want)
+			}
+		}
+
+		resp, body := do(t, srv, call{
+			method: "GET",
+			path:   "/api/v1/repositories/scratch-local/properties/m.txt",
+		})
+		if resp.StatusCode == http.StatusOK && strings.Contains(body, "approved") {
+			t.Errorf("properties set without annotate: %s", body)
+		}
+	})
+
 	t.Run("unreadable repositories and builds answer as missing ones", func(t *testing.T) {
 		if resp, body := do(t, srv, call{
 			method: "PUT",

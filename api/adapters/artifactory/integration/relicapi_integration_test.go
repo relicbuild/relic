@@ -624,7 +624,11 @@ func TestRelicAPIArtifacts(t *testing.T) {
 		t.Errorf("overwrite without delete = %d, want 403", code)
 	}
 
-	if code, body := put(dev, "libs/app/2.0/app.bin?build.name=team/app&build.number=7", "other"); code != 201 {
+	if code, _ := put(dev, "libs/app/2.0/app.bin?build.name=team/app&build.number=7", "other"); code != 403 {
+		t.Errorf("upload with properties without annotate = %d, want 403", code)
+	}
+
+	if code, body := put(admin, "libs/app/2.0/app.bin?build.name=team/app&build.number=7", "other"); code != 201 {
 		t.Fatalf("upload = %d %s", code, body)
 	}
 

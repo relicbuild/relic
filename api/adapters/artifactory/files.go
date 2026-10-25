@@ -111,6 +111,14 @@ func (h *Handler) files(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 
+		if len(t.Props) > 0 {
+			checks = append(checks, packages.RepoCheck{
+				Repo:   t.Repo,
+				Path:   t.Path,
+				Action: auth.ActionAnnotate,
+			})
+		}
+
 		if h.packages.RequireRepo(w, r, checks...) {
 			h.deploy(w, r, t)
 		}

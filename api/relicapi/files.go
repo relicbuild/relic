@@ -169,6 +169,13 @@ func (d Dependencies) upload(w http.ResponseWriter, r *http.Request, key, p stri
 		return
 	}
 
+	if len(props) > 0 {
+		if err := can(ctx, d, target, p, auth.ActionAnnotate); err != nil {
+			writeHTTPError(w, codeOf(err))
+			return
+		}
+	}
+
 	check, err := repositoryAccess(ctx, d, target)
 	if err != nil {
 		writeHTTPError(w, d.logged(r, err))
