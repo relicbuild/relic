@@ -324,6 +324,7 @@ type Querier interface {
 	PutHold(ctx context.Context, arg PutHoldParams) error
 	PutQuarantineDecision(ctx context.Context, arg PutQuarantineDecisionParams) error
 	PutTombstone(ctx context.Context, arg PutTombstoneParams) error
+	RebindAccessTokens(ctx context.Context, arg RebindAccessTokensParams) error
 	RecordCleanupRun(ctx context.Context, arg RecordCleanupRunParams) error
 	RecordDownloads(ctx context.Context, arg RecordDownloadsParams) error
 	RecordPolicyDecision(ctx context.Context, arg RecordPolicyDecisionParams) error
@@ -344,6 +345,7 @@ type Querier interface {
 	ReplaceSsoMemberships(ctx context.Context, arg ReplaceSsoMembershipsParams) error
 	RepositoryUsedBytes(ctx context.Context, repoKey string) (int64, error)
 	RevokeAccessToken(ctx context.Context, id uuid.UUID) error
+	RevokeBoundAccessTokens(ctx context.Context, boundBy string) error
 	RevokeUserAccessTokens(ctx context.Context, username string) error
 	SaveCVEFeed(ctx context.Context, arg SaveCVEFeedParams) error
 	SaveCVERecord(ctx context.Context, arg SaveCVERecordParams) error

@@ -57,6 +57,11 @@ type Token struct {
 	Scope            TokenScope
 	WorkloadIdentity string
 	Expires          time.Time
+	// BoundBy is the token whose revocation also revokes this one, if any.
+	BoundBy string
+	// SignIn marks a UI session or a CLI sign-in approved in the browser:
+	// tokens made with it are bound by what it is bound by, not by it.
+	SignIn bool
 }
 
 // IssuedToken is a token just issued, with its refresh token when it is
@@ -80,6 +85,10 @@ type IssueParams struct {
 	Description      string
 	Project          string
 	WorkloadIdentity string
+	// BoundBy is the token whose revocation also revokes the new one.
+	BoundBy string
+	// SignIn issues a UI session or a CLI sign-in (Token.SignIn).
+	SignIn bool
 
 	kind string
 }
@@ -284,6 +293,8 @@ func (t *Tokens) issue(ctx context.Context, q database.Querier, p IssueParams) (
 		Description:      p.Description,
 		Project:          p.Project,
 		WorkloadIdentity: p.WorkloadIdentity,
+		BoundBy:          p.BoundBy,
+		SignIn:           p.SignIn,
 	})
 	if err != nil {
 		return IssuedToken{}, fmt.Errorf("store token: %w", err)
@@ -328,6 +339,12 @@ func (t *Tokens) Refresh(ctx context.Context, refreshToken string) (IssuedToken,
 			lifetime = old.Expires.Sub(old.Created).Round(time.Second)
 		}
 
+		if old.BoundBy != "" {
+			if lifetime, err = t.boundLifetime(ctx, q, old.BoundBy, lifetime); err != nil {
+				return err
+			}
+		}
+
 		if err := q.RevokeAccessToken(ctx, old.ID); err != nil {
 			return err
 		}
@@ -342,10 +359,18 @@ func (t *Tokens) Refresh(ctx context.Context, refreshToken string) (IssuedToken,
 				Refreshable: true,
 				Description: old.Description,
 				Project:     old.Project,
+				BoundBy:     old.BoundBy,
+				SignIn:      old.SignIn,
 			},
 		)
+		if err != nil {
+			return err
+		}
 
-		return err
+		return q.RebindAccessTokens(ctx, database.RebindAccessTokensParams{
+			NewBoundBy: out.ID,
+			BoundBy:    old.ID.String(),
+		})
 	})
 	if err != nil {
 		return IssuedToken{}, err
@@ -356,7 +381,47 @@ func (t *Tokens) Refresh(ctx context.Context, refreshToken string) (IssuedToken,
 	return out, nil
 }
 
-// Revoke invalidates a token (UI sign-out).
+func (t *Tokens) boundLifetime(
+	ctx context.Context,
+	q database.Querier,
+	boundBy string,
+	lifetime time.Duration,
+) (time.Duration, error) {
+	id, err := uuid.Parse(boundBy)
+	if err != nil {
+		return 0, ErrInvalidToken
+	}
+
+	bound, err := q.GetAccessToken(ctx, id)
+	if errors.Is(database.NotFound(err), database.ErrNotFound) {
+		return 0, ErrInvalidToken
+	}
+
+	if err != nil {
+		return 0, fmt.Errorf("look up the token it is bound by: %w", err)
+	}
+
+	if bound.Revoked {
+		return 0, ErrInvalidToken
+	}
+
+	if bound.Expires == nil {
+		return lifetime, nil
+	}
+
+	remaining := bound.Expires.Sub(t.now()).Truncate(time.Second)
+	if remaining <= 0 {
+		return 0, ErrInvalidToken
+	}
+
+	if lifetime == 0 || lifetime > remaining {
+		return remaining, nil
+	}
+
+	return lifetime, nil
+}
+
+// Revoke invalidates a token (sign-out); the tokens it bound stay.
 func (t *Tokens) Revoke(ctx context.Context, token string) error {
 	tok, err := t.Verify(ctx, token)
 	if errors.Is(err, ErrInvalidToken) {
@@ -428,7 +493,8 @@ func (t *Tokens) List(ctx context.Context, username string, includeRevoked bool)
 	return out, nil
 }
 
-// RevokeID revokes the token with id.
+// RevokeID revokes the token with id and every token bound by it, directly
+// or through others.
 func (t *Tokens) RevokeID(ctx context.Context, id, owner string) error {
 	uid, err := uuid.Parse(id)
 	if err != nil {
@@ -448,11 +514,17 @@ func (t *Tokens) RevokeID(ctx context.Context, id, owner string) error {
 		return ErrTokenNotFound
 	}
 
-	if err := t.db.RevokeAccessToken(ctx, uid); err != nil {
-		return fmt.Errorf("revoke token: %w", err)
-	}
+	return t.db.WithTx(ctx, func(q database.Querier) error {
+		if err := q.RevokeAccessToken(ctx, uid); err != nil {
+			return fmt.Errorf("revoke token: %w", err)
+		}
 
-	return nil
+		if err := q.RevokeBoundAccessTokens(ctx, uid.String()); err != nil {
+			return fmt.Errorf("revoke the tokens it bound: %w", err)
+		}
+
+		return nil
+	})
 }
 
 // Verify checks a token's signature, expiry and revocation.
@@ -520,6 +592,8 @@ func (t *Tokens) Verify(ctx context.Context, token string) (Token, error) {
 		Username:         username,
 		Scope:            t.format.ParseScope(claims.Scope),
 		WorkloadIdentity: row.WorkloadIdentity,
+		BoundBy:          row.BoundBy,
+		SignIn:           row.SignIn,
 	}
 	if row.Expires != nil {
 		verified.Expires = *row.Expires

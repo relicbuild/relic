@@ -22,6 +22,8 @@ type AccessToken struct {
 	Project          string
 	ScopeGroups      []string
 	WorkloadIdentity string
+	BoundBy          string
+	SignIn           bool
 }
 
 type Approval struct {

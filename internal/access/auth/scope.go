@@ -83,12 +83,23 @@ func (p Principal) CeilScope(s TokenScope) TokenScope {
 
 // LimitIssue keeps a token p mints within p's rights: its scope within p's,
 // its life within MaxUserTokenLifetime unless p is an administrator, and,
-// when a workload identity's token signed p in, its life within that
-// token's, without a refresh token.
+// when a token signed p in, its life within that token's, revoked with it
+// (RevokeID).
 func (p Principal) LimitIssue(params IssueParams, now time.Time) IssueParams {
 	params.Scope = p.CeilScope(params.Scope)
 	if !p.Admin && (params.ExpiresIn == 0 || params.ExpiresIn > MaxUserTokenLifetime) {
 		params.ExpiresIn = MaxUserTokenLifetime
+	}
+
+	if p.BoundBy != "" {
+		params.BoundBy = p.BoundBy
+
+		if !p.BoundUntil.IsZero() {
+			remaining := max(p.BoundUntil.Sub(now), time.Second)
+			if params.ExpiresIn == 0 || params.ExpiresIn > remaining {
+				params.ExpiresIn = remaining
+			}
+		}
 	}
 
 	if p.WorkloadIdentity == "" {

@@ -10,11 +10,12 @@ UPDATE signing_keys SET private_key = @private_key WHERE kid = @kid;
 -- name: InsertAccessToken :exec
 -- scope_groups arrives as a JSON array, which is how the column stores it.
 INSERT INTO access_tokens (
-    id, username, scope_kind, scope_groups, refresh_token_hash, expires, description, project, workload_identity
+    id, username, scope_kind, scope_groups, refresh_token_hash, expires, description, project, workload_identity,
+    bound_by, sign_in
 )
 VALUES (
     @id, @username, @scope_kind, @scope_groups, @refresh_token_hash, @expires, @description, @project,
-    @workload_identity
+    @workload_identity, @bound_by, @sign_in
 );
 
 -- name: GetAccessToken :one
@@ -25,6 +26,17 @@ SELECT * FROM access_tokens WHERE refresh_token_hash = @refresh_token_hash;
 
 -- name: RevokeAccessToken :exec
 UPDATE access_tokens SET revoked = true, refresh_token_hash = NULL WHERE id = @id;
+
+-- name: RevokeBoundAccessTokens :exec
+WITH RECURSIVE bound (id) AS (
+    SELECT t.id FROM access_tokens t WHERE t.bound_by = @bound_by
+    UNION
+    SELECT t.id FROM access_tokens t JOIN bound b ON t.bound_by = b.id
+)
+UPDATE access_tokens SET revoked = true, refresh_token_hash = NULL WHERE id IN (SELECT id FROM bound);
+
+-- name: RebindAccessTokens :exec
+UPDATE access_tokens SET bound_by = @new_bound_by WHERE bound_by = @bound_by;
 
 -- name: RevokeUserAccessTokens :exec
 UPDATE access_tokens SET revoked = true, refresh_token_hash = NULL WHERE username = @username;

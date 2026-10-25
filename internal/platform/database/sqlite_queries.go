@@ -672,11 +672,12 @@ SET status = 'done', reason = 'SBOM imported', sbom = excluded.sbom, components 
 const sqliteInsertAccessToken = `-- name: InsertAccessToken :exec
 -- scope_groups arrives as a JSON array, which is how the column stores it.
 INSERT INTO access_tokens (
-    id, username, scope_kind, scope_groups, refresh_token_hash, expires, description, project, workload_identity
+    id, username, scope_kind, scope_groups, refresh_token_hash, expires, description, project, workload_identity,
+    bound_by, sign_in
 )
 VALUES (
     @id, @username, @scope_kind, @scope_groups, @refresh_token_hash, @expires, @description, @project,
-    @workload_identity
+    @workload_identity, @bound_by, @sign_in
 );`
 
 const sqliteInsertAuditEvent = `-- name: InsertAuditEvent :exec
@@ -1361,6 +1362,9 @@ const sqlitePutTombstone = `-- name: PutTombstone :exec
 INSERT INTO replication_tombstones (repo_key, path, deleted) VALUES (@repo_key, @path, @deleted)
 ON CONFLICT (repo_key, path) DO UPDATE SET deleted = excluded.deleted;`
 
+const sqliteRebindAccessTokens = `-- name: RebindAccessTokens :exec
+UPDATE access_tokens SET bound_by = @new_bound_by WHERE bound_by = @bound_by;`
+
 const sqliteRecordCleanupRun = `-- name: RecordCleanupRun :exec
 UPDATE cleanup_policies SET last_run = @last_run, last_moved = @last_moved, last_error = @last_error
 WHERE name = @name;`
@@ -1454,6 +1458,14 @@ SELECT CAST(coalesce(sum(size), 0) AS INTEGER) AS bytes FROM items WHERE repo_ke
 
 const sqliteRevokeAccessToken = `-- name: RevokeAccessToken :exec
 UPDATE access_tokens SET revoked = true, refresh_token_hash = NULL WHERE id = @id;`
+
+const sqliteRevokeBoundAccessTokens = `-- name: RevokeBoundAccessTokens :exec
+WITH RECURSIVE bound (id) AS (
+    SELECT t.id FROM access_tokens t WHERE t.bound_by = @bound_by
+    UNION
+    SELECT t.id FROM access_tokens t JOIN bound b ON t.bound_by = b.id
+)
+UPDATE access_tokens SET revoked = true, refresh_token_hash = NULL WHERE id IN (SELECT id FROM bound);`
 
 const sqliteRevokeUserAccessTokens = `-- name: RevokeUserAccessTokens :exec
 UPDATE access_tokens SET revoked = true, refresh_token_hash = NULL WHERE username = @username;`
@@ -3110,7 +3122,7 @@ func (q *sqliteQueries) ForgetFailedScans(ctx context.Context, arg []string) ([]
 func (q *sqliteQueries) GetAccessToken(ctx context.Context, arg uuid.UUID) (AccessToken, error) {
 	var i AccessToken
 
-	rows, err := q.query(ctx, "GetAccessToken", []string{"id", "username", "scopekind", "refreshtokenhash", "expires", "created", "revoked", "description", "project", "scopegroups", "workloadidentity"}, sqliteGetAccessToken, sql.Named("id", arg.String()))
+	rows, err := q.query(ctx, "GetAccessToken", []string{"id", "username", "scopekind", "refreshtokenhash", "expires", "created", "revoked", "description", "project", "scopegroups", "workloadidentity", "boundby", "signin"}, sqliteGetAccessToken, sql.Named("id", arg.String()))
 	if err != nil {
 		return i, err
 	}
@@ -3125,7 +3137,7 @@ func (q *sqliteQueries) GetAccessToken(ctx context.Context, arg uuid.UUID) (Acce
 		return i, sql.ErrNoRows
 	}
 
-	err = rows.Scan(sqliteUUIDScanner{&i.ID}, &i.Username, &i.ScopeKind, &i.RefreshTokenHash, sqliteNullTimeScanner{&i.Expires}, sqliteTimeScanner{&i.Created}, &i.Revoked, &i.Description, &i.Project, sqliteJSONScanner[[]string]{&i.ScopeGroups}, &i.WorkloadIdentity)
+	err = rows.Scan(sqliteUUIDScanner{&i.ID}, &i.Username, &i.ScopeKind, &i.RefreshTokenHash, sqliteNullTimeScanner{&i.Expires}, sqliteTimeScanner{&i.Created}, &i.Revoked, &i.Description, &i.Project, sqliteJSONScanner[[]string]{&i.ScopeGroups}, &i.WorkloadIdentity, &i.BoundBy, &i.SignIn)
 
 	return i, err
 }
@@ -3133,7 +3145,7 @@ func (q *sqliteQueries) GetAccessToken(ctx context.Context, arg uuid.UUID) (Acce
 func (q *sqliteQueries) GetAccessTokenByRefreshHash(ctx context.Context, arg *string) (AccessToken, error) {
 	var i AccessToken
 
-	rows, err := q.query(ctx, "GetAccessTokenByRefreshHash", []string{"id", "username", "scopekind", "refreshtokenhash", "expires", "created", "revoked", "description", "project", "scopegroups", "workloadidentity"}, sqliteGetAccessTokenByRefreshHash, sql.Named("refresh_token_hash", arg))
+	rows, err := q.query(ctx, "GetAccessTokenByRefreshHash", []string{"id", "username", "scopekind", "refreshtokenhash", "expires", "created", "revoked", "description", "project", "scopegroups", "workloadidentity", "boundby", "signin"}, sqliteGetAccessTokenByRefreshHash, sql.Named("refresh_token_hash", arg))
 	if err != nil {
 		return i, err
 	}
@@ -3148,7 +3160,7 @@ func (q *sqliteQueries) GetAccessTokenByRefreshHash(ctx context.Context, arg *st
 		return i, sql.ErrNoRows
 	}
 
-	err = rows.Scan(sqliteUUIDScanner{&i.ID}, &i.Username, &i.ScopeKind, &i.RefreshTokenHash, sqliteNullTimeScanner{&i.Expires}, sqliteTimeScanner{&i.Created}, &i.Revoked, &i.Description, &i.Project, sqliteJSONScanner[[]string]{&i.ScopeGroups}, &i.WorkloadIdentity)
+	err = rows.Scan(sqliteUUIDScanner{&i.ID}, &i.Username, &i.ScopeKind, &i.RefreshTokenHash, sqliteNullTimeScanner{&i.Expires}, sqliteTimeScanner{&i.Created}, &i.Revoked, &i.Description, &i.Project, sqliteJSONScanner[[]string]{&i.ScopeGroups}, &i.WorkloadIdentity, &i.BoundBy, &i.SignIn)
 
 	return i, err
 }
@@ -4184,7 +4196,7 @@ func (q *sqliteQueries) ImportScanSbom(ctx context.Context, arg ImportScanSbomPa
 }
 
 func (q *sqliteQueries) InsertAccessToken(ctx context.Context, arg InsertAccessTokenParams) error {
-	_, err := q.db.ExecContext(ctx, sqliteInsertAccessToken, sql.Named("id", arg.ID.String()), sql.Named("username", arg.Username), sql.Named("scope_kind", arg.ScopeKind), sql.Named("scope_groups", sqliteJSON(arg.ScopeGroups)), sql.Named("refresh_token_hash", arg.RefreshTokenHash), sql.Named("expires", sqliteNullTime(arg.Expires)), sql.Named("description", arg.Description), sql.Named("project", arg.Project), sql.Named("workload_identity", arg.WorkloadIdentity))
+	_, err := q.db.ExecContext(ctx, sqliteInsertAccessToken, sql.Named("id", arg.ID.String()), sql.Named("username", arg.Username), sql.Named("scope_kind", arg.ScopeKind), sql.Named("scope_groups", sqliteJSON(arg.ScopeGroups)), sql.Named("refresh_token_hash", arg.RefreshTokenHash), sql.Named("expires", sqliteNullTime(arg.Expires)), sql.Named("description", arg.Description), sql.Named("project", arg.Project), sql.Named("workload_identity", arg.WorkloadIdentity), sql.Named("bound_by", arg.BoundBy), sql.Named("sign_in", arg.SignIn))
 
 	return err
 }
@@ -4468,7 +4480,7 @@ func (q *sqliteQueries) LatestMaliciousChange(ctx context.Context) (time.Time, e
 }
 
 func (q *sqliteQueries) ListAccessTokens(ctx context.Context, arg ListAccessTokensParams) ([]AccessToken, error) {
-	rows, err := q.query(ctx, "ListAccessTokens", []string{"id", "username", "scopekind", "refreshtokenhash", "expires", "created", "revoked", "description", "project", "scopegroups", "workloadidentity"}, sqliteListAccessTokens, sql.Named("username", arg.Username), sql.Named("include_revoked", arg.IncludeRevoked))
+	rows, err := q.query(ctx, "ListAccessTokens", []string{"id", "username", "scopekind", "refreshtokenhash", "expires", "created", "revoked", "description", "project", "scopegroups", "workloadidentity", "boundby", "signin"}, sqliteListAccessTokens, sql.Named("username", arg.Username), sql.Named("include_revoked", arg.IncludeRevoked))
 	if err != nil {
 		return nil, err
 	}
@@ -4479,7 +4491,7 @@ func (q *sqliteQueries) ListAccessTokens(ctx context.Context, arg ListAccessToke
 
 	for rows.Next() {
 		var i AccessToken
-		if err := rows.Scan(sqliteUUIDScanner{&i.ID}, &i.Username, &i.ScopeKind, &i.RefreshTokenHash, sqliteNullTimeScanner{&i.Expires}, sqliteTimeScanner{&i.Created}, &i.Revoked, &i.Description, &i.Project, sqliteJSONScanner[[]string]{&i.ScopeGroups}, &i.WorkloadIdentity); err != nil {
+		if err := rows.Scan(sqliteUUIDScanner{&i.ID}, &i.Username, &i.ScopeKind, &i.RefreshTokenHash, sqliteNullTimeScanner{&i.Expires}, sqliteTimeScanner{&i.Created}, &i.Revoked, &i.Description, &i.Project, sqliteJSONScanner[[]string]{&i.ScopeGroups}, &i.WorkloadIdentity, &i.BoundBy, &i.SignIn); err != nil {
 			return nil, err
 		}
 
@@ -6954,6 +6966,12 @@ func (q *sqliteQueries) PutTombstone(ctx context.Context, arg PutTombstoneParams
 	return err
 }
 
+func (q *sqliteQueries) RebindAccessTokens(ctx context.Context, arg RebindAccessTokensParams) error {
+	_, err := q.db.ExecContext(ctx, sqliteRebindAccessTokens, sql.Named("new_bound_by", arg.NewBoundBy), sql.Named("bound_by", arg.BoundBy))
+
+	return err
+}
+
 func (q *sqliteQueries) RecordCleanupRun(ctx context.Context, arg RecordCleanupRunParams) error {
 	_, err := q.db.ExecContext(ctx, sqliteRecordCleanupRun, sql.Named("last_run", sqliteNullTime(arg.LastRun)), sql.Named("last_moved", arg.LastMoved), sql.Named("last_error", arg.LastError), sql.Named("name", arg.Name))
 
@@ -7065,6 +7083,12 @@ func (q *sqliteQueries) RepositoryUsedBytes(ctx context.Context, arg string) (in
 
 func (q *sqliteQueries) RevokeAccessToken(ctx context.Context, arg uuid.UUID) error {
 	_, err := q.db.ExecContext(ctx, sqliteRevokeAccessToken, sql.Named("id", arg.String()))
+
+	return err
+}
+
+func (q *sqliteQueries) RevokeBoundAccessTokens(ctx context.Context, arg string) error {
+	_, err := q.db.ExecContext(ctx, sqliteRevokeBoundAccessTokens, sql.Named("bound_by", arg))
 
 	return err
 }

@@ -57,6 +57,9 @@ type Principal struct {
 	// principal in; tokens it mints expire with that token (LimitIssue).
 	WorkloadIdentity     string
 	WorkloadTokenExpires time.Time
+	// BoundBy is the token whose revocation also revokes the tokens the principal mints.
+	BoundBy    string
+	BoundUntil time.Time
 }
 
 // MaxUserTokenLifetime bounds tokens non-administrators mint for
@@ -425,6 +428,13 @@ func (a *Authenticator) bearer(ctx context.Context, token string) (Principal, er
 	if tok.WorkloadIdentity != "" {
 		p.WorkloadIdentity = tok.WorkloadIdentity
 		p.WorkloadTokenExpires = tok.Expires
+	}
+
+	switch {
+	case !tok.SignIn:
+		p.BoundBy, p.BoundUntil = tok.ID, tok.Expires
+	case tok.BoundBy != "":
+		p.BoundBy, p.BoundUntil = tok.BoundBy, tok.Expires
 	}
 
 	return p, nil

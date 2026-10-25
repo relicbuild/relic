@@ -83,6 +83,7 @@ func (d Dependencies) uiSession(r *http.Request, p auth.Principal) (*http.Cookie
 		Scope:       auth.UserScope,
 		ExpiresIn:   sessionTTL,
 		Description: "ui session",
+		SignIn:      true,
 	}, now))
 	if err != nil {
 		return nil, time.Time{}, err
@@ -153,10 +154,10 @@ func (s *sessionServer) ApproveLogin(
 	}
 
 	approver := auth.FromContext(ctx)
-	if approver.Scoped || approver.WorkloadIdentity != "" {
+	if approver.Scoped || approver.WorkloadIdentity != "" || approver.BoundBy != "" {
 		return nil, connect.NewError(
 			connect.CodePermissionDenied,
-			"a token scoped to groups or from a workload identity cannot approve a sign-in",
+			"sign in with your password to approve a sign-in; a token cannot",
 		)
 	}
 

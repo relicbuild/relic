@@ -918,6 +918,35 @@ func TestLimitIssueBoundsTheLifetime(t *testing.T) {
 			},
 			want: time.Hour,
 		},
+		{
+			name: "a user signed in with a short-lived token",
+			p: Principal{
+				Username:   "bob",
+				BoundBy:    "parent",
+				BoundUntil: now.Add(time.Minute),
+			},
+			requested: 12 * time.Hour,
+			want:      time.Minute,
+		},
+		{
+			name: "an administrator signed in with a token",
+			p: Principal{
+				Username:   "root",
+				Admin:      true,
+				BoundBy:    "parent",
+				BoundUntil: now.Add(time.Minute),
+			},
+			want: time.Minute,
+		},
+		{
+			name: "a user signed in with a token that never expires",
+			p: Principal{
+				Username: "bob",
+				BoundBy:  "parent",
+			},
+			requested: time.Hour,
+			want:      time.Hour,
+		},
 	}
 
 	for _, tt := range tests {
@@ -925,12 +954,24 @@ func TestLimitIssueBoundsTheLifetime(t *testing.T) {
 			t.Parallel()
 
 			got := tt.p.LimitIssue(IssueParams{
-				Username:  tt.p.Username,
-				Scope:     UserScope,
-				ExpiresIn: tt.requested,
+				Username:    tt.p.Username,
+				Scope:       UserScope,
+				ExpiresIn:   tt.requested,
+				Refreshable: true,
 			}, now)
 			if got.ExpiresIn != tt.want {
 				t.Errorf("ExpiresIn = %v, want %v", got.ExpiresIn, tt.want)
+			}
+
+			bound := tt.p.WorkloadIdentity != ""
+			if got.BoundBy != tt.p.BoundBy || got.Refreshable == bound {
+				t.Errorf(
+					"BoundBy = %q, Refreshable = %v; want %q, %v",
+					got.BoundBy,
+					got.Refreshable,
+					tt.p.BoundBy,
+					!bound,
+				)
 			}
 		})
 	}

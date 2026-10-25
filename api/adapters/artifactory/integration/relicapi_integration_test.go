@@ -235,6 +235,169 @@ func TestRelicAPISession(t *testing.T) {
 	}
 }
 
+func TestRelicAPISessionsEndWithTheTokenTheyWereMadeWith(t *testing.T) {
+	t.Parallel()
+	srv := server(t)
+	ctx := t.Context()
+
+	const password = "Bob-pass-12345"
+
+	if _, err := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL)).
+		PutUser(ctx, &relicv1.PutUserRequest{
+			User: &relicv1.User{
+				Name:     "bob",
+				Email:    "bob@example.com",
+				Password: password,
+			},
+		}); err != nil {
+		t.Fatal(err)
+	}
+
+	bobs := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("bob", password), srv.URL))
+
+	short, err := bobs.CreateToken(ctx, &relicv1.CreateTokenRequest{
+		Description:      "short",
+		ExpiresInSeconds: 60,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	uiCtx, uiInfo := connect.NewClientContext(ctx)
+	uiInfo.RequestHeader().Set(auth.UIHeader, "1")
+
+	signIn := func(secret string) (*cookieJar, relicv1connect.SecurityServiceClient) {
+		jar := &cookieJar{}
+		if _, err := relicv1connect.NewSessionServiceClient(apiClient(&http.Client{
+			Transport: jar,
+		}, srv.URL)).Login(uiCtx, &relicv1.LoginRequest{
+			Username: "bob",
+			Password: secret,
+		}); err != nil || jar.cookie == "" {
+			t.Fatalf("sign in: %v", err)
+		}
+
+		return jar, relicv1connect.NewSecurityServiceClient(apiClient(&http.Client{
+			Transport: jar,
+		}, srv.URL))
+	}
+
+	_, tokenSession := signIn(short.GetAccessToken())
+
+	fromSession, err := tokenSession.CreateToken(uiCtx, &relicv1.CreateTokenRequest{
+		Description:      "from a token session",
+		ExpiresInSeconds: 30 * 24 * 3600,
+	})
+	if err != nil || fromSession.GetExpiresIn() > 60 {
+		t.Fatalf("token from a session made with a 60 s token = %v %v, want it to live at most 60 s", fromSession, err)
+	}
+
+	fromToken, err := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("bob", short.GetAccessToken()), srv.URL)).
+		CreateToken(ctx, &relicv1.CreateTokenRequest{
+			Description: "child",
+		})
+	if err != nil || fromToken.GetExpiresIn() > 60 || fromToken.GetRefreshToken() != "" {
+		t.Fatalf("token minted with a 60 s token = %v %v, want it to live at most 60 s, unrefreshable", fromToken, err)
+	}
+
+	const cliSession = "5f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f"
+
+	if _, err := relicv1connect.NewSessionServiceClient(apiClient(http.DefaultClient, srv.URL)).
+		StartWebLogin(ctx, &relicv1.StartWebLoginRequest{
+			Session: cliSession,
+		}); err != nil {
+		t.Fatal(err)
+	}
+
+	tokenJar, _ := signIn(short.GetAccessToken())
+	if _, err := relicv1connect.NewSessionServiceClient(apiClient(&http.Client{
+		Transport: tokenJar,
+	}, srv.URL)).ApproveLogin(uiCtx, &relicv1.ApproveLoginRequest{
+		Session: cliSession,
+		Code:    cliSession[len(cliSession)-4:],
+	}); code(err) != connect.CodePermissionDenied {
+		t.Errorf("a session made with a token approving a CLI sign-in: %v, want permission denied", err)
+	}
+
+	passwordJar, passwordSession := signIn(password)
+
+	if _, err := relicv1connect.NewSessionServiceClient(apiClient(&http.Client{
+		Transport: passwordJar,
+	}, srv.URL)).ApproveLogin(uiCtx, &relicv1.ApproveLoginRequest{
+		Session: cliSession,
+		Code:    cliSession[len(cliSession)-4:],
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	polled, err := relicv1connect.NewSessionServiceClient(apiClient(http.DefaultClient, srv.URL)).
+		PollWebLogin(ctx, &relicv1.PollWebLoginRequest{
+			Session: cliSession,
+		})
+	if err != nil || polled.GetAccessToken() == "" {
+		t.Fatalf("poll = %v %v", polled, err)
+	}
+
+	traded, err := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("bob", polled.GetAccessToken()), srv.URL)).
+		CreateToken(ctx, &relicv1.CreateTokenRequest{
+			Description:      "relic CLI",
+			ExpiresInSeconds: 90 * 24 * 3600,
+		})
+	if err != nil || traded.GetExpiresIn() != 90*24*3600 {
+		t.Errorf("the CLI's token traded for a browser sign-in = %v %v, want the 90 days asked for", traded, err)
+	}
+
+	fromPassword, err := passwordSession.CreateToken(uiCtx, &relicv1.CreateTokenRequest{
+		Description:      "from a password session",
+		ExpiresInSeconds: 30 * 24 * 3600,
+	})
+	if err != nil || fromPassword.GetExpiresIn() != 30*24*3600 {
+		t.Fatalf("token from a password session = %v %v, want the 30 days asked for", fromPassword, err)
+	}
+
+	list, err := bobs.ListTokens(ctx, &relicv1.ListTokensRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tok := range list.GetTokens() {
+		if tok.GetDescription() != "short" {
+			continue
+		}
+
+		if _, err := bobs.RevokeToken(ctx, &relicv1.RevokeTokenRequest{
+			Id: tok.GetId(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := tokenSession.ListTokens(
+		uiCtx,
+		&relicv1.ListTokensRequest{},
+	); code(
+		err,
+	) != connect.CodeUnauthenticated {
+		t.Errorf("the session made with a revoked token: %v, want unauthenticated", err)
+	}
+
+	for name, tok := range map[string]string{
+		"from the token session": fromSession.GetAccessToken(),
+		"minted with the token":  fromToken.GetAccessToken(),
+	} {
+		_, err := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("bob", tok), srv.URL)).
+			ListTokens(ctx, &relicv1.ListTokensRequest{})
+		if code(err) != connect.CodeUnauthenticated {
+			t.Errorf("token %s after its parent was revoked: %v, want unauthenticated", name, err)
+		}
+	}
+
+	if _, err := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("bob", fromPassword.GetAccessToken()), srv.URL)).
+		ListTokens(ctx, &relicv1.ListTokensRequest{}); err != nil {
+		t.Errorf("a token made in a password session: %v, want it still valid", err)
+	}
+}
+
 type cookieJar struct {
 	cookie string
 }
