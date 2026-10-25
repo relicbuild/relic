@@ -2,6 +2,7 @@ package relicapi
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"mime"
 	"net/http"
@@ -43,8 +44,7 @@ func (d Dependencies) files(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		d.upload(w, r, key, p)
 	default:
-		w.Header().Set("Allow", "GET, HEAD, PUT")
-		writeHTTPError(w, connect.NewError(connect.CodeUnimplemented, "method not allowed"))
+		writeMethodNotAllowed(w, "GET, HEAD, PUT")
 	}
 }
 
@@ -251,35 +251,19 @@ func (d Dependencies) logged(r *http.Request, err error) *connect.Error {
 }
 
 func writeHTTPError(w http.ResponseWriter, ce *connect.Error) {
-	status := map[connect.Code]int{
-		connect.CodeInvalidArgument:    http.StatusBadRequest,
-		connect.CodeUnauthenticated:    http.StatusUnauthorized,
-		connect.CodePermissionDenied:   http.StatusForbidden,
-		connect.CodeNotFound:           http.StatusNotFound,
-		connect.CodeAlreadyExists:      http.StatusConflict,
-		connect.CodeUnimplemented:      http.StatusMethodNotAllowed,
-		connect.CodeFailedPrecondition: http.StatusConflict,
-		connect.CodeUnavailable:        http.StatusBadGateway,
-		connect.CodeResourceExhausted:  http.StatusRequestEntityTooLarge,
-	}[ce.Code()]
-	if status == 0 {
-		status = http.StatusInternalServerError
-	}
+	status := restHTTPStatus(ce.Code())
 
-	if ce.Message() == objectstore.ErrStorageFull.Error() {
+	switch {
+	case errors.Is(ce, repository.ErrTooLarge), errors.Is(ce, repository.ErrQuotaExceeded):
+		status = http.StatusRequestEntityTooLarge
+	case errors.Is(ce, objectstore.ErrStorageFull):
 		status = http.StatusInsufficientStorage
 	}
 
-	if status >= http.StatusInternalServerError {
-		w.Header().Set("Cache-Control", "no-store")
-	}
+	writeRESTError(w, status, ce)
+}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	//nolint:errchkjson // plain strings
-	_ = json.NewEncoder(w).
-		Encode(map[string]string{
-			"code":    ce.Code().String(),
-			"message": ce.Message(),
-		})
+func writeMethodNotAllowed(w http.ResponseWriter, allow string) {
+	w.Header().Set("Allow", allow)
+	writeRESTError(w, http.StatusMethodNotAllowed, connect.NewError(connect.CodeUnimplemented, "method not allowed"))
 }

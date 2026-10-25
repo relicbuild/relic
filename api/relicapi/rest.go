@@ -108,3 +108,46 @@ func (w *restErrorWriter) finish() {
 	w.ResponseWriter.WriteHeader(status)
 	_, _ = w.ResponseWriter.Write(body)
 }
+
+var restHTTPStatuses = map[connect.Code]int{
+	connect.CodeCanceled:           499,
+	connect.CodeInvalidArgument:    http.StatusBadRequest,
+	connect.CodeDeadlineExceeded:   http.StatusGatewayTimeout,
+	connect.CodeNotFound:           http.StatusNotFound,
+	connect.CodeAlreadyExists:      http.StatusConflict,
+	connect.CodePermissionDenied:   http.StatusForbidden,
+	connect.CodeResourceExhausted:  http.StatusTooManyRequests,
+	connect.CodeFailedPrecondition: http.StatusBadRequest,
+	connect.CodeAborted:            http.StatusConflict,
+	connect.CodeOutOfRange:         http.StatusBadRequest,
+	connect.CodeUnimplemented:      http.StatusNotImplemented,
+	connect.CodeUnavailable:        http.StatusServiceUnavailable,
+	connect.CodeUnauthenticated:    http.StatusUnauthorized,
+}
+
+func restHTTPStatus(code connect.Code) int {
+	if status, ok := restHTTPStatuses[code]; ok {
+		return status
+	}
+
+	return http.StatusInternalServerError
+}
+
+func writeRESTError(w http.ResponseWriter, status int, ce *connect.Error) {
+	body, err := json.Marshal(restStatus{
+		Code:    int(ce.Code()),
+		Message: ce.Message(),
+		Details: []json.RawMessage{},
+	})
+	if err != nil {
+		status, body = http.StatusInternalServerError, []byte(`{"code":13,"message":"internal error","details":[]}`)
+	}
+
+	if status >= http.StatusInternalServerError {
+		w.Header().Set("Cache-Control", "no-store")
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write(body)
+}

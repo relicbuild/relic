@@ -84,7 +84,7 @@ func TestSBOMExportAndImport(t *testing.T) {
 		},
 		{
 			format: "syft",
-			status: http.StatusConflict,
+			status: http.StatusBadRequest,
 		},
 		{
 			format: "xml",

@@ -63,8 +63,7 @@ func (d Dependencies) sbom(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		d.importSBOM(w, r, key, p)
 	default:
-		w.Header().Set("Allow", "GET, PUT")
-		writeHTTPError(w, connect.NewError(connect.CodeUnimplemented, "method not allowed"))
+		writeMethodNotAllowed(w, "GET, PUT")
 	}
 }
 
