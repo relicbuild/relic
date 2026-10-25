@@ -1,0 +1,121 @@
+# Weekly update pull requests: minor and patch versions grouped per
+# ecosystem, each major version in its own pull request. A release must be
+# public for a week (a month for a major version) before it is proposed.
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directories:
+      - /
+      - /tools/protogen
+      - /api/adapters/artifactory/compat/sdk
+      - /api/adapters/artifactory/relic-indexer
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+    commit-message:
+      prefix: chore
+      include: scope
+    ignore:
+      # Moves with the jf version in api/adapters/artifactory/compat/jf.sh.
+      - dependency-name: github.com/jfrog/jfrog-client-go
+    groups:
+      go:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: npm
+    directories:
+      - /web
+      - /deploy/cloudflare
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      web:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      actions:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: docker
+    directories:
+      - /
+      - /test/e2e/client
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+    commit-message:
+      prefix: chore
+      include: scope
+    ignore:
+      # Go moves with go.mod, every module and the tools in one change.
+      - dependency-name: golang
+    groups:
+      images:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: docker-compose
+    directory: /deploy
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      compose:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: helm
+    directory: /helm/relic
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      chart:
+        update-types:
+          - minor
+          - patch
