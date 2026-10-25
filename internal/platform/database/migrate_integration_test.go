@@ -3,10 +3,14 @@
 package database_test
 
 import (
+	"errors"
 	"math"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
+	"relic/internal/platform/database"
 	"relic/internal/platform/database/databasetest"
 )
 
@@ -59,5 +63,44 @@ func TestMigrateReportsTheAppliedMigrations(t *testing.T) {
 	again, err := db.Migrate(t.Context())
 	if err != nil || len(again) != 0 {
 		t.Errorf("migrating a migrated database = %+v, %v; want none applied", again, err)
+	}
+}
+
+func TestMigrateRefusesASchemaNewerThanTheBinary(t *testing.T) {
+	t.Parallel()
+	db := databasetest.NewDB(t)
+
+	rows, err := db.Query(
+		t.Context(),
+		"INSERT INTO goose_db_version (version_id, is_applied) VALUES (99999, true) RETURNING version_id",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows.Close()
+
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = db.Migrate(t.Context())
+
+	newer, ok := errors.AsType[*database.NewerSchemaError](err)
+	if !ok {
+		t.Fatalf("Migrate on a newer schema = %v, want a NewerSchemaError", err)
+	}
+
+	if newer.Database != 99999 || newer.Binary <= 1 || newer.Binary >= newer.Database {
+		t.Errorf("NewerSchemaError = %+v", newer)
+	}
+
+	for _, want := range []string{
+		"99999",
+		strconv.FormatInt(newer.Binary, 10),
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not name version %s", err, want)
+		}
 	}
 }

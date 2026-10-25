@@ -114,7 +114,35 @@ func (db *DB) MigrateTo(ctx context.Context, version int64) ([]Migration, error)
 	return db.engine.migrateTo(ctx, version)
 }
 
+// NewerSchemaError is returned by Migrate when a newer Relic migrated the
+// database past the newest migration this binary has.
+type NewerSchemaError struct {
+	Database int64
+	Binary   int64
+}
+
+func (e *NewerSchemaError) Error() string {
+	return fmt.Sprintf(
+		"the database schema is at version %d, newer than version %d, the newest this binary knows: "+
+			"run the Relic release that migrated it, or restore the backup taken before the upgrade",
+		e.Database,
+		e.Binary,
+	)
+}
+
 func migrateUpTo(ctx context.Context, provider *goose.Provider, version int64) ([]Migration, error) {
+	current, err := provider.GetDBVersion(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("schema version: %w", err)
+	}
+
+	if sources := provider.ListSources(); len(sources) > 0 && current > sources[len(sources)-1].Version {
+		return nil, &NewerSchemaError{
+			Database: current,
+			Binary:   sources[len(sources)-1].Version,
+		}
+	}
+
 	results, err := provider.UpTo(ctx, version)
 	if err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)

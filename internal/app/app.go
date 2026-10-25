@@ -216,6 +216,11 @@ func migrate(ctx context.Context, getenv func(string) string, log *slog.Logger) 
 
 func migrateDB(ctx context.Context, db *database.DB, log *slog.Logger) error {
 	applied, err := db.Migrate(ctx)
+	if newer, ok := errors.AsType[*database.NewerSchemaError](err); ok {
+		version, _ := relicVersion()
+		return fmt.Errorf("relic %s cannot use this database: %w", version, newer)
+	}
+
 	if err != nil {
 		return err
 	}

@@ -19,6 +19,7 @@ import (
 	"relic/internal/access/auth"
 	"relic/internal/app/ui"
 	"relic/internal/artifacts/repository"
+	"relic/internal/platform/database"
 	"relic/internal/platform/objectstore"
 )
 
@@ -144,6 +145,45 @@ func TestMigrateLogsTheAppliedMigrations(t *testing.T) {
 
 	if strings.Contains(logged.String(), "database migration applied") {
 		t.Errorf("migrating a migrated database logged %q", logged.String())
+	}
+}
+
+func TestMigrateRefusesADatabaseANewerReleaseMigrated(t *testing.T) {
+	t.Parallel()
+
+	url := "sqlite://" + filepath.Join(t.TempDir(), "relic.db")
+	getenv := func(key string) string {
+		if key == "RELIC_DATABASE_URL" {
+			return url
+		}
+
+		return ""
+	}
+
+	db, err := database.Open(t.Context(), url)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(db.Close)
+
+	if _, err := db.Migrate(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := db.Query(t.Context(), "INSERT INTO goose_db_version (version_id, is_applied) VALUES (99999, true)")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows.Close()
+
+	err = migrate(t.Context(), getenv, slog.New(slog.DiscardHandler))
+
+	version, _ := relicVersion()
+	if err == nil || !strings.Contains(err.Error(), "relic "+version+" cannot use this database") ||
+		!strings.Contains(err.Error(), "99999") {
+		t.Errorf("migrating a database a newer release migrated = %v, want a refusal naming both versions", err)
 	}
 }
 
