@@ -182,6 +182,60 @@ func TestDistributionServesTheBuiltCopyWhileItRebuilds(t *testing.T) {
 	}
 }
 
+func TestDistributionListsEveryComponentAndArchitecture(t *testing.T) {
+	t.Parallel()
+
+	f := newDebianFixture(t)
+	f.deploy(t, "hello", repository.Properties{
+		PropDistribution: {
+			"bookworm",
+			"trixie",
+		},
+		PropComponent: {
+			"main",
+			"contrib",
+		},
+		PropArchitecture: {
+			"amd64",
+			"arm64",
+		},
+	})
+
+	for _, dist := range []string{
+		"bookworm",
+		"trixie",
+	} {
+		d, err := f.svc.Distribution(t.Context(), f.local, dist)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !slices.Equal(d.Components, []string{
+			"contrib",
+			"main",
+		}) || !slices.Equal(d.Architectures, []string{
+			"amd64",
+			"arm64",
+		}) {
+			t.Errorf("%s has components %v and architectures %v, want contrib main and amd64 arm64",
+				dist, d.Components, d.Architectures)
+		}
+
+		for _, file := range []string{
+			"main/binary-amd64/Packages",
+			"main/binary-arm64/Packages",
+			"contrib/binary-amd64/Packages",
+			"contrib/binary-arm64/Packages",
+		} {
+			if got := f.packages(t, f.local, dist, file); !slices.Equal(got, []string{
+				"hello",
+			}) {
+				t.Errorf("%s %s lists %v, want hello", dist, file, got)
+			}
+		}
+	}
+}
+
 func BenchmarkDistributionBurst(b *testing.B) {
 	f := newDebianFixture(b)
 

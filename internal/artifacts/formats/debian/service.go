@@ -147,7 +147,7 @@ func (s *Service) buildDistribution(ctx context.Context, r repository.Repository
 	paras := map[string]map[string][]string{}
 	seen := map[string]bool{}
 	add := func(comp, arch, p string) {
-		id := comp + "\x00" + Field(p, "Package") + "\x00" + Field(p, "Version") + "\x00" + Field(p, "Architecture")
+		id := comp + "\x00" + arch + "\x00" + Field(p, "Package") + "\x00" + Field(p, "Version") + "\x00" + Field(p, "Architecture")
 		if seen[id] {
 			return
 		}
@@ -305,30 +305,33 @@ func (s *Service) localParagraphs(
 			continue
 		}
 
-		comp := first(props[PropComponent])
-		if comp == "" {
-			comp = "main"
-		}
-
-		arch := first(props[PropArchitecture])
-		if arch == "" {
-			arch = Field(ctl, "Architecture")
-		}
-
-		for c := range strings.SplitSeq(comp, ",") {
-			c = strings.TrimSpace(c)
-			if c == "" {
-				continue
+		components := listedValues(props[PropComponent])
+		if len(components) == 0 {
+			components = []string{
+				"main",
 			}
+		}
 
-			add(c, arch, File{
-				Control:  ctl,
-				Filename: it.Path(),
-				Size:     it.Size,
-				MD5:      it.Checksums.MD5,
-				SHA1:     it.Checksums.SHA1,
-				SHA256:   it.Checksums.SHA256,
-			}.Paragraph())
+		archs := listedValues(props[PropArchitecture])
+		if len(archs) == 0 {
+			archs = []string{
+				Field(ctl, "Architecture"),
+			}
+		}
+
+		paragraph := File{
+			Control:  ctl,
+			Filename: it.Path(),
+			Size:     it.Size,
+			MD5:      it.Checksums.MD5,
+			SHA1:     it.Checksums.SHA1,
+			SHA256:   it.Checksums.SHA256,
+		}.Paragraph()
+
+		for _, component := range components {
+			for _, arch := range archs {
+				add(component, arch, paragraph)
+			}
 		}
 	}
 
@@ -445,6 +448,20 @@ func (s *Service) members(ctx context.Context, r repository.Repository, depth in
 	for _, key := range s.repos.Members(r) {
 		if m, err := s.repos.GetRepository(ctx, key); err == nil {
 			out = append(out, s.members(ctx, m, depth+1)...)
+		}
+	}
+
+	return out
+}
+
+func listedValues(values []string) []string {
+	var out []string
+
+	for _, v := range values {
+		for part := range strings.SplitSeq(v, ",") {
+			if part = strings.TrimSpace(part); part != "" && !slices.Contains(out, part) {
+				out = append(out, part)
+			}
 		}
 	}
 
