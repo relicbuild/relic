@@ -72,9 +72,15 @@ func TestImportArtifactory(t *testing.T) {
 			body:   `{"description":"developers"}`,
 		},
 		{
+			method: "PUT",
+			path:   "/artifactory/api/security/users/carol",
+			body:   `{"email":"carol@example.com","password":"Carol-pass-1"}`,
+		},
+		{
 			method: "POST",
 			path:   "/artifactory/api/v2/security/permissions/devs-libs",
-			body:   `{"name":"devs-libs","repo":{"repositories":["libs-local"],"include-patterns":["**"],"actions":{"groups":{"devs":["read","write"]}}}}`,
+			body: `{"name":"devs-libs","repo":{"repositories":["libs-local"],"include-patterns":["**"],` +
+				`"actions":{"groups":{"devs":["read","write"]},"users":{"carol":["read"]}}}}`,
 		},
 		{
 			method: "PUT",
@@ -138,6 +144,12 @@ func TestImportArtifactory(t *testing.T) {
 	if err != nil || len(report.Errors) == 0 || report.Groups.Created < 1 || report.Repositories.Created != 3 ||
 		report.Permissions.Created != 1 || report.Files.Copied != 1 {
 		t.Fatalf("import without the jar's properties = %+v %v, want the jar refused", report, err)
+	}
+
+	if !slices.ContainsFunc(report.Notes, func(n string) bool {
+		return strings.Contains(n, "devs-libs") && strings.Contains(n, "carol")
+	}) {
+		t.Errorf("notes = %v; want one that says the grant to carol, who was not imported, is left out", report.Notes)
 	}
 
 	report, err = transfer.Import(t.Context(), s, d, transfer.Options{})

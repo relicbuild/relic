@@ -16,6 +16,15 @@ func TestProjectCommands(t *testing.T) {
 	config, _ := adminCLI(t)
 
 	if _, err := relic(t, config, `apiVersion: relic.build/v1
+kind: User
+metadata: {name: alice}
+spec: {email: alice@example.com, password: Alice-pass-1}
+---
+apiVersion: relic.build/v1
+kind: Group
+metadata: {name: qa}
+---
+apiVersion: relic.build/v1
 kind: Project
 metadata: {name: acme}
 spec:
@@ -47,6 +56,10 @@ spec:
 		t.Error("an unknown role was accepted")
 	}
 
+	if _, err := relic(t, config, "", "project", "member-add", "acme", "ghost3", "--role", "viewer"); err == nil {
+		t.Error("a user that does not exist was added")
+	}
+
 	if out, err := relic(t, config, "", "project", "member-remove", "acme", "alice"); err != nil ||
 		out != "acme has 1 members\n" {
 		t.Errorf("member-remove = %q %v", out, err)
@@ -62,6 +75,16 @@ spec:
 		wg   sync.WaitGroup
 		errs = make([]error, 8)
 	)
+
+	var developers strings.Builder
+	for i := range errs {
+		fmt.Fprintf(&developers, "---\napiVersion: relic.build/v1\nkind: User\nmetadata: {name: dev%d}\n"+
+			"spec: {email: dev%d@example.com, password: Developer-pass-1}\n", i, i)
+	}
+
+	if _, err := relic(t, config, developers.String(), "apply", "-f", "-"); err != nil {
+		t.Fatal(err)
+	}
 
 	for i := range errs {
 		wg.Go(func() {

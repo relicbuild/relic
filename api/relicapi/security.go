@@ -488,7 +488,7 @@ func (s *securityServer) CreateToken(
 		Description: req.GetDescription(),
 		Project:     req.GetProject(),
 	}, time.Now()))
-	if errors.Is(err, auth.ErrUnknownUser) {
+	if errors.Is(err, auth.ErrUnknownUser) || errors.Is(err, auth.ErrUnknownGroup) {
 		return nil, connect.NewError(connect.CodeNotFound, err.Error())
 	}
 

@@ -34,6 +34,10 @@ var ErrTokenNotFound = errors.New("token not found")
 // exist.
 var ErrUnknownUser = errors.New("user not found")
 
+// ErrUnknownGroup is returned for a token scoped to a group that does not
+// exist.
+var ErrUnknownGroup = errors.New("group not found")
+
 // claims are the JWT claims of Relic's tokens. Clients decode them and need
 // numeric exp and iat.
 type claims struct {
@@ -198,6 +202,17 @@ func (t *Tokens) Issue(ctx context.Context, p IssueParams) (IssuedToken, error) 
 
 	if err != nil {
 		return IssuedToken{}, fmt.Errorf("look up user: %w", err)
+	}
+
+	for _, group := range p.Scope.Groups {
+		_, err := t.db.GetGroup(ctx, group)
+		if errors.Is(database.NotFound(err), database.ErrNotFound) {
+			return IssuedToken{}, fmt.Errorf("%w: %s", ErrUnknownGroup, group)
+		}
+
+		if err != nil {
+			return IssuedToken{}, fmt.Errorf("look up group: %w", err)
+		}
 	}
 
 	out, err := t.issue(ctx, t.db, p)

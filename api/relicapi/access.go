@@ -206,6 +206,7 @@ var notFound = []error{
 	signingkey.ErrNotFound,
 	auth.ErrTokenNotFound,
 	auth.ErrUnknownUser,
+	auth.ErrUnknownGroup,
 	sso.ErrNotFound,
 	workload.ErrNotFound,
 	webhook.ErrNotFound,

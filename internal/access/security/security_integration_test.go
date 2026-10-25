@@ -340,6 +340,156 @@ func TestDeletingAPrincipalRemovesItsGrants(t *testing.T) {
 	}
 }
 
+func TestPermissionsRefuseGrantsToPrincipalsThatDoNotExist(t *testing.T) {
+	t.Parallel()
+
+	read := []auth.Action{
+		auth.ActionRead,
+	}
+	permission := func(grants ...security.Grant) security.Permission {
+		return security.Permission{
+			Name: "libs-readers",
+			Rules: []security.Rule{
+				{
+					Resource: security.ResourceRepository,
+					Selector: auth.Selector{
+						Repositories: []string{
+							"libs",
+						},
+					},
+					Grants: grants,
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name    string
+		grant   security.Grant
+		wantErr error
+	}{
+		{
+			name: "an existing user",
+			grant: security.Grant{
+				User:    "alice",
+				Actions: read,
+			},
+		},
+		{
+			name: "an existing group",
+			grant: security.Grant{
+				Group:   "developers",
+				Actions: read,
+			},
+		},
+		{
+			name: "a user that does not exist",
+			grant: security.Grant{
+				User:    "ghostuser",
+				Actions: read,
+			},
+			wantErr: security.ErrInvalid,
+		},
+		{
+			name: "a group that does not exist",
+			grant: security.Grant{
+				Group:   "ghostgroup",
+				Actions: read,
+			},
+			wantErr: security.ErrInvalid,
+		},
+		{
+			name: "a user named like an existing group",
+			grant: security.Grant{
+				User:    "developers",
+				Actions: read,
+			},
+			wantErr: security.ErrInvalid,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			db := databasetest.NewDB(t)
+			s := security.NewService(db, slog.New(slog.DiscardHandler))
+
+			if err := db.CreateUser(ctx, database.CreateUserParams{
+				ID:           uuid.NewV7(),
+				Username:     "alice",
+				PasswordHash: "x",
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := s.CreateGroup(ctx, security.Group{
+				Name: "developers",
+			}, nil); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := s.CreatePermission(ctx, permission(tt.grant)); !errors.Is(err, tt.wantErr) {
+				t.Errorf("CreatePermission = %v, want %v", err, tt.wantErr)
+			}
+
+			if err := s.CreatePermission(ctx, permission(security.Grant{
+				User:    "alice",
+				Actions: read,
+			})); err != nil && !errors.Is(err, security.ErrExists) {
+				t.Fatal(err)
+			}
+
+			if err := s.UpdatePermission(ctx, permission(tt.grant)); !errors.Is(err, tt.wantErr) {
+				t.Errorf("UpdatePermission = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestUpdatePermissionKeepsAStoredGrantToAMissingPrincipal(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db := databasetest.NewDB(t)
+	s := security.NewService(db, slog.New(slog.DiscardHandler))
+
+	if err := db.InsertPermission(ctx, database.InsertPermissionParams{
+		Name: "legacy",
+		Config: []byte(
+			`{"rules":[{"resource":"repository","selector":{"repositories":["libs"]},"grants":[{"user":"gone","actions":["read"]}]}]}`,
+		),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := s.UpdatePermission(ctx, security.Permission{
+		Name: "legacy",
+		Rules: []security.Rule{
+			{
+				Resource: security.ResourceRepository,
+				Selector: auth.Selector{
+					Repositories: []string{
+						"libs",
+						"docs",
+					},
+				},
+				Grants: []security.Grant{
+					{
+						User: "gone",
+						Actions: []auth.Action{
+							auth.ActionRead,
+						},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Errorf("UpdatePermission keeping a stored grant = %v", err)
+	}
+}
+
 func TestUserChangesKeepAnEnabledAdministrator(t *testing.T) {
 	t.Parallel()
 

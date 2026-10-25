@@ -176,9 +176,67 @@ func (p Permission) compile() auth.Permission {
 	}
 }
 
+// CheckPrincipal refuses with ErrInvalid a user, or with group a group, that does not exist.
+func CheckPrincipal(ctx context.Context, q database.Querier, name string, group bool) error {
+	var err error
+	if group {
+		_, err = q.GetGroup(ctx, name)
+	} else {
+		_, err = q.GetUserByUsername(ctx, name)
+	}
+
+	switch {
+	case errors.Is(database.NotFound(err), database.ErrNotFound) && group:
+		return fmt.Errorf("%w: group %s does not exist", ErrInvalid, name)
+	case errors.Is(database.NotFound(err), database.ErrNotFound):
+		return fmt.Errorf("%w: user %s does not exist", ErrInvalid, name)
+	case err != nil:
+		return fmt.Errorf("look up %s: %w", name, err)
+	}
+
+	return nil
+}
+
+func (s *Service) checkGrantees(ctx context.Context, pt, kept Permission) error {
+	for _, r := range pt.Rules {
+		for _, g := range r.Grants {
+			if kept.grants(g.User, g.Group) {
+				continue
+			}
+
+			name, group := g.User, false
+			if g.Group != "" {
+				name, group = g.Group, true
+			}
+
+			if err := CheckPrincipal(ctx, s.db, name, group); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (p Permission) grants(user, group string) bool {
+	for _, r := range p.Rules {
+		for _, g := range r.Grants {
+			if g.User == user && g.Group == group {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 // CreatePermission stores a new permission; ErrExists if the name is taken.
 func (s *Service) CreatePermission(ctx context.Context, pt Permission) error {
 	if err := pt.Validate(); err != nil {
+		return err
+	}
+
+	if err := s.checkGrantees(ctx, pt, Permission{}); err != nil {
 		return err
 	}
 
@@ -203,6 +261,15 @@ func (s *Service) CreatePermission(ctx context.Context, pt Permission) error {
 // UpdatePermission replaces an existing permission.
 func (s *Service) UpdatePermission(ctx context.Context, pt Permission) error {
 	if err := pt.Validate(); err != nil {
+		return err
+	}
+
+	kept, err := s.GetPermission(ctx, pt.Name)
+	if err != nil {
+		return err
+	}
+
+	if err := s.checkGrantees(ctx, pt, kept); err != nil {
 		return err
 	}
 

@@ -237,6 +237,18 @@ func TestProjects(t *testing.T) {
 		"pa-extra-7",
 		"pa-extra-8",
 	}
+	for _, name := range extras {
+		if _, err := sec.PutUser(ctx, &relicv1.PutUserRequest{
+			User: &relicv1.User{
+				Name:     name,
+				Email:    name + "@example.com",
+				Password: password,
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	members := func() []string {
 		got, err := projects("pa-lead").GetProject(ctx, &relicv1.GetProjectRequest{
 			Key: "acme",

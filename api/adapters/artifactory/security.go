@@ -85,7 +85,7 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) {
 		Refreshable: r.PostForm.Get("refreshable") == "true",
 		Description: r.PostForm.Get("description"),
 	}, time.Now()))
-	if errors.Is(err, auth.ErrUnknownUser) {
+	if errors.Is(err, auth.ErrUnknownUser) || errors.Is(err, auth.ErrUnknownGroup) {
 		wire.WriteError(w, http.StatusNotFound, err.Error())
 		return
 	}

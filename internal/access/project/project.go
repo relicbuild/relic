@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"relic/internal/access/auth"
+	"relic/internal/access/security"
 	"relic/internal/platform/database"
 )
 
@@ -203,6 +204,15 @@ func (s *Service) Put(ctx context.Context, p Project) (Project, error) {
 	}
 
 	if err := s.db.WithLock(ctx, projectLock(p.Key), func() error {
+		stored, err := s.Get(ctx, p.Key)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return err
+		}
+
+		if err := s.checkNewMembers(ctx, stored.Members, p.Members); err != nil {
+			return err
+		}
+
 		return s.store(ctx, p)
 	}); err != nil {
 		return Project{}, err
@@ -310,11 +320,16 @@ func (s *Service) changeMembers(
 			return err
 		}
 
+		stored := slices.Clone(p.Members)
 		if p.Members, err = change(p.Members); err != nil {
 			return err
 		}
 
 		if err := validate(&p); err != nil {
+			return err
+		}
+
+		if err := s.checkNewMembers(ctx, stored, p.Members); err != nil {
 			return err
 		}
 
@@ -324,6 +339,22 @@ func (s *Service) changeMembers(
 	}
 
 	return s.Get(ctx, key)
+}
+
+func (s *Service) checkNewMembers(ctx context.Context, stored, members []Member) error {
+	for _, m := range members {
+		if slices.ContainsFunc(stored, func(existing Member) bool {
+			return existing.Name == m.Name && existing.Group == m.Group
+		}) {
+			continue
+		}
+
+		if err := security.CheckPrincipal(ctx, s.db, m.Name, m.Group); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func projectLock(key string) string { return "project:" + key }

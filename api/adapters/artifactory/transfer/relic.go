@@ -166,6 +166,10 @@ func (im *importer) putPermission(ctx context.Context, p *relicv1.Permission) er
 		return nil
 	}
 
+	if err := im.dropMissingGrantees(ctx, p); err != nil {
+		return err
+	}
+
 	if _, err := im.relic.security.PutPermission(ctx, &relicv1.PutPermissionRequest{
 		Permission: p,
 	}); err != nil {
@@ -173,6 +177,43 @@ func (im *importer) putPermission(ctx context.Context, p *relicv1.Permission) er
 	}
 
 	im.progress("copied permission %s", p.GetName())
+
+	return nil
+}
+
+func (im *importer) dropMissingGrantees(ctx context.Context, p *relicv1.Permission) error {
+	for _, rule := range p.GetRules() {
+		kept := rule.GetGrants()[:0]
+
+		for _, g := range rule.GetGrants() {
+			var err error
+			if g.GetGroup() != "" {
+				_, err = im.relic.security.GetGroup(ctx, &relicv1.GetGroupRequest{
+					Name: g.GetGroup(),
+				})
+			} else {
+				_, err = im.relic.security.GetUser(ctx, &relicv1.GetUserRequest{
+					Name: g.GetUser(),
+				})
+			}
+
+			exists, err := found(err)
+			if err != nil {
+				return err
+			}
+
+			if !exists {
+				im.note("permission %s: %s%s does not exist in Relic and its grant is left out",
+					p.GetName(), g.GetUser(), g.GetGroup())
+
+				continue
+			}
+
+			kept = append(kept, g)
+		}
+
+		rule.Grants = kept
+	}
 
 	return nil
 }

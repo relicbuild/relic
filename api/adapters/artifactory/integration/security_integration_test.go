@@ -303,6 +303,18 @@ func TestSecurityRegressions(t *testing.T) {
 	})
 
 	t.Run("M2 a scoped token cannot mint a wider one", func(t *testing.T) {
+		if resp, body := do(
+			t,
+			srv,
+			call{
+				method: "PUT",
+				path:   "/artifactory/api/security/groups/readers",
+				body:   `{"name":"readers"}`,
+			},
+		); resp.StatusCode >= 300 {
+			t.Fatalf("create group = %d %s", resp.StatusCode, body)
+		}
+
 		_, first := do(
 			t,
 			srv,

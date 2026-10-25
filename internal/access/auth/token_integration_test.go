@@ -45,6 +45,18 @@ func TestTokensRevoke(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if _, err := tokens.Issue(ctx, auth.IssueParams{
+		Username: "alice",
+		Scope: auth.TokenScope{
+			Kind: auth.ScopeGroups,
+			Groups: []string{
+				"latergroup",
+			},
+		},
+	}); !errors.Is(err, auth.ErrUnknownGroup) {
+		t.Fatalf("token for a group that does not exist: %v, want %v", err, auth.ErrUnknownGroup)
+	}
+
 	issued, err := tokens.Issue(ctx, auth.IssueParams{
 		Username: "alice",
 		Scope:    auth.UserScope,
