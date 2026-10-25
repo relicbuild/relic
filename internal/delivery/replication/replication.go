@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -149,6 +150,13 @@ type Target interface {
 		sums repository.Checksums,
 		props repository.Properties,
 	) error
+	// Properties returns the properties of the target's file at path.
+	Properties(ctx context.Context, path string) (repository.Properties, error)
+	// SetProperties sets the values of props' keys on the target's file at
+	// path, keeping its other keys.
+	SetProperties(ctx context.Context, path string, props repository.Properties) error
+	// DeleteProperties removes keys from the target's file at path.
+	DeleteProperties(ctx context.Context, path string, keys []string) error
 	// Files lists the paths of every file in the target repository.
 	Files(ctx context.Context) ([]string, error)
 	// Delete removes the file at path; a missing file is not an error.
@@ -361,48 +369,101 @@ func underPrefix(path, prefix string) bool {
 }
 
 func (p *Pusher) pushFile(ctx context.Context, t Target, cfg Config, it repository.Item) (bool, error) {
-	if !cfg.SyncProperties || cfg.Effective() == DirectionFederated {
-		remote, err := t.Stat(ctx, it.Path())
-		if err != nil {
-			return false, err
-		}
+	remote, err := t.Stat(ctx, it.Path())
+	if err != nil {
+		return false, err
+	}
 
-		if remote.Found && strings.EqualFold(remote.Checksums.SHA1, it.Checksums.SHA1) && !cfg.SyncProperties {
-			return false, nil
-		}
+	if cfg.Effective() == DirectionFederated && remote.Found && remote.Modified.After(it.Modified) {
+		return false, nil
+	}
 
-		if cfg.Effective() == DirectionFederated && remote.Found && remote.Modified.After(it.Modified) {
-			return false, nil
-		}
+	same := remote.Found && strings.EqualFold(remote.Checksums.SHA1, it.Checksums.SHA1)
+	if same && !cfg.SyncProperties {
+		return false, nil
 	}
 
 	var props repository.Properties
 
 	if cfg.SyncProperties {
-		var err error
 		if props, err = p.repos.Properties(ctx, it); err != nil {
 			return false, err
 		}
 	}
 
+	if same {
+		return syncTargetProperties(ctx, t, it.Path(), props)
+	}
+
+	if err := p.deploy(ctx, t, it, props); err != nil {
+		return false, err
+	}
+
+	if remote.Found && cfg.SyncProperties {
+		if _, err := syncTargetProperties(ctx, t, it.Path(), props); err != nil {
+			return true, err
+		}
+	}
+
+	return true, nil
+}
+
+func (p *Pusher) deploy(ctx context.Context, t Target, it repository.Item, props repository.Properties) error {
 	if ok, err := t.DeployByChecksum(ctx, it.Path(), it.Checksums, props); err != nil || ok {
-		return ok, err
+		return err
 	}
 
 	body, err := p.repos.Open(ctx, it, nil)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	defer func() {
 		_ = body.Close()
 	}()
 
-	if err := t.Deploy(ctx, it.Path(), body, it.Size, it.Checksums, props); err != nil {
-		return false, err
+	return t.Deploy(ctx, it.Path(), body, it.Size, it.Checksums, props)
+}
+
+func syncTargetProperties(ctx context.Context, t Target, path string, want repository.Properties) (bool, error) {
+	have, err := t.Properties(ctx, path)
+	if err != nil {
+		return false, fmt.Errorf("target properties: %w", err)
 	}
 
-	return true, nil
+	var removed []string
+
+	for _, k := range have.Keys() {
+		if _, ok := want[k]; !ok {
+			removed = append(removed, k)
+		}
+	}
+
+	changed := repository.Properties{}
+
+	for k, values := range want {
+		if !sameValues(have[k], values) {
+			changed[k] = values
+		}
+	}
+
+	if len(removed) > 0 {
+		if err := t.DeleteProperties(ctx, path, removed); err != nil {
+			return false, fmt.Errorf("delete target properties: %w", err)
+		}
+	}
+
+	if len(changed) > 0 {
+		if err := t.SetProperties(ctx, path, changed); err != nil {
+			return false, fmt.Errorf("set target properties: %w", err)
+		}
+	}
+
+	return len(removed)+len(changed) > 0, nil
+}
+
+func sameValues(a, b []string) bool {
+	return slices.Equal(slices.Sorted(slices.Values(a)), slices.Sorted(slices.Values(b)))
 }
 
 func syncDeletes(ctx context.Context, t Target, prefix string, source map[string]bool) (int, error) {

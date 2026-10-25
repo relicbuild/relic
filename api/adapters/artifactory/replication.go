@@ -426,6 +426,65 @@ func (t *replicationTarget) Deploy(
 	return nil
 }
 
+func (t *replicationTarget) storageURL(path string) string {
+	return t.base + "/api/storage/" + escapePath(t.repo+"/"+path)
+}
+
+func (t *replicationTarget) Properties(ctx context.Context, path string) (repository.Properties, error) {
+	resp, err := t.do(ctx, http.MethodGet, t.storageURL(path)+"?properties", nil, 0, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusNotFound:
+		return repository.Properties{}, nil
+	default:
+		return nil, fmt.Errorf("target returned %s", resp.Status)
+	}
+
+	var body itemProperties
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("decode target properties: %w", err)
+	}
+
+	return body.Properties, nil
+}
+
+func (t *replicationTarget) SetProperties(ctx context.Context, path string, props repository.Properties) error {
+	query := "?properties=" + strings.TrimPrefix(matrixParams(props), ";")
+
+	return t.changeProperties(ctx, http.MethodPut, t.storageURL(path)+query)
+}
+
+func (t *replicationTarget) DeleteProperties(ctx context.Context, path string, keys []string) error {
+	escaped := make([]string, 0, len(keys))
+	for _, k := range keys {
+		escaped = append(escaped, url.QueryEscape(k))
+	}
+
+	return t.changeProperties(ctx, http.MethodDelete, t.storageURL(path)+"?properties="+strings.Join(escaped, ","))
+}
+
+func (t *replicationTarget) changeProperties(ctx context.Context, method, rawURL string) error {
+	resp, err := t.do(ctx, method, rawURL, nil, 0, nil)
+	if err != nil {
+		return err
+	}
+
+	_ = resp.Body.Close()
+
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("target returned %s", resp.Status)
+	}
+
+	return nil
+}
+
 func (t *replicationTarget) Files(ctx context.Context) ([]string, error) {
 	resp, err := t.do(ctx, http.MethodGet, t.base+"/api/storage/"+escapePath(t.repo)+"/?list&deep=1", nil, 0, nil)
 	if err != nil {

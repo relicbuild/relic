@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -271,5 +273,140 @@ func TestPushReplicationContinuesPastAFileItCannotRead(t *testing.T) {
 
 	if code, _ := send(t, "HEAD", dst.srv.URL+"/artifactory/libs/b/kept.txt", ""); code != 200 {
 		t.Errorf("the readable file was not pushed: %d", code)
+	}
+}
+
+func TestPushReplicationSyncsPropertiesWithoutRedeploying(t *testing.T) {
+	t.Parallel()
+
+	src, dst := relicInstance(t), relicInstance(t)
+	for _, in := range []instance{
+		src,
+		dst,
+	} {
+		if code, _ := send(
+			t,
+			"PUT",
+			in.srv.URL+"/artifactory/api/repositories/libs",
+			`{"rclass":"local"}`,
+		); code != 200 {
+			t.Fatalf("create repo = %d", code)
+		}
+	}
+
+	send(t, "PUT", src.srv.URL+"/artifactory/libs/a/one.txt;team=x;env=a", "one")
+
+	cfg, _ := json.Marshal(map[string]any{
+		"username":       "admin",
+		"password":       "password",
+		"url":            dst.srv.URL + "/artifactory/libs",
+		"repoKey":        "libs",
+		"enabled":        true,
+		"syncProperties": true,
+		"cronExp":        "0 0 12 * * ?",
+	})
+	if code, _ := send(t, "PUT", src.srv.URL+"/artifactory/api/replications/libs", string(cfg)); code != 201 {
+		t.Fatalf("configure replication = %d", code)
+	}
+
+	log := slog.New(slog.DiscardHandler)
+	pusher := replication.NewPusher(
+		src.db,
+		repository.NewService(src.db, src.blobs, log),
+		artifactory.ReplicationTargets(nil),
+		log,
+	)
+
+	run := func(want replication.Result) {
+		t.Helper()
+
+		res, err := pusher.Run(t.Context(), "libs")
+		if err != nil || res != want {
+			t.Fatalf("run = %+v, %v; want %+v", res, err, want)
+		}
+	}
+
+	targetProperties := func() string {
+		t.Helper()
+
+		code, body := send(t, "GET", dst.srv.URL+"/artifactory/api/storage/libs/a/one.txt?properties", "")
+		if code == http.StatusNotFound {
+			return "none"
+		}
+
+		var props struct {
+			Properties map[string][]string `json:"properties"`
+		}
+		if err := json.Unmarshal([]byte(body), &props); err != nil {
+			t.Fatalf("target properties %d %s: %v", code, body, err)
+		}
+
+		keys := slices.Sorted(maps.Keys(props.Properties))
+
+		return strings.Join(keys, ",")
+	}
+
+	lastModified := func() string {
+		t.Helper()
+
+		_, body := send(t, "GET", dst.srv.URL+"/artifactory/api/storage/libs/a/one.txt", "")
+
+		var info struct {
+			LastModified string `json:"lastModified"`
+		}
+		if err := json.Unmarshal([]byte(body), &info); err != nil {
+			t.Fatalf("target file info %s: %v", body, err)
+		}
+
+		return info.LastModified
+	}
+
+	run(replication.Result{
+		Pushed: 1,
+	})
+
+	deployed := lastModified()
+
+	run(replication.Result{
+		Skipped: 1,
+	})
+
+	if again := lastModified(); again != deployed {
+		t.Errorf("unchanged file modified on the target at %s, then %s; want it left alone", deployed, again)
+	}
+
+	for _, step := range []struct {
+		remove string
+		want   string
+	}{
+		{
+			remove: "env",
+			want:   "team",
+		},
+		{
+			remove: "team",
+			want:   "none",
+		},
+	} {
+		if code, body := send(
+			t,
+			"DELETE",
+			src.srv.URL+"/artifactory/api/storage/libs/a/one.txt?properties="+step.remove,
+			"",
+		); code != http.StatusNoContent {
+			t.Fatalf("delete %s on the source = %d %s", step.remove, code, body)
+		}
+
+		run(replication.Result{
+			Pushed: 1,
+		})
+
+		if got := targetProperties(); got != step.want {
+			t.Errorf("target properties after removing %s = %s, want %s", step.remove, got, step.want)
+		}
+	}
+
+	if again := lastModified(); again != deployed {
+		t.Errorf("file modified on the target at %s, then %s by a property change; want no new deploy", deployed, again)
 	}
 }
