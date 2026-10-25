@@ -51,7 +51,12 @@ const tabs = computed<TabsItem[]>(() => [
         @retry="refresh()"
       />
       <USkeleton v-else-if="status === 'pending'" class="h-48" />
-      <UTabs v-else-if="build" :items="tabs" variant="link">
+      <UTabs
+        v-else-if="build"
+        :items="tabs"
+        variant="link"
+        :ui="scrollingTabs"
+      >
         <template #artifacts>
           <UTable :data="artifacts" :columns="[{ accessorKey: 'name', header: 'Name' }, { accessorKey: 'type', header: 'Type' }, { accessorKey: 'path', header: 'Path' }, { accessorKey: 'module', header: 'Module' }]" />
         </template>
