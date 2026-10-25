@@ -18,6 +18,7 @@ import (
 	"relic/api/gen/relic/v1/relicv1connect"
 	"relic/internal/platform/database"
 	"relic/internal/scanning/scan"
+	"relic/internal/scanning/scan/blocking"
 )
 
 func TestQuarantineAppliesAsSoonAsItIsTurnedOn(t *testing.T) {
@@ -168,6 +169,16 @@ func TestQuarantine(t *testing.T) {
 		t.Errorf("a file Relic Scan does not scan = %d, want served", status)
 	}
 
+	explained, err := relicv1connect.NewScanServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL)).
+		ExplainDownload(ctx, &relicv1.ExplainDownloadRequest{
+			Repository: "held-remote",
+			Path:       "g/a/1.0/a-1.0.pom",
+		})
+	if err != nil || explained.GetBlocked() || explained.GetPolicy() != "quarantine" ||
+		explained.GetRule() != blocking.RuleNotHeld {
+		t.Errorf("explanation of a file quarantine does not hold = %v, %v; want it served and said so", explained, err)
+	}
+
 	quarantine := relicv1connect.NewQuarantineServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
 
 	list, err := quarantine.ListQuarantined(ctx, &relicv1.ListQuarantinedRequest{})
@@ -180,7 +191,7 @@ func TestQuarantine(t *testing.T) {
 		RepoKeys: []string{
 			"held-remote",
 		},
-		NamePattern: scan.ScannablePattern,
+		NamePattern: scan.PackagePattern,
 		MaxRows:     100,
 	})
 	if err != nil || len(candidates) != 4 {

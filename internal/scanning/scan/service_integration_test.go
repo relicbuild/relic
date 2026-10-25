@@ -342,6 +342,170 @@ func TestScanPipeline(t *testing.T) {
 	}
 }
 
+func TestScanCoversPackagesAndConfigurationFiles(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db := databasetest.NewDB(t)
+	blobs := objectstoretest.NewMemory()
+	log := slog.New(slog.DiscardHandler)
+
+	repos := repository.NewService(db, blobs, log)
+	if err := repos.CreateRepository(
+		ctx,
+		repository.Repository{
+			Name:   "files",
+			Class:  "local",
+			Format: "generic",
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	var gem bytes.Buffer
+
+	gemTar := tar.NewWriter(&gem)
+	for name, body := range map[string]string{
+		"metadata.gz": gzipText(t, "--- !ruby/object:Gem::Specification\nname: rack\n"+
+			"version: !ruby/object:Gem::Version\n  version: 2.2.3\nplatform: ruby\n"),
+		"data.tar.gz": tgz(t, map[string]string{
+			"lib/rack.rb": "module Rack; end",
+		}),
+	} {
+		_ = gemTar.WriteHeader(&tar.Header{
+			Name:     name,
+			Mode:     0o644,
+			Size:     int64(len(body)),
+			Typeflag: tar.TypeReg,
+		})
+		_, _ = io.WriteString(gemTar, body)
+	}
+
+	_ = gemTar.Close()
+
+	apk := tgz(t, map[string]string{
+		".PKGINFO": "pkgname = zlib\npkgver = 1.2.11-r3\narch = x86_64\norigin = zlib\n",
+	})
+
+	files := map[string]string{
+		"gems/rack-2.2.3.gem":                         gem.String(),
+		"alpine/v3.12/main/x86_64/zlib-1.2.11-r3.apk": apk,
+		"k8s/deploy.yaml":                             "apiVersion: v1\nkind: Pod\n",
+		"app/Dockerfile":                              "FROM alpine:3.12\n",
+		"docs/readme.md":                              "not scanned",
+	}
+	for p, body := range files {
+		if _, err := repos.Deploy(
+			ctx,
+			repository.DeployInput{
+				Repository: "files",
+				Path:       p,
+				Body:       strings.NewReader(body),
+				User:       "admin",
+			},
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	_, grype, _ := fakeScanners(t)
+	seen := filepath.Join(t.TempDir(), "sources")
+	listing := filepath.Join(t.TempDir(), "syft")
+	scripttest.Write(t, listing, "#!/bin/sh\ncase \"$2\" in dir:*) find \"${2#dir:}\" -type f >>"+seen+";; esac\n"+
+		"echo '{\"artifacts\":[],\"schema\":{\"version\":\"16.1.10\"}}'\n")
+	svc := scan.NewService(db, blobs, scan.Syft{
+		Exec: scan.Exec{
+			Path: listing,
+		},
+	}, grype, scan.Limits{}, log)
+
+	claimed, err := svc.Claim(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	names := map[string]string{}
+	for _, c := range claimed {
+		names[c.FileName] = c.Sha256
+	}
+
+	for _, want := range []string{
+		"rack-2.2.3.gem",
+		"zlib-1.2.11-r3.apk",
+		"deploy.yaml",
+		"Dockerfile",
+	} {
+		if names[want] == "" {
+			t.Errorf("%s not claimed for scanning: %v", want, names)
+		}
+	}
+
+	if names["readme.md"] != "" {
+		t.Error("readme.md claimed for scanning")
+	}
+
+	for name, sha := range names {
+		if err := svc.ScanArtifact(ctx, sha, name); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+
+	stored := func(name string) (string, string) {
+		t.Helper()
+
+		a, err := db.GetScanArtifact(ctx, names[name])
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		zr, err := gzip.NewReader(bytes.NewReader(a.Sbom))
+		if err != nil {
+			t.Fatalf("%s: SBOM: %v", name, err)
+		}
+
+		sbom, err := io.ReadAll(zr)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return string(sbom), a.Status
+	}
+
+	if sbom, status := stored("rack-2.2.3.gem"); status != scan.StatusDone ||
+		!strings.Contains(sbom, `"purl":"pkg:gem/rack@2.2.3"`) {
+		t.Errorf("gem scan = %s %s, want it done with the gem's own package", status, sbom)
+	}
+
+	if sbom, status := stored("zlib-1.2.11-r3.apk"); status != scan.StatusDone ||
+		!strings.Contains(sbom, `pkg:apk/alpine/zlib@1.2.11-r3`) ||
+		!strings.Contains(sbom, `"distro":{"id":"alpine","versionID":"3.12"}`) {
+		t.Errorf("apk scan = %s %s, want the package and its Alpine branch", status, sbom)
+	}
+
+	src, _ := os.ReadFile(seen)
+	for _, want := range []string{
+		"/lib/rack.rb\n",
+		"/deploy.yaml\n",
+		"/Dockerfile\n",
+	} {
+		if !strings.Contains(string(src), want) {
+			t.Errorf("%s not cataloged from an extracted directory: %q", want, src)
+		}
+	}
+}
+
+func gzipText(t *testing.T, text string) string {
+	t.Helper()
+
+	var buf bytes.Buffer
+
+	zw := gzip.NewWriter(&buf)
+	_, _ = io.WriteString(zw, text)
+	_ = zw.Close()
+
+	return buf.String()
+}
+
 func TestScanStoredImage(t *testing.T) {
 	t.Parallel()
 

@@ -83,6 +83,14 @@ var (
 		"reason",
 	)
 
+	// PromQL: sum by (reason) (increase(relic_downloads_not_held_total[1h]))
+	downloadsNotHeld = counterVec(
+		"downloads_not_held_total",
+		"Downloads served without a successful scan where quarantine or blockUnscanned would hold a package, "+
+			"by reason (unscanned, quarantine).",
+		"reason",
+	)
+
 	// PromQL: sum by (result) (increase(relic_gc_runs_total[6h]))   (alert RelicGCFailing: no success in 6h)
 	gcRuns = counterVec("gc_runs_total", "Garbage collection runs by result.", "result")
 
@@ -251,6 +259,16 @@ func DownloadBlocked(reason string) {
 	}
 
 	downloadsBlocked.WithLabelValues(reason).Inc()
+}
+
+// DownloadNotHeld counts a download served without a successful scan because Relic Scan holds only packages; reason
+// is "unscanned" or "quarantine".
+func DownloadNotHeld(reason string) {
+	if reason != "quarantine" {
+		reason = "unscanned"
+	}
+
+	downloadsNotHeld.WithLabelValues(reason).Inc()
 }
 
 // GCRun records a garbage collection run.

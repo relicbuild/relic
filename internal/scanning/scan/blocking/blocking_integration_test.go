@@ -199,6 +199,27 @@ func TestDownloadBlocking(t *testing.T) {
 		t.Error("non-scannable file blocked as unscanned")
 	}
 
+	for _, name := range []string{
+		"rack-2.2.3.gem",
+		"zlib1g_1.2.11_amd64.deb",
+		"zlib-1.2.11-17.el8.x86_64.rpm",
+		"zlib-1.2.11-r3.apk",
+	} {
+		if d, err := b.Explain(ctx, "libs", name, unscanned); err != nil || !d.Blocked || d.Rule != "unscanned" {
+			t.Errorf("unscanned %s = %+v, %v; want blocked as unscanned", name, d, err)
+		}
+	}
+
+	for _, name := range []string{
+		"deploy.yaml",
+		"README.md",
+	} {
+		if d, err := b.Explain(ctx, "libs", name, unscanned); err != nil || d.Blocked ||
+			d.Rule != blocking.RuleNotHeld || d.Watch != "w" || !strings.Contains(d.Reason, "without a successful scan") {
+			t.Errorf("unscanned %s = %+v, %v; want served, and said to be served unscanned", name, d, err)
+		}
+	}
+
 	if d, err := b.Check(ctx, "other", "a-1.jar", vulnerable); err != nil || d.Blocked {
 		t.Errorf("repository no watch covers: %+v, %v; want allowed", d, err)
 	}

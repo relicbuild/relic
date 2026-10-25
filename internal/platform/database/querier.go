@@ -228,6 +228,7 @@ type Querier interface {
 	ListCVEPage(ctx context.Context, arg ListCVEPageParams) ([]ListCVEPageRow, error)
 	ListChildren(ctx context.Context, arg ListChildrenParams) ([]Item, error)
 	ListCleanupPolicies(ctx context.Context) ([]CleanupPolicy, error)
+	ListContentFolders(ctx context.Context, sha256 *string) ([]string, error)
 	// The release cycles of the products these package URLs (without a version)
 	// name.
 	ListEndOfLifeCycles(ctx context.Context, purls []string) ([]ListEndOfLifeCyclesRow, error)

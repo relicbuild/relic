@@ -18,6 +18,9 @@ RETURNING sha256;
 -- name: ForgetFailedMatches :execrows
 DELETE FROM scan_artifacts WHERE status = 'failed' AND reason LIKE 'match:%';
 
+-- name: ListContentFolders :many
+SELECT DISTINCT path FROM items WHERE sha256 = @sha256 AND type = 'file' ORDER BY path LIMIT 20;
+
 -- name: GetScanArtifact :one
 SELECT * FROM scan_artifacts WHERE sha256 = @sha256;
 

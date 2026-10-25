@@ -924,6 +924,9 @@ SELECT * FROM items WHERE repo_key = @repo_key AND path = @path ORDER BY name;`
 const sqliteListCleanupPolicies = `-- name: ListCleanupPolicies :many
 SELECT * FROM cleanup_policies ORDER BY name;`
 
+const sqliteListContentFolders = `-- name: ListContentFolders :many
+SELECT DISTINCT path FROM items WHERE sha256 = @sha256 AND type = 'file' ORDER BY path LIMIT 20;`
+
 const sqliteListEndOfLifeCycles = `-- name: ListEndOfLifeCycles :many
 -- The release cycles of the products these package URLs (without a version)
 -- name.
@@ -4946,6 +4949,36 @@ func (q *sqliteQueries) ListCleanupPolicies(ctx context.Context) ([]CleanupPolic
 	for rows.Next() {
 		var i CleanupPolicy
 		if err := rows.Scan(&i.Name, &i.Doc, sqliteTimeScanner{&i.Created}, sqliteTimeScanner{&i.Updated}, sqliteNullTimeScanner{&i.LastRun}, &i.LastMoved, &i.LastError); err != nil {
+			return nil, err
+		}
+
+		items = append(items, i)
+	}
+
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
+
+func (q *sqliteQueries) ListContentFolders(ctx context.Context, arg *string) ([]string, error) {
+	rows, err := q.query(ctx, "ListContentFolders", nil, sqliteListContentFolders, sql.Named("sha256", arg))
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	items := []string{}
+
+	for rows.Next() {
+		var i string
+		if err := rows.Scan(&i); err != nil {
 			return nil, err
 		}
 

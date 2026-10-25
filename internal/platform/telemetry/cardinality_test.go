@@ -39,6 +39,7 @@ func TestRecordersBoundTheirLabels(t *testing.T) {
 	})
 	ScanFinished(junk)
 	DownloadBlocked(junk)
+	DownloadNotHeld(junk)
 	ReleaseOp(junk, err)
 	Promoted(junk, nil)
 	TLSCertificateServed(junk, time.Now())

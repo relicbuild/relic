@@ -537,6 +537,30 @@ func (q *Queries) LatestDBBuilt(ctx context.Context) (time.Time, error) {
 	return column_1, err
 }
 
+const listContentFolders = `-- name: ListContentFolders :many
+SELECT DISTINCT path FROM items WHERE sha256 = $1 AND type = 'file' ORDER BY path LIMIT 20
+`
+
+func (q *Queries) ListContentFolders(ctx context.Context, sha256 *string) ([]string, error) {
+	rows, err := q.db.Query(ctx, listContentFolders, sha256)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		items = append(items, path)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listFindings = `-- name: ListFindings :many
 SELECT sha256, vuln_id, purl, package_name, package_version, severity, summary, cves, fixed_versions, cvss, urls FROM scan_findings WHERE sha256 = $1 ORDER BY severity, vuln_id, purl
 `

@@ -99,8 +99,16 @@ var holdReasons = map[QuarantineState]string{
 // quarantine decides for a file of a quarantined repository.
 func (b *Blocker) quarantine(ctx context.Context, repoKey, itemPath, sha256Hex string) (Decision, error) {
 	held, err := b.quarantines(ctx, repoKey)
-	if err != nil || !held || !scannable.MatchString(path.Base(itemPath)) {
+	if err != nil || !held {
 		return Decision{}, err
+	}
+
+	if !heldFile.MatchString(path.Base(itemPath)) {
+		return Decision{
+			Reason: notHeldReason,
+			Policy: "quarantine",
+			Rule:   RuleNotHeld,
+		}, nil
 	}
 
 	decision := ""
@@ -183,7 +191,7 @@ func (b *Blocker) Quarantined(ctx context.Context, limit int) ([]Held, error) {
 	for skip := 0; len(out) < limit; skip += quarantinePage {
 		rows, err := b.db.ListQuarantineCandidates(ctx, database.ListQuarantineCandidatesParams{
 			RepoKeys:    keys,
-			NamePattern: scan.ScannablePattern,
+			NamePattern: scan.PackagePattern,
 			MaxRows:     quarantinePage,
 			Skip:        int32(skip), //nolint:gosec // at most maxQuarantineScan
 		})
