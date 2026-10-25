@@ -64,6 +64,9 @@ func NewService(db *database.DB, repos *repository.Service, log *slog.Logger) *S
 			},
 		},
 	}
+	repos.RegisterMetadata(func(name string) bool {
+		return strings.HasSuffix(name, packumentCacheSuffix)
+	})
 	repos.RegisterHook(Format, s.indexTarball)
 	repos.SetUpstreamCheck(Format, s.checkTarball)
 
@@ -321,37 +324,9 @@ func (s *Service) remotePackument(
 
 	upstream := strings.TrimSuffix(cfg.URL, "/")
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, upstream+"/"+escapeName(name), nil)
+	doc, err := s.cachedPackument(ctx, r, upstream+"/"+escapeName(name), name)
 	if err != nil {
 		return nil, err
-	}
-
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", repository.UserAgent)
-
-	if cfg.Username != "" {
-		req.SetBasicAuth(cfg.Username, cfg.Password)
-	}
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", repository.ErrUpstream, err)
-	}
-
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	switch {
-	case resp.StatusCode == http.StatusNotFound:
-		return nil, ErrNotFound
-	case resp.StatusCode != http.StatusOK:
-		return nil, fmt.Errorf("%w: %s returned %s", repository.ErrUpstream, req.URL.Redacted(), resp.Status)
-	}
-
-	var doc Packument
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 256<<20)).Decode(&doc); err != nil {
-		return nil, fmt.Errorf("%w: invalid packument: %w", repository.ErrUpstream, err)
 	}
 
 	versions, _ := doc["versions"].(map[string]any)
@@ -414,6 +389,41 @@ func (s *Service) remotePackument(
 		}
 
 		dropMissing(doc, versions)
+	}
+
+	return doc, nil
+}
+
+const maxPackumentBytes = 256 << 20
+
+const packumentCacheSuffix = ".npm.json"
+
+func (s *Service) cachedPackument(
+	ctx context.Context,
+	r repository.Repository,
+	upstreamURL, name string,
+) (Packument, error) {
+	item, err := s.repos.ResolveURL(ctx, r, upstreamURL, ".npm/"+name+packumentCacheSuffix)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil, ErrNotFound
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	rc, err := s.repos.Open(ctx, item, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		_ = rc.Close()
+	}()
+
+	var doc Packument
+	if err := json.NewDecoder(io.LimitReader(rc, maxPackumentBytes)).Decode(&doc); err != nil {
+		return nil, fmt.Errorf("%w: invalid packument: %w", repository.ErrUpstream, err)
 	}
 
 	return doc, nil
