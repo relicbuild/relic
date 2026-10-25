@@ -125,6 +125,7 @@ type Querier interface {
 	// (an SBOM import, or a newer claim).
 	FinishUnchangedScanArtifact(ctx context.Context, arg FinishUnchangedScanArtifactParams) (int64, error)
 	FinishWebhookDelivery(ctx context.Context, arg FinishWebhookDeliveryParams) error
+	ForgetFailedMatches(ctx context.Context) (int64, error)
 	ForgetFailedScans(ctx context.Context, sha256s []string) ([]string, error)
 	GetAccessToken(ctx context.Context, id uuid.UUID) (AccessToken, error)
 	GetAccessTokenByRefreshHash(ctx context.Context, refreshTokenHash *string) (AccessToken, error)

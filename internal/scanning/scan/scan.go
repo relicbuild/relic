@@ -322,7 +322,11 @@ func (e Exec) run(ctx context.Context, args ...string) ([]byte, error) {
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w: %s", filepath.Base(e.Path), err, strings.TrimSpace(stderr.String()))
+		if detail := strings.TrimSpace(stderr.String()); detail != "" {
+			return nil, fmt.Errorf("%s: %w: %s", filepath.Base(e.Path), err, detail)
+		}
+
+		return nil, fmt.Errorf("%s: %w", filepath.Base(e.Path), err)
 	}
 
 	return stdout.Bytes(), nil
@@ -386,7 +390,7 @@ func (g Grype) Match(ctx context.Context, sbomPath string) (Report, error) {
 	e := g.Exec
 	e.Env = g.env()
 
-	out, err := e.run(ctx, "sbom:"+sbomPath, "-o", "json", "-q")
+	out, err := e.run(ctx, "sbom:"+sbomPath, "-o", "json")
 	if err != nil {
 		if _, dbErr := g.DBBuilt(ctx); errors.Is(dbErr, ErrInvalidDB) {
 			return Report{}, dbErr

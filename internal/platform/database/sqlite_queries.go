@@ -511,6 +511,9 @@ SET status = @status, attempts = @attempts, next_attempt = @next_attempt, respon
     error = @error, delivered = @delivered
 WHERE id = @id;`
 
+const sqliteForgetFailedMatches = `-- name: ForgetFailedMatches :execrows
+DELETE FROM scan_artifacts WHERE status = 'failed' AND reason LIKE 'match:%';`
+
 const sqliteForgetFailedScans = `-- name: ForgetFailedScans :many
 DELETE FROM scan_artifacts WHERE sha256 IN (SELECT value FROM json_each(@sha256s)) AND status = 'failed'
 RETURNING sha256;`
@@ -3110,6 +3113,15 @@ func (q *sqliteQueries) FinishWebhookDelivery(ctx context.Context, arg FinishWeb
 	_, err := q.db.ExecContext(ctx, sqliteFinishWebhookDelivery, sql.Named("status", arg.Status), sql.Named("attempts", arg.Attempts), sql.Named("next_attempt", sqliteTime(arg.NextAttempt)), sql.Named("response_status", arg.ResponseStatus), sql.Named("error", arg.Error), sql.Named("delivered", sqliteNullTime(arg.Delivered)), sql.Named("id", arg.ID.String()))
 
 	return err
+}
+
+func (q *sqliteQueries) ForgetFailedMatches(ctx context.Context) (int64, error) {
+	res, err := q.db.ExecContext(ctx, sqliteForgetFailedMatches)
+	if err != nil {
+		return 0, err
+	}
+
+	return res.RowsAffected()
 }
 
 func (q *sqliteQueries) ForgetFailedScans(ctx context.Context, arg []string) ([]string, error) {

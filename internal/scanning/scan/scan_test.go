@@ -97,6 +97,50 @@ func TestExecLimitsAndEnvironment(t *testing.T) { //nolint:paralleltest // uses 
 	}
 }
 
+func TestExecErrorsCarryTheScannersOwnError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		script string
+		want   string
+	}{
+		{
+			name:   "an error on stderr",
+			script: "#!/bin/sh\necho 'ERROR failed to load vulnerability db' >&2\nexit 1\n",
+			want:   "grype: exit status 1: ERROR failed to load vulnerability db",
+		},
+		{
+			name:   "nothing on stderr",
+			script: "#!/bin/sh\nexit 1\n",
+			want:   "grype: exit status 1",
+		},
+		{
+			name:   "grype told to keep its errors to itself",
+			script: "#!/bin/sh\nfor a; do [ \"$a\" = -q ] && exit 1; done\necho 'ERROR no database' >&2\nexit 1\n",
+			want:   "grype: exit status 1: ERROR no database",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			script := filepath.Join(t.TempDir(), "grype")
+			scripttest.Write(t, script, tt.script)
+
+			_, err := Grype{
+				Exec: Exec{
+					Path: script,
+				},
+				DatabaseDir: t.TempDir(),
+			}.Match(t.Context(), "sbom.json")
+			if err == nil || err.Error() != tt.want {
+				t.Errorf("Match = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestSyftCatalogsPackageManifestsOfExtractedArchives(t *testing.T) {
 	t.Parallel()
 

@@ -21,6 +21,9 @@ RETURNING sha256, file_name;
 DELETE FROM scan_artifacts WHERE sha256 IN (SELECT value FROM json_each(@sha256s)) AND status = 'failed'
 RETURNING sha256;
 
+-- name: ForgetFailedMatches :execrows
+DELETE FROM scan_artifacts WHERE status = 'failed' AND reason LIKE 'match:%';
+
 -- name: GetScanArtifact :one
 SELECT * FROM scan_artifacts WHERE sha256 = @sha256;
 

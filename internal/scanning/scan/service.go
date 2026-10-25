@@ -235,7 +235,7 @@ func (s *Service) ScanArtifact(ctx context.Context, sha256Hex, fileName string) 
 
 	rep, err := s.matchSBOM(ctx, dir, sbom)
 	if err != nil {
-		return err
+		return fmt.Errorf("match: %w", err)
 	}
 
 	issues, failed := s.analyze(ctx, source)
@@ -298,6 +298,24 @@ func (s *Service) ScanArtifact(ctx context.Context, sha256Hex, fileName string) 
 	}
 
 	return s.saveIssues(ctx, sha256Hex, issues)
+}
+
+// FailArtifact records a queued scan whose job gave up as failed, with failure as the reason.
+func (s *Service) FailArtifact(ctx context.Context, sha256Hex string, failure error) error {
+	a, err := s.db.GetScanArtifact(ctx, sha256Hex)
+	if errors.Is(database.NotFound(err), database.ErrNotFound) {
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("load scan %s: %w", sha256Hex, err)
+	}
+
+	if a.Status != StatusQueued {
+		return nil
+	}
+
+	return s.finish(ctx, sha256Hex, a.Updated, StatusFailed, failure.Error(), nil, nil)
 }
 
 func (s *Service) analyze(ctx context.Context, source string) (issues []Issue, failed string) {

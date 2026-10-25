@@ -246,6 +246,18 @@ func (q *Queries) FinishUnchangedScanArtifact(ctx context.Context, arg FinishUnc
 	return result.RowsAffected(), nil
 }
 
+const forgetFailedMatches = `-- name: ForgetFailedMatches :execrows
+DELETE FROM scan_artifacts WHERE status = 'failed' AND reason LIKE 'match:%'
+`
+
+func (q *Queries) ForgetFailedMatches(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, forgetFailedMatches)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const forgetFailedScans = `-- name: ForgetFailedScans :many
 DELETE FROM scan_artifacts WHERE sha256 = ANY($1::text[]) AND status = 'failed'
 RETURNING sha256

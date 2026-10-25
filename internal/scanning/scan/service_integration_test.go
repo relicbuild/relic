@@ -644,6 +644,85 @@ func TestRunGraphLastAttemptFails(t *testing.T) {
 	}
 }
 
+func TestFailArtifactRecordsAMatchThatKeepsFailing(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db := databasetest.NewDB(t)
+	blobs := objectstoretest.NewMemory()
+	log := slog.New(slog.DiscardHandler)
+
+	repos := repository.NewService(db, blobs, log)
+	if err := repos.CreateRepository(
+		ctx,
+		repository.Repository{
+			Name:   "npm-local",
+			Class:  "local",
+			Format: "npm",
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := repos.Deploy(
+		ctx,
+		repository.DeployInput{
+			Repository: "npm-local",
+			Path:       "x/-/x-1.0.0.tgz",
+			Body: strings.NewReader(tgz(t, map[string]string{
+				"package/package.json": `{"name":"x","version":"1.0.0"}`,
+			})),
+			User: "admin",
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	syft, _, _ := fakeScanners(t)
+	failing := filepath.Join(t.TempDir(), "grype")
+	scripttest.Write(t, failing, "#!/bin/sh\necho 'ERROR failed to load vulnerability db' >&2\nexit 1\n")
+	svc := scan.NewService(db, blobs, syft, scan.Grype{
+		Exec: scan.Exec{
+			Path: failing,
+		},
+		DatabaseDir: t.TempDir(),
+	}, scan.Limits{}, log)
+
+	claimed, err := svc.Claim(ctx, 10)
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("claim = %v, %v", claimed, err)
+	}
+
+	c := claimed[0]
+
+	scanErr := svc.ScanArtifact(ctx, c.Sha256, c.FileName)
+	if scanErr == nil {
+		t.Fatal("ScanArtifact succeeded with a failing grype")
+	}
+
+	if a, _ := db.GetScanArtifact(ctx, c.Sha256); a.Status != scan.StatusQueued {
+		t.Errorf("after a failed attempt, status = %s, want it queued for the retry", a.Status)
+	}
+
+	if err := svc.FailArtifact(ctx, c.Sha256, scanErr); err != nil {
+		t.Fatal(err)
+	}
+
+	a, err := db.GetScanArtifact(ctx, c.Sha256)
+	if err != nil || a.Status != scan.StatusFailed ||
+		!strings.HasPrefix(a.Reason, "match: grype: exit status 1: ERROR failed to load vulnerability db") {
+		t.Fatalf("after the last attempt, scan = %s (%s), %v; want failed with grype's error", a.Status, a.Reason, err)
+	}
+
+	if n, err := db.ForgetFailedMatches(ctx); err != nil || n != 1 {
+		t.Fatalf("ForgetFailedMatches = %d, %v; want the failed match dropped", n, err)
+	}
+
+	if again, err := svc.Claim(ctx, 10); err != nil || len(again) != 1 {
+		t.Errorf("claim after the failed match was dropped = %v, %v; want it scanned again", again, err)
+	}
+}
+
 type failingAssessor struct {
 	failing string
 }
