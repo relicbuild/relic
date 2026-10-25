@@ -659,6 +659,44 @@ func TestConcurrentUpdatesAreKept(t *testing.T) {
 	}
 }
 
+func TestSaveConfigWritesThroughASymbolicLink(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	target := filepath.Join(dir, "dotfiles", "relic.yaml")
+	link := filepath.Join(dir, "config.yaml")
+
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(target, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	var c cliConfig
+	c.set(cliContext{
+		Name: "sym",
+		URL:  "https://relic.example.com",
+	})
+
+	if err := saveConfig(link, c); err != nil {
+		t.Fatal(err)
+	}
+
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the symbolic link was replaced: %v %v", fi, err)
+	}
+
+	if got, err := os.ReadFile(target); err != nil || !strings.Contains(string(got), "name: sym") {
+		t.Errorf("the link's target holds %q %v", got, err)
+	}
+}
+
 func TestConfigAndTarget(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "relic", "config.yaml")

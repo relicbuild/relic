@@ -995,3 +995,37 @@ func TestMachineSetupRefusesAUserServiceBesideASystemOne(t *testing.T) {
 		t.Errorf("setup went ahead: wrote %v, ran %v", entries, *ran)
 	}
 }
+
+func TestMachineSetupWritesThroughASymlinkedShellFile(t *testing.T) {
+	t.Parallel()
+
+	m, _, _ := testMachineSetup(t, "")
+	m.yes = true
+
+	target := filepath.Join(m.home, "dotfiles", "bashrc")
+	bashrc := filepath.Join(m.home, ".bashrc")
+
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(target, []byte("alias ll='ls -l'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Symlink(target, bashrc); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.runSetup(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	if fi, err := os.Lstat(bashrc); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("setup replaced the symbolic link .bashrc: %v %v", fi, err)
+	}
+
+	if got := readFile(t, target); !strings.Contains(got, "Completion for relic") {
+		t.Errorf("the link's target holds %q", got)
+	}
+}

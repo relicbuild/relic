@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"cmp"
 	"errors"
 	"fmt"
@@ -95,30 +96,7 @@ func saveConfig(path string, c cliConfig) error {
 		return fmt.Errorf("create the config directory: %w", err)
 	}
 
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".config-*.yaml")
-	if err != nil {
-		return fmt.Errorf("write config: %w", err)
-	}
-
-	defer func() {
-		_ = os.Remove(tmp.Name())
-	}()
-
-	if _, err := tmp.Write(b); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("write config: %w", err)
-	}
-
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("write config: %w", err)
-	}
-
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("write config: %w", err)
-	}
-
-	if err := os.Rename(tmp.Name(), path); err != nil {
+	if err := writeFileAtomic(path, bytes.NewReader(b), 0o600); err != nil {
 		return fmt.Errorf("write config: %w", err)
 	}
 
