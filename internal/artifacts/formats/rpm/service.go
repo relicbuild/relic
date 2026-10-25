@@ -293,10 +293,6 @@ func (s *Service) upstream(
 	m repository.Repository,
 	root string,
 ) (UpstreamMetadata, time.Time, bool, error) {
-	if repository.Restricted(ctx, m.Name) {
-		return UpstreamMetadata{}, time.Time{}, false, nil
-	}
-
 	item, err := s.repos.Resolve(ctx, m.Name, path.Join(root, RepodataFolder, RepoMD))
 	if errors.Is(err, repository.ErrNotFound) {
 		return UpstreamMetadata{}, time.Time{}, false, nil
@@ -333,6 +329,14 @@ func (s *Service) upstream(
 
 	if u.Primary == nil {
 		return UpstreamMetadata{}, time.Time{}, false, fmt.Errorf("upstream %s lists no primary metadata", RepoMD)
+	}
+
+	if repository.Restricted(ctx, m.Name) {
+		if u.Hidden, err = hiddenPackages(u.Primary, func(location string) bool {
+			return !repository.Visible(ctx, m.Name, path.Join(root, location))
+		}); err != nil {
+			return UpstreamMetadata{}, time.Time{}, false, fmt.Errorf("upstream primary: %w", err)
+		}
 	}
 
 	return u, item.Modified, true, nil

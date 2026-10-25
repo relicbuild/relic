@@ -6,6 +6,9 @@ import (
 	"bytes"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -185,6 +188,92 @@ func TestRepodataOfAVirtualFollowsItsMetadataDepth(t *testing.T) {
 
 	if got := primaryOf(t, files); len(got) != 1 || got["older"] != "older-1.0-1.noarch.rpm" {
 		t.Errorf("f43 of the virtual lists %v, want only older at older-1.0-1.noarch.rpm", got)
+	}
+}
+
+type hidingVisibility struct {
+	repo, hidden string
+}
+
+func (v hidingVisibility) Visible(repoKey, path string) bool {
+	return repoKey != v.repo || !strings.HasPrefix(path, v.hidden)
+}
+
+func (v hidingVisibility) Restricted(repoKey string) bool { return repoKey == v.repo }
+
+func TestRepodataHidesTheUpstreamPackagesPermissionsHide(t *testing.T) {
+	t.Parallel()
+
+	upstreamFiles, err := Build([]Entry{
+		entry(t, testPackage{
+			name:    "shown",
+			version: "1.0",
+			release: "1",
+			arch:    "noarch",
+		}, "Packages/s/shown-1.0-1.noarch.rpm"),
+		entry(t, testPackage{
+			name:    "hidden",
+			version: "1.0",
+			release: "1",
+			arch:    "noarch",
+		}, "Packages/h/hidden-1.0-1.noarch.rpm"),
+	}, nil, time.Unix(1_700_000_000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if body, ok := upstreamFiles[strings.TrimPrefix(r.URL.Path, "/repodata/")]; ok {
+			_, _ = w.Write(body)
+			return
+		}
+
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(upstream.Close)
+
+	f := newRPMFixture(t, repository.Repository{
+		Name:   "rpm-remote",
+		Class:  repository.ClassRemote,
+		Format: repository.FormatRPM,
+		Config: repository.Config{
+			Remote: &repository.RemoteConfig{
+				URL: upstream.URL,
+			},
+		},
+	}, virtualOf("rpm", 0, "rpm-remote"))
+	virtual := f.repository(t, "rpm")
+
+	ctx := repository.WithVisibility(t.Context(), hidingVisibility{
+		repo:   "rpm-remote",
+		hidden: "Packages/h/",
+	})
+
+	files, err := f.svc.Repodata(ctx, virtual, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := primaryOf(t, files); len(got) != 1 || got["shown"] == "" {
+		t.Errorf("a caller who may not see Packages/h/ gets %v, want shown only", got)
+	}
+
+	for _, kind := range []string{
+		"filelists",
+		"other",
+	} {
+		doc := readRepodata(t, files)[kind]
+
+		var names []string
+		for _, p := range doc.Packages {
+			names = append(names, p.NameAttr)
+		}
+
+		if !slices.Equal(names, []string{
+			"shown",
+		}) || doc.Count != 1 {
+			t.Errorf("%s lists %v (count %d), want shown only", kind, names, doc.Count)
+		}
 	}
 }
 
