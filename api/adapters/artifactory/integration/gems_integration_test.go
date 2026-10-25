@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -299,6 +300,23 @@ func TestGemsAPIKeyAndYank(t *testing.T) {
 		},
 	); resp.StatusCode != 200 {
 		t.Fatalf("push with the key = %d %s", resp.StatusCode, body)
+	}
+
+	for i, path := range []string{
+		api + "gems",
+		"/gems/gems/api/v1/gems",
+	} {
+		if resp, body := do(t, srv, call{
+			method: "POST",
+			path:   path,
+			body:   string(gemFile(t, "rawkey", "1.0."+strconv.Itoa(i))),
+			noAuth: true,
+			headers: map[string]string{
+				"Authorization": strings.TrimPrefix(key, "Bearer "),
+			},
+		}); resp.StatusCode != 200 {
+			t.Errorf("push to %s with the token alone as the key, as gem sends it = %d %s", path, resp.StatusCode, body)
+		}
 	}
 
 	if resp, _ := do(t, srv, call{

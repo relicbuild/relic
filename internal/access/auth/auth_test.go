@@ -775,6 +775,55 @@ func TestAcceptAPIKey(t *testing.T) {
 	}
 }
 
+func TestAcceptBareToken(t *testing.T) {
+	t.Parallel()
+	a := newTestAuthenticator(t)
+	a.AcceptBareToken("/pkg/")
+
+	tests := []struct {
+		name, path, header string
+		want               string
+		wantErr            error
+	}{
+		{
+			name:   "a bare token on its prefix",
+			path:   "/pkg/api/v1/gems",
+			header: "good-bob",
+			want:   "bob",
+		},
+		{
+			name:    "a bare token that does not verify",
+			path:    "/pkg/api/v1/gems",
+			header:  "bad-bob",
+			wantErr: ErrBadCredentials,
+		},
+		{
+			name:   "a bearer token on its prefix",
+			path:   "/pkg/api/v1/gems",
+			header: "Bearer good-bob",
+			want:   "bob",
+		},
+		{
+			name:    "a bare token elsewhere",
+			path:    "/other/api/v1/gems",
+			header:  "good-bob",
+			wantErr: ErrBadCredentials,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, tt.path, nil)
+			r.Header.Set("Authorization", tt.header)
+
+			p, err := a.Authenticate(r)
+			if !errors.Is(err, tt.wantErr) || p.Username != tt.want {
+				t.Errorf("Authenticate = %q, %v; want %q, %v", p.Username, err, tt.want, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestAllowExpiredBearer(t *testing.T) {
 	t.Parallel()
 	a := newTestAuthenticator(t)

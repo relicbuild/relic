@@ -267,6 +267,7 @@ const registryPrefix = "/v2/"
 // ConfigureAuth teaches the authenticator what the adapter's clients send.
 func ConfigureAuth(a *auth.Authenticator) {
 	a.AcceptAPIKey("X-NuGet-ApiKey", "/artifactory/api/nuget/")
+	a.AcceptBareToken("/artifactory/api/gems/")
 	a.AllowExpiredBearer("/artifactory/api/security/token")
 	a.AllowExpiredBearer("/access/api/v1/tokens")
 }

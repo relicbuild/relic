@@ -154,6 +154,7 @@ func (h *Handler) native(prefix string) Mount {
 // ConfigureAuth teaches the authenticator what the package clients send at Relic's mounts.
 func ConfigureAuth(a *auth.Authenticator) {
 	a.AcceptAPIKey("X-NuGet-ApiKey", "/nuget/")
+	a.AcceptBareToken("/gems/")
 	a.LeaveBearer(hfXetTokenPrefix, hfXetCASPath+"/")
 }
 

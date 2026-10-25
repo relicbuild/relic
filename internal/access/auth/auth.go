@@ -174,9 +174,10 @@ type Authenticator struct {
 	verified map[[32]byte]time.Time
 	backoff  *Backoff
 
-	apiKeys        []apiKeyHeader
-	expiredBearers map[string]bool
-	leftBearers    []leftBearer
+	apiKeys           []apiKeyHeader
+	bareTokenPrefixes []string
+	expiredBearers    map[string]bool
+	leftBearers       []leftBearer
 }
 
 type leftBearer struct {
@@ -194,6 +195,26 @@ func (a *Authenticator) AcceptAPIKey(header, prefix string) {
 		header: header,
 		prefix: prefix,
 	})
+}
+
+// AcceptBareToken makes requests under prefix whose Authorization header is
+// a token alone, with no scheme, authenticate with that token.
+func (a *Authenticator) AcceptBareToken(prefix string) {
+	a.bareTokenPrefixes = append(a.bareTokenPrefixes, prefix)
+}
+
+func (a *Authenticator) bareToken(r *http.Request, header string) (string, bool) {
+	if strings.ContainsAny(header, " \t") {
+		return "", false
+	}
+
+	for _, prefix := range a.bareTokenPrefixes {
+		if strings.HasPrefix(r.URL.Path, prefix) {
+			return header, true
+		}
+	}
+
+	return "", false
 }
 
 // LeaveBearer makes requests to a path containing pathPart whose bearer
@@ -293,7 +314,12 @@ func (a *Authenticator) Authenticate(r *http.Request) (Principal, error) {
 		return a.cookie(r)
 	}
 
-	if token, ok := BearerToken(header); ok {
+	token, ok := BearerToken(header)
+	if !ok {
+		token, ok = a.bareToken(r, header)
+	}
+
+	if ok {
 		for _, left := range a.leftBearers {
 			if strings.HasPrefix(token, left.prefix) && strings.Contains(r.URL.Path, left.pathPart) {
 				return Principal{}, nil
