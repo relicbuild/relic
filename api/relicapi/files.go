@@ -13,6 +13,7 @@ import (
 
 	"relic/internal/access/auth"
 	"relic/internal/artifacts/repository"
+	"relic/internal/platform/localdisk"
 	"relic/internal/platform/objectstore"
 )
 
@@ -256,7 +257,7 @@ func writeHTTPError(w http.ResponseWriter, ce *connect.Error) {
 	switch {
 	case errors.Is(ce, repository.ErrTooLarge), errors.Is(ce, repository.ErrQuotaExceeded):
 		status = http.StatusRequestEntityTooLarge
-	case errors.Is(ce, objectstore.ErrStorageFull):
+	case errors.Is(ce, objectstore.ErrStorageFull), errors.Is(ce, localdisk.ErrFull):
 		status = http.StatusInsufficientStorage
 	}
 

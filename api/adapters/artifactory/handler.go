@@ -21,6 +21,7 @@ import (
 	"relic/internal/delivery/replication"
 	"relic/internal/platform/httperror"
 	"relic/internal/platform/httpserver"
+	"relic/internal/platform/localdisk"
 	"relic/internal/platform/objectstore"
 	"relic/internal/platform/sealing"
 	"relic/internal/platform/telemetry"
@@ -220,6 +221,8 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, err error) 
 		status, msg = http.StatusRequestEntityTooLarge, err.Error()
 	case errors.Is(err, objectstore.ErrStorageFull):
 		status, msg = http.StatusInsufficientStorage, objectstore.ErrStorageFull.Error()
+	case errors.Is(err, localdisk.ErrFull):
+		status, msg = http.StatusInsufficientStorage, localdisk.ErrFull.Error()
 	default:
 		h.log.ErrorContext(r.Context(), "request failed", "request_id", httpserver.RequestID(r.Context()), "error", err)
 	}

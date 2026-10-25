@@ -11,6 +11,7 @@ import (
 
 	"relic/internal/access/auth"
 	"relic/internal/artifacts/repository"
+	"relic/internal/platform/localdisk"
 	"relic/internal/platform/objectstore"
 )
 
@@ -51,6 +52,12 @@ func TestWriteHTTPError(t *testing.T) {
 			err:    codeOf(fmt.Errorf("put: %w", objectstore.ErrStorageFull)),
 			status: http.StatusInsufficientStorage,
 			body:   `{"code":8,"message":"object storage is full","details":[]}`,
+		},
+		{
+			name:   "a full database disk",
+			err:    codeOf(fmt.Errorf("commit: %w: database or disk is full (13)", localdisk.ErrFull)),
+			status: http.StatusInsufficientStorage,
+			body:   `{"code":8,"message":"the disk is full","details":[]}`,
 		},
 		{
 			name:   "a server failure",

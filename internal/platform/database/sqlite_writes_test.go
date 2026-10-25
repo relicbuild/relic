@@ -2,6 +2,7 @@ package database_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -14,6 +15,8 @@ import (
 	"relic/internal/platform/database"
 
 	"github.com/riverqueue/river"
+
+	"relic/internal/platform/localdisk"
 )
 
 func TestSQLiteWritesTakeTurnsWithABulkImport(t *testing.T) {
@@ -219,6 +222,41 @@ func TestSQLiteDeletesAWithdrawnAdvisoryThroughAnIndex(t *testing.T) {
 		return strings.Contains(step, "USING INDEX")
 	}) {
 		t.Errorf("deleting an advisory scans the table: %q", plan)
+	}
+}
+
+func TestSQLiteWritesToAFullDiskAreErrFull(t *testing.T) {
+	t.Parallel()
+
+	db, err := database.Open(t.Context(), "sqlite://"+filepath.Join(t.TempDir(), "relic.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(db.Close)
+
+	if _, err := db.Migrate(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := db.Query(t.Context(), "PRAGMA max_page_count = 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows.Close()
+
+	err = db.WithTx(t.Context(), func(q database.Querier) error {
+		for i := range 1000 {
+			if err := q.UpsertMaliciousPackage(t.Context(), maliciousPackage(fmt.Sprintf("MAL-%d", i))); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if !errors.Is(err, localdisk.ErrFull) {
+		t.Errorf("writing past the database's last page = %v, want localdisk.ErrFull", err)
 	}
 }
 

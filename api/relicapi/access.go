@@ -30,6 +30,7 @@ import (
 	"relic/internal/delivery/release"
 	"relic/internal/delivery/replication"
 	"relic/internal/delivery/webhook"
+	"relic/internal/platform/localdisk"
 	"relic/internal/platform/objectstore"
 	"relic/internal/scanning/cvecatalog"
 	"relic/internal/scanning/scan"
@@ -290,6 +291,8 @@ func codeOf(err error) *connect.Error {
 	case errors.Is(err, objectstore.ErrStorageFull):
 		return connect.NewError(connect.CodeResourceExhausted, objectstore.ErrStorageFull.Error()).
 			WithCause(objectstore.ErrStorageFull)
+	case errors.Is(err, localdisk.ErrFull):
+		return connect.NewError(connect.CodeResourceExhausted, localdisk.ErrFull.Error()).WithCause(localdisk.ErrFull)
 	case errors.Is(err, context.Canceled):
 		return connect.NewError(connect.CodeCanceled, err.Error()).WithCause(err)
 	case errors.Is(err, context.DeadlineExceeded):

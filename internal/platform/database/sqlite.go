@@ -21,7 +21,8 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riversqlite"
 	"github.com/riverqueue/river/rivermigrate"
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 type sqliteEngine struct {
@@ -202,7 +203,7 @@ func (e *sqliteEngine) withTx(ctx context.Context, fn func(q Querier) error) (er
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit: %w", err)
+		return fmt.Errorf("commit: %w", markDiskFull(err))
 	}
 
 	return nil
@@ -283,6 +284,14 @@ func readOnlyStatement(query string) bool {
 	}
 }
 
+func markDiskFull(err error) error {
+	if liteErr, ok := errors.AsType[*sqlite.Error](err); ok && liteErr.Code()&0xff == sqlite3.SQLITE_FULL {
+		return fmt.Errorf("%w: %w", localdisk.ErrFull, err)
+	}
+
+	return err
+}
+
 type tracedSQLite struct {
 	db       sqliteDBTX
 	acquired func()
@@ -296,6 +305,7 @@ func (t tracedSQLite) ExecContext(ctx context.Context, query string, args ...any
 	}
 
 	res, err := t.db.ExecContext(ctx, query, args...)
+	err = markDiskFull(err)
 	end(err)
 
 	return res, err
@@ -309,6 +319,7 @@ func (t tracedSQLite) QueryContext(ctx context.Context, query string, args ...an
 	}
 
 	rows, err := t.db.QueryContext(ctx, query, args...)
+	err = markDiskFull(err)
 	end(err)
 
 	return rows, err
