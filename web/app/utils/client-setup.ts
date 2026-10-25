@@ -1,3 +1,4 @@
+import { RepositoryClass } from '~/gen/relic/v1/repository_pb'
 import type { GetClientEndpointsResponse, Repository } from '~/gen/relic/v1/repository_pb'
 
 export interface ClientSetupSnippet {
@@ -58,9 +59,15 @@ export function clientSetupSnippets(repo: Repository, endpoints: GetClientEndpoi
     case 'helm':
       out.push({ title: 'helm', code: `helm repo add ${repo.name} ${pm} --username ${shellWord(user)} --password ${token}` })
       break
-    case 'rpm':
-      out.push({ title: 'dnf', code: `# /etc/yum.repos.d/relic-${repo.name}.repo\n[relic-${repo.name}]\nname=Relic ${repo.name}\nbaseurl=${pm}\nusername=${user}\npassword=${token}\ngpgcheck=0` })
+    case 'rpm': {
+      const baseURL = repo.metadataDepth > 0 ? `${pm.replace(/\/$/, '')}/<folder>` : pm
+      const keyFile = `/etc/pki/rpm-gpg/RPM-GPG-KEY-relic-${repo.name}`
+      const remote = repo.class === RepositoryClass.REMOTE
+      const fetchKey = remote ? '' : `curl -u ${shellWord(user)}:${token} -o ${keyFile} ${baseURL.replace(/\/$/, '')}/repodata/repomd.xml.key\n`
+      const signature = remote ? 'repo_gpgcheck=0' : `repo_gpgcheck=1\ngpgkey=file://${keyFile}`
+      out.push({ title: 'dnf', code: `${fetchKey}# /etc/yum.repos.d/relic-${repo.name}.repo\n[relic-${repo.name}]\nname=Relic ${repo.name}\nbaseurl=${baseURL}\nusername=${user}\npassword=${token}\ngpgcheck=0\n${signature}` })
       break
+    }
     case 'helmoci':
       out.push({ title: 'helm', code: `helm registry login ${registryHost} -u ${shellWord(user)} -p ${token}\nhelm push <chart>.tgz oci://${cr}` })
       break

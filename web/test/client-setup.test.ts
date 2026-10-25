@@ -27,6 +27,28 @@ describe('clientSetupSnippets', () => {
   })
 })
 
+describe('clientSetupSnippets for dnf', () => {
+  const dnf = (settings: { class: RepositoryClass, metadataDepth?: number }) =>
+    clientSetupSnippets(create(RepositorySchema, { name: 'r', format: Format.RPM, ...settings }), endpoints, 'alice', '<token>')
+      .find(s => s.title === 'dnf')?.code ?? ''
+
+  it('checks the signature of a local repository with its key', () => {
+    const code = dnf({ class: RepositoryClass.LOCAL })
+    expect(code).toContain('curl -u alice:<token> -o /etc/pki/rpm-gpg/RPM-GPG-KEY-relic-r http://relic.test/api/pypi/r/simple/repodata/repomd.xml.key')
+    expect(code).toContain('repo_gpgcheck=1\ngpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-relic-r')
+  })
+
+  it('leaves the signature of a remote to its upstream', () => {
+    const code = dnf({ class: RepositoryClass.REMOTE })
+    expect(code).toContain('repo_gpgcheck=0')
+    expect(code).not.toContain('gpgkey=')
+  })
+
+  it('points a repository with a metadata depth at a folder', () => {
+    expect(dnf({ class: RepositoryClass.LOCAL, metadataDepth: 1 })).toContain('baseurl=http://relic.test/api/pypi/r/simple/<folder>\n')
+  })
+})
+
 describe('tokenExpiry', () => {
   it('lets an administrator mint a token that never expires', () => {
     expect(tokenExpiry(true)).toEqual({ minDays: 0, maxDays: 3650, label: 'Expires after (days, 0 = never)' })
