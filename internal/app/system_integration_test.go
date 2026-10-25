@@ -351,6 +351,69 @@ func TestRelicAPISaysWhenRelicScanIsOff(t *testing.T) {
 	}
 }
 
+func TestRelicAPIReportsAFailedDatabaseImport(t *testing.T) {
+	t.Parallel()
+	srv, db := serverDB(t)
+
+	ctx := t.Context()
+	sys := relicv1connect.NewSystemServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL))
+
+	failed := `INSERT INTO river_job (kind, state, queue, attempt, max_attempts, args, attempted_at, attempted_by, errors)
+		VALUES ('scan_db_import', 'retryable', 'scan', 1, 3, '{}', now(), ARRAY['relic-1_2026'],
+		ARRAY[jsonb_build_object('attempt', 1, 'at', now(), 'error', 'import vulnerability database: unexpected EOF')])`
+	completed := `INSERT INTO river_job (kind, state, queue, attempt, max_attempts, args, attempted_at, finalized_at)
+		VALUES ('scan_db_import', 'completed', 'scan', 1, 3, '{}', now(), now() + interval '1 minute')`
+
+	if db.SQLite() {
+		failed = `INSERT INTO river_job (kind, state, queue, attempt, max_attempts, args, attempted_at, attempted_by, errors)
+			VALUES ('scan_db_import', 'retryable', 'scan', 1, 3, jsonb('{}'), datetime('now', 'subsec'),
+			jsonb('["relic-1_2026"]'),
+			jsonb_array(json_object('attempt', 1, 'at', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+			'error', 'import vulnerability database: unexpected EOF')))`
+		completed = `INSERT INTO river_job (kind, state, queue, attempt, max_attempts, args, attempted_at, finalized_at)
+			VALUES ('scan_db_import', 'completed', 'scan', 1, 3, jsonb('{}'), datetime('now', 'subsec'),
+			datetime('now', '+1 minute', 'subsec'))`
+	}
+
+	for _, step := range []struct {
+		name      string
+		statement string
+		wantError string
+	}{
+		{
+			name:      "an import attempt failed",
+			statement: failed,
+			wantError: "import vulnerability database: unexpected EOF",
+		},
+		{
+			name:      "a later import succeeded",
+			statement: completed,
+		},
+	} {
+		rows, err := db.Query(ctx, step.statement)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		rows.Close()
+
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+
+		st, err := sys.GetSystemStatus(ctx, &relicv1.GetSystemStatusRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := st.GetScanner().GetVulnerabilityDatabaseImportError(); got != step.wantError ||
+			(got != "") != (st.GetScanner().GetVulnerabilityDatabaseImportFailed() != nil) {
+			t.Errorf("%s: import error = %q at %v, want %q", step.name, got,
+				st.GetScanner().GetVulnerabilityDatabaseImportFailed(), step.wantError)
+		}
+	}
+}
+
 func sameJSON(a, b string) bool {
 	var x, y any
 	if json.Unmarshal([]byte(a), &x) != nil || json.Unmarshal([]byte(b), &y) != nil {

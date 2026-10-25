@@ -177,6 +177,14 @@ const columns: TableColumn<JobKindView>[] = [
               <UBadge color="success" variant="subtle" :label="`Done ${(data.scanner.scans.done ?? 0) + (data.scanner.scans.partial ?? 0)}`" />
               <UBadge color="error" variant="subtle" :label="`Failed ${data.scanner.scans.failed ?? 0}`" />
             </div>
+            <UAlert
+              v-if="data.scanner.importError"
+              color="error"
+              variant="subtle"
+              icon="i-lucide-database-zap"
+              :title="`The latest database import failed${data.scanner.importFailed ? ` ${formatDate(data.scanner.importFailed)}` : ''}`"
+              :description="data.scanner.importError"
+            />
             <UFileUpload
               v-if="administers"
               v-slot="{ open }"

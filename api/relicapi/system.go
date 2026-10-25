@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"relic/internal/artifacts/usage"
+	"relic/internal/scanning/scan"
 
 	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -62,6 +63,11 @@ func (s *systemServer) GetSystemStatus(
 	}
 
 	for _, k := range jobs {
+		if k.Kind == scan.DatabaseImportJob && k.FailedSinceCompleted() {
+			out.Scanner.VulnerabilityDatabaseImportError = k.LastError
+			out.Scanner.VulnerabilityDatabaseImportFailed = ts(k.LastErrorAt)
+		}
+
 		out.BackgroundJobs = append(out.BackgroundJobs, &relicv1.BackgroundJobSummary{
 			Kind:         k.Kind,
 			States:       counts(k.States),

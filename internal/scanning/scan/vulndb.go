@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -24,6 +25,53 @@ const MaxDatabaseArchive = 4 << 30
 
 // ErrInvalidDatabaseImport is an import key that names no staged archive.
 var ErrInvalidDatabaseImport = errors.New("scan: not a staged vulnerability database")
+
+// ErrNotDatabaseArchive is an upload that is no archive Grype imports.
+var ErrNotDatabaseArchive = errors.New(
+	"not a vulnerability database archive: Grype imports a .tar.zst, .tar.gz, .tar.xz or .tar file",
+)
+
+// DatabaseImportJob is the kind of the job that installs an imported vulnerability database.
+const DatabaseImportJob = "scan_db_import"
+
+var archiveMagic = [][]byte{
+	{
+		0x28,
+		0xb5,
+		0x2f,
+		0xfd,
+	},
+	{
+		0x1f,
+		0x8b,
+	},
+	[]byte("\xfd7zXZ\x00"),
+}
+
+const tarMagicOffset = 257
+
+// DatabaseArchive returns r whole if it starts like an archive Grype imports, and ErrNotDatabaseArchive otherwise.
+func DatabaseArchive(r io.Reader) (io.Reader, error) {
+	head := make([]byte, tarMagicOffset+len("ustar"))
+
+	n, err := io.ReadFull(r, head)
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("read the vulnerability database archive: %w", err)
+	}
+
+	head = head[:n]
+
+	known := len(head) == tarMagicOffset+len("ustar") && string(head[tarMagicOffset:]) == "ustar"
+	for _, magic := range archiveMagic {
+		known = known || bytes.HasPrefix(head, magic)
+	}
+
+	if !known {
+		return nil, ErrNotDatabaseArchive
+	}
+
+	return io.MultiReader(bytes.NewReader(head), r), nil
+}
 
 // DatabaseImports moves vulnerability database archives (Grype's `db
 // import` format) from an upload on the server to the worker.

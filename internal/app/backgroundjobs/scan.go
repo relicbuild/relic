@@ -332,7 +332,7 @@ type ScanDBImportArgs struct {
 }
 
 // Kind implements river.JobArgs.
-func (ScanDBImportArgs) Kind() string { return "scan_db_import" }
+func (ScanDBImportArgs) Kind() string { return scan.DatabaseImportJob }
 
 // InsertOpts implements river.JobArgsWithInsertOpts.
 func (ScanDBImportArgs) InsertOpts() river.InsertOpts {

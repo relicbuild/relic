@@ -115,6 +115,12 @@ message ScannerStatus {
   // available reports a worker that runs Relic Scan (one with Syft and
   // Grype) seen lately; without one, Relic Scan is off.
   bool available = 3;
+  // vulnerability_database_import_error is why the latest attempt to install
+  // an imported vulnerability database failed, unless an import succeeded
+  // after it.
+  string vulnerability_database_import_error = 4;
+  // vulnerability_database_import_failed is when that attempt failed.
+  google.protobuf.Timestamp vulnerability_database_import_failed = 5;
 }
 
 message GetSystemStatusResponse {

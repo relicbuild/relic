@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -68,6 +69,68 @@ func TestGrypeUpdateDB(t *testing.T) {
 
 	if err := offline.UpdateDB(t.Context()); err != nil || calls(t, offlineLog) != "" {
 		t.Errorf("offline update ran grype: %q %v", calls(t, offlineLog), err)
+	}
+}
+
+func TestDatabaseArchive(t *testing.T) {
+	t.Parallel()
+
+	tarHeader := make([]byte, 512)
+	copy(tarHeader, "vulnerability.db")
+	copy(tarHeader[257:], "ustar")
+
+	tests := []struct {
+		name    string
+		body    string
+		wantErr bool
+	}{
+		{
+			name: "zstd",
+			body: "\x28\xb5\x2f\xfd" + "the database",
+		},
+		{
+			name: "gzip",
+			body: "\x1f\x8b\x08" + "the database",
+		},
+		{
+			name: "xz",
+			body: "\xfd7zXZ\x00" + "the database",
+		},
+		{
+			name: "tar",
+			body: string(tarHeader) + "the database",
+		},
+		{
+			name:    "text",
+			body:    "garbage\n",
+			wantErr: true,
+		},
+		{
+			name:    "empty",
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			r, err := DatabaseArchive(strings.NewReader(tt.body))
+			if tt.wantErr {
+				if !errors.Is(err, ErrNotDatabaseArchive) {
+					t.Errorf("DatabaseArchive = %v, want ErrNotDatabaseArchive", err)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if b, err := io.ReadAll(r); err != nil || string(b) != tt.body {
+				t.Errorf("the archive read back = %q, %v; want it whole", b, err)
+			}
+		})
 	}
 }
 

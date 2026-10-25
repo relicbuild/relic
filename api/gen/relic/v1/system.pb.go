@@ -374,9 +374,15 @@ type ScannerStatus struct {
 	Scans map[string]int32 `protobuf:"bytes,2,rep,name=scans,proto3" json:"scans,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
 	// available reports a worker that runs Relic Scan (one with Syft and
 	// Grype) seen lately; without one, Relic Scan is off.
-	Available     bool `protobuf:"varint,3,opt,name=available,proto3" json:"available,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Available bool `protobuf:"varint,3,opt,name=available,proto3" json:"available,omitempty"`
+	// vulnerability_database_import_error is why the latest attempt to install
+	// an imported vulnerability database failed, unless an import succeeded
+	// after it.
+	VulnerabilityDatabaseImportError string `protobuf:"bytes,4,opt,name=vulnerability_database_import_error,json=vulnerabilityDatabaseImportError,proto3" json:"vulnerability_database_import_error,omitempty"`
+	// vulnerability_database_import_failed is when that attempt failed.
+	VulnerabilityDatabaseImportFailed *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=vulnerability_database_import_failed,json=vulnerabilityDatabaseImportFailed,proto3" json:"vulnerability_database_import_failed,omitempty"`
+	unknownFields                     protoimpl.UnknownFields
+	sizeCache                         protoimpl.SizeCache
 }
 
 func (x *ScannerStatus) Reset() {
@@ -428,6 +434,20 @@ func (x *ScannerStatus) GetAvailable() bool {
 		return x.Available
 	}
 	return false
+}
+
+func (x *ScannerStatus) GetVulnerabilityDatabaseImportError() string {
+	if x != nil {
+		return x.VulnerabilityDatabaseImportError
+	}
+	return ""
+}
+
+func (x *ScannerStatus) GetVulnerabilityDatabaseImportFailed() *timestamppb.Timestamp {
+	if x != nil {
+		return x.VulnerabilityDatabaseImportFailed
+	}
+	return nil
 }
 
 type GetSystemStatusResponse struct {
@@ -1736,11 +1756,13 @@ const file_relic_v1_system_proto_rawDesc = "" +
 	"\rlast_error_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\vlastErrorAt\x1a9\n" +
 	"\vStatesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\"\xff\x01\n" +
+	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\"\xbb\x03\n" +
 	"\rScannerStatus\x12\\\n" +
 	"\x1cvulnerability_database_built\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x1avulnerabilityDatabaseBuilt\x128\n" +
 	"\x05scans\x18\x02 \x03(\v2\".relic.v1.ScannerStatus.ScansEntryR\x05scans\x12\x1c\n" +
-	"\tavailable\x18\x03 \x01(\bR\tavailable\x1a8\n" +
+	"\tavailable\x18\x03 \x01(\bR\tavailable\x12M\n" +
+	"#vulnerability_database_import_error\x18\x04 \x01(\tR vulnerabilityDatabaseImportError\x12k\n" +
+	"$vulnerability_database_import_failed\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR!vulnerabilityDatabaseImportFailed\x1a8\n" +
 	"\n" +
 	"ScansEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
@@ -1912,49 +1934,50 @@ var file_relic_v1_system_proto_depIdxs = []int32{
 	31, // 2: relic.v1.BackgroundJobSummary.last_error_at:type_name -> google.protobuf.Timestamp
 	31, // 3: relic.v1.ScannerStatus.vulnerability_database_built:type_name -> google.protobuf.Timestamp
 	27, // 4: relic.v1.ScannerStatus.scans:type_name -> relic.v1.ScannerStatus.ScansEntry
-	3,  // 5: relic.v1.GetSystemStatusResponse.checks:type_name -> relic.v1.HealthCheck
-	4,  // 6: relic.v1.GetSystemStatusResponse.storage:type_name -> relic.v1.StorageUsage
-	5,  // 7: relic.v1.GetSystemStatusResponse.background_jobs:type_name -> relic.v1.BackgroundJobSummary
-	6,  // 8: relic.v1.GetSystemStatusResponse.scanner:type_name -> relic.v1.ScannerStatus
-	12, // 9: relic.v1.GetSystemStatusResponse.workers:type_name -> relic.v1.JobWorker
-	13, // 10: relic.v1.GetSystemStatusResponse.queues:type_name -> relic.v1.JobQueue
-	28, // 11: relic.v1.GetDashboardSummaryResponse.repositories:type_name -> relic.v1.GetDashboardSummaryResponse.RepositoriesEntry
-	29, // 12: relic.v1.GetDashboardSummaryResponse.scans:type_name -> relic.v1.GetDashboardSummaryResponse.ScansEntry
-	30, // 13: relic.v1.GetDashboardSummaryResponse.findings:type_name -> relic.v1.GetDashboardSummaryResponse.FindingsEntry
-	31, // 14: relic.v1.GetDashboardSummaryResponse.vulnerability_database_built:type_name -> google.protobuf.Timestamp
-	31, // 15: relic.v1.JobWorker.last_active:type_name -> google.protobuf.Timestamp
-	31, // 16: relic.v1.JobQueue.updated:type_name -> google.protobuf.Timestamp
-	16, // 17: relic.v1.ListBackgroundJobsResponse.jobs:type_name -> relic.v1.BackgroundJob
-	31, // 18: relic.v1.BackgroundJob.created:type_name -> google.protobuf.Timestamp
-	31, // 19: relic.v1.BackgroundJob.scheduled:type_name -> google.protobuf.Timestamp
-	31, // 20: relic.v1.BackgroundJob.attempted:type_name -> google.protobuf.Timestamp
-	31, // 21: relic.v1.BackgroundJob.finalized:type_name -> google.protobuf.Timestamp
-	17, // 22: relic.v1.BackgroundJob.errors:type_name -> relic.v1.BackgroundJobError
-	31, // 23: relic.v1.BackgroundJobError.at:type_name -> google.protobuf.Timestamp
-	21, // 24: relic.v1.GetUsageReportResponse.repositories:type_name -> relic.v1.RepositoryUsage
-	22, // 25: relic.v1.GetUsageReportResponse.projects:type_name -> relic.v1.ProjectUsage
-	23, // 26: relic.v1.GetUsageReportResponse.days:type_name -> relic.v1.DayUsage
-	24, // 27: relic.v1.GetUsageReportResponse.top_downloaders:type_name -> relic.v1.UserUsage
-	24, // 28: relic.v1.GetUsageReportResponse.top_deployers:type_name -> relic.v1.UserUsage
-	0,  // 29: relic.v1.SystemService.GetVersion:input_type -> relic.v1.GetVersionRequest
-	2,  // 30: relic.v1.SystemService.GetSystemStatus:input_type -> relic.v1.GetSystemStatusRequest
-	8,  // 31: relic.v1.SystemService.GetDashboardSummary:input_type -> relic.v1.GetDashboardSummaryRequest
-	14, // 32: relic.v1.SystemService.ListBackgroundJobs:input_type -> relic.v1.ListBackgroundJobsRequest
-	18, // 33: relic.v1.SystemService.CheckStorage:input_type -> relic.v1.CheckStorageRequest
-	20, // 34: relic.v1.SystemService.GetUsageReport:input_type -> relic.v1.GetUsageReportRequest
-	10, // 35: relic.v1.SystemService.CollectGarbage:input_type -> relic.v1.CollectGarbageRequest
-	1,  // 36: relic.v1.SystemService.GetVersion:output_type -> relic.v1.GetVersionResponse
-	7,  // 37: relic.v1.SystemService.GetSystemStatus:output_type -> relic.v1.GetSystemStatusResponse
-	9,  // 38: relic.v1.SystemService.GetDashboardSummary:output_type -> relic.v1.GetDashboardSummaryResponse
-	15, // 39: relic.v1.SystemService.ListBackgroundJobs:output_type -> relic.v1.ListBackgroundJobsResponse
-	19, // 40: relic.v1.SystemService.CheckStorage:output_type -> relic.v1.CheckStorageResponse
-	25, // 41: relic.v1.SystemService.GetUsageReport:output_type -> relic.v1.GetUsageReportResponse
-	11, // 42: relic.v1.SystemService.CollectGarbage:output_type -> relic.v1.CollectGarbageResponse
-	36, // [36:43] is the sub-list for method output_type
-	29, // [29:36] is the sub-list for method input_type
-	29, // [29:29] is the sub-list for extension type_name
-	29, // [29:29] is the sub-list for extension extendee
-	0,  // [0:29] is the sub-list for field type_name
+	31, // 5: relic.v1.ScannerStatus.vulnerability_database_import_failed:type_name -> google.protobuf.Timestamp
+	3,  // 6: relic.v1.GetSystemStatusResponse.checks:type_name -> relic.v1.HealthCheck
+	4,  // 7: relic.v1.GetSystemStatusResponse.storage:type_name -> relic.v1.StorageUsage
+	5,  // 8: relic.v1.GetSystemStatusResponse.background_jobs:type_name -> relic.v1.BackgroundJobSummary
+	6,  // 9: relic.v1.GetSystemStatusResponse.scanner:type_name -> relic.v1.ScannerStatus
+	12, // 10: relic.v1.GetSystemStatusResponse.workers:type_name -> relic.v1.JobWorker
+	13, // 11: relic.v1.GetSystemStatusResponse.queues:type_name -> relic.v1.JobQueue
+	28, // 12: relic.v1.GetDashboardSummaryResponse.repositories:type_name -> relic.v1.GetDashboardSummaryResponse.RepositoriesEntry
+	29, // 13: relic.v1.GetDashboardSummaryResponse.scans:type_name -> relic.v1.GetDashboardSummaryResponse.ScansEntry
+	30, // 14: relic.v1.GetDashboardSummaryResponse.findings:type_name -> relic.v1.GetDashboardSummaryResponse.FindingsEntry
+	31, // 15: relic.v1.GetDashboardSummaryResponse.vulnerability_database_built:type_name -> google.protobuf.Timestamp
+	31, // 16: relic.v1.JobWorker.last_active:type_name -> google.protobuf.Timestamp
+	31, // 17: relic.v1.JobQueue.updated:type_name -> google.protobuf.Timestamp
+	16, // 18: relic.v1.ListBackgroundJobsResponse.jobs:type_name -> relic.v1.BackgroundJob
+	31, // 19: relic.v1.BackgroundJob.created:type_name -> google.protobuf.Timestamp
+	31, // 20: relic.v1.BackgroundJob.scheduled:type_name -> google.protobuf.Timestamp
+	31, // 21: relic.v1.BackgroundJob.attempted:type_name -> google.protobuf.Timestamp
+	31, // 22: relic.v1.BackgroundJob.finalized:type_name -> google.protobuf.Timestamp
+	17, // 23: relic.v1.BackgroundJob.errors:type_name -> relic.v1.BackgroundJobError
+	31, // 24: relic.v1.BackgroundJobError.at:type_name -> google.protobuf.Timestamp
+	21, // 25: relic.v1.GetUsageReportResponse.repositories:type_name -> relic.v1.RepositoryUsage
+	22, // 26: relic.v1.GetUsageReportResponse.projects:type_name -> relic.v1.ProjectUsage
+	23, // 27: relic.v1.GetUsageReportResponse.days:type_name -> relic.v1.DayUsage
+	24, // 28: relic.v1.GetUsageReportResponse.top_downloaders:type_name -> relic.v1.UserUsage
+	24, // 29: relic.v1.GetUsageReportResponse.top_deployers:type_name -> relic.v1.UserUsage
+	0,  // 30: relic.v1.SystemService.GetVersion:input_type -> relic.v1.GetVersionRequest
+	2,  // 31: relic.v1.SystemService.GetSystemStatus:input_type -> relic.v1.GetSystemStatusRequest
+	8,  // 32: relic.v1.SystemService.GetDashboardSummary:input_type -> relic.v1.GetDashboardSummaryRequest
+	14, // 33: relic.v1.SystemService.ListBackgroundJobs:input_type -> relic.v1.ListBackgroundJobsRequest
+	18, // 34: relic.v1.SystemService.CheckStorage:input_type -> relic.v1.CheckStorageRequest
+	20, // 35: relic.v1.SystemService.GetUsageReport:input_type -> relic.v1.GetUsageReportRequest
+	10, // 36: relic.v1.SystemService.CollectGarbage:input_type -> relic.v1.CollectGarbageRequest
+	1,  // 37: relic.v1.SystemService.GetVersion:output_type -> relic.v1.GetVersionResponse
+	7,  // 38: relic.v1.SystemService.GetSystemStatus:output_type -> relic.v1.GetSystemStatusResponse
+	9,  // 39: relic.v1.SystemService.GetDashboardSummary:output_type -> relic.v1.GetDashboardSummaryResponse
+	15, // 40: relic.v1.SystemService.ListBackgroundJobs:output_type -> relic.v1.ListBackgroundJobsResponse
+	19, // 41: relic.v1.SystemService.CheckStorage:output_type -> relic.v1.CheckStorageResponse
+	25, // 42: relic.v1.SystemService.GetUsageReport:output_type -> relic.v1.GetUsageReportResponse
+	11, // 43: relic.v1.SystemService.CollectGarbage:output_type -> relic.v1.CollectGarbageResponse
+	37, // [37:44] is the sub-list for method output_type
+	30, // [30:37] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_relic_v1_system_proto_init() }

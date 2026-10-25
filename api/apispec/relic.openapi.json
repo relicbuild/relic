@@ -9495,6 +9495,20 @@
             "type": "boolean",
             "title": "available",
             "description": "available reports a worker that runs Relic Scan (one with Syft and\n Grype) seen lately; without one, Relic Scan is off."
+          },
+          "vulnerabilityDatabaseImportError": {
+            "type": "string",
+            "title": "vulnerability_database_import_error",
+            "description": "vulnerability_database_import_error is why the latest attempt to install\n an imported vulnerability database failed, unless an import succeeded\n after it."
+          },
+          "vulnerabilityDatabaseImportFailed": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/google.protobuf.Timestamp"
+              }
+            ],
+            "title": "vulnerability_database_import_failed",
+            "description": "vulnerability_database_import_failed is when that attempt failed."
           }
         },
         "title": "ScannerStatus",

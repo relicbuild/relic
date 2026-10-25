@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -123,22 +124,7 @@ func vulnerabilityDatabaseStatusCmd(g *globals) *cobra.Command {
 			s := r.GetScanner()
 
 			return printMessage(cmd.OutOrStdout(), output, s, func(w io.Writer) error {
-				if !s.GetAvailable() {
-					if _, err := fmt.Fprintln(w, scanOffLine); err != nil {
-						return err
-					}
-				}
-
-				if s.GetVulnerabilityDatabaseBuilt() == nil {
-					_, err := fmt.Fprintln(w, "no scan has used a vulnerability database yet")
-
-					return err
-				}
-
-				_, err := fmt.Fprintln(
-					w,
-					databaseBuiltLine(s.GetVulnerabilityDatabaseBuilt().AsTime(), time.Now(), time.Local),
-				)
+				_, err := io.WriteString(w, databaseStatusText(s, time.Now(), time.Local))
 
 				return err
 			})
@@ -147,4 +133,29 @@ func vulnerabilityDatabaseStatusCmd(g *globals) *cobra.Command {
 	outputFlag(cmd, &output)
 
 	return cmd
+}
+
+func databaseStatusText(s *relicv1.ScannerStatus, now time.Time, loc *time.Location) string {
+	var b strings.Builder
+
+	if !s.GetAvailable() {
+		b.WriteString(scanOffLine + "\n")
+	}
+
+	if s.GetVulnerabilityDatabaseBuilt() == nil {
+		b.WriteString("no scan has used a vulnerability database yet\n")
+	} else {
+		b.WriteString(databaseBuiltLine(s.GetVulnerabilityDatabaseBuilt().AsTime(), now, loc) + "\n")
+	}
+
+	if failure := s.GetVulnerabilityDatabaseImportError(); failure != "" {
+		fmt.Fprintf(
+			&b,
+			"the latest import failed at %s: %s\n",
+			s.GetVulnerabilityDatabaseImportFailed().AsTime().In(loc).Format(time.DateTime),
+			failure,
+		)
+	}
+
+	return b.String()
 }
