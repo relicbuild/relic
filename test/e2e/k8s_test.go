@@ -140,12 +140,10 @@ func TestKubernetes(t *testing.T) {
 // Docker host's own platform into dir: kind imports every platform of an
 // index, and a pulled image holds only one.
 func saveImages(ctx context.Context, dir string, images []string) error {
-	arch, err := command(ctx, "docker", "version", "--format", "{{.Server.Arch}}")
+	platform, err := hostPlatform(ctx)
 	if err != nil {
 		return err
 	}
-
-	platform := "linux/" + strings.TrimSpace(string(arch))
 
 	for _, img := range images {
 		if _, err := command(ctx, "docker", "image", "inspect", img); err != nil {

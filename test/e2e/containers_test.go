@@ -5,12 +5,18 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/moby/moby/api/types/container"
@@ -20,7 +26,8 @@ import (
 )
 
 // clientImages are the images scenarios run inside the shared Docker
-// daemon; its volume keeps them between runs.
+// daemon; the host's Docker keeps them, and each run loads them into the
+// daemon.
 var clientImages = []string{
 	"alpine:3.24",
 	"debian:trixie-slim",
@@ -32,16 +39,13 @@ var clientImages = []string{
 	"ghcr.io/opencontainers/distribution-spec/conformance:v1.1.1",
 }
 
-// daemon starts a Docker daemon on the stack's network under alias, its
-// storage in a named volume, cleaned of what an earlier run left and, for
-// the shared daemon, holding the client images.
+// daemon starts a Docker daemon on the stack's network under alias, holding
+// images; its storage is an anonymous volume, removed with it.
 func daemon(ctx context.Context, s stack, alias string, images []string) (testcontainers.Container, error) {
-	name := s.project + "-" + alias
-
 	c, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image: "docker:29-dind",
-			Name:  name,
+			Name:  s.project + "-" + alias,
 			Cmd: []string{
 				"--insecure-registry",
 				"relic-server:8090",
@@ -59,9 +63,6 @@ func daemon(ctx context.Context, s stack, alias string, images []string) (testco
 			},
 			HostConfigModifier: func(hc *container.HostConfig) {
 				hc.Privileged = true
-				// A named volume Docker owns, not testcontainers: it keeps the
-				// pulled images for the next run.
-				hc.Binds = append(hc.Binds, name+":/var/lib/docker")
 			},
 			WaitingFor: wait.ForExec([]string{
 				"docker",
@@ -75,22 +76,278 @@ func daemon(ctx context.Context, s stack, alias string, images []string) (testco
 		return c, fmt.Errorf("docker daemon %s: %w", alias, err)
 	}
 
-	script := `docker rm -f $(docker ps -aq) >/dev/null 2>&1; docker volume prune -af >/dev/null 2>&1
-printf "%s\n" "$@" >/tmp/kept
-docker images --format "{{.Repository}}:{{.Tag}}" | grep -v "<none>" | grep -vxFf /tmp/kept | xargs -r docker rmi >/dev/null 2>&1
-for i in "$@"; do docker images -q "$i"; done >/tmp/kept-ids
-docker images -qa | sort -u | grep -vxFf /tmp/kept-ids | xargs -r docker rmi -f >/dev/null 2>&1
-docker builder prune -af >/dev/null 2>&1
-for i in "$@"; do docker image inspect "$i" >/dev/null 2>&1 || docker pull -q "$i" >/dev/null 2>&1 & done
-wait; true`
+	if err := loadImages(ctx, c, images); err != nil {
+		return c, fmt.Errorf("docker daemon %s: %w", alias, err)
+	}
 
-	if _, err := run(ctx, c, append([]string{
-		"sh",
-		"-c",
-		script,
-		"sh",
-	}, images...)); err != nil {
-		return c, fmt.Errorf("prepare docker daemon %s: %w", alias, err)
+	return c, nil
+}
+
+func loadImages(ctx context.Context, c testcontainers.Container, images []string) error {
+	var (
+		mu    sync.Mutex
+		errs  []error
+		pulls sync.WaitGroup
+	)
+
+	for _, image := range images {
+		pulls.Go(func() {
+			if _, err := command(ctx, "docker", "image", "inspect", image); err == nil {
+				return
+			}
+
+			if err := pull(ctx, image); err != nil {
+				mu.Lock()
+				defer mu.Unlock()
+
+				errs = append(errs, err)
+			}
+		})
+	}
+
+	pulls.Wait()
+
+	if err := errors.Join(errs...); err != nil {
+		return err
+	}
+
+	for _, image := range images {
+		if err := copyImage(ctx, c, image); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func copyImage(ctx context.Context, c testcontainers.Container, image string) error {
+	platform, err := command(ctx, "docker", "image", "inspect", "--format", "{{.Os}}/{{.Architecture}}", image)
+	if err != nil {
+		return err
+	}
+
+	//nolint:gosec // docker with the suite's own arguments
+	save := exec.CommandContext(ctx, "docker", "save", "--platform", strings.TrimSpace(string(platform)), image)
+	load := exec.CommandContext(ctx, "docker", "exec", "-i", c.GetContainerID(), "docker", "load", "-q")
+
+	var out bytes.Buffer
+
+	save.Stderr = &out
+	load.Stdout, load.Stderr = &out, &out
+
+	if load.Stdin, err = save.StdoutPipe(); err != nil {
+		return err
+	}
+
+	if err := save.Start(); err != nil {
+		return err
+	}
+
+	loadErr := load.Run()
+	if err := errors.Join(save.Wait(), loadErr); err != nil {
+		return fmt.Errorf("load %s: %w\n%s", image, err, lastLines(out.Bytes(), 30))
+	}
+
+	return nil
+}
+
+const (
+	pullAttempts = 3
+	pullTimeout  = 10 * time.Minute
+)
+
+func pull(ctx context.Context, image string) error {
+	var err error
+
+	for range pullAttempts {
+		attempt, cancel := context.WithTimeout(ctx, pullTimeout)
+		_, err = command(attempt, "docker", "pull", "-q", image)
+
+		cancel()
+
+		if err == nil || ctx.Err() != nil {
+			return err
+		}
+	}
+
+	return err
+}
+
+func hostPlatform(ctx context.Context) (string, error) {
+	arch, err := command(ctx, "docker", "version", "--format", "{{.Server.Arch}}")
+	if err != nil {
+		return "", err
+	}
+
+	return "linux/" + strings.TrimSpace(string(arch)), nil
+}
+
+const vulnerabilityListing = "https://grype.anchore.io/databases/v6/latest.json"
+
+func vulnerabilityDatabases(ctx context.Context) (string, error) {
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
+	}
+
+	dir := filepath.Join(cache, "relic-e2e", "grype")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return "", err
+	}
+
+	var listing []byte
+
+	body, err := downloaded(ctx, vulnerabilityListing)
+	if err == nil {
+		listing, err = readSmall(body)
+	}
+
+	if err != nil {
+		if _, cached := os.Stat(filepath.Join(dir, "latest.json")); cached == nil {
+			return dir, nil
+		}
+
+		return "", err
+	}
+
+	var newest struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal(listing, &newest); err != nil {
+		return "", fmt.Errorf("%s: %w", vulnerabilityListing, err)
+	}
+
+	if newest.Path == "" || filepath.Base(newest.Path) != newest.Path {
+		return "", fmt.Errorf("%s: unexpected archive %q", vulnerabilityListing, newest.Path)
+	}
+
+	archive := filepath.Join(dir, newest.Path)
+	if _, err := os.Stat(archive); errors.Is(err, fs.ErrNotExist) {
+		if err := downloadTo(
+			ctx,
+			strings.TrimSuffix(vulnerabilityListing, "latest.json")+newest.Path,
+			archive,
+		); err != nil {
+			return "", err
+		}
+	}
+
+	if err := writeAtomically(filepath.Join(dir, "latest.json"), bytes.NewReader(listing)); err != nil {
+		return "", err
+	}
+
+	older, err := filepath.Glob(filepath.Join(dir, "*.tar.zst"))
+	if err != nil {
+		return "", err
+	}
+
+	for _, f := range older {
+		if f != archive {
+			_ = os.Remove(f)
+		}
+	}
+
+	return dir, nil
+}
+
+func downloaded(ctx context.Context, url string) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("GET %s: %s", url, resp.Status)
+	}
+
+	return resp.Body, nil
+}
+
+func readSmall(body io.ReadCloser) ([]byte, error) {
+	defer func() {
+		_ = body.Close()
+	}()
+
+	return io.ReadAll(io.LimitReader(body, 1<<20))
+}
+
+func downloadTo(ctx context.Context, url, path string) error {
+	body, err := downloaded(ctx, url)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		_ = body.Close()
+	}()
+
+	return writeAtomically(path, body)
+}
+
+func writeAtomically(path string, body io.Reader) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.part")
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		_ = os.Remove(tmp.Name())
+	}()
+
+	if _, err := io.Copy(tmp, body); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+
+	return os.Rename(tmp.Name(), path)
+}
+
+func vulnerabilityMirror(ctx context.Context, s stack, dir string) (testcontainers.Container, error) {
+	c, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image: "caddy:2",
+			Name:  s.project + "-grype-mirror",
+			Cmd: []string{
+				"caddy",
+				"file-server",
+				"--root",
+				"/srv",
+				"--listen",
+				":80",
+			},
+			Networks: []string{
+				s.network(),
+			},
+			NetworkAliases: map[string][]string{
+				s.network(): {
+					"grype-mirror",
+				},
+			},
+			HostConfigModifier: func(hc *container.HostConfig) {
+				hc.Binds = append(hc.Binds, dir+":/srv:ro")
+			},
+			WaitingFor: wait.ForExec([]string{
+				"wget",
+				"-q",
+				"-O",
+				"/dev/null",
+				"http://127.0.0.1/latest.json",
+			}).WithStartupTimeout(30 * time.Second),
+		},
+		Started: true,
+	})
+	if err != nil {
+		return c, fmt.Errorf("vulnerability database mirror: %w", err)
 	}
 
 	return c, nil

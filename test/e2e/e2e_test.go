@@ -88,6 +88,14 @@ func TestStack(t *testing.T) {
 
 	containers := s.startContainers(t, names)
 
+	if s.remote() == "" {
+		if err := s.serveVulnerabilityDatabases(t); err != nil {
+			t.Fatal(err)
+		}
+
+		phase(t, start, "vulnerability database served")
+	}
+
 	clientImage, relic, err := s.images(ctx, t.TempDir())
 	if err != nil {
 		t.Fatal(err)

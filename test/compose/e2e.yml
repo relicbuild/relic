@@ -1,0 +1,10 @@
+services:
+  relic-server:
+    build:
+      labels:
+        build.relic.e2e: "true"
+    environment:
+      RELIC_SCAN_VULNERABILITY_DATABASE_URL: http://grype-mirror/latest.json
+  relic-worker:
+    environment:
+      RELIC_SCAN_VULNERABILITY_DATABASE_URL: http://grype-mirror/latest.json

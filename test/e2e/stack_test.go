@@ -64,6 +64,7 @@ func newStack(tier string) stack {
 	files := []string{
 		"deploy/docker-compose.yml",
 		"test/compose/plain-http.yml",
+		"test/compose/e2e.yml",
 	}
 	if tier == "core" {
 		files = append(files, "deploy/docker-compose.single-node.yml", "test/compose/plain-http.single-node.yml")
@@ -167,29 +168,24 @@ func (s stack) up(ctx context.Context) error {
 	return err
 }
 
-// down removes the stack and its volumes, except the vulnerability database:
-// downloading it again takes about a minute.
+// down removes the stack: its containers, networks and volumes.
 func (s stack) down(ctx context.Context) {
-	_, _ = s.compose(ctx, "down", "--remove-orphans")
+	_, _ = s.compose(ctx, "down", "--volumes", "--remove-orphans")
+}
 
-	out, err := command(
-		ctx,
-		"docker",
-		"volume",
-		"ls",
-		"-q",
-		"--filter",
-		"label=com.docker.compose.project="+s.project,
-	)
+func (s stack) serveVulnerabilityDatabases(t *testing.T) error {
+	dir, err := vulnerabilityDatabases(t.Context())
 	if err != nil {
-		return
+		return err
 	}
 
-	for _, v := range strings.Fields(string(out)) {
-		if !strings.HasSuffix(v, "_vulnerability-database") {
-			_, _ = command(ctx, "docker", "volume", "rm", v)
-		}
-	}
+	c, err := vulnerabilityMirror(t.Context(), s, dir)
+
+	t.Cleanup(func() {
+		stop(c)
+	})
+
+	return err
 }
 
 // serverAddress is where the host reaches the server's HTTP port.
@@ -243,7 +239,9 @@ func (s stack) images(ctx context.Context, dir string) (client, relic string, er
 
 	<-done
 
-	return client, relic, errors.Join(err, clientErr)
+	_, pruneErr := command(ctx, "docker", "image", "prune", "-f", "--filter", "label="+builtLabel)
+
+	return client, relic, errors.Join(err, clientErr, pruneErr)
 }
 
 // serverImage builds the server image, or tags RELIC_E2E_SERVER_IMAGE, for
@@ -272,6 +270,8 @@ func (s stack) serverImage(ctx context.Context, dir string) (string, error) {
 	return relic, copyFromImage(ctx, server, "/relic", relic)
 }
 
+const builtLabel = "build.relic.e2e=true"
+
 // clientImage builds the client image, or names RELIC_E2E_CLIENT_IMAGE.
 func clientImage(ctx context.Context) (string, error) {
 	if prebuilt := os.Getenv("RELIC_E2E_CLIENT_IMAGE"); prebuilt != "" {
@@ -285,6 +285,8 @@ func clientImage(ctx context.Context) (string, error) {
 		"docker",
 		"build",
 		"-q",
+		"--label",
+		builtLabel,
 		"-t",
 		client,
 		"-f",
@@ -305,7 +307,7 @@ func copyFromImage(ctx context.Context, image, src, dst string) error {
 	id := strings.TrimSpace(string(out))
 
 	defer func() {
-		_, _ = command(context.WithoutCancel(ctx), "docker", "rm", id)
+		_, _ = command(context.WithoutCancel(ctx), "docker", "rm", "-v", id)
 	}()
 
 	_, err = command(ctx, "docker", "cp", id+":"+src, dst)
