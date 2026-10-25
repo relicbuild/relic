@@ -15,7 +15,7 @@ cat >repos.json <<JSON
  {"key":"$VIRTUAL","rclass":"virtual","packageType":"alpine","repositories":"$LOCAL,$REMOTE","defaultDeploymentRepo":"$LOCAL"}]
 JSON
 jf rt rc repos.json
-ver=v3.24 arch=x86_64
+ver=v3.24 arch=$(uname -m)
 
 step "the upstream's index and a package through the remote"
 jf rt curl -sf -o upstream.tar.gz "/$REMOTE/$ver/main/$arch/APKINDEX.tar.gz"
