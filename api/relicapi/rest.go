@@ -4,10 +4,16 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
 	"connectrpc.com/connect/v2"
+	"google.golang.org/genproto/googleapis/api/annotations"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/reflect/protoregistry"
 )
 
 // restDecodeErrors answers 400 invalid_argument where the transcoder reports
@@ -107,6 +113,133 @@ func (w *restErrorWriter) finish() {
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	w.ResponseWriter.WriteHeader(status)
 	_, _ = w.ResponseWriter.Write(body)
+}
+
+type multiSegmentRoute struct {
+	method string
+	prefix []string
+}
+
+func multiSegmentRoutes() []multiSegmentRoute {
+	var routes []multiSegmentRoute
+
+	protoregistry.GlobalFiles.RangeFilesByPackage("relic.v1", func(file protoreflect.FileDescriptor) bool {
+		services := file.Services()
+		for i := range services.Len() {
+			methods := services.Get(i).Methods()
+			for j := range methods.Len() {
+				rule, ok := proto.GetExtension(methods.Get(j).Options(), annotations.E_Http).(*annotations.HttpRule)
+				if !ok || rule == nil {
+					continue
+				}
+
+				bindings := append([]*annotations.HttpRule{
+					rule,
+				}, rule.GetAdditionalBindings()...)
+				for _, binding := range bindings {
+					if route, ok := multiSegmentRouteOf(binding); ok {
+						routes = append(routes, route)
+					}
+				}
+			}
+		}
+
+		return true
+	})
+
+	return routes
+}
+
+func multiSegmentRouteOf(rule *annotations.HttpRule) (multiSegmentRoute, bool) {
+	method, template := httpRulePattern(rule)
+
+	var prefix []string
+
+	for segment := range strings.SplitSeq(strings.TrimPrefix(template, "/"), "/") {
+		switch {
+		case strings.HasPrefix(segment, "{") && strings.Contains(segment, "=**}"):
+			return multiSegmentRoute{
+				method: method,
+				prefix: prefix,
+			}, true
+		case strings.HasPrefix(segment, "{"):
+			prefix = append(prefix, "")
+		default:
+			prefix = append(prefix, segment)
+		}
+	}
+
+	return multiSegmentRoute{}, false
+}
+
+func httpRulePattern(rule *annotations.HttpRule) (method, template string) {
+	switch pattern := rule.GetPattern().(type) {
+	case *annotations.HttpRule_Get:
+		return http.MethodGet, pattern.Get
+	case *annotations.HttpRule_Put:
+		return http.MethodPut, pattern.Put
+	case *annotations.HttpRule_Post:
+		return http.MethodPost, pattern.Post
+	case *annotations.HttpRule_Delete:
+		return http.MethodDelete, pattern.Delete
+	case *annotations.HttpRule_Patch:
+		return http.MethodPatch, pattern.Patch
+	case *annotations.HttpRule_Custom:
+		return pattern.Custom.GetKind(), pattern.Custom.GetPath()
+	}
+
+	return "", ""
+}
+
+func (route multiSegmentRoute) matches(method string, segments []string) bool {
+	if method != route.method || len(segments) <= len(route.prefix) {
+		return false
+	}
+
+	for i, literal := range route.prefix {
+		if literal == "" && segments[i] == "" || literal != "" && literal != segments[i] {
+			return false
+		}
+	}
+
+	return true
+}
+
+func multiSegmentPaths(next http.Handler) http.Handler {
+	routes := multiSegmentRoutes()
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		escaped := r.URL.EscapedPath()
+		if !strings.Contains(strings.ToUpper(escaped), "%2F") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		segments := strings.Split(strings.TrimPrefix(escaped, "/"), "/")
+		for _, route := range routes {
+			if !route.matches(r.Method, segments) {
+				continue
+			}
+
+			variable := strings.Join(segments[len(route.prefix):], "/")
+			variable = strings.NewReplacer("%2F", "/", "%2f", "/").Replace(variable)
+			raw := "/" + strings.Join(append(slices.Clone(segments[:len(route.prefix)]), variable), "/")
+
+			decoded, err := url.PathUnescape(raw)
+			if err != nil {
+				break
+			}
+
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = decoded
+			r2.URL.RawPath = raw
+			r = r2
+
+			break
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 var restHTTPStatuses = map[connect.Code]int{

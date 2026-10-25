@@ -262,7 +262,7 @@ func Handler(d Dependencies) http.Handler {
 	mux.HandleFunc("GET "+SSOPath+"{provider}/callback", d.ssoCallback)
 	mux.HandleFunc("POST "+SSOPath+"{provider}/acs", d.ssoAssertion)
 	mux.HandleFunc("GET "+SSOPath+"{provider}/metadata", d.ssoMetadata)
-	mux.Handle(Prefix, restDecodeErrors(connectPaths(api)))
+	mux.Handle(Prefix, restDecodeErrors(connectPaths(multiSegmentPaths(api))))
 
 	return withRequest(mux)
 }
