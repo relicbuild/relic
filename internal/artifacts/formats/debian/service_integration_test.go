@@ -63,7 +63,7 @@ func newDebianFixture(t testing.TB) *debianFixture {
 
 	f := &debianFixture{
 		repos: repos,
-		svc:   NewService(repos, nil, log),
+		svc:   NewService(db, repos, nil, log),
 	}
 
 	var err error
@@ -124,6 +124,22 @@ func (f *debianFixture) packages(t *testing.T, r repository.Repository, dist, fi
 	}
 
 	return names
+}
+
+func (f *debianFixture) releaseDate(t *testing.T, dist string) time.Time {
+	t.Helper()
+
+	d, err := f.svc.Distribution(t.Context(), f.local, dist)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	date, err := time.Parse(time.RFC1123Z, Field(string(d.Release), "Date"))
+	if err != nil {
+		t.Fatalf("Release Date: %v\n%s", err, d.Release)
+	}
+
+	return date
 }
 
 func TestDistributionMemberErrors(t *testing.T) {
@@ -233,6 +249,37 @@ func TestDistributionListsEveryComponentAndArchitecture(t *testing.T) {
 				t.Errorf("%s %s lists %v, want hello", dist, file, got)
 			}
 		}
+	}
+}
+
+func TestDistributionReleaseDateMovesForward(t *testing.T) {
+	t.Parallel()
+
+	f := newDebianFixture(t)
+	bookworm := repository.Properties{
+		PropDistribution: {
+			"bookworm",
+		},
+	}
+	f.deploy(t, "older", bookworm)
+	newest := f.deploy(t, "newest", bookworm)
+
+	before := f.releaseDate(t, "bookworm")
+
+	f.advance(time.Minute)
+
+	if again := f.releaseDate(t, "bookworm"); !again.Equal(before) {
+		t.Errorf("the Date of unchanged indexes moved from %s to %s", before, again)
+	}
+
+	if err := f.repos.Delete(t.Context(), f.local.Name, newest); err != nil {
+		t.Fatal(err)
+	}
+
+	f.clock.Store(before.Unix())
+
+	if after := f.releaseDate(t, "bookworm"); !after.After(before) {
+		t.Errorf("after deleting the newest package the Date is %s, want later than %s", after, before)
 	}
 }
 

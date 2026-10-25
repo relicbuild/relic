@@ -998,7 +998,7 @@ func newRouter(
 		Conan:              conan.NewService(repos, log),
 		HuggingFace:        huggingface.NewService(repos, log),
 		Alpine:             alpine.NewService(repos, keySvc, log),
-		Debian:             debian.NewService(repos, keySvc, log),
+		Debian:             debian.NewService(db, repos, keySvc, log),
 		RPM:                rpm.NewService(repos, keySvc, log),
 		Nix:                nix.NewService(repos, log),
 		TerraformProviders: terraform.NewService(repos, log),

@@ -144,6 +144,13 @@ type CveFeed struct {
 	Fetched time.Time
 }
 
+type DebianReleaseDate struct {
+	RepoKey      string
+	Distribution string
+	Digest       string
+	Date         time.Time
+}
+
 type DepsDevVersion struct {
 	System     string
 	Name       string

@@ -538,6 +538,9 @@ SELECT * FROM cve_feeds WHERE name = @name;`
 const sqliteGetCleanupPolicy = `-- name: GetCleanupPolicy :one
 SELECT * FROM cleanup_policies WHERE name = @name;`
 
+const sqliteGetDebianReleaseDate = `-- name: GetDebianReleaseDate :one
+SELECT * FROM debian_release_dates WHERE repo_key = @repo_key AND distribution = @distribution;`
+
 const sqliteGetDepsDevVersion = `-- name: GetDepsDevVersion :one
 SELECT * FROM deps_dev_versions WHERE system = @system AND name = @name AND version = @version;`
 
@@ -1346,6 +1349,11 @@ INSERT INTO approvals (repo_key, path, sha256, approved_by, approved)
 VALUES (@repo_key, @path, @sha256, @approved_by, @approved)
 ON CONFLICT (repo_key, path) DO UPDATE SET sha256 = excluded.sha256, approved_by = excluded.approved_by,
     approved = excluded.approved;`
+
+const sqlitePutDebianReleaseDate = `-- name: PutDebianReleaseDate :exec
+INSERT INTO debian_release_dates (repo_key, distribution, digest, date)
+VALUES (@repo_key, @distribution, @digest, @date)
+ON CONFLICT (repo_key, distribution) DO UPDATE SET digest = excluded.digest, date = excluded.date;`
 
 const sqlitePutHold = `-- name: PutHold :exec
 INSERT INTO item_holds (repo_key, path, reason, created_by, created)
@@ -3302,6 +3310,29 @@ func (q *sqliteQueries) GetCleanupPolicy(ctx context.Context, arg string) (Clean
 	}
 
 	err = rows.Scan(&i.Name, &i.Doc, sqliteTimeScanner{&i.Created}, sqliteTimeScanner{&i.Updated}, sqliteNullTimeScanner{&i.LastRun}, &i.LastMoved, &i.LastError)
+
+	return i, err
+}
+
+func (q *sqliteQueries) GetDebianReleaseDate(ctx context.Context, arg GetDebianReleaseDateParams) (DebianReleaseDate, error) {
+	var i DebianReleaseDate
+
+	rows, err := q.query(ctx, "GetDebianReleaseDate", []string{"repokey", "distribution", "digest", "date"}, sqliteGetDebianReleaseDate, sql.Named("repo_key", arg.RepoKey), sql.Named("distribution", arg.Distribution))
+	if err != nil {
+		return i, err
+	}
+
+	defer rows.Close()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return i, err
+		}
+
+		return i, sql.ErrNoRows
+	}
+
+	err = rows.Scan(&i.RepoKey, &i.Distribution, &i.Digest, sqliteTimeScanner{&i.Date})
 
 	return i, err
 }
@@ -6947,6 +6978,12 @@ func (q *sqliteQueries) PurgeWebhookDeliveries(ctx context.Context, arg time.Tim
 
 func (q *sqliteQueries) PutApproval(ctx context.Context, arg PutApprovalParams) error {
 	_, err := q.db.ExecContext(ctx, sqlitePutApproval, sql.Named("repo_key", arg.RepoKey), sql.Named("path", arg.Path), sql.Named("sha256", arg.Sha256), sql.Named("approved_by", arg.ApprovedBy), sql.Named("approved", sqliteTime(arg.Approved)))
+
+	return err
+}
+
+func (q *sqliteQueries) PutDebianReleaseDate(ctx context.Context, arg PutDebianReleaseDateParams) error {
+	_, err := q.db.ExecContext(ctx, sqlitePutDebianReleaseDate, sql.Named("repo_key", arg.RepoKey), sql.Named("distribution", arg.Distribution), sql.Named("digest", arg.Digest), sql.Named("date", sqliteTime(arg.Date)))
 
 	return err
 }

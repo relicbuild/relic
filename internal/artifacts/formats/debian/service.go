@@ -2,6 +2,8 @@ package debian
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -13,6 +15,7 @@ import (
 	"relic/internal/artifacts/formats/indexcache"
 	"relic/internal/artifacts/repository"
 	"relic/internal/artifacts/signingkey"
+	"relic/internal/platform/database"
 	"relic/internal/platform/telemetry"
 )
 
@@ -36,6 +39,7 @@ var defaultArchitectures = []string{
 
 // Service indexes and serves Debian repositories.
 type Service struct {
+	db      *database.DB
 	repos   *repository.Service
 	keys    *signingkey.Service
 	log     *slog.Logger
@@ -46,8 +50,9 @@ type Service struct {
 // NewService returns a Service; it reads the control file of .deb files
 // deployed to Debian repositories, and remotes refresh dists/ like other
 // metadata.
-func NewService(repos *repository.Service, keySvc *signingkey.Service, log *slog.Logger) *Service {
+func NewService(db *database.DB, repos *repository.Service, keySvc *signingkey.Service, log *slog.Logger) *Service {
 	s := &Service{
+		db:    db,
 		repos: repos,
 		keys:  keySvc,
 		log:   log,
@@ -147,7 +152,16 @@ func (s *Service) buildDistribution(ctx context.Context, r repository.Repository
 	paras := map[string]map[string][]string{}
 	seen := map[string]bool{}
 	add := func(comp, arch, p string) {
-		id := comp + "\x00" + arch + "\x00" + Field(p, "Package") + "\x00" + Field(p, "Version") + "\x00" + Field(p, "Architecture")
+		id := comp + "\x00" + arch + "\x00" + Field(
+			p,
+			"Package",
+		) + "\x00" + Field(
+			p,
+			"Version",
+		) + "\x00" + Field(
+			p,
+			"Architecture",
+		)
 		if seen[id] {
 			return
 		}
@@ -213,10 +227,65 @@ func (s *Service) buildDistribution(ctx context.Context, r repository.Repository
 		return nil, repository.ErrNotFound
 	}
 
-	return assemble(r.Name, dist, paras, modified)
+	idx, release, err := assemble(r.Name, dist, paras)
+	if err != nil {
+		return nil, err
+	}
+
+	digest := sha256.Sum256(release(time.Time{}))
+
+	date, err := s.releaseDate(ctx, r.Name, dist, hex.EncodeToString(digest[:]), modified)
+	if err != nil {
+		return nil, err
+	}
+
+	idx.Release = release(date)
+
+	return idx, nil
 }
 
-func assemble(label, dist string, paras map[string]map[string][]string, now time.Time) (*Dist, error) {
+func (s *Service) releaseDate(
+	ctx context.Context,
+	repoKey, dist, digest string,
+	modified time.Time,
+) (time.Time, error) {
+	stored, err := s.db.GetDebianReleaseDate(ctx, database.GetDebianReleaseDateParams{
+		RepoKey:      repoKey,
+		Distribution: dist,
+	})
+
+	found := err == nil
+	if err != nil && !errors.Is(database.NotFound(err), database.ErrNotFound) {
+		return time.Time{}, fmt.Errorf("release date of %s %s: %w", repoKey, dist, err)
+	}
+
+	switch {
+	case found && stored.Digest == digest:
+		return stored.Date, nil
+	case repository.Filtered(ctx) && found && stored.Date.After(modified):
+		return stored.Date, nil
+	case repository.Filtered(ctx):
+		return modified, nil
+	}
+
+	date := s.now().UTC().Truncate(time.Second)
+	if found && !date.After(stored.Date) {
+		date = stored.Date.Add(time.Second)
+	}
+
+	if err := s.db.PutDebianReleaseDate(ctx, database.PutDebianReleaseDateParams{
+		RepoKey:      repoKey,
+		Distribution: dist,
+		Digest:       digest,
+		Date:         date,
+	}); err != nil {
+		return time.Time{}, fmt.Errorf("release date of %s %s: %w", repoKey, dist, err)
+	}
+
+	return date, nil
+}
+
+func assemble(label, dist string, paras map[string]map[string][]string) (*Dist, func(time.Time) []byte, error) {
 	comps, archSet := map[string]bool{}, map[string]bool{}
 	for comp, byArch := range paras {
 		comps[comp] = true
@@ -251,7 +320,7 @@ func assemble(label, dist string, paras map[string]map[string][]string, now time
 
 			gz, err := Gzip(data)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 
 			base := comp + "/binary-" + arch + "/Packages"
@@ -272,9 +341,9 @@ func assemble(label, dist string, paras map[string]map[string][]string, now time
 		}
 	}
 
-	d.Release = Release(label, dist, d.Components, archs, files, now)
-
-	return d, nil
+	return d, func(date time.Time) []byte {
+		return Release(label, dist, d.Components, archs, files, date)
+	}, nil
 }
 
 func (s *Service) localParagraphs(

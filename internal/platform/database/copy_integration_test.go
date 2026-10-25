@@ -94,6 +94,7 @@ INSERT INTO registry_entries (repo_key, path, kind, name, version, description, 
   ('libs', 'weather/server.json', 'mcp', 'io.example/weather', '1.0.0', 'Forecasts', 'aa', '{"name": "io.example/weather"}', now());
 INSERT INTO approvals (repo_key, path, sha256, approved_by, approved) VALUES ('libs', 'weather/server.json', 'aa', 'admin', now());
 INSERT INTO replication_tombstones (repo_key, path, deleted) VALUES ('libs', 'gone.txt', now());
+INSERT INTO debian_release_dates (repo_key, distribution, digest, date) VALUES ('libs', 'bookworm', 'd1', now());
 INSERT INTO usage_daily (day, repo_key, files, bytes, downloads, deploys) VALUES ('2026-10-05', 'libs', 2, 10, 3, 1);
 INSERT INTO usage_users_daily (day, username, downloads, deploys) VALUES ('2026-10-05', 'bob', 3, 1);
 INSERT INTO workload_identities (name, config, created, updated) VALUES

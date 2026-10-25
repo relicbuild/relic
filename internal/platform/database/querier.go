@@ -133,6 +133,7 @@ type Querier interface {
 	GetCVE(ctx context.Context, id string) (CVE, error)
 	GetCVEFeed(ctx context.Context, name string) (CveFeed, error)
 	GetCleanupPolicy(ctx context.Context, name string) (CleanupPolicy, error)
+	GetDebianReleaseDate(ctx context.Context, arg GetDebianReleaseDateParams) (DebianReleaseDate, error)
 	GetDepsDevVersion(ctx context.Context, arg GetDepsDevVersionParams) (DepsDevVersion, error)
 	GetDownloadStats(ctx context.Context, itemID uuid.UUID) (DownloadStat, error)
 	GetEndOfLifeFeed(ctx context.Context, source string) (EndOfLifeFeed, error)
@@ -321,6 +322,7 @@ type Querier interface {
 	PurgeUserUsage(ctx context.Context, before string) error
 	PurgeWebhookDeliveries(ctx context.Context, before time.Time) (int64, error)
 	PutApproval(ctx context.Context, arg PutApprovalParams) error
+	PutDebianReleaseDate(ctx context.Context, arg PutDebianReleaseDateParams) error
 	PutHold(ctx context.Context, arg PutHoldParams) error
 	PutQuarantineDecision(ctx context.Context, arg PutQuarantineDecisionParams) error
 	PutTombstone(ctx context.Context, arg PutTombstoneParams) error
