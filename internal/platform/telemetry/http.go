@@ -29,3 +29,13 @@ func RouteMatched(ctx context.Context, pattern string) {
 	span.SetName(pattern)
 	span.SetAttributes(semconv.HTTPRoute(Route(pattern)))
 }
+
+// RedactURLPath records path as the server span's url.path.
+func RedactURLPath(ctx context.Context, path string) {
+	span := trace.SpanFromContext(ctx)
+	if !span.IsRecording() {
+		return
+	}
+
+	span.SetAttributes(semconv.URLPath(path))
+}
