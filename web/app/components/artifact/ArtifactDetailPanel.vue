@@ -111,7 +111,7 @@ const actions = computed<DropdownMenuItem[][]>(() => {
   return groups
 })
 
-const hasSbom = computed(() => ['done', 'partial'].includes(artifact.value?.scan.status ?? ''))
+const hasSbom = computed(() => ['done', 'partial'].includes(artifact.value?.scan.status ?? '') || (artifact.value?.scan.components ?? 0) > 0)
 
 const gav = computed(() => {
   const it = artifact.value?.item

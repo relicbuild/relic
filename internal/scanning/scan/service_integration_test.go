@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -206,13 +207,21 @@ func TestScanPipeline(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if a, err := db.GetScanArtifact(ctx, c.Sha256); err != nil || a.Components != 2 || a.Reason != "SBOM imported" ||
-		a.DbBuilt != nil {
-		t.Fatalf("after the import, scan record = %+v, %v; want it stale until matched", a, err)
+	if a, err := db.GetScanArtifact(ctx, c.Sha256); err != nil || a.Components != 2 || a.Status != scan.StatusQueued ||
+		a.Reason != "SBOM imported, not matched yet" || a.DbBuilt != nil {
+		t.Fatalf("after the import, scan record = %+v, %v; want it queued until matched", a, err)
 	}
 
 	if cleared, _ := db.ListFindings(ctx, c.Sha256); len(cleared) != 0 {
 		t.Errorf("findings of the replaced SBOM kept: %d", len(cleared))
+	}
+
+	built := time.Now()
+	if stale, err := db.ListStaleScans(ctx, database.ListStaleScansParams{
+		DbBuilt: &built,
+		MaxRows: 10,
+	}); err != nil || !slices.Contains(stale, c.Sha256) {
+		t.Errorf("stale scans = %v, %v; want the imported SBOM matched with the next database", stale, err)
 	}
 
 	if err := svc.Rematch(ctx, c.Sha256); err != nil {
@@ -221,6 +230,11 @@ func TestScanPipeline(t *testing.T) {
 
 	if matched, _ := db.ListFindings(ctx, c.Sha256); len(matched) != 3 {
 		t.Errorf("findings of the imported SBOM = %d, want it matched", len(matched))
+	}
+
+	if a, err := db.GetScanArtifact(ctx, c.Sha256); err != nil || a.Status != scan.StatusDone ||
+		a.Reason != "SBOM imported" {
+		t.Errorf("after matching the imported SBOM, scan = %s (%s), %v; want done", a.Status, a.Reason, err)
 	}
 
 	past, total, err := scan.NewResults(db).FindingsPage(ctx, scan.FindingsQuery{
@@ -263,7 +277,8 @@ func TestScanPipeline(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if a, err := db.GetScanArtifact(ctx, c.Sha256); err != nil || a.Components != 2 || a.Reason != "SBOM imported" {
+	if a, err := db.GetScanArtifact(ctx, c.Sha256); err != nil || a.Components != 2 ||
+		a.Reason != "SBOM imported, not matched yet" {
 		t.Errorf("a scan that finished after an SBOM import replaced it: %+v, %v", a, err)
 	}
 

@@ -10,6 +10,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -19,6 +21,7 @@ import (
 	"relic/internal/platform/database"
 	"relic/internal/platform/database/databasetest"
 	"relic/internal/platform/objectstore/objectstoretest"
+	"relic/internal/scanning/scan"
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
@@ -111,6 +114,31 @@ func do(t *testing.T, srv *httptest.Server, c call) (reply, string) {
 }
 
 func hexSum(sum []byte) string { return hex.EncodeToString(sum) }
+
+func importMatchedSBOM(t *testing.T, db *database.DB, sha, fileName, sbom string) {
+	t.Helper()
+
+	ctx := t.Context()
+	if err := scan.NewResults(db).ImportSBOM(ctx, sha, fileName, []byte(sbom)); err != nil {
+		t.Fatal(err)
+	}
+
+	grype := filepath.Join(t.TempDir(), "grype")
+
+	//nolint:gosec // G306: an executable test script
+	if err := os.WriteFile(grype, []byte("#!/bin/sh\necho '{\"matches\":[]}'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := scan.NewService(db, nil, scan.Syft{}, scan.Grype{
+		Exec: scan.Exec{
+			Path: grype,
+		},
+	}, scan.Limits{}, slog.New(slog.DiscardHandler))
+	if err := svc.Rematch(ctx, sha); err != nil {
+		t.Fatal(err)
+	}
+}
 
 type asUser struct {
 	user, password string

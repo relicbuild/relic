@@ -55,12 +55,10 @@ func TestOperationalRisk(t *testing.T) {
 	sum := sha256.Sum256([]byte(content))
 	sha := hexSum(sum[:])
 
-	if err := scan.NewResults(db).ImportSBOM(ctx, sha, "app-1.0.tar.gz", []byte(`{"bomFormat":"CycloneDX","components":[
+	importMatchedSBOM(t, db, sha, "app-1.0.tar.gz", `{"bomFormat":"CycloneDX","components":[
 		{"type":"library","name":"Django","version":"4.2.11","purl":"pkg:pypi/django@4.2.11"},
 		{"type":"library","name":"requests","version":"2.32.0","purl":"pkg:pypi/requests@2.32.0"},
-		{"type":"operating-system","name":"alpine","version":"3.17.4"}]}`)); err != nil {
-		t.Fatal(err)
-	}
+		{"type":"operating-system","name":"alpine","version":"3.17.4"}]}`)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, srv.URL+"/api/v1/end-of-life-data",
 		strings.NewReader(endOfLifeDump))

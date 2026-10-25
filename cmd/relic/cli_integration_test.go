@@ -808,7 +808,17 @@ func TestSBOMCommands(t *testing.T) {
 		}
 	}
 
-	out, err := relic(t, config, "", "security", "sbom", "export", "sbom-cli/app/app.jar", "--format", "spdx")
+	out, err := relic(t, config, "", "security", "sbom", "import", "sbom-cli/app/app.jar", bom)
+	if err != nil || !strings.Contains(out, "imported the SBOM of sbom-cli/app/app.jar") {
+		t.Errorf("import = %q %v; want the result on standard output", out, err)
+	}
+
+	out, err = relic(t, config, "", "security", "report", "sbom-cli/app/app.jar")
+	if err != nil || !strings.Contains(out, "queued (SBOM imported, not matched yet)") {
+		t.Errorf("report right after the import = %q %v; want it queued until matched", out, err)
+	}
+
+	out, err = relic(t, config, "", "security", "sbom", "export", "sbom-cli/app/app.jar", "--format", "spdx")
 	if err != nil || !strings.Contains(out, `"spdxVersion": "SPDX-2.3"`) ||
 		!strings.Contains(out, "pkg:maven/com.google.guava/guava@31.0") {
 		t.Errorf("export as SPDX = %q %v", out, err)

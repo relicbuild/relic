@@ -433,7 +433,12 @@ func (s *Service) Rematch(ctx context.Context, sha256Hex string) error {
 		return err
 	}
 
-	err = s.save(ctx, sha256Hex, a.Updated, a.Status, a.Reason, sbom, &rep)
+	status, reason := a.Status, a.Reason
+	if status == StatusQueued {
+		status, reason = StatusDone, "SBOM imported"
+	}
+
+	err = s.save(ctx, sha256Hex, a.Updated, status, reason, sbom, &rep)
 	if errors.Is(err, errSuperseded) {
 		return nil
 	}

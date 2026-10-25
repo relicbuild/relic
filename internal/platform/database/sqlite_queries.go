@@ -673,9 +673,9 @@ const sqliteImportScanSbom = `-- name: ImportScanSbom :exec
 -- Replaces an artifact's SBOM with an imported one; matching it comes next,
 -- and until then it counts as matched against no database (stale).
 INSERT INTO scan_artifacts (sha256, file_name, status, reason, sbom, components, db_built, updated)
-VALUES (@sha256, @file_name, 'done', 'SBOM imported', @sbom, @components, NULL, @now)
+VALUES (@sha256, @file_name, 'queued', 'SBOM imported, not matched yet', @sbom, @components, NULL, @now)
 ON CONFLICT (sha256) DO UPDATE
-SET status = 'done', reason = 'SBOM imported', sbom = excluded.sbom, components = excluded.components,
+SET status = 'queued', reason = 'SBOM imported, not matched yet', sbom = excluded.sbom, components = excluded.components,
     db_built = NULL, updated = excluded.updated;`
 
 const sqliteInsertAccessToken = `-- name: InsertAccessToken :exec
@@ -1215,7 +1215,7 @@ LIMIT @max;`
 
 const sqliteListStaleScans = `-- name: ListStaleScans :many
 SELECT sha256 FROM scan_artifacts
-WHERE status IN ('done', 'partial') AND sbom IS NOT NULL AND (db_built IS NULL OR db_built < @db_built)
+WHERE status IN ('done', 'partial', 'queued') AND sbom IS NOT NULL AND (db_built IS NULL OR db_built < @db_built)
 ORDER BY sha256
 LIMIT @max_rows;`
 

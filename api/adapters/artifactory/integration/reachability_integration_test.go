@@ -40,10 +40,7 @@ func TestReachability(t *testing.T) {
 	sum := sha256.Sum256([]byte(content))
 	sha := hexSum(sum[:])
 
-	if err := scan.NewResults(db).
-		ImportSBOM(ctx, sha, "app-1.0", []byte(`{"bomFormat":"CycloneDX","components":[]}`)); err != nil {
-		t.Fatal(err)
-	}
+	importMatchedSBOM(t, db, sha, "app-1.0", `{"bomFormat":"CycloneDX","components":[]}`)
 
 	for _, f := range []struct {
 		id, cve string

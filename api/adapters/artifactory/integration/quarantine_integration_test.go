@@ -204,20 +204,12 @@ func TestQuarantine(t *testing.T) {
 		t.Errorf("a released file = %d", status)
 	}
 
-	results := scan.NewResults(db)
 	for _, p := range []string{
 		"g/b/1.0/b-1.0.jar",
 		"g/c/1.0/c-1.0.jar",
 		"g/d/1.0/d-1.0.jar",
 	} {
-		if err := results.ImportSBOM(
-			ctx,
-			sha[p],
-			"x.jar",
-			[]byte(`{"bomFormat":"CycloneDX","components":[]}`),
-		); err != nil {
-			t.Fatal(err)
-		}
+		importMatchedSBOM(t, db, sha[p], "x.jar", `{"bomFormat":"CycloneDX","components":[]}`)
 	}
 
 	if err := db.InsertFinding(ctx, database.InsertFindingParams{

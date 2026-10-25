@@ -399,9 +399,9 @@ func (q *Queries) ImageManifestsInFolders(ctx context.Context, arg ImageManifest
 
 const importScanSbom = `-- name: ImportScanSbom :exec
 INSERT INTO scan_artifacts (sha256, file_name, status, reason, sbom, components, db_built, updated)
-VALUES ($1, $2, 'done', 'SBOM imported', $3, $4, NULL, $5)
+VALUES ($1, $2, 'queued', 'SBOM imported, not matched yet', $3, $4, NULL, $5)
 ON CONFLICT (sha256) DO UPDATE
-SET status = 'done', reason = 'SBOM imported', sbom = EXCLUDED.sbom, components = EXCLUDED.components,
+SET status = 'queued', reason = 'SBOM imported, not matched yet', sbom = EXCLUDED.sbom, components = EXCLUDED.components,
     db_built = NULL, updated = EXCLUDED.updated
 `
 
@@ -773,7 +773,7 @@ func (q *Queries) ListIssues(ctx context.Context, sha256 string) ([]ScanIssue, e
 
 const listStaleScans = `-- name: ListStaleScans :many
 SELECT sha256 FROM scan_artifacts
-WHERE status IN ('done', 'partial') AND sbom IS NOT NULL AND (db_built IS NULL OR db_built < $1)
+WHERE status IN ('done', 'partial', 'queued') AND sbom IS NOT NULL AND (db_built IS NULL OR db_built < $1)
 ORDER BY sha256
 LIMIT $2
 `
