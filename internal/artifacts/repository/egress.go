@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
@@ -90,10 +92,10 @@ func noDowngrade(req *http.Request, via []*http.Request) error {
 	return nil
 }
 
-func newUpstreamClient(timeout time.Duration, allowPrivate bool) *http.Client {
+func newUpstreamClient(timeout time.Duration, allowPrivate bool, roots *x509.CertPool) *http.Client {
 	return &http.Client{
 		Transport: retryLostConnection{
-			next: telemetry.UpstreamTransport(upstreamTransport(timeout, allowPrivate)),
+			next: telemetry.UpstreamTransport(upstreamTransport(timeout, allowPrivate, roots)),
 		},
 		CheckRedirect: noDowngrade,
 	}
@@ -114,8 +116,19 @@ func (t retryLostConnection) RoundTrip(req *http.Request) (*http.Response, error
 	return t.next.RoundTrip(req)
 }
 
-func upstreamTransport(timeout time.Duration, allowPrivate bool) *http.Transport {
-	return upstreamTransportFrom(http.DefaultTransport.(*http.Transport), timeout, allowPrivate)
+func upstreamTransport(timeout time.Duration, allowPrivate bool, roots *x509.CertPool) *http.Transport {
+	t := upstreamTransportFrom(http.DefaultTransport.(*http.Transport), timeout, allowPrivate)
+	if roots != nil {
+		if t.TLSClientConfig == nil {
+			t.TLSClientConfig = &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			}
+		}
+
+		t.TLSClientConfig.RootCAs = roots
+	}
+
+	return t
 }
 
 func upstreamTransportFrom(base *http.Transport, timeout time.Duration, allowPrivate bool) *http.Transport {

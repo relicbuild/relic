@@ -2,11 +2,15 @@ package app
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -366,8 +370,10 @@ func TestOutboundClientsRefusePrivateAddresses(t *testing.T) {
 	t.Cleanup(target.Close)
 
 	clients := map[string]func(allowPrivate bool) *http.Client{
-		"webhook":     webhookClient,
-		"replication": replicationClient,
+		"webhook": webhookClient,
+		"replication": func(allowPrivate bool) *http.Client {
+			return replicationClient(allowPrivate, nil)
+		},
 	}
 
 	tests := []struct {
@@ -408,5 +414,76 @@ func TestOutboundClientsRefusePrivateAddresses(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestReplicationClientTrustsTheUpstreamAuthority(t *testing.T) {
+	t.Parallel()
+
+	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(target.Close)
+
+	caFile := filepath.Join(t.TempDir(), "ca.crt")
+	if err := os.WriteFile(caFile, pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: target.Certificate().Raw,
+	}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	roots, err := trustedRoots("RELIC_UPSTREAM_CA_CERTIFICATE_FILE", caFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name        string
+		roots       *x509.CertPool
+		wantRefused bool
+	}{
+		{
+			name:        "the system roots refuse a private authority",
+			wantRefused: true,
+		},
+		{
+			name:  "the upstream CA file trusts it",
+			roots: roots,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, target.URL, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			resp, err := replicationClient(true, tt.roots).Do(req)
+			if err == nil {
+				_ = resp.Body.Close()
+			}
+
+			var unknown x509.UnknownAuthorityError
+			if refused := errors.As(err, &unknown); refused != tt.wantRefused {
+				t.Errorf("request = %v, want refused %v", err, tt.wantRefused)
+			}
+		})
+	}
+}
+
+func TestTrustedRootsRefusesAFileWithoutCertificates(t *testing.T) {
+	t.Parallel()
+
+	file := filepath.Join(t.TempDir(), "ca.crt")
+	if err := os.WriteFile(file, []byte("not a certificate"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := trustedRoots("RELIC_UPSTREAM_CA_CERTIFICATE_FILE", file); err == nil ||
+		!strings.Contains(err.Error(), "RELIC_UPSTREAM_CA_CERTIFICATE_FILE") {
+		t.Errorf("trustedRoots = %v, want an error naming the setting", err)
 	}
 }

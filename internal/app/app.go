@@ -323,9 +323,15 @@ func runServer(ctx context.Context, getenv func(string) string, mode serverMode,
 		return err
 	}
 
+	upstreamRoots, err := trustedRoots("RELIC_UPSTREAM_CA_CERTIFICATE_FILE", cfg.UpstreamCACertificateFile)
+	if err != nil {
+		return err
+	}
+
 	handler := NewHandler(db, blobs, tokens, queue, Options{
 		IndexerDir:                 cfg.Scan.IndexerDir,
 		AllowPrivateUpstreams:      cfg.AllowPrivateUpstreams,
+		UpstreamRoots:              upstreamRoots,
 		MaxUploadSize:              cfg.MaxUploadSize,
 		Downloads:                  downloads,
 		Usage:                      usageRecorder,
@@ -419,8 +425,20 @@ func ldapTLSConfig(caFile string) (*tls.Config, error) {
 	cfg := &tls.Config{
 		MinVersion: tls.VersionTLS12,
 	}
-	if caFile == "" {
-		return cfg, nil
+
+	pool, err := trustedRoots("RELIC_LDAP_CA_CERTIFICATE_FILE", caFile)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg.RootCAs = pool
+
+	return cfg, nil
+}
+
+func trustedRoots(setting, file string) (*x509.CertPool, error) {
+	if file == "" {
+		return nil, nil //nolint:nilnil // nil selects the system roots
 	}
 
 	pool, err := x509.SystemCertPool()
@@ -428,18 +446,16 @@ func ldapTLSConfig(caFile string) (*tls.Config, error) {
 		pool = x509.NewCertPool()
 	}
 
-	pem, err := os.ReadFile(caFile) //nolint:gosec // an operator-set path
+	pem, err := os.ReadFile(file) //nolint:gosec // an operator-set path
 	if err != nil {
-		return nil, fmt.Errorf("RELIC_LDAP_CA_CERTIFICATE_FILE: %w", err)
+		return nil, fmt.Errorf("%s: %w", setting, err)
 	}
 
 	if !pool.AppendCertsFromPEM(pem) {
-		return nil, fmt.Errorf("RELIC_LDAP_CA_CERTIFICATE_FILE %s holds no PEM certificates", caFile)
+		return nil, fmt.Errorf("%s %s holds no PEM certificates", setting, file)
 	}
 
-	cfg.RootCAs = pool
-
-	return cfg, nil
+	return pool, nil
 }
 
 // SealStoredSecrets seals the secrets stored before RELIC_ENCRYPTION_KEY was
@@ -593,15 +609,21 @@ func startWorker(
 	box *sealing.Box,
 	log *slog.Logger,
 ) (func() error, error) {
+	upstreamRoots, err := trustedRoots("RELIC_UPSTREAM_CA_CERTIFICATE_FILE", cfg.UpstreamCACertificateFile)
+	if err != nil {
+		return nil, err
+	}
+
 	repos := newRepositories(db, blobs, log)
 	repos.AllowPrivateUpstreams(cfg.AllowPrivateUpstreams)
+	repos.TrustUpstreamRoots(upstreamRoots)
 	repos.SetSecrets(box)
 	repos.SetTrash(cfg.Trash.Enabled)
 
 	pusher := replication.NewPusher(
 		db,
 		repos,
-		adapter.ReplicationTargets(replicationClient(cfg.AllowPrivateUpstreams)),
+		adapter.ReplicationTargets(replicationClient(cfg.AllowPrivateUpstreams, upstreamRoots)),
 		log,
 	)
 	pusher.SetSecrets(box)
@@ -703,9 +725,17 @@ func outboundTransport(allowPrivate bool) *http.Transport {
 	return transport
 }
 
-func replicationClient(allowPrivate bool) *http.Client {
+func replicationClient(allowPrivate bool, roots *x509.CertPool) *http.Client {
+	transport := outboundTransport(allowPrivate)
+	if roots != nil {
+		transport.TLSClientConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			RootCAs:    roots,
+		}
+	}
+
 	return &http.Client{
-		Transport: telemetry.ClientTransport(outboundTransport(allowPrivate)),
+		Transport: telemetry.ClientTransport(transport),
 	}
 }
 
@@ -828,6 +858,9 @@ type Options struct {
 	IndexerDir string
 	// AllowPrivateUpstreams lets remotes reach private addresses.
 	AllowPrivateUpstreams bool
+	// UpstreamRoots are the CA certificates remotes trust; nil for the
+	// system roots.
+	UpstreamRoots *x509.CertPool
 	// MaxUploadSize caps every upload in bytes; 0 for no limit.
 	MaxUploadSize int64
 	// Downloads counts downloads; nil counts nothing (tests).
@@ -890,6 +923,7 @@ func newRouter(
 
 	repos := newRepositories(db, blobs, log)
 	repos.AllowPrivateUpstreams(opts.AllowPrivateUpstreams)
+	repos.TrustUpstreamRoots(opts.UpstreamRoots)
 	repos.SetMaxUploadSize(opts.MaxUploadSize)
 	repos.SetTrash(!opts.DisableTrash)
 	repos.SetSecrets(opts.Secrets)
