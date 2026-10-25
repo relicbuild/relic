@@ -60,3 +60,4 @@ ignore/
 apm_modules/*
 !apm_modules/go.mod
 .claude/skills/
+/cmd/relic/relic
