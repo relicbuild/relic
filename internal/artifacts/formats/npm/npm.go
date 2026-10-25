@@ -213,7 +213,7 @@ func (s *Service) localPackument(ctx context.Context, repoKey, name, tarballBase
 	}
 
 	versions := map[string]any{}
-	times := map[string]string{}
+	times := map[string]any{}
 
 	var (
 		latest            string
