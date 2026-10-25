@@ -322,13 +322,19 @@ func (s *Service) recordedItems(
 		}
 	}
 
+	excludedFormats := make([]string, 0, len(repository.OwnFormats))
+	for _, f := range repository.OwnFormats {
+		excludedFormats = append(excludedFormats, string(f))
+	}
+
 	rows, err := s.db.FindItemsBySHA1(
 		ctx,
 		database.FindItemsBySHA1Params{
-			BuildName:   b.Name,
-			BuildNumber: b.Number,
-			Sha1s:       sha1s,
-			SourceRepo:  query.sourceRepository,
+			BuildName:       b.Name,
+			BuildNumber:     b.Number,
+			Sha1s:           sha1s,
+			SourceRepo:      query.sourceRepository,
+			ExcludedFormats: excludedFormats,
 		},
 	)
 	if err != nil {

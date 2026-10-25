@@ -447,11 +447,7 @@ func (r Repository) KeyPairRef() string {
 func (s *Service) OwnRepositories(ctx context.Context) ([]string, error) {
 	var names []string
 
-	for _, f := range []Format{
-		FormatBuild,
-		FormatRelease,
-		FormatEvidence,
-	} {
+	for _, f := range OwnFormats {
 		repos, err := s.ListRepositories(ctx, "", f)
 		if err != nil {
 			return nil, err

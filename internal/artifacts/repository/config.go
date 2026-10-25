@@ -127,6 +127,13 @@ var Formats = []Format{
 	FormatEvidence,
 }
 
+// OwnFormats lists the formats of the repositories Relic writes itself.
+var OwnFormats = []Format{
+	FormatBuild,
+	FormatRelease,
+	FormatEvidence,
+}
+
 // Known reports whether f is one of Formats.
 func (f Format) Known() bool { return slices.Contains(Formats, f) }
 

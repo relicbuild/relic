@@ -479,6 +479,7 @@ SELECT i.*,
 FROM items i
 WHERE i.type = 'file' AND i.sha1 IN (SELECT value FROM json_each(@sha1s))
   AND (@source_repo = '' OR i.repo_key = @source_repo)
+  AND NOT EXISTS (SELECT 1 FROM repositories r WHERE r.key = i.repo_key AND r.format IN (SELECT value FROM json_each(@excluded_formats)))
 ORDER BY i.repo_key, i.path, i.name;`
 
 const sqliteFindingCounts = `-- name: FindingCounts :many
@@ -2990,7 +2991,7 @@ func (q *sqliteQueries) FindFilesNamed(ctx context.Context, arg FindFilesNamedPa
 }
 
 func (q *sqliteQueries) FindItemsBySHA1(ctx context.Context, arg FindItemsBySHA1Params) ([]FindItemsBySHA1Row, error) {
-	rows, err := q.query(ctx, "FindItemsBySHA1", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated", "hasbuildname", "hasbuildnumber", "hasotherbuild"}, sqliteFindItemsBySHA1, sql.Named("build_name", arg.BuildName), sql.Named("build_number", arg.BuildNumber), sql.Named("sha1s", sqliteJSON(arg.Sha1s)), sql.Named("source_repo", arg.SourceRepo))
+	rows, err := q.query(ctx, "FindItemsBySHA1", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated", "hasbuildname", "hasbuildnumber", "hasotherbuild"}, sqliteFindItemsBySHA1, sql.Named("build_name", arg.BuildName), sql.Named("build_number", arg.BuildNumber), sql.Named("sha1s", sqliteJSON(arg.Sha1s)), sql.Named("source_repo", arg.SourceRepo), sql.Named("excluded_formats", sqliteJSON(arg.ExcludedFormats)))
 	if err != nil {
 		return nil, err
 	}

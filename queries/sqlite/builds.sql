@@ -79,6 +79,7 @@ SELECT i.*,
 FROM items i
 WHERE i.type = 'file' AND i.sha1 IN (SELECT value FROM json_each(@sha1s))
   AND (@source_repo = '' OR i.repo_key = @source_repo)
+  AND NOT EXISTS (SELECT 1 FROM repositories r WHERE r.key = i.repo_key AND r.format IN (SELECT value FROM json_each(@excluded_formats)))
 ORDER BY i.repo_key, i.path, i.name;
 
 -- name: BuildsProducing :many
