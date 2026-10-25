@@ -139,8 +139,9 @@ WHERE id IN (SELECT d.id FROM webhook_deliveries d
              ORDER BY d.next_attempt LIMIT @max_rows)
 RETURNING *;`
 
-const sqliteClearGroupMembers = `-- name: ClearGroupMembers :exec
-DELETE FROM group_members WHERE group_name = @group_name;`
+const sqliteClearInternalGroupMembers = `-- name: ClearInternalGroupMembers :exec
+-- The members an administrator set; identity providers and LDAP keep theirs.
+DELETE FROM group_members WHERE group_name = @group_name AND source = 'internal';`
 
 const sqliteClearSsoGroupMembers = `-- name: ClearSsoGroupMembers :exec
 DELETE FROM group_members WHERE group_name = @group_name AND source = 'sso';`
@@ -2028,8 +2029,8 @@ func (q *sqliteQueries) ClaimWebhookDeliveries(ctx context.Context, arg ClaimWeb
 	return items, nil
 }
 
-func (q *sqliteQueries) ClearGroupMembers(ctx context.Context, arg string) error {
-	_, err := q.db.ExecContext(ctx, sqliteClearGroupMembers, sql.Named("group_name", arg))
+func (q *sqliteQueries) ClearInternalGroupMembers(ctx context.Context, arg string) error {
+	_, err := q.db.ExecContext(ctx, sqliteClearInternalGroupMembers, sql.Named("group_name", arg))
 
 	return err
 }

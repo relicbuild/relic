@@ -9,12 +9,13 @@ import (
 	"context"
 )
 
-const clearGroupMembers = `-- name: ClearGroupMembers :exec
-DELETE FROM group_members WHERE group_name = $1
+const clearInternalGroupMembers = `-- name: ClearInternalGroupMembers :exec
+DELETE FROM group_members WHERE group_name = $1 AND source = 'internal'
 `
 
-func (q *Queries) ClearGroupMembers(ctx context.Context, groupName string) error {
-	_, err := q.db.Exec(ctx, clearGroupMembers, groupName)
+// The members an administrator set; identity providers and LDAP keep theirs.
+func (q *Queries) ClearInternalGroupMembers(ctx context.Context, groupName string) error {
+	_, err := q.db.Exec(ctx, clearInternalGroupMembers, groupName)
 	return err
 }
 

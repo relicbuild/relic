@@ -33,7 +33,8 @@ type Querier interface {
 	ClaimUnscanned(ctx context.Context, arg ClaimUnscannedParams) ([]ClaimUnscannedRow, error)
 	// Leases due deliveries until lease_until, so no other worker sends them.
 	ClaimWebhookDeliveries(ctx context.Context, arg ClaimWebhookDeliveriesParams) ([]WebhookDelivery, error)
-	ClearGroupMembers(ctx context.Context, groupName string) error
+	// The members an administrator set; identity providers and LDAP keep theirs.
+	ClearInternalGroupMembers(ctx context.Context, groupName string) error
 	ClearSsoGroupMembers(ctx context.Context, groupName string) error
 	ClearUserGroups(ctx context.Context, username string) error
 	CountAdmins(ctx context.Context) (int64, error)

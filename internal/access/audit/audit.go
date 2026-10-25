@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/netip"
 	"time"
+	"unicode/utf8"
 	"uuid"
 
 	"relic/internal/platform/database"
@@ -117,6 +118,8 @@ func (s *Service) Record(ctx context.Context, e Event) {
 	if e.Client == "" {
 		e.Client, _ = ctx.Value(clientKey{}).(string)
 	}
+
+	e = e.bounded()
 
 	err := s.db.InsertAuditEvent(context.WithoutCancel(ctx), database.InsertAuditEventParams{
 		ID:      uuid.MustParse(e.ID),
@@ -237,4 +240,33 @@ func (s *Service) Purge(ctx context.Context, retention time.Duration) (int64, er
 	}
 
 	return n, nil
+}
+
+// maxFieldBytes bounds each text field of a stored or logged event.
+const maxFieldBytes = 1 << 10
+
+const ellipsis = "…"
+
+func (e Event) bounded() Event {
+	e.Actor = truncated(e.Actor)
+	e.Action = truncated(e.Action)
+	e.Target = truncated(e.Target)
+	e.Client = truncated(e.Client)
+	e.Detail = truncated(e.Detail)
+
+	return e
+}
+
+// truncated cuts s to maxFieldBytes at a rune boundary, marking the cut.
+func truncated(s string) string {
+	if len(s) <= maxFieldBytes {
+		return s
+	}
+
+	end := maxFieldBytes - len(ellipsis)
+	for end > 0 && !utf8.RuneStart(s[end]) {
+		end--
+	}
+
+	return s[:end] + ellipsis
 }

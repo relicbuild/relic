@@ -441,3 +441,26 @@ func (r Repository) KeyPairRef() string {
 		return ""
 	}
 }
+
+// OwnRepositories names the repositories Relic writes itself: build
+// information, releases and evidence.
+func (s *Service) OwnRepositories(ctx context.Context) ([]string, error) {
+	var names []string
+
+	for _, f := range []Format{
+		FormatBuild,
+		FormatRelease,
+		FormatEvidence,
+	} {
+		repos, err := s.ListRepositories(ctx, "", f)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, r := range repos {
+			names = append(names, r.Name)
+		}
+	}
+
+	return names, nil
+}
