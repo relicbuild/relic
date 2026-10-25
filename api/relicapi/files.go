@@ -270,6 +270,10 @@ func writeHTTPError(w http.ResponseWriter, ce *connect.Error) {
 		status = http.StatusInsufficientStorage
 	}
 
+	if status >= http.StatusInternalServerError {
+		w.Header().Set("Cache-Control", "no-store")
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	//nolint:errchkjson // plain strings
