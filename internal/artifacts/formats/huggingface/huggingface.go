@@ -442,6 +442,80 @@ func (s *Service) CreateRepository(ctx context.Context, repoKey string, kind Kin
 	return c, err
 }
 
+// Refs are the newest commits of a local repository's branches and tags,
+// by name.
+func (s *Service) Refs(ctx context.Context, repoKey string, kind Kind, id string) (map[string]Commit, error) {
+	commits, err := s.commits(ctx, repoKey, kind, id)
+	if err != nil {
+		return nil, err
+	}
+
+	refs := map[string]Commit{}
+
+	for _, c := range commits {
+		if best, ok := refs[c.Rev]; !ok || c.Folder > best.Folder {
+			refs[c.Rev] = c
+		}
+	}
+
+	return refs, nil
+}
+
+// History lists the commits of rev in a local repository, newest first.
+func (s *Service) History(ctx context.Context, repoKey string, kind Kind, id, rev string) ([]Commit, error) {
+	commits, err := s.commits(ctx, repoKey, kind, id)
+	if err != nil {
+		return nil, err
+	}
+
+	commits = slices.DeleteFunc(commits, func(c Commit) bool {
+		return c.Rev != rev
+	})
+	if len(commits) == 0 {
+		return nil, ErrRevisionNotFound
+	}
+
+	slices.SortFunc(commits, func(a, b Commit) int {
+		return strings.Compare(b.Folder, a.Folder)
+	})
+
+	return commits, nil
+}
+
+const maxUpstreamAPIBytes = 16 << 20
+
+// RemoteAPI is the answer of a remote's upstream Hub API to GET
+// api/<kind>/<id>/<op> (refs, commits/<rev>), decoded.
+func (s *Service) RemoteAPI(ctx context.Context, r repository.Repository, kind Kind, id, op string) (any, error) {
+	if r.Upstream().Offline {
+		return nil, ErrRepoNotFound
+	}
+
+	base := strings.TrimSuffix(s.repos.UpstreamOf(r).URL, "/")
+
+	body, err := s.repos.FetchUpstream(
+		ctx,
+		r,
+		base+"/api/"+string(kind)+"/"+escapedSegments(id)+"/"+escapedSegments(op),
+		"application/json",
+		maxUpstreamAPIBytes,
+	)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil, ErrRepoNotFound
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	var doc any
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return nil, fmt.Errorf("%w: upstream %s: %w", repository.ErrUpstream, op, err)
+	}
+
+	return doc, nil
+}
+
 func commitLock(repoKey string, kind Kind, id, rev string) string {
 	return "huggingface-commit:" + repoKey + "/" + string(kind) + "/" + id + "/" + rev
 }

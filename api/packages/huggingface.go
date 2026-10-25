@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -52,6 +54,12 @@ func (h *Handler) hfAPI(w http.ResponseWriter, r *http.Request, m Mount) {
 		})
 	case rest == "api/repos/create" && r.Method == http.MethodPost:
 		h.hfCreateRepo(w, r, m, rp)
+	case rest == "api/whoami-v2" && r.Method == http.MethodGet:
+		h.hfWhoami(w, r)
+	case rest == "api/repos/delete" || rest == "api/repos/move":
+		hfNotSupported(w, "deleting and moving repositories")
+	case len(parts) == 2 && parts[0] == "api" && (parts[1] == "models" || parts[1] == "datasets"):
+		hfNotSupported(w, "listing repositories")
 	case len(parts) >= 3 && parts[0] == "api":
 		kind, ok := hf.ParseKind(parts[1])
 
@@ -63,6 +71,11 @@ func (h *Handler) hfAPI(w http.ResponseWriter, r *http.Request, m Mount) {
 			"commit",
 			"xet-read-token",
 			"xet-write-token",
+			"refs",
+			"commits",
+			"paths-info",
+			"branch",
+			"tag",
 		)
 		if bare := strings.Join(parts[2:], "/"); !found && len(parts) <= 4 && hf.ValidID(bare) {
 			id, op, arg, found = bare, "revision", []string{
@@ -188,6 +201,31 @@ func (h *Handler) hfRepoAPI(
 			dir:       strings.Join(arg[1:], "/"),
 			recursive: recursive,
 		})
+	case (op == "refs" && len(arg) == 0 || op == "commits") && r.Method == http.MethodGet ||
+		op == "paths-info" && r.Method == http.MethodPost:
+		if !h.RequireRepo(w, r, RepoCheck{
+			rp.Name,
+			string(kind) + "/" + id,
+			auth.ActionRead,
+		}) {
+			return
+		}
+
+		rev := strings.Join(arg, "/")
+		if rev == "" {
+			rev = hfDefaultRevision
+		}
+
+		switch op {
+		case "refs":
+			h.hfRefs(w, r, rp, kind, id)
+		case "commits":
+			h.hfCommits(w, r, rp, kind, id, rev)
+		default:
+			h.hfPathsInfo(w, r, rp, kind, id, rev)
+		}
+	case op == "branch" || op == "tag":
+		hfNotSupported(w, "creating and deleting branches and tags")
 	case op == "preupload" && r.Method == http.MethodPost:
 		h.hfPreupload(w, r, rp)
 	case op == "commit" && r.Method == http.MethodPost:
@@ -308,37 +346,38 @@ func (h *Handler) hfRevision(
 	id, rev string,
 	tree *hfTreeQuery,
 ) {
+	info, all, err := h.hfRevisionFiles(r, rp, kind, id, rev, tree != nil)
+	if h.hfFail(w, r, err) {
+		return
+	}
+
+	if tree == nil {
+		writeJSON(w, http.StatusOK, info)
+		return
+	}
+
+	entries, found := hfTreeEntries(all, *tree)
+	if !found {
+		h.hfFail(w, r, hf.ErrEntryNotFound)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, entries)
+}
+
+func (h *Handler) hfRevisionFiles(
+	r *http.Request,
+	rp repository.Repository,
+	kind hf.Kind,
+	id, rev string,
+	withFiles bool,
+) (map[string]any, []map[string]any, error) {
 	lastErr := error(hf.ErrRepoNotFound)
 
 	for _, m := range h.hfMembers(r, rp) {
 		var all []map[string]any
 
-		if m.Class == "remote" {
-			info, err := h.hf.RemoteInfo(r.Context(), m, kind, id, rev)
-			if err != nil {
-				lastErr = err
-				continue
-			}
-
-			if tree == nil {
-				writeJSON(w, http.StatusOK, info)
-				return
-			}
-
-			sha, _ := info["sha"].(string)
-
-			upstream, err := h.hf.RemoteTree(r.Context(), m, kind, id, sha)
-			if err != nil {
-				lastErr = err
-				continue
-			}
-
-			for _, e := range upstream {
-				if fields, ok := e.(map[string]any); ok {
-					all = append(all, fields)
-				}
-			}
-		} else {
+		if m.Class != "remote" {
 			c, err := h.hf.Revision(r.Context(), m.Name, kind, id, rev)
 			if err != nil {
 				lastErr = err
@@ -346,13 +385,8 @@ func (h *Handler) hfRevision(
 			}
 
 			files, err := h.hf.Files(r.Context(), m.Name, c)
-			if h.hfFail(w, r, err) {
-				return
-			}
-
-			if tree == nil {
-				writeJSON(w, http.StatusOK, hf.Info(c, files))
-				return
+			if err != nil {
+				return nil, nil, err
 			}
 
 			for _, f := range files {
@@ -366,20 +400,197 @@ func (h *Handler) hfRevision(
 					},
 				)
 			}
+
+			return hf.Info(c, files), all, nil
 		}
 
-		entries, found := hfTreeEntries(all, *tree)
-		if !found {
-			h.hfFail(w, r, hf.ErrEntryNotFound)
+		info, err := h.hf.RemoteInfo(r.Context(), m, kind, id, rev)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if !withFiles {
+			return info, nil, nil
+		}
+
+		sha, _ := info["sha"].(string)
+
+		upstream, err := h.hf.RemoteTree(r.Context(), m, kind, id, sha)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		for _, e := range upstream {
+			if fields, ok := e.(map[string]any); ok {
+				all = append(all, fields)
+			}
+		}
+
+		return info, all, nil
+	}
+
+	return nil, nil, lastErr
+}
+
+func hfNotSupported(w http.ResponseWriter, what string) {
+	hfError(w, http.StatusNotImplemented, "NotSupported", "Relic does not support "+what)
+}
+
+func (h *Handler) hfWhoami(w http.ResponseWriter, r *http.Request) {
+	p := auth.FromContext(r.Context())
+	if p.Anonymous() {
+		hfError(w, http.StatusUnauthorized, "", "Invalid user token.")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"type":     "user",
+		"id":       p.Username,
+		"name":     p.Username,
+		"fullname": p.Username,
+		"isPro":    false,
+		"orgs":     []any{},
+		"auth": map[string]any{
+			"type": "access_token",
+			"accessToken": map[string]any{
+				"displayName": "relic",
+				"role":        "write",
+			},
+		},
+	})
+}
+
+func (h *Handler) hfRefs(w http.ResponseWriter, r *http.Request, rp repository.Repository, kind hf.Kind, id string) {
+	lastErr := error(hf.ErrRepoNotFound)
+
+	for _, m := range h.hfMembers(r, rp) {
+		if m.Class == "remote" {
+			doc, err := h.hf.RemoteAPI(r.Context(), m, kind, id, "refs")
+			if err != nil {
+				lastErr = err
+				continue
+			}
+
+			writeJSON(w, http.StatusOK, doc)
+
 			return
 		}
 
-		writeJSON(w, http.StatusOK, entries)
+		refs, err := h.hf.Refs(r.Context(), m.Name, kind, id)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		branches := make([]map[string]string, 0, len(refs))
+		for _, name := range slices.Sorted(maps.Keys(refs)) {
+			branches = append(branches, map[string]string{
+				"name":         name,
+				"ref":          "refs/heads/" + name,
+				"targetCommit": refs[name].Oid,
+			})
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"branches":     branches,
+			"tags":         []any{},
+			"converts":     []any{},
+			"pullRequests": []any{},
+		})
 
 		return
 	}
 
 	h.hfFail(w, r, lastErr)
+}
+
+func (h *Handler) hfCommits(
+	w http.ResponseWriter,
+	r *http.Request,
+	rp repository.Repository,
+	kind hf.Kind,
+	id, rev string,
+) {
+	lastErr := error(hf.ErrRepoNotFound)
+
+	for _, m := range h.hfMembers(r, rp) {
+		if m.Class == "remote" {
+			doc, err := h.hf.RemoteAPI(r.Context(), m, kind, id, "commits/"+rev)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+
+			writeJSON(w, http.StatusOK, doc)
+
+			return
+		}
+
+		history, err := h.hf.History(r.Context(), m.Name, kind, id, rev)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		commits := make([]map[string]any, 0, len(history))
+		for _, c := range history {
+			commits = append(commits, map[string]any{
+				"id":      c.Oid,
+				"authors": []any{},
+				"date":    c.Time.Format("2006-01-02T15:04:05.000Z"),
+				"title":   "",
+				"message": "",
+			})
+		}
+
+		writeJSON(w, http.StatusOK, commits)
+
+		return
+	}
+
+	h.hfFail(w, r, lastErr)
+}
+
+const hfMaxPathsInfoBody = 1 << 20
+
+func (h *Handler) hfPathsInfo(
+	w http.ResponseWriter,
+	r *http.Request,
+	rp repository.Repository,
+	kind hf.Kind,
+	id, rev string,
+) {
+	r.Body = http.MaxBytesReader(w, r.Body, hfMaxPathsInfoBody)
+	if err := r.ParseForm(); err != nil {
+		hfError(w, http.StatusBadRequest, "", "invalid paths-info body")
+		return
+	}
+
+	_, all, err := h.hfRevisionFiles(r, rp, kind, id, rev, true)
+	if h.hfFail(w, r, err) {
+		return
+	}
+
+	entries, _ := hfTreeEntries(all, hfTreeQuery{
+		recursive: true,
+	})
+
+	wanted := map[string]bool{}
+	for _, p := range r.PostForm["paths"] {
+		wanted[strings.Trim(p, "/")] = true
+	}
+
+	found := []map[string]any{}
+
+	for _, e := range entries {
+		if p, _ := e["path"].(string); wanted[p] {
+			found = append(found, e)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, found)
 }
 
 // The HEAD must carry X-Repo-Commit, ETag and Content-Length.
