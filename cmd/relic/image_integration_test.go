@@ -11,86 +11,152 @@ import (
 	"testing"
 )
 
+type registry struct {
+	t    *testing.T
+	url  string
+	repo string
+}
+
+type registryReply struct {
+	status   int
+	location string
+}
+
+func (r registry) send(method, path, contentType, body string) registryReply {
+	r.t.Helper()
+
+	req, err := http.NewRequestWithContext(r.t.Context(), method, path, strings.NewReader(body))
+	if err != nil {
+		r.t.Fatal(err)
+	}
+
+	req.SetBasicAuth("admin", "password")
+
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+
+	_ = resp.Body.Close()
+
+	return registryReply{
+		status:   resp.StatusCode,
+		location: resp.Header.Get("Location"),
+	}
+}
+
+func contentDigest(content string) string {
+	sum := sha256.Sum256([]byte(content))
+
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func (r registry) blob(image, content string) string {
+	r.t.Helper()
+
+	digest := contentDigest(content)
+
+	started := r.send(http.MethodPost, r.url+"/v2/"+r.repo+"/"+image+"/blobs/uploads/", "", "")
+	if started.status != http.StatusAccepted {
+		r.t.Fatalf("start upload = %d", started.status)
+	}
+
+	loc := started.location
+	if !strings.HasPrefix(loc, "http") {
+		loc = r.url + loc
+	}
+
+	sep := "?"
+	if strings.Contains(loc, "?") {
+		sep = "&"
+	}
+
+	if finished := r.send(
+		http.MethodPut,
+		loc+sep+"digest="+digest,
+		"",
+		content,
+	); finished.status != http.StatusCreated {
+		r.t.Fatalf("finish upload = %d", finished.status)
+	}
+
+	return digest
+}
+
+func (r registry) imageManifest(image, layerContent string) string {
+	r.t.Helper()
+
+	config, layer := r.blob(image, "{}"), r.blob(image, layerContent)
+
+	return fmt.Sprintf(`{"schemaVersion":2,"mediaType":"application/vnd.docker.distribution.manifest.v2+json",`+
+		`"config":{"mediaType":"application/vnd.docker.container.image.v1+json","digest":%q,"size":2},`+
+		`"layers":[{"mediaType":"application/vnd.docker.image.rootfs.diff.tar.gzip","digest":%q,"size":%d}]}`,
+		config, layer, len(layerContent))
+}
+
+func (r registry) push(image, reference, mediaType, manifest string) {
+	r.t.Helper()
+
+	if pushed := r.send(
+		http.MethodPut,
+		r.url+"/v2/"+r.repo+"/"+image+"/manifests/"+reference,
+		mediaType,
+		manifest,
+	); pushed.status != http.StatusCreated {
+		r.t.Fatalf("push manifest %s = %d", reference, pushed.status)
+	}
+}
+
+const dockerManifestType = "application/vnd.docker.distribution.manifest.v2+json"
+
 func pushImage(t *testing.T, url, repo, image, tag string) {
 	t.Helper()
 
-	type registryReply struct {
-		status   int
-		location string
+	r := registry{
+		t:    t,
+		url:  url,
+		repo: repo,
+	}
+	r.push(image, tag, dockerManifestType, r.imageManifest(image, "layer-"+tag))
+}
+
+func pushIndex(t *testing.T, url, repo, image, tag string, platforms ...string) {
+	t.Helper()
+
+	r := registry{
+		t:    t,
+		url:  url,
+		repo: repo,
 	}
 
-	send := func(method, path, contentType, body string) registryReply {
-		t.Helper()
+	entries := make([]string, 0, len(platforms))
 
-		req, err := http.NewRequestWithContext(t.Context(), method, path, strings.NewReader(body))
-		if err != nil {
-			t.Fatal(err)
-		}
+	for _, p := range platforms {
+		manifest := r.imageManifest(image, "layer-"+tag+"-"+p)
+		r.push(image, contentDigest(manifest), dockerManifestType, manifest)
 
-		req.SetBasicAuth("admin", "password")
-
-		if contentType != "" {
-			req.Header.Set("Content-Type", contentType)
-		}
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		_ = resp.Body.Close()
-
-		return registryReply{
-			status:   resp.StatusCode,
-			location: resp.Header.Get("Location"),
-		}
+		system, architecture, _ := strings.Cut(p, "/")
+		entries = append(entries, fmt.Sprintf(
+			`{"mediaType":%q,"digest":%q,"size":%d,"platform":{"os":%q,"architecture":%q}}`,
+			dockerManifestType,
+			contentDigest(manifest),
+			len(manifest),
+			system,
+			architecture,
+		))
 	}
 
-	blob := func(content string) string {
-		sum := sha256.Sum256([]byte(content))
-		digest := "sha256:" + hex.EncodeToString(sum[:])
-
-		started := send(http.MethodPost, url+"/v2/"+repo+"/"+image+"/blobs/uploads/", "", "")
-		if started.status != http.StatusAccepted {
-			t.Fatalf("start upload = %d", started.status)
-		}
-
-		loc := started.location
-		if !strings.HasPrefix(loc, "http") {
-			loc = url + loc
-		}
-
-		sep := "?"
-		if strings.Contains(loc, "?") {
-			sep = "&"
-		}
-
-		if finished := send(
-			http.MethodPut,
-			loc+sep+"digest="+digest,
-			"",
-			content,
-		); finished.status != http.StatusCreated {
-			t.Fatalf("finish upload = %d", finished.status)
-		}
-
-		return digest
-	}
-
-	config, layer := blob("{}"), blob("layer-"+tag)
-	manifest := fmt.Sprintf(`{"schemaVersion":2,"mediaType":"application/vnd.docker.distribution.manifest.v2+json",`+
-		`"config":{"mediaType":"application/vnd.docker.container.image.v1+json","digest":%q,"size":2},`+
-		`"layers":[{"mediaType":"application/vnd.docker.image.rootfs.diff.tar.gzip","digest":%q,"size":%d}]}`,
-		config, layer, len("layer-"+tag))
-
-	if pushed := send(
-		http.MethodPut,
-		url+"/v2/"+repo+"/"+image+"/manifests/"+tag,
-		"application/vnd.docker.distribution.manifest.v2+json",
-		manifest,
-	); pushed.status != http.StatusCreated {
-		t.Fatalf("push manifest = %d", pushed.status)
-	}
+	r.push(
+		image,
+		tag,
+		"application/vnd.oci.image.index.v1+json",
+		`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[`+
+			strings.Join(entries, ",")+`]}`,
+	)
 }
 
 func TestImageCommands(t *testing.T) {
@@ -136,6 +202,13 @@ spec: {class: local, format: docker}
 
 	if _, err := relic(t, config, "", "build", "add-image", "app", "3", "img-dev/team/app:9.9"); err == nil {
 		t.Error("add-image of a missing tag succeeded")
+	}
+
+	pushIndex(t, srv.URL, "img-dev", "team/multi", "2.0", "linux/amd64", "linux/arm64")
+
+	if out, err := relic(t, config, "", "build", "add-image", "app", "3", "img-dev/team/multi:2.0"); err != nil ||
+		!strings.Contains(out, "img-dev/team/multi:2.0 with 7 files recorded") {
+		t.Errorf("add-image of a multi-platform image = %q %v", out, err)
 	}
 
 	if out, err := relic(
