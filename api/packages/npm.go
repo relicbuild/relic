@@ -58,6 +58,8 @@ func (h *Handler) npmAPI(w http.ResponseWriter, r *http.Request, m Mount) {
 		})
 	case strings.HasPrefix(rest, "-/user/org.couchdb.user:") && r.Method == http.MethodPut:
 		h.npmLogin(w, r)
+	case strings.HasPrefix(rest, "-/user/token/") && r.Method == http.MethodDelete:
+		h.npmLogout(w, r, strings.TrimPrefix(rest, "-/user/token/"))
 	case strings.HasPrefix(rest, "-/npm/v1/security/") && r.Method == http.MethodPost:
 		h.npmAudit(w, r, req, rest)
 	case rest == "-/npm/v1/keys" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
@@ -376,6 +378,7 @@ func (h *Handler) npmLogin(w http.ResponseWriter, r *http.Request) {
 	tok, err := h.tokens.Issue(r.Context(), p.LimitIssue(auth.IssueParams{
 		Username:    p.Username,
 		Scope:       auth.UserScope,
+		ExpiresIn:   npmLoginTokenLifetime,
 		Description: "npm login",
 	}, time.Now()))
 	if err != nil {
@@ -392,6 +395,41 @@ func (h *Handler) npmLogin(w http.ResponseWriter, r *http.Request) {
 			"token": tok.AccessToken,
 		},
 	)
+}
+
+const npmLoginTokenLifetime = 90 * 24 * time.Hour
+
+func (h *Handler) npmLogout(w http.ResponseWriter, r *http.Request, escaped string) {
+	caller := auth.FromContext(r.Context())
+	if caller.Anonymous() {
+		httperror.Write(w, r, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	token, err := url.PathUnescape(escaped)
+	if err != nil {
+		httperror.Write(w, r, http.StatusNotFound, "Not Found")
+		return
+	}
+
+	tok, err := h.tokens.Verify(r.Context(), token)
+	if errors.Is(err, auth.ErrInvalidToken) || err == nil && tok.Username != caller.Username {
+		httperror.Write(w, r, http.StatusNotFound, "Not Found")
+		return
+	}
+
+	if err == nil {
+		err = h.tokens.RevokeID(r.Context(), tok.ID, caller.Username)
+	}
+
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{
+		"ok": true,
+	})
 }
 
 func (h *Handler) npmError(w http.ResponseWriter, r *http.Request, err error) {

@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect/v2"
 
@@ -369,6 +370,104 @@ func TestNpmRegistry(t *testing.T) {
 		},
 	); resp.StatusCode != 401 {
 		t.Errorf("npm login with a wrong password = %d, want 401", resp.StatusCode)
+	}
+}
+
+func TestNpmLogoutRevokesTheLoginToken(t *testing.T) {
+	t.Parallel()
+
+	srv := server(t)
+	base := "/artifactory/api/npm/npm-local"
+
+	login := func() string {
+		t.Helper()
+
+		resp, body := do(t, srv, call{
+			method: "PUT",
+			path:   base + "/-/user/org.couchdb.user:admin",
+			body:   `{"name":"admin","password":"password"}`,
+			noAuth: true,
+		})
+
+		var issued struct {
+			Token string
+		}
+		if err := json.Unmarshal([]byte(body), &issued); err != nil || resp.StatusCode != 201 || issued.Token == "" {
+			t.Fatalf("npm login = %d %s", resp.StatusCode, body)
+		}
+
+		return issued.Token
+	}
+
+	bearer := func(token string) map[string]string {
+		return map[string]string{
+			"Authorization": "Bearer " + token,
+		}
+	}
+
+	token, other := login(), login()
+
+	tokens, err := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL)).
+		ListTokens(t.Context(), &relicv1.ListTokensRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tok := range tokens.GetTokens() {
+		if tok.GetDescription() != "npm login" {
+			continue
+		}
+
+		lifetime := tok.GetExpires().AsTime().Sub(tok.GetCreated().AsTime())
+		if tok.GetExpires() == nil || lifetime.Round(time.Minute) != 90*24*time.Hour {
+			t.Errorf(
+				"an npm login token expires at %v, %v after it was issued; want 90 days",
+				tok.GetExpires(),
+				lifetime,
+			)
+		}
+	}
+
+	if resp, body := do(t, srv, call{
+		method:  "DELETE",
+		path:    base + "/-/user/token/not-a-token",
+		headers: bearer(token),
+	}); resp.StatusCode != 404 {
+		t.Errorf("logout of an unknown token = %d %s, want 404", resp.StatusCode, body)
+	}
+
+	if resp, body := do(t, srv, call{
+		method:  "DELETE",
+		path:    base + "/-/user/token/" + token,
+		headers: bearer(token),
+	}); resp.StatusCode != 200 {
+		t.Errorf("npm logout = %d %s", resp.StatusCode, body)
+	}
+
+	if resp, _ := do(t, srv, call{
+		method:  "GET",
+		path:    base + "/-/whoami",
+		noAuth:  true,
+		headers: bearer(token),
+	}); resp.StatusCode != 401 {
+		t.Errorf("whoami with the revoked token = %d, want 401", resp.StatusCode)
+	}
+
+	if resp, _ := do(t, srv, call{
+		method:  "GET",
+		path:    base + "/-/whoami",
+		noAuth:  true,
+		headers: bearer(other),
+	}); resp.StatusCode != 200 {
+		t.Errorf("whoami with another login's token = %d, want 200", resp.StatusCode)
+	}
+
+	if resp, _ := do(t, srv, call{
+		method: "DELETE",
+		path:   base + "/-/user/token/" + other,
+		noAuth: true,
+	}); resp.StatusCode != 401 {
+		t.Errorf("anonymous logout = %d, want 401", resp.StatusCode)
 	}
 }
 
