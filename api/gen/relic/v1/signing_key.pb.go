@@ -261,6 +261,86 @@ func (x *GetPublicKeyResponse) GetPublicKey() string {
 	return ""
 }
 
+type DeleteKeyPairRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteKeyPairRequest) Reset() {
+	*x = DeleteKeyPairRequest{}
+	mi := &file_relic_v1_signing_key_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteKeyPairRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteKeyPairRequest) ProtoMessage() {}
+
+func (x *DeleteKeyPairRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_relic_v1_signing_key_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteKeyPairRequest.ProtoReflect.Descriptor instead.
+func (*DeleteKeyPairRequest) Descriptor() ([]byte, []int) {
+	return file_relic_v1_signing_key_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *DeleteKeyPairRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type DeleteKeyPairResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteKeyPairResponse) Reset() {
+	*x = DeleteKeyPairResponse{}
+	mi := &file_relic_v1_signing_key_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteKeyPairResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteKeyPairResponse) ProtoMessage() {}
+
+func (x *DeleteKeyPairResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_relic_v1_signing_key_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteKeyPairResponse.ProtoReflect.Descriptor instead.
+func (*DeleteKeyPairResponse) Descriptor() ([]byte, []int) {
+	return file_relic_v1_signing_key_proto_rawDescGZIP(), []int{6}
+}
+
 var File_relic_v1_signing_key_proto protoreflect.FileDescriptor
 
 const file_relic_v1_signing_key_proto_rawDesc = "" +
@@ -279,10 +359,14 @@ const file_relic_v1_signing_key_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"5\n" +
 	"\x14GetPublicKeyResponse\x12\x1d\n" +
 	"\n" +
-	"public_key\x18\x01 \x01(\tR\tpublicKey2\x81\x02\n" +
+	"public_key\x18\x01 \x01(\tR\tpublicKey\"*\n" +
+	"\x14DeleteKeyPairRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"\x17\n" +
+	"\x15DeleteKeyPairResponse2\xf9\x02\n" +
 	"\x11SigningKeyService\x12l\n" +
 	"\fListKeyPairs\x12\x1d.relic.v1.ListKeyPairsRequest\x1a\x1e.relic.v1.ListKeyPairsResponse\"\x1d\x88\xb5\x18\x04\x82\xd3\xe4\x93\x02\x13\x12\x11/api/v1/key-pairs\x12~\n" +
-	"\fGetPublicKey\x12\x1d.relic.v1.GetPublicKeyRequest\x1a\x1e.relic.v1.GetPublicKeyResponse\"/\x88\xb5\x18\x02\x82\xd3\xe4\x93\x02%\x12#/api/v1/key-pairs/{name}/public-keyB\x80\x01\n" +
+	"\fGetPublicKey\x12\x1d.relic.v1.GetPublicKeyRequest\x1a\x1e.relic.v1.GetPublicKeyResponse\"/\x88\xb5\x18\x02\x82\xd3\xe4\x93\x02%\x12#/api/v1/key-pairs/{name}/public-key\x12v\n" +
+	"\rDeleteKeyPair\x12\x1e.relic.v1.DeleteKeyPairRequest\x1a\x1f.relic.v1.DeleteKeyPairResponse\"$\x88\xb5\x18\x03\x82\xd3\xe4\x93\x02\x1a*\x18/api/v1/key-pairs/{name}B\x80\x01\n" +
 	"\fcom.relic.v1B\x0fSigningKeyProtoP\x01Z\x1erelic/api/gen/relic/v1;relicv1\xa2\x02\x03RXX\xaa\x02\bRelic.V1\xca\x02\bRelic\\V1\xe2\x02\x14Relic\\V1\\GPBMetadata\xea\x02\tRelic::V1b\x06proto3"
 
 var (
@@ -297,24 +381,28 @@ func file_relic_v1_signing_key_proto_rawDescGZIP() []byte {
 	return file_relic_v1_signing_key_proto_rawDescData
 }
 
-var file_relic_v1_signing_key_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_relic_v1_signing_key_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_relic_v1_signing_key_proto_goTypes = []any{
 	(*KeyPair)(nil),               // 0: relic.v1.KeyPair
 	(*ListKeyPairsRequest)(nil),   // 1: relic.v1.ListKeyPairsRequest
 	(*ListKeyPairsResponse)(nil),  // 2: relic.v1.ListKeyPairsResponse
 	(*GetPublicKeyRequest)(nil),   // 3: relic.v1.GetPublicKeyRequest
 	(*GetPublicKeyResponse)(nil),  // 4: relic.v1.GetPublicKeyResponse
-	(*timestamppb.Timestamp)(nil), // 5: google.protobuf.Timestamp
+	(*DeleteKeyPairRequest)(nil),  // 5: relic.v1.DeleteKeyPairRequest
+	(*DeleteKeyPairResponse)(nil), // 6: relic.v1.DeleteKeyPairResponse
+	(*timestamppb.Timestamp)(nil), // 7: google.protobuf.Timestamp
 }
 var file_relic_v1_signing_key_proto_depIdxs = []int32{
-	5, // 0: relic.v1.KeyPair.created:type_name -> google.protobuf.Timestamp
+	7, // 0: relic.v1.KeyPair.created:type_name -> google.protobuf.Timestamp
 	0, // 1: relic.v1.ListKeyPairsResponse.key_pairs:type_name -> relic.v1.KeyPair
 	1, // 2: relic.v1.SigningKeyService.ListKeyPairs:input_type -> relic.v1.ListKeyPairsRequest
 	3, // 3: relic.v1.SigningKeyService.GetPublicKey:input_type -> relic.v1.GetPublicKeyRequest
-	2, // 4: relic.v1.SigningKeyService.ListKeyPairs:output_type -> relic.v1.ListKeyPairsResponse
-	4, // 5: relic.v1.SigningKeyService.GetPublicKey:output_type -> relic.v1.GetPublicKeyResponse
-	4, // [4:6] is the sub-list for method output_type
-	2, // [2:4] is the sub-list for method input_type
+	5, // 4: relic.v1.SigningKeyService.DeleteKeyPair:input_type -> relic.v1.DeleteKeyPairRequest
+	2, // 5: relic.v1.SigningKeyService.ListKeyPairs:output_type -> relic.v1.ListKeyPairsResponse
+	4, // 6: relic.v1.SigningKeyService.GetPublicKey:output_type -> relic.v1.GetPublicKeyResponse
+	6, // 7: relic.v1.SigningKeyService.DeleteKeyPair:output_type -> relic.v1.DeleteKeyPairResponse
+	5, // [5:8] is the sub-list for method output_type
+	2, // [2:5] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
 	2, // [2:2] is the sub-list for extension extendee
 	0, // [0:2] is the sub-list for field type_name
@@ -332,7 +420,7 @@ func file_relic_v1_signing_key_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_relic_v1_signing_key_proto_rawDesc), len(file_relic_v1_signing_key_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

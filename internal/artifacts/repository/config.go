@@ -140,18 +140,22 @@ func (f Format) Known() bool { return slices.Contains(Formats, f) }
 
 // Config is a repository's settings, in Relic's own terms.
 type Config struct {
-	Description   string                     `json:"description,omitempty"`
-	Notes         string                     `json:"notes,omitempty"`
-	Environments  []string                   `json:"environments,omitempty"`
-	SigningKey    string                     `json:"signingKey,omitempty"`
-	Architectures []string                   `json:"architectures,omitempty"`
-	MetadataDepth int32                      `json:"metadataDepth,omitempty"`
-	MaxUploadSize int64                      `json:"maxUploadSize,omitempty"`
-	MaxStorage    int64                      `json:"maxStorage,omitempty"`
-	Immutable     bool                       `json:"immutable,omitempty"`
-	Remote        *RemoteConfig              `json:"remote,omitempty"`
-	Virtual       *VirtualConfig             `json:"virtual,omitempty"`
-	Extensions    map[string]json.RawMessage `json:"extensions,omitempty"`
+	Description  string   `json:"description,omitempty"`
+	Notes        string   `json:"notes,omitempty"`
+	Environments []string `json:"environments,omitempty"`
+	SigningKey   string   `json:"signingKey,omitempty"`
+	// SecondarySigningKey names a second key pair of an Alpine, Debian or RPM
+	// repository: it also signs Alpine and Debian metadata, and its public key
+	// is published with SigningKey's.
+	SecondarySigningKey string                     `json:"secondarySigningKey,omitempty"`
+	Architectures       []string                   `json:"architectures,omitempty"`
+	MetadataDepth       int32                      `json:"metadataDepth,omitempty"`
+	MaxUploadSize       int64                      `json:"maxUploadSize,omitempty"`
+	MaxStorage          int64                      `json:"maxStorage,omitempty"`
+	Immutable           bool                       `json:"immutable,omitempty"`
+	Remote              *RemoteConfig              `json:"remote,omitempty"`
+	Virtual             *VirtualConfig             `json:"virtual,omitempty"`
+	Extensions          map[string]json.RawMessage `json:"extensions,omitempty"`
 }
 
 // RemoteConfig is how a remote repository reaches its upstream.
@@ -341,6 +345,7 @@ func (r *Repository) Validate() error {
 func (r *Repository) validateSigningKeys() error {
 	for _, name := range []string{
 		r.Config.SigningKey,
+		r.Config.SecondarySigningKey,
 	} {
 		if name != "" && !keyPairNamePattern.MatchString(name) {
 			return fmt.Errorf(
@@ -349,6 +354,23 @@ func (r *Repository) validateSigningKeys() error {
 				name,
 			)
 		}
+	}
+
+	secondary := r.Config.SecondarySigningKey
+	if secondary == "" {
+		return nil
+	}
+
+	if KeyPairKind(r.Format) == "" {
+		return fmt.Errorf(
+			"%w: a %s repository is not signed, so it takes no secondarySigningKey",
+			ErrInvalidRepository,
+			r.Format,
+		)
+	}
+
+	if secondary == r.KeyPairRef() {
+		return fmt.Errorf("%w: secondarySigningKey %s is the signing key", ErrInvalidRepository, secondary)
 	}
 
 	return nil

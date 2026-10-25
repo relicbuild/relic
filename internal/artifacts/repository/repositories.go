@@ -496,6 +496,19 @@ func (r Repository) KeyPairRef() string {
 	}
 }
 
+// KeyPairRefs names the key pairs that sign the repository's metadata: its
+// key pair, then its secondary signing key, if any.
+func (r Repository) KeyPairRefs() []string {
+	refs := []string{
+		r.KeyPairRef(),
+	}
+	if r.Config.SecondarySigningKey != "" {
+		refs = append(refs, r.Config.SecondarySigningKey)
+	}
+
+	return refs
+}
+
 // KeyPairKind is the kind of key pair that signs format's metadata: rsa for
 // Alpine, gpg for Debian and RPM, else "".
 func KeyPairKind(format Format) string {
@@ -520,9 +533,7 @@ func (s *Service) checkKeyPairs(ctx context.Context, r Repository) error {
 		return err
 	}
 
-	for _, name := range []string{
-		r.KeyPairRef(),
-	} {
+	for _, name := range r.KeyPairRefs() {
 		stored, err := s.db.GetKeyPair(ctx, name)
 		if err == nil && stored.Kind != kind {
 			return fmt.Errorf("%w: key pair %s is %s; a %s repository is signed with %s",
@@ -536,7 +547,7 @@ func (s *Service) checkKeyPairs(ctx context.Context, r Repository) error {
 		for _, other := range repos {
 			otherKind := KeyPairKind(other.Format)
 			if other.Name != r.Name && otherKind != "" && otherKind != kind &&
-				other.KeyPairRef() == name {
+				slices.Contains(other.KeyPairRefs(), name) {
 				return fmt.Errorf(
 					"%w: key pair %s signs %s, a %s repository, with %s; a %s repository is signed with %s",
 					ErrInvalidRepository,

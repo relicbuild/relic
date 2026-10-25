@@ -236,13 +236,13 @@ func TestCreateRepositoryRefusesKeyPairsOfTheOtherKind(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "a stored OpenPGP key pair for Alpine",
+			name: "a secondary OpenPGP key pair for Alpine",
 			repo: Repository{
 				Name:   "apk-wrongkey",
 				Class:  ClassLocal,
 				Format: FormatAlpine,
 				Config: Config{
-					SigningKey: "stored-gpg",
+					SecondarySigningKey: "stored-gpg",
 				},
 			},
 			wantErr: true,
@@ -266,7 +266,8 @@ func TestCreateRepositoryRefusesKeyPairsOfTheOtherKind(t *testing.T) {
 				Class:  ClassLocal,
 				Format: FormatRPM,
 				Config: Config{
-					SigningKey: "stored-gpg",
+					SigningKey:          "stored-gpg",
+					SecondarySigningKey: "unstored-gpg",
 				},
 			},
 		},

@@ -538,10 +538,14 @@ func TestApkSetupWritesKeysUnderTheKeysFolderOnly(t *testing.T) {
 			t.Parallel()
 
 			steps, err := setupClients["apk"].steps(setupEnv{
-				url:       "https://relic.example.com/alpine/alpine",
-				user:      "admin",
-				keyPair:   tc.keyPair,
-				publicKey: "key",
+				url:  "https://relic.example.com/alpine/alpine",
+				user: "admin",
+				signingKeys: []signingKey{
+					{
+						name:      tc.keyPair,
+						publicKey: "key",
+					},
+				},
 				flags: map[string]string{
 					"branch": "v3.22",
 				},

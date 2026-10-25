@@ -33,7 +33,7 @@ func (s *Service) GPG(ctx context.Context, name string) (*openpgp.Entity, string
 			return nil, "", err
 		}
 
-		pub, err := armoredPublic(e)
+		pub, err := ArmoredPublicKeys(e)
 		if err != nil {
 			return nil, "", err
 		}
@@ -52,7 +52,30 @@ func (s *Service) GPG(ctx context.Context, name string) (*openpgp.Entity, string
 	return e, row.PublicKey, nil
 }
 
-func armoredPublic(e *openpgp.Entity) (string, error) {
+// GPGKeys returns the named OpenPGP key pairs, creating them on first use,
+// with their public keys in one armored block.
+func (s *Service) GPGKeys(ctx context.Context, names ...string) ([]*openpgp.Entity, string, error) {
+	keys := make([]*openpgp.Entity, 0, len(names))
+
+	for _, name := range names {
+		key, _, err := s.GPG(ctx, name)
+		if err != nil {
+			return nil, "", err
+		}
+
+		keys = append(keys, key)
+	}
+
+	public, err := ArmoredPublicKeys(keys...)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return keys, public, nil
+}
+
+// ArmoredPublicKeys returns the public keys of keys in one armored block.
+func ArmoredPublicKeys(keys ...*openpgp.Entity) (string, error) {
 	var buf bytes.Buffer
 
 	w, err := armor.Encode(&buf, openpgp.PublicKeyType, nil)
@@ -60,8 +83,10 @@ func armoredPublic(e *openpgp.Entity) (string, error) {
 		return "", err
 	}
 
-	if err := e.Serialize(w); err != nil {
-		return "", err
+	for _, e := range keys {
+		if err := e.Serialize(w); err != nil {
+			return "", err
+		}
 	}
 
 	if err := w.Close(); err != nil {
@@ -73,11 +98,17 @@ func armoredPublic(e *openpgp.Entity) (string, error) {
 	return buf.String(), nil
 }
 
-// ClearSign returns data clear-signed with key, as Debian's InRelease.
-func ClearSign(data []byte, key *openpgp.Entity) ([]byte, error) {
+// ClearSign returns data clear-signed with each of keys, as Debian's
+// InRelease.
+func ClearSign(data []byte, keys ...*openpgp.Entity) ([]byte, error) {
+	privateKeys := make([]*packet.PrivateKey, 0, len(keys))
+	for _, k := range keys {
+		privateKeys = append(privateKeys, k.PrivateKey)
+	}
+
 	var buf bytes.Buffer
 
-	w, err := clearsign.Encode(&buf, key.PrivateKey, nil)
+	w, err := clearsign.EncodeMulti(&buf, privateKeys, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -93,11 +124,23 @@ func ClearSign(data []byte, key *openpgp.Entity) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// DetachSign returns an armored detached signature of data, as Debian's
-// Release.gpg and RPM's repomd.xml.asc.
-func DetachSign(data []byte, key *openpgp.Entity) ([]byte, error) {
+// DetachSign returns an armored block of detached signatures of data, one by
+// each of keys, as Debian's Release.gpg and RPM's repomd.xml.asc.
+func DetachSign(data []byte, keys ...*openpgp.Entity) ([]byte, error) {
 	var buf bytes.Buffer
-	if err := openpgp.ArmoredDetachSign(&buf, key, bytes.NewReader(data), nil); err != nil {
+
+	w, err := armor.Encode(&buf, openpgp.SignatureType, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, k := range keys {
+		if err := openpgp.DetachSign(w, k, bytes.NewReader(data), nil); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := w.Close(); err != nil {
 		return nil, err
 	}
 

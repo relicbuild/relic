@@ -17,6 +17,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/ProtonMail/go-crypto/openpgp"
+	"github.com/ProtonMail/go-crypto/openpgp/armor"
 	"github.com/spf13/cobra"
 
 	relicv1 "relic/api/gen/relic/v1"
@@ -36,9 +38,12 @@ type setupEnv struct {
 	home, root   string
 	goos         string
 	getenv       func(string) string
-	publicKey    string
-	keyPair      string
+	signingKeys  []signingKey
 	flags        map[string]string
+}
+
+type signingKey struct {
+	name, publicKey string
 }
 
 type setupStep struct {
@@ -81,6 +86,38 @@ func withUserinfo(u, user, token string) (string, error) {
 
 func plainFileName(name string) bool {
 	return name != "." && name != ".." && !strings.ContainsAny(name, `/\`) && filepath.IsLocal(name)
+}
+
+func armoredKeyring(keys []signingKey) (string, error) {
+	var entities openpgp.EntityList
+
+	for _, k := range keys {
+		ring, err := openpgp.ReadArmoredKeyRing(strings.NewReader(k.publicKey))
+		if err != nil {
+			return "", fmt.Errorf("the public key of %s: %w", k.name, err)
+		}
+
+		entities = append(entities, ring...)
+	}
+
+	var buf bytes.Buffer
+
+	w, err := armor.Encode(&buf, openpgp.PublicKeyType, nil)
+	if err != nil {
+		return "", err
+	}
+
+	for _, e := range entities {
+		if err := e.Serialize(w); err != nil {
+			return "", err
+		}
+	}
+
+	if err := w.Close(); err != nil {
+		return "", err
+	}
+
+	return buf.String() + "\n", nil
 }
 
 func withoutScheme(u string) string {
@@ -560,15 +597,15 @@ var setupClients = map[string]setupClient{
 					content: repository + "\n",
 				},
 			}
-			if e.publicKey != "" {
-				if !plainFileName(e.keyPair) {
-					return nil, fmt.Errorf("apk: the key pair name %q cannot name a key file", e.keyPair)
+			for _, key := range e.signingKeys {
+				if !plainFileName(key.name) {
+					return nil, fmt.Errorf("apk: the key pair name %q cannot name a key file", key.name)
 				}
 
 				steps = append(steps, setupStep{
-					file:    "etc/apk/keys/" + e.keyPair + ".rsa.pub",
+					file:    "etc/apk/keys/" + key.name + ".rsa.pub",
 					mode:    0o644,
-					content: e.publicKey,
+					content: key.publicKey,
 				})
 			}
 
@@ -597,12 +634,17 @@ var setupClients = map[string]setupClient{
 
 			var steps []setupStep
 
-			if e.publicKey != "" {
+			if len(e.signingKeys) > 0 {
+				keyring, err := armoredKeyring(e.signingKeys)
+				if err != nil {
+					return nil, fmt.Errorf("apt: %w", err)
+				}
+
 				signedBy = "[signed-by=/etc/apt/keyrings/relic-" + e.repo + ".asc] "
 				steps = append(steps, setupStep{
 					file:    "etc/apt/keyrings/relic-" + e.repo + ".asc",
 					mode:    0o644,
-					content: e.publicKey,
+					content: keyring,
 				})
 			}
 
@@ -633,12 +675,17 @@ var setupClients = map[string]setupClient{
 
 			signature := "repo_gpgcheck=0\n"
 
-			if e.publicKey != "" {
+			if len(e.signingKeys) > 0 {
+				keyring, err := armoredKeyring(e.signingKeys)
+				if err != nil {
+					return nil, fmt.Errorf("dnf: %w", err)
+				}
+
 				keyFile := "etc/pki/rpm-gpg/RPM-GPG-KEY-relic-" + e.repo
 				steps = append(steps, setupStep{
 					file:    keyFile,
 					mode:    0o644,
-					content: e.publicKey,
+					content: keyring,
 				})
 				signature = "repo_gpgcheck=1\ngpgkey=file:///" + keyFile + "\n"
 			}
@@ -1081,7 +1128,18 @@ func setupEnvFor(cmd *cobra.Command, g *globals, c *client, client setupClient, 
 			return setupEnv{}, fmt.Errorf("setup: the signing key of %s: %w", repo, err)
 		}
 
-		e.keyPair, e.publicKey = key.GetKeyPair(), key.GetPublicKey()
+		e.signingKeys = []signingKey{
+			{
+				name:      key.GetKeyPair(),
+				publicKey: key.GetPublicKey(),
+			},
+		}
+		if key.GetSecondaryKeyPair() != "" {
+			e.signingKeys = append(e.signingKeys, signingKey{
+				name:      key.GetSecondaryKeyPair(),
+				publicKey: key.GetSecondaryPublicKey(),
+			})
+		}
 	}
 
 	return e, nil

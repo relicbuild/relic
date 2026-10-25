@@ -1845,6 +1845,22 @@
         "title": "DeleteItemResponse",
         "additionalProperties": false
       },
+      "relic.v1.DeleteKeyPairRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "name"
+          }
+        },
+        "title": "DeleteKeyPairRequest",
+        "additionalProperties": false
+      },
+      "relic.v1.DeleteKeyPairResponse": {
+        "type": "object",
+        "title": "DeleteKeyPairResponse",
+        "additionalProperties": false
+      },
       "relic.v1.DeleteLdapGroupMappingRequest": {
         "type": "object",
         "properties": {
@@ -3885,6 +3901,15 @@
           "publicKey": {
             "type": "string",
             "title": "public_key"
+          },
+          "secondaryKeyPair": {
+            "type": "string",
+            "title": "secondary_key_pair",
+            "description": "secondary_key_pair names the repository's secondary signing key, if any."
+          },
+          "secondaryPublicKey": {
+            "type": "string",
+            "title": "secondary_public_key"
           }
         },
         "title": "GetRepositorySigningKeyResponse",
@@ -9040,6 +9065,11 @@
             "title": "metadata_depth",
             "format": "int32",
             "description": "metadata_depth is how many folders below the root an RPM repository's\n repodata folders are; each indexes the packages beneath it."
+          },
+          "secondarySigningKey": {
+            "type": "string",
+            "title": "secondary_signing_key",
+            "description": "secondary_signing_key names a second key pair of an Alpine, Debian or RPM\n repository: it also signs Alpine and Debian metadata, and its public key\n is published with signing_key's."
           }
         },
         "title": "Repository",
@@ -10836,19 +10866,19 @@
         }
       }
     },
-    "/api/v1/releases/{spec.name}/versions": {
+    "/api/v1/releases/{name}/versions/{version}:finalize": {
       "post": {
         "tags": [
           "ReleaseService"
         ],
-        "summary": "CreateRelease",
-        "description": "CreateRelease creates a release version from its sources. Every\n artifact it takes must be readable by the caller.",
-        "operationId": "ReleaseService_CreateRelease",
+        "summary": "FinalizeRelease",
+        "description": "FinalizeRelease turns a draft version into a completed one.",
+        "operationId": "ReleaseService_FinalizeRelease",
         "parameters": [
           {
-            "name": "spec.name",
+            "name": "name",
             "in": "path",
-            "description": "The spec.name path parameter.",
+            "description": "The name path parameter.",
             "required": true,
             "schema": {
               "type": "string",
@@ -10856,12 +10886,13 @@
             }
           },
           {
-            "name": "project",
-            "in": "query",
-            "description": "The project query parameter.",
+            "name": "version",
+            "in": "path",
+            "description": "The version path parameter.",
+            "required": true,
             "schema": {
               "type": "string",
-              "title": "project"
+              "title": "version"
             }
           }
         ],
@@ -10869,15 +10900,19 @@
           "content": {
             "application/json": {
               "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/relic.v1.ReleaseSpec"
+                "type": "object",
+                "properties": {
+                  "project": {
+                    "type": "string",
+                    "title": "project"
                   }
-                ],
-                "title": "spec"
+                },
+                "title": "FinalizeReleaseRequest",
+                "additionalProperties": false
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -10885,71 +10920,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/relic.v1.CreateReleaseResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/cleanup-policies/{name}": {
-      "get": {
-        "tags": [
-          "CleanupService"
-        ],
-        "summary": "GetCleanupPolicy",
-        "operationId": "CleanupService_GetCleanupPolicy",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "description": "The name path parameter.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "name"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/relic.v1.GetCleanupPolicyResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "CleanupService"
-        ],
-        "summary": "DeleteCleanupPolicy",
-        "operationId": "CleanupService_DeleteCleanupPolicy",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "description": "The name path parameter.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "name"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/relic.v1.DeleteCleanupPolicyResponse"
+                  "$ref": "#/components/schemas/relic.v1.FinalizeReleaseResponse"
                 }
               }
             }
@@ -11034,6 +11005,59 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/relic.v1.CreateRepositoryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/builds/{name}/runs/{number}": {
+      "get": {
+        "tags": [
+          "BuildService"
+        ],
+        "summary": "GetBuildRun",
+        "description": "GetBuildRun returns one build run's published information.",
+        "operationId": "BuildService_GetBuildRun",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "The name path parameter.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "name"
+            }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "description": "The number path parameter.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "number"
+            }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "description": "The project query parameter.",
+            "schema": {
+              "type": "string",
+              "title": "project"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/relic.v1.GetBuildRunResponse"
                 }
               }
             }
@@ -11427,14 +11451,13 @@
         }
       }
     },
-    "/api/v1/repositories/{name}": {
+    "/api/v1/cleanup-policies/{name}": {
       "get": {
         "tags": [
-          "RepositoryService"
+          "CleanupService"
         ],
-        "summary": "GetRepository",
-        "description": "GetRepository returns one repository the caller may read.",
-        "operationId": "RepositoryService_GetRepository",
+        "summary": "GetCleanupPolicy",
+        "operationId": "CleanupService_GetCleanupPolicy",
         "parameters": [
           {
             "name": "name",
@@ -11453,7 +11476,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/relic.v1.GetRepositoryResponse"
+                  "$ref": "#/components/schemas/relic.v1.GetCleanupPolicyResponse"
                 }
               }
             }
@@ -11462,11 +11485,10 @@
       },
       "delete": {
         "tags": [
-          "RepositoryService"
+          "CleanupService"
         ],
-        "summary": "DeleteRepository",
-        "description": "DeleteRepository deletes a repository and everything in it.\n Administrators may, and a project's admins in their project.",
-        "operationId": "RepositoryService_DeleteRepository",
+        "summary": "DeleteCleanupPolicy",
+        "operationId": "CleanupService_DeleteCleanupPolicy",
         "parameters": [
           {
             "name": "name",
@@ -11485,7 +11507,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/relic.v1.DeleteRepositoryResponse"
+                  "$ref": "#/components/schemas/relic.v1.DeleteCleanupPolicyResponse"
                 }
               }
             }
@@ -12309,33 +12331,53 @@
         }
       }
     },
-    "/api/v1/repositories/{name}/client-endpoints": {
+    "/api/v1/ignore-rules": {
       "get": {
         "tags": [
-          "RepositoryService"
+          "ScanService"
         ],
-        "summary": "GetClientEndpoints",
-        "description": "GetClientEndpoints returns where clients reach a repository: its files\n over the Relic API, and the URL its format's package manager uses.",
-        "operationId": "RepositoryService_GetClientEndpoints",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "description": "The name path parameter.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "name"
-            }
-          }
-        ],
+        "summary": "ListIgnoreRules",
+        "operationId": "ScanService_ListIgnoreRules",
         "responses": {
           "200": {
             "description": "Success",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/relic.v1.GetClientEndpointsResponse"
+                  "$ref": "#/components/schemas/relic.v1.ListIgnoreRulesResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "ScanService"
+        ],
+        "summary": "CreateIgnoreRule",
+        "operationId": "ScanService_CreateIgnoreRule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/relic.v1.IgnoreRule"
+                  }
+                ],
+                "title": "rule"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/relic.v1.CreateIgnoreRuleResponse"
                 }
               }
             }
@@ -12443,6 +12485,40 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/relic.v1.ListKeyPairsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/key-pairs/{name}": {
+      "delete": {
+        "tags": [
+          "SigningKeyService"
+        ],
+        "summary": "DeleteKeyPair",
+        "description": "DeleteKeyPair deletes a key pair no repository signs with and Relic does\n not sign release manifests with.",
+        "operationId": "SigningKeyService_DeleteKeyPair",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "The name path parameter.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/relic.v1.DeleteKeyPairResponse"
                 }
               }
             }
@@ -13132,31 +13208,65 @@
         }
       }
     },
-    "/api/v1/policies:preview": {
-      "post": {
+    "/api/v1/repositories/{name}": {
+      "get": {
         "tags": [
-          "PolicyDecisionService"
+          "RepositoryService"
         ],
-        "summary": "PreviewPolicy",
-        "description": "PreviewPolicy lists the scanned files whose stored findings a policy\n would violate, without storing the policy.",
-        "operationId": "PolicyDecisionService_PreviewPolicy",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/relic.v1.PreviewPolicyRequest"
-              }
+        "summary": "GetRepository",
+        "description": "GetRepository returns one repository the caller may read.",
+        "operationId": "RepositoryService_GetRepository",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "The name path parameter.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "name"
             }
-          },
-          "required": true
-        },
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/relic.v1.PreviewPolicyResponse"
+                  "$ref": "#/components/schemas/relic.v1.GetRepositoryResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "RepositoryService"
+        ],
+        "summary": "DeleteRepository",
+        "description": "DeleteRepository deletes a repository and everything in it.\n Administrators may, and a project's admins in their project.",
+        "operationId": "RepositoryService_DeleteRepository",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "The name path parameter.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/relic.v1.DeleteRepositoryResponse"
                 }
               }
             }
@@ -13791,103 +13901,20 @@
         }
       }
     },
-    "/api/v1/releases/{name}/versions/{version}": {
+    "/api/v1/replications": {
       "get": {
         "tags": [
-          "ReleaseService"
+          "ReplicationService"
         ],
-        "summary": "GetRelease",
-        "description": "GetRelease returns one release version with its artifacts.",
-        "operationId": "ReleaseService_GetRelease",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "description": "The name path parameter.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "name"
-            }
-          },
-          {
-            "name": "version",
-            "in": "path",
-            "description": "The version path parameter.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "version"
-            }
-          },
-          {
-            "name": "project",
-            "in": "query",
-            "description": "The project query parameter.",
-            "schema": {
-              "type": "string",
-              "title": "project"
-            }
-          }
-        ],
+        "summary": "ListReplications",
+        "operationId": "ReplicationService_ListReplications",
         "responses": {
           "200": {
             "description": "Success",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/relic.v1.GetReleaseResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "ReleaseService"
-        ],
-        "summary": "DeleteRelease",
-        "description": "DeleteRelease deletes a release version and its stored files.",
-        "operationId": "ReleaseService_DeleteRelease",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "description": "The name path parameter.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "name"
-            }
-          },
-          {
-            "name": "version",
-            "in": "path",
-            "description": "The version path parameter.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "version"
-            }
-          },
-          {
-            "name": "project",
-            "in": "query",
-            "description": "The project query parameter.",
-            "schema": {
-              "type": "string",
-              "title": "project"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/relic.v1.DeleteReleaseResponse"
+                  "$ref": "#/components/schemas/relic.v1.ListReplicationsResponse"
                 }
               }
             }
@@ -14225,68 +14252,6 @@
         }
       }
     },
-    "/api/v1/releases/{name}/versions/{version}:finalize": {
-      "post": {
-        "tags": [
-          "ReleaseService"
-        ],
-        "summary": "FinalizeRelease",
-        "description": "FinalizeRelease turns a draft version into a completed one.",
-        "operationId": "ReleaseService_FinalizeRelease",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "description": "The name path parameter.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "name"
-            }
-          },
-          {
-            "name": "version",
-            "in": "path",
-            "description": "The version path parameter.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "version"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "project": {
-                    "type": "string",
-                    "title": "project"
-                  }
-                },
-                "title": "FinalizeReleaseRequest",
-                "additionalProperties": false
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/relic.v1.FinalizeReleaseResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/builds": {
       "get": {
         "tags": [
@@ -14313,6 +14278,63 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/relic.v1.ListBuildsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/releases/{spec.name}/versions": {
+      "post": {
+        "tags": [
+          "ReleaseService"
+        ],
+        "summary": "CreateRelease",
+        "description": "CreateRelease creates a release version from its sources. Every\n artifact it takes must be readable by the caller.",
+        "operationId": "ReleaseService_CreateRelease",
+        "parameters": [
+          {
+            "name": "spec.name",
+            "in": "path",
+            "description": "The spec.name path parameter.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "name"
+            }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "description": "The project query parameter.",
+            "schema": {
+              "type": "string",
+              "title": "project"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/relic.v1.ReleaseSpec"
+                  }
+                ],
+                "title": "spec"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/relic.v1.CreateReleaseResponse"
                 }
               }
             }
@@ -14387,35 +14409,14 @@
         }
       }
     },
-    "/api/v1/replications": {
+    "/api/v1/releases/{name}/versions/{version}": {
       "get": {
         "tags": [
-          "ReplicationService"
+          "ReleaseService"
         ],
-        "summary": "ListReplications",
-        "operationId": "ReplicationService_ListReplications",
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/relic.v1.ListReplicationsResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/builds/{name}/runs/{number}": {
-      "get": {
-        "tags": [
-          "BuildService"
-        ],
-        "summary": "GetBuildRun",
-        "description": "GetBuildRun returns one build run's published information.",
-        "operationId": "BuildService_GetBuildRun",
+        "summary": "GetRelease",
+        "description": "GetRelease returns one release version with its artifacts.",
+        "operationId": "ReleaseService_GetRelease",
         "parameters": [
           {
             "name": "name",
@@ -14428,13 +14429,13 @@
             }
           },
           {
-            "name": "number",
+            "name": "version",
             "in": "path",
-            "description": "The number path parameter.",
+            "description": "The version path parameter.",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "number"
+              "title": "version"
             }
           },
           {
@@ -14453,7 +14454,58 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/relic.v1.GetBuildRunResponse"
+                  "$ref": "#/components/schemas/relic.v1.GetReleaseResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "ReleaseService"
+        ],
+        "summary": "DeleteRelease",
+        "description": "DeleteRelease deletes a release version and its stored files.",
+        "operationId": "ReleaseService_DeleteRelease",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "The name path parameter.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "name"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "description": "The version path parameter.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "version"
+            }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "description": "The project query parameter.",
+            "schema": {
+              "type": "string",
+              "title": "project"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/relic.v1.DeleteReleaseResponse"
                 }
               }
             }
@@ -14575,45 +14627,23 @@
         }
       }
     },
-    "/api/v1/ignore-rules": {
-      "get": {
-        "tags": [
-          "ScanService"
-        ],
-        "summary": "ListIgnoreRules",
-        "operationId": "ScanService_ListIgnoreRules",
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/relic.v1.ListIgnoreRulesResponse"
-                }
-              }
-            }
-          }
-        }
-      },
+    "/api/v1/policies:preview": {
       "post": {
         "tags": [
-          "ScanService"
+          "PolicyDecisionService"
         ],
-        "summary": "CreateIgnoreRule",
-        "operationId": "ScanService_CreateIgnoreRule",
+        "summary": "PreviewPolicy",
+        "description": "PreviewPolicy lists the scanned files whose stored findings a policy\n would violate, without storing the policy.",
+        "operationId": "PolicyDecisionService_PreviewPolicy",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/relic.v1.IgnoreRule"
-                  }
-                ],
-                "title": "rule"
+                "$ref": "#/components/schemas/relic.v1.PreviewPolicyRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -14621,7 +14651,41 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/relic.v1.CreateIgnoreRuleResponse"
+                  "$ref": "#/components/schemas/relic.v1.PreviewPolicyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/client-endpoints": {
+      "get": {
+        "tags": [
+          "RepositoryService"
+        ],
+        "summary": "GetClientEndpoints",
+        "description": "GetClientEndpoints returns where clients reach a repository: its files\n over the Relic API, and the URL its format's package manager uses.",
+        "operationId": "RepositoryService_GetClientEndpoints",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "The name path parameter.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/relic.v1.GetClientEndpointsResponse"
                 }
               }
             }

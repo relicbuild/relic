@@ -195,10 +195,11 @@ func TestValidateSigningKeys(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		format  Format
-		primary string
-		wantErr bool
+		name      string
+		format    Format
+		primary   string
+		secondary string
+		wantErr   bool
 	}{
 		{
 			name:    "a plain name",
@@ -217,6 +218,35 @@ func TestValidateSigningKeys(t *testing.T) {
 			primary: "../x y",
 			wantErr: true,
 		},
+		{
+			name:      "a secondary key",
+			format:    FormatRPM,
+			primary:   "rpm-signing",
+			secondary: "rpm-signing-next",
+		},
+		{
+			name:      "a secondary key next to the default",
+			format:    FormatAlpine,
+			secondary: "alpine-next",
+		},
+		{
+			name:      "a secondary key with a path",
+			format:    FormatDebian,
+			secondary: "keys/next",
+			wantErr:   true,
+		},
+		{
+			name:      "a secondary key that is the signing key",
+			format:    FormatDebian,
+			secondary: "relic-gpg",
+			wantErr:   true,
+		},
+		{
+			name:      "a secondary key for a format that is not signed",
+			format:    FormatHelm,
+			secondary: "helm-next",
+			wantErr:   true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -227,7 +257,8 @@ func TestValidateSigningKeys(t *testing.T) {
 				Class:  ClassLocal,
 				Format: tt.format,
 				Config: Config{
-					SigningKey: tt.primary,
+					SigningKey:          tt.primary,
+					SecondarySigningKey: tt.secondary,
 				},
 			}
 

@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -139,6 +140,35 @@ func TestRelicAPIServices(t *testing.T) {
 		admin.call(http.MethodGet, "/api/v1/key-pairs", "", http.StatusOK)
 		bob.call(http.MethodGet, "/api/v1/key-pairs", "", http.StatusForbidden)
 		bob.call(http.MethodGet, "/api/v1/key-pairs/nope/public-key", "", http.StatusNotFound)
+
+		rotating := `{"name":"deb-rotating","class":"REPOSITORY_CLASS_LOCAL","format":"FORMAT_DEBIAN",` +
+			`"signingKey":"deb-old"%s}`
+		admin.call(http.MethodPost, "/api/v1/repositories", fmt.Sprintf(rotating, `,"secondarySigningKey":"deb-new"`),
+			http.StatusOK)
+
+		var keys struct {
+			KeyPair            string `json:"keyPair"`
+			PublicKey          string `json:"publicKey"`
+			SecondaryKeyPair   string `json:"secondaryKeyPair"`
+			SecondaryPublicKey string `json:"secondaryPublicKey"`
+		}
+		if err := json.Unmarshal([]byte(admin.call(
+			http.MethodGet,
+			"/api/v1/repositories/deb-rotating/signing-key",
+			"",
+			http.StatusOK,
+		)), &keys); err != nil || keys.KeyPair != "deb-old" || keys.SecondaryKeyPair != "deb-new" ||
+			keys.PublicKey == "" || keys.SecondaryPublicKey == "" || keys.PublicKey == keys.SecondaryPublicKey {
+			t.Errorf("the signing keys of a repository with a secondary key = %+v, %v", keys, err)
+		}
+
+		bob.call(http.MethodDelete, "/api/v1/key-pairs/deb-new", "", http.StatusForbidden)
+		admin.call(http.MethodDelete, "/api/v1/key-pairs/deb-new", "", http.StatusBadRequest)
+		admin.call(http.MethodDelete, "/api/v1/key-pairs/release-bundles", "", http.StatusBadRequest)
+		admin.call(http.MethodPut, "/api/v1/repositories/deb-rotating", fmt.Sprintf(rotating, ""), http.StatusOK)
+		admin.call(http.MethodDelete, "/api/v1/key-pairs/deb-new", "", http.StatusOK)
+		admin.call(http.MethodGet, "/api/v1/key-pairs/deb-new/public-key", "", http.StatusNotFound)
+		admin.call(http.MethodDelete, "/api/v1/key-pairs/deb-new", "", http.StatusNotFound)
 	})
 
 	t.Run("trusted keys and evidence", func(t *testing.T) {

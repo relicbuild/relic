@@ -79,6 +79,7 @@ type Querier interface {
 	DeleteIssues(ctx context.Context, sha256 string) error
 	DeleteItemProperties(ctx context.Context, itemID uuid.UUID) error
 	DeleteItemPropertyKeys(ctx context.Context, arg DeleteItemPropertyKeysParams) error
+	DeleteKeyPair(ctx context.Context, name string) (int64, error)
 	DeleteLdapGroupMapping(ctx context.Context, name string) (int64, error)
 	DeleteLdapServer(ctx context.Context, name string) (int64, error)
 	DeleteMaliciousAdvisory(ctx context.Context, id string) error

@@ -3,6 +3,7 @@
 package debian
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,7 +15,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ProtonMail/go-crypto/openpgp"
+	"github.com/ProtonMail/go-crypto/openpgp/clearsign"
+
 	"relic/internal/artifacts/repository"
+	"relic/internal/artifacts/signingkey"
 	"relic/internal/platform/database/databasetest"
 	"relic/internal/platform/objectstore/objectstoretest"
 )
@@ -23,6 +28,7 @@ func TestMain(m *testing.M) { databasetest.Main(m) }
 
 type debianFixture struct {
 	repos   *repository.Service
+	keys    *signingkey.Service
 	svc     *Service
 	local   repository.Repository
 	virtual repository.Repository
@@ -63,8 +69,9 @@ func newDebianFixture(t testing.TB) *debianFixture {
 
 	f := &debianFixture{
 		repos: repos,
-		svc:   NewService(db, repos, nil, log),
+		keys:  signingkey.New(db, nil),
 	}
+	f.svc = NewService(db, repos, f.keys, log)
 
 	var err error
 	if f.local, err = repos.GetRepository(ctx, "deb-local"); err != nil {
@@ -280,6 +287,54 @@ func TestDistributionReleaseDateMovesForward(t *testing.T) {
 
 	if after := f.releaseDate(t, "bookworm"); !after.After(before) {
 		t.Errorf("after deleting the newest package the Date is %s, want later than %s", after, before)
+	}
+}
+
+func TestSignWithEveryKeyPair(t *testing.T) {
+	t.Parallel()
+
+	f := newDebianFixture(t)
+	rotating := f.local
+	rotating.Config.SigningKey, rotating.Config.SecondarySigningKey = "deb-old", "deb-new"
+	release := []byte("Origin: deb-local\nSuite: bookworm\n")
+
+	inRelease, err := f.svc.Sign(t.Context(), rotating, release, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	detached, err := f.svc.Sign(t.Context(), rotating, release, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range rotating.KeyPairRefs() {
+		key, _, err := f.keys.GPG(t.Context(), name)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		trusted := openpgp.EntityList{
+			key,
+		}
+
+		block, _ := clearsign.Decode(inRelease)
+		if block == nil {
+			t.Fatal("InRelease does not decode")
+		}
+
+		if _, err := block.VerifySignature(trusted, nil); err != nil {
+			t.Errorf("InRelease does not verify with %s alone: %v", name, err)
+		}
+
+		if _, err := openpgp.CheckArmoredDetachedSignature(
+			trusted,
+			bytes.NewReader(release),
+			bytes.NewReader(detached),
+			nil,
+		); err != nil {
+			t.Errorf("Release.gpg does not verify with %s alone: %v", name, err)
+		}
 	}
 }
 

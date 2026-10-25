@@ -280,7 +280,8 @@ func codeOf(err error) *connect.Error {
 		errors.Is(err, repository.ErrHeld),
 		errors.Is(err, repository.ErrImmutable),
 		errors.Is(err, release.ErrNotDraft),
-		errors.Is(err, signingkey.ErrKind):
+		errors.Is(err, signingkey.ErrKind),
+		errors.Is(err, signingkey.ErrInUse):
 		return connect.NewError(connect.CodeFailedPrecondition, err.Error()).WithCause(err)
 	case errors.Is(err, repository.ErrUpstream):
 		return connect.NewError(connect.CodeUnavailable, err.Error()).WithCause(err)

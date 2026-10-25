@@ -468,8 +468,7 @@ func (s *Service) members(ctx context.Context, r repository.Repository, depth in
 	return out
 }
 
-// Sign returns repomd.xml.asc: repomd's detached signature with r's key
-// pair.
+// Sign returns repomd.xml.asc: repomd's detached signature by r's key pair.
 func (s *Service) Sign(ctx context.Context, r repository.Repository, repoMD []byte) ([]byte, error) {
 	key, _, err := s.keys.GPG(ctx, r.KeyPairRef())
 	if err != nil {
@@ -479,9 +478,9 @@ func (s *Service) Sign(ctx context.Context, r repository.Repository, repoMD []by
 	return signingkey.DetachSign(repoMD, key)
 }
 
-// PublicKey returns the armored public key that checks r's repomd.xml.asc.
+// PublicKey returns the armored public keys that check r's repomd.xml.asc.
 func (s *Service) PublicKey(ctx context.Context, r repository.Repository) (string, error) {
-	_, public, err := s.keys.GPG(ctx, r.KeyPairRef())
+	_, public, err := s.keys.GPGKeys(ctx, r.KeyPairRefs()...)
 
 	return public, err
 }

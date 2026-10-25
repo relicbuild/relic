@@ -134,14 +134,22 @@ func (s *Service) Index(ctx context.Context, r repository.Repository, dir string
 		return nil, repository.ErrNotFound
 	}
 
-	ref := r.KeyPairRef()
+	refs := r.KeyPairRefs()
+	signers := make([]Signer, 0, len(refs))
 
-	key, _, err := s.keys.RSA(ctx, ref)
-	if err != nil {
-		return nil, err
+	for _, ref := range refs {
+		key, _, err := s.keys.RSA(ctx, ref)
+		if err != nil {
+			return nil, err
+		}
+
+		signers = append(signers, Signer{
+			Key:  key,
+			Name: ref,
+		})
 	}
 
-	return Index(stanzas, fmt.Sprintf("%s %s", r.Name, dir), key, ref, modified)
+	return Index(stanzas, fmt.Sprintf("%s %s", r.Name, dir), signers, modified)
 }
 
 func (s *Service) memberStanzas(

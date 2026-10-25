@@ -15,7 +15,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ProtonMail/go-crypto/openpgp"
+
 	"relic/internal/artifacts/repository"
+	"relic/internal/artifacts/signingkey"
 	"relic/internal/platform/database/databasetest"
 	"relic/internal/platform/objectstore/objectstoretest"
 )
@@ -24,6 +27,7 @@ func TestMain(m *testing.M) { databasetest.Main(m) }
 
 type rpmFixture struct {
 	repos *repository.Service
+	keys  *signingkey.Service
 	svc   *Service
 	clock atomic.Int64
 }
@@ -32,11 +36,13 @@ func newRPMFixture(t testing.TB, repos ...repository.Repository) *rpmFixture {
 	t.Helper()
 
 	log := slog.New(slog.DiscardHandler)
+	db := databasetest.NewDB(t)
 	f := &rpmFixture{
-		repos: repository.NewService(databasetest.NewDB(t), objectstoretest.NewMemory(), log),
+		repos: repository.NewService(db, objectstoretest.NewMemory(), log),
+		keys:  signingkey.New(db, nil),
 	}
 	f.repos.AllowPrivateUpstreams(true)
-	f.svc = NewService(f.repos, nil, log)
+	f.svc = NewService(f.repos, f.keys, log)
 
 	for _, r := range repos {
 		if err := f.repos.CreateRepository(t.Context(), r); err != nil {
@@ -274,6 +280,62 @@ func TestRepodataHidesTheUpstreamPackagesPermissionsHide(t *testing.T) {
 		}) || doc.Count != 1 {
 			t.Errorf("%s lists %v (count %d), want shown only", kind, names, doc.Count)
 		}
+	}
+}
+
+func TestSignAndPublicKeyDuringARotation(t *testing.T) {
+	t.Parallel()
+
+	f := newRPMFixture(t)
+	rotating := localOf("rpm-rotating", 0)
+	rotating.Config.SigningKey, rotating.Config.SecondarySigningKey = "rpm-old", "rpm-new"
+	repoMD := []byte("<repomd/>")
+
+	signature, err := f.svc.Sign(t.Context(), rotating, repoMD)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	public, err := f.svc.PublicKey(t.Context(), rotating)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ring, err := openpgp.ReadArmoredKeyRing(strings.NewReader(public))
+	if err != nil || len(ring) != 2 {
+		t.Fatalf("repomd.xml.key holds %d keys, %v; want the signing and the secondary key", len(ring), err)
+	}
+
+	primary, _, err := f.keys.GPG(t.Context(), "rpm-old")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := openpgp.CheckArmoredDetachedSignature(
+		openpgp.EntityList{
+			primary,
+		},
+		bytes.NewReader(repoMD),
+		bytes.NewReader(signature),
+		nil,
+	); err != nil {
+		t.Errorf("repomd.xml.asc does not verify with the signing key: %v", err)
+	}
+
+	secondary, _, err := f.keys.GPG(t.Context(), "rpm-new")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := openpgp.CheckArmoredDetachedSignature(
+		openpgp.EntityList{
+			secondary,
+		},
+		bytes.NewReader(repoMD),
+		bytes.NewReader(signature),
+		nil,
+	); err == nil {
+		t.Error("repomd.xml.asc holds a second signature, which dnf cannot parse")
 	}
 }
 

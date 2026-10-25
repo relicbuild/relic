@@ -49,6 +49,7 @@ const schema = z.object({
   localOnlyPatterns: z.array(z.string()),
   defaultDeploymentRepo: z.string().optional(),
   signingKey: z.string().optional(),
+  secondarySigningKey: z.string().optional(),
   metadataDepth: z.number().int().min(0).max(16),
   architectures: z.array(z.string())
 }).superRefine((d, ctx) => {
@@ -87,6 +88,7 @@ const state = reactive<Partial<Schema>>({
   localOnlyPatterns: [...(r?.virtual?.localOnlyPatterns ?? [])],
   defaultDeploymentRepo: r?.virtual?.deployTo ?? '',
   signingKey: r?.signingKey ?? '',
+  secondarySigningKey: r?.secondarySigningKey ?? '',
   metadataDepth: r?.metadataDepth ?? 0,
   architectures: [...(r?.architectures ?? [])]
 })
@@ -133,6 +135,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
     const immutable = d.class === 'local' && d.immutable
     const indexes = {
       signingKey: defaultSigningKey[d.format] && d.class !== 'remote' ? d.signingKey ?? '' : '',
+      secondarySigningKey: defaultSigningKey[d.format] && d.class !== 'remote' ? d.secondarySigningKey ?? '' : '',
       metadataDepth: d.format === 'rpm' && d.class !== 'remote' ? d.metadataDepth : 0,
       architectures: d.format === 'debian' && d.class === 'virtual' ? d.architectures : []
     }
@@ -225,6 +228,15 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
           hint="Optional"
         >
           <UInput v-model="state.signingKey" :placeholder="defaultSigningKey[state.format ?? '']" class="w-full" />
+        </UFormField>
+        <UFormField
+          v-if="signsIndexes"
+          name="secondarySigningKey"
+          label="Secondary signing key"
+          description="A key pair that also signs the indexes, with its public key published next to the signing key's, so clients that trust either keep working while the key is replaced."
+          hint="Optional"
+        >
+          <UInput v-model="state.secondarySigningKey" class="w-full" />
         </UFormField>
         <UFormField
           v-if="state.format === 'rpm' && state.class !== 'remote'"

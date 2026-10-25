@@ -98,6 +98,11 @@ func FromArtifactory(key string, doc []byte) (repository.Repository, error) {
 	d.take("description", "notes", "environments")
 	d.takeSet("projectKey", "primaryKeyPairRef")
 
+	if repository.KeyPairKind(r.Format) != "" {
+		c.SecondarySigningKey = d.str("secondaryKeyPairRef")
+		d.takeSet("secondaryKeyPairRef")
+	}
+
 	if r.Format == repository.FormatRPM && d.has("yumRootDepth") {
 		depth, err := d.integer("yumRootDepth", 0)
 		if err != nil {
@@ -242,6 +247,7 @@ func ToArtifactory(r repository.Repository) ([]byte, error) {
 	out["environments"] = nonNil(c.Environments)
 	setIf(out, "projectKey", r.Project)
 	setIf(out, "primaryKeyPairRef", r.KeyPairRef())
+	setIf(out, "secondaryKeyPairRef", c.SecondarySigningKey)
 	setIf(out, "debianDefaultArchitectures", strings.Join(c.Architectures, ","))
 
 	if r.Format == repository.FormatRPM {

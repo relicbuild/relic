@@ -546,16 +546,16 @@ func first(v []string) string {
 }
 
 // Sign returns InRelease (clear-signed) or Release.gpg (detached) for a
-// Release, with r's key pair.
+// Release, with each of r's key pairs.
 func (s *Service) Sign(ctx context.Context, r repository.Repository, release []byte, detached bool) ([]byte, error) {
-	key, _, err := s.keys.GPG(ctx, r.KeyPairRef())
+	keys, _, err := s.keys.GPGKeys(ctx, r.KeyPairRefs()...)
 	if err != nil {
 		return nil, err
 	}
 
 	if detached {
-		return signingkey.DetachSign(release, key)
+		return signingkey.DetachSign(release, keys...)
 	}
 
-	return signingkey.ClearSign(release, key)
+	return signingkey.ClearSign(release, keys...)
 }

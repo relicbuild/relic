@@ -1,6 +1,7 @@
 package alpine
 
 import (
+	"archive/tar"
 	"bytes"
 	"compress/gzip"
 	"crypto"
@@ -10,6 +11,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -125,9 +129,21 @@ func TestParse(t *testing.T) {
 func TestIndex(t *testing.T) {
 	t.Parallel()
 
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
+	signers := make([]Signer, 0, 2)
+
+	for _, name := range []string{
+		"relic-rsa",
+		"relic-rsa-next",
+	} {
+		key, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		signers = append(signers, Signer{
+			Key:  key,
+			Name: name,
+		})
 	}
 
 	stanzas := []string{
@@ -135,7 +151,7 @@ func TestIndex(t *testing.T) {
 		"C:Q1def=\nP:b\nV:2\n",
 	}
 
-	idx, err := Index(stanzas, "relic", key, "relic-rsa", time.Now())
+	idx, err := Index(stanzas, "relic", signers, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,21 +168,39 @@ func TestIndex(t *testing.T) {
 
 	zr.Multistream(false)
 
-	var sigBuf bytes.Buffer
-	if _, err := sigBuf.ReadFrom(zr); err != nil {
-		t.Fatal(err)
+	signatures := map[string][]byte{}
+	tr := tar.NewReader(zr)
+
+	for {
+		h, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		body, err := io.ReadAll(tr)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		signatures[h.Name] = body
 	}
 
-	if !strings.Contains(sigBuf.String(), ".SIGN.RSA.relic-rsa.rsa.pub") {
-		t.Fatal("no signature entry named after the key")
-	}
+	sum := sha1.Sum(idx[firstMemberLen(t, idx):]) //nolint:gosec // apk format
 
-	sig := sigBuf.Bytes()[512 : 512+key.Size()]
-	sigMember := firstMemberLen(t, idx)
+	for _, signer := range signers {
+		sig, ok := signatures[".SIGN.RSA."+signer.Name+".rsa.pub"]
+		if !ok {
+			t.Errorf("no signature entry named after %s: %v", signer.Name, slices.Collect(maps.Keys(signatures)))
+			continue
+		}
 
-	sum := sha1.Sum(idx[sigMember:]) //nolint:gosec // apk format
-	if err := rsa.VerifyPKCS1v15(&key.PublicKey, crypto.SHA1, sum[:], sig); err != nil {
-		t.Errorf("signature does not verify: %v", err)
+		if err := rsa.VerifyPKCS1v15(&signer.Key.PublicKey, crypto.SHA1, sum[:], sig); err != nil {
+			t.Errorf("the signature of %s does not verify: %v", signer.Name, err)
+		}
 	}
 }
 

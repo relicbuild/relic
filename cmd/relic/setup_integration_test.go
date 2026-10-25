@@ -3,10 +3,13 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ProtonMail/go-crypto/openpgp"
 )
 
 func TestSetupCommands(t *testing.T) {
@@ -61,6 +64,16 @@ apiVersion: relic.build/v1
 kind: Repository
 metadata: {name: go-local}
 spec: {class: local, format: gomod}
+---
+apiVersion: relic.build/v1
+kind: Repository
+metadata: {name: apk-rotating}
+spec: {class: local, format: alpine, signingKey: apk-old, secondarySigningKey: apk-new}
+---
+apiVersion: relic.build/v1
+kind: Repository
+metadata: {name: deb-rotating}
+spec: {class: local, format: debian, signingKey: deb-old, secondarySigningKey: deb-new}
 `, "apply", "-f", "-"); err != nil {
 		t.Fatal(err)
 	}
@@ -205,6 +218,29 @@ spec: {class: local, format: gomod}
 
 	if !strings.Contains(string(dnfRepo), "repo_gpgcheck=1\n") {
 		t.Errorf("dnf repository file of a repository with the default key pair = %q, want repo_gpgcheck=1", dnfRepo)
+	}
+
+	if _, err := setup("apk", "apk-rotating", "--branch", "v3.22", "--write"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range []string{
+		"apk-old",
+		"apk-new",
+	} {
+		if key, err := os.ReadFile(filepath.Join(root, "etc/apk/keys/"+name+".rsa.pub")); err != nil ||
+			!strings.Contains(string(key), "BEGIN PUBLIC KEY") {
+			t.Errorf("apk key %s of a repository with a secondary key = %q %v", name, key, err)
+		}
+	}
+
+	if _, err := setup("apt", "deb-rotating", "--distribution", "bookworm", "--write"); err != nil {
+		t.Fatal(err)
+	}
+
+	keyring, _ := os.ReadFile(filepath.Join(root, "etc/apt/keyrings/relic-deb-rotating.asc"))
+	if ring, err := openpgp.ReadArmoredKeyRing(bytes.NewReader(keyring)); err != nil || len(ring) != 2 {
+		t.Errorf("apt keyring of a repository with a secondary key holds %d keys, %v", len(ring), err)
 	}
 
 	out, err = setup("go", "go-local", "--private", "git.example.com/*")

@@ -497,8 +497,12 @@ type Repository struct {
 	// metadata_depth is how many folders below the root an RPM repository's
 	// repodata folders are; each indexes the packages beneath it.
 	MetadataDepth int32 `protobuf:"varint,18,opt,name=metadata_depth,json=metadataDepth,proto3" json:"metadata_depth,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// secondary_signing_key names a second key pair of an Alpine, Debian or RPM
+	// repository: it also signs Alpine and Debian metadata, and its public key
+	// is published with signing_key's.
+	SecondarySigningKey string `protobuf:"bytes,19,opt,name=secondary_signing_key,json=secondarySigningKey,proto3" json:"secondary_signing_key,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *Repository) Reset() {
@@ -655,6 +659,13 @@ func (x *Repository) GetMetadataDepth() int32 {
 		return x.MetadataDepth
 	}
 	return 0
+}
+
+func (x *Repository) GetSecondarySigningKey() string {
+	if x != nil {
+		return x.SecondarySigningKey
+	}
+	return ""
 }
 
 type ListRepositoriesRequest struct {
@@ -845,10 +856,13 @@ func (x *GetRepositorySigningKeyRequest) GetName() string {
 type GetRepositorySigningKeyResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// key_pair names the key pair; Alpine clients name the key file after it.
-	KeyPair       string `protobuf:"bytes,1,opt,name=key_pair,json=keyPair,proto3" json:"key_pair,omitempty"`
-	PublicKey     string `protobuf:"bytes,2,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	KeyPair   string `protobuf:"bytes,1,opt,name=key_pair,json=keyPair,proto3" json:"key_pair,omitempty"`
+	PublicKey string `protobuf:"bytes,2,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+	// secondary_key_pair names the repository's secondary signing key, if any.
+	SecondaryKeyPair   string `protobuf:"bytes,3,opt,name=secondary_key_pair,json=secondaryKeyPair,proto3" json:"secondary_key_pair,omitempty"`
+	SecondaryPublicKey string `protobuf:"bytes,4,opt,name=secondary_public_key,json=secondaryPublicKey,proto3" json:"secondary_public_key,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *GetRepositorySigningKeyResponse) Reset() {
@@ -891,6 +905,20 @@ func (x *GetRepositorySigningKeyResponse) GetKeyPair() string {
 func (x *GetRepositorySigningKeyResponse) GetPublicKey() string {
 	if x != nil {
 		return x.PublicKey
+	}
+	return ""
+}
+
+func (x *GetRepositorySigningKeyResponse) GetSecondaryKeyPair() string {
+	if x != nil {
+		return x.SecondaryKeyPair
+	}
+	return ""
+}
+
+func (x *GetRepositorySigningKeyResponse) GetSecondaryPublicKey() string {
+	if x != nil {
+		return x.SecondaryPublicKey
 	}
 	return ""
 }
@@ -1350,7 +1378,7 @@ const file_relic_v1_repository_proto_rawDesc = "" +
 	"\x19VirtualRepositorySettings\x12\x18\n" +
 	"\amembers\x18\x01 \x03(\tR\amembers\x12\x1b\n" +
 	"\tdeploy_to\x18\x02 \x01(\tR\bdeployTo\x12.\n" +
-	"\x13local_only_patterns\x18\x03 \x03(\tR\x11localOnlyPatterns\"\xcc\x05\n" +
+	"\x13local_only_patterns\x18\x03 \x03(\tR\x11localOnlyPatterns\"\x80\x06\n" +
 	"\n" +
 	"Repository\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12/\n" +
@@ -1374,7 +1402,8 @@ const file_relic_v1_repository_proto_rawDesc = "" +
 	"\n" +
 	"used_bytes\x18\x10 \x01(\x03R\tusedBytes\x12\x1c\n" +
 	"\timmutable\x18\x11 \x01(\bR\timmutable\x12%\n" +
-	"\x0emetadata_depth\x18\x12 \x01(\x05R\rmetadataDepth\"t\n" +
+	"\x0emetadata_depth\x18\x12 \x01(\x05R\rmetadataDepth\x122\n" +
+	"\x15secondary_signing_key\x18\x13 \x01(\tR\x13secondarySigningKey\"t\n" +
 	"\x17ListRepositoriesRequest\x12/\n" +
 	"\x05class\x18\x01 \x01(\x0e2\x19.relic.v1.RepositoryClassR\x05class\x12(\n" +
 	"\x06format\x18\x02 \x01(\x0e2\x10.relic.v1.FormatR\x06format\"T\n" +
@@ -1383,11 +1412,13 @@ const file_relic_v1_repository_proto_rawDesc = "" +
 	"\x14GetRepositoryRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"4\n" +
 	"\x1eGetRepositorySigningKeyRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\"[\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"\xbb\x01\n" +
 	"\x1fGetRepositorySigningKeyResponse\x12\x19\n" +
 	"\bkey_pair\x18\x01 \x01(\tR\akeyPair\x12\x1d\n" +
 	"\n" +
-	"public_key\x18\x02 \x01(\tR\tpublicKey\"\x8b\x01\n" +
+	"public_key\x18\x02 \x01(\tR\tpublicKey\x12,\n" +
+	"\x12secondary_key_pair\x18\x03 \x01(\tR\x10secondaryKeyPair\x120\n" +
+	"\x14secondary_public_key\x18\x04 \x01(\tR\x12secondaryPublicKey\"\x8b\x01\n" +
 	"\x15GetRepositoryResponse\x124\n" +
 	"\n" +
 	"repository\x18\x01 \x01(\v2\x14.relic.v1.RepositoryR\n" +

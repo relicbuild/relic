@@ -24,6 +24,14 @@ service SigningKeyService {
       get: "/api/v1/key-pairs/{name}/public-key"
     };
   }
+  // DeleteKeyPair deletes a key pair no repository signs with and Relic does
+  // not sign release manifests with.
+  rpc DeleteKeyPair(DeleteKeyPairRequest) returns (DeleteKeyPairResponse) {
+    option (relic.v1.access) = ACCESS_ADMIN;
+    option (google.api.http) = {
+      delete: "/api/v1/key-pairs/{name}"
+    };
+  }
 }
 
 // KeyPair is a signing key pair, without its private key.
@@ -48,3 +56,9 @@ message GetPublicKeyRequest {
 message GetPublicKeyResponse {
   string public_key = 1;
 }
+
+message DeleteKeyPairRequest {
+  string name = 1;
+}
+
+message DeleteKeyPairResponse {}

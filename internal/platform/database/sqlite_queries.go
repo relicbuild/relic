@@ -335,6 +335,9 @@ DELETE FROM item_properties WHERE item_id = @item_id;`
 const sqliteDeleteItemPropertyKeys = `-- name: DeleteItemPropertyKeys :exec
 DELETE FROM item_properties WHERE item_id = @item_id AND key IN (SELECT value FROM json_each(@keys));`
 
+const sqliteDeleteKeyPair = `-- name: DeleteKeyPair :execrows
+DELETE FROM key_pairs WHERE name = @name;`
+
 const sqliteDeleteLdapGroupMapping = `-- name: DeleteLdapGroupMapping :execrows
 DELETE FROM ldap_group_mappings WHERE name = @name;`
 
@@ -2564,6 +2567,15 @@ func (q *sqliteQueries) DeleteItemPropertyKeys(ctx context.Context, arg DeleteIt
 	_, err := q.db.ExecContext(ctx, sqliteDeleteItemPropertyKeys, sql.Named("item_id", arg.ItemID.String()), sql.Named("keys", sqliteJSON(arg.Keys)))
 
 	return err
+}
+
+func (q *sqliteQueries) DeleteKeyPair(ctx context.Context, arg string) (int64, error) {
+	res, err := q.db.ExecContext(ctx, sqliteDeleteKeyPair, sql.Named("name", arg))
+	if err != nil {
+		return 0, err
+	}
+
+	return res.RowsAffected()
 }
 
 func (q *sqliteQueries) DeleteLdapGroupMapping(ctx context.Context, arg string) (int64, error) {
