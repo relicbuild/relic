@@ -27,6 +27,7 @@ import (
 const (
 	gcBatch             = 500
 	replicationInterval = time.Minute
+	jobRescueAfter      = 5 * time.Minute
 )
 
 // GCArgs collects unreferenced blobs.
@@ -242,6 +243,7 @@ func (StorageCheckArgs) InsertOpts() river.InsertOpts {
 
 const (
 	storageCheckInterval    = 24 * time.Hour
+	storageCheckTimeout     = 2 * time.Hour
 	storageCheckVerifyBytes = 10 << 30
 )
 
@@ -271,7 +273,7 @@ func (w *storageCheckWorker) Work(ctx context.Context, _ *river.Job[StorageCheck
 
 // Timeout implements river.Worker.
 func (w *storageCheckWorker) Timeout(*river.Job[StorageCheckArgs]) time.Duration {
-	return 12 * time.Hour
+	return storageCheckTimeout
 }
 
 type gcWorker struct {
@@ -570,11 +572,12 @@ func NewWorkerClient(
 	}
 
 	return db.NewJobClient(&river.Config{
-		Logger:       log,
-		Queues:       queues,
-		Workers:      workers,
-		PeriodicJobs: periodic,
-		Middleware:   middleware(Kinds(scanning != nil)),
+		Logger:               log,
+		RescueStuckJobsAfter: jobRescueAfter,
+		Queues:               queues,
+		Workers:              workers,
+		PeriodicJobs:         periodic,
+		Middleware:           middleware(Kinds(scanning != nil)),
 	})
 }
 
