@@ -167,6 +167,16 @@ func TestAuthContextShowAndLogout(t *testing.T) {
 		t.Fatalf("show = %q, %v", out, err)
 	}
 
+	out, err = runRelic(t, nil, "--config", path, "auth", "context", "show", "-o", "json")
+	if err != nil || !strings.Contains(out, `"name": "dev"`) || strings.Contains(out, "token") {
+		t.Errorf("show -o json = %q, %v", out, err)
+	}
+
+	out, err = runRelic(t, nil, "--config", path, "auth", "context", "list", "-o", "yaml")
+	if err != nil || !strings.Contains(out, "name: prod") || !strings.Contains(out, "current: true") {
+		t.Errorf("list -o yaml = %q, %v", out, err)
+	}
+
 	if _, err := runRelic(
 		t,
 		nil,
@@ -291,6 +301,14 @@ func TestServerConfigMasksSecrets(t *testing.T) {
 		!strings.Contains(out, "RELIC_ADMIN_PASSWORD=********") ||
 		!strings.Contains(out, "RELIC_HTTP_LISTEN_ADDRESS=127.0.0.1:8090") {
 		t.Errorf("server config = %q", out)
+	}
+
+	out, err = runRelic(t, map[string]string{
+		"HOME": home,
+	}, "server", "config", "-o", "json")
+	if err != nil || strings.Contains(out, "hunter2") || !strings.Contains(out, `"RELIC_ADMIN_PASSWORD": "********"`) ||
+		!strings.Contains(out, `"RELIC_HTTP_LISTEN_ADDRESS": "127.0.0.1:8090"`) {
+		t.Errorf("server config -o json = %q, %v", out, err)
 	}
 }
 

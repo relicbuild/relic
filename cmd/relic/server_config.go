@@ -25,6 +25,8 @@ var (
 )
 
 func serverConfigCmd(g *globals) *cobra.Command {
+	var output string
+
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Show the settings of the Relic service on this machine, secrets masked",
@@ -45,13 +47,25 @@ func serverConfigCmd(g *globals) *cobra.Command {
 				return fmt.Errorf("read %s: %w (a system service's settings need sudo)", path, err)
 			}
 
+			settings := map[string]string{}
+
 			for l := range strings.Lines(string(b)) {
-				_, _ = fmt.Fprint(cmd.OutOrStdout(), maskedSettingsLine(l))
+				if key, value, ok := strings.Cut(strings.TrimSpace(maskedSettingsLine(l)), "="); ok &&
+					!strings.HasPrefix(key, "#") {
+					settings[key] = strings.Trim(value, `"'`)
+				}
 			}
 
-			return nil
+			return printMessage(cmd.OutOrStdout(), output, settings, func(w io.Writer) error {
+				for l := range strings.Lines(string(b)) {
+					_, _ = fmt.Fprint(w, maskedSettingsLine(l))
+				}
+
+				return nil
+			})
 		},
 	}
+	outputFlag(cmd, &output)
 	cmd.AddCommand(serverConfigSetCmd(g))
 
 	return cmd
