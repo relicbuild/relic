@@ -79,6 +79,7 @@ func openSQLite(ctx context.Context, path string, mustExist bool) (*sqliteEngine
 	writeAcquired, unregisterWriter := telemetry.RegisterSQLDB(writer)
 	unregisterDisk := telemetry.RegisterDisk(
 		telemetry.VolumeDatabase,
+		path,
 		func() (uint64, uint64, error) {
 			return localdisk.Usage(filepath.Dir(path))
 		},

@@ -3,6 +3,8 @@ package telemetry
 import (
 	"context"
 	"log/slog"
+	"maps"
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -38,6 +40,7 @@ const (
 
 type disk struct {
 	volume string
+	path   string
 	usage  func() (free, size uint64, err error)
 	file   func() (int64, error)
 }
@@ -53,9 +56,14 @@ func gaugeDesc(name, help string, labels ...string) *prometheus.Desc {
 	return prometheus.NewDesc(namespace+"_"+name, help, labels, nil)
 }
 
-// RegisterDisk adds a volume to relic_disk_free_bytes and
-// relic_disk_size_bytes until the returned function runs.
-func RegisterDisk(volume string, usage func() (free, size uint64, err error), file func() (int64, error)) func() {
+// RegisterDisk adds the volume that holds path to relic_disk_free_bytes and
+// relic_disk_size_bytes until the returned function runs; registrations of
+// the same volume and path count once.
+func RegisterDisk(
+	volume, path string,
+	usage func() (free, size uint64, err error),
+	file func() (int64, error),
+) func() {
 	key := new(int)
 
 	disksMu.Lock()
@@ -63,6 +71,7 @@ func RegisterDisk(volume string, usage func() (free, size uint64, err error), fi
 
 	disks[key] = disk{
 		volume: volume,
+		path:   path,
 		usage:  usage,
 		file:   file,
 	}
@@ -90,11 +99,16 @@ func (diskCollector) Describe(ch chan<- *prometheus.Desc) {
 func (diskCollector) Collect(ch chan<- prometheus.Metric) {
 	disksMu.Lock()
 
-	list := make([]disk, 0, len(disks))
+	unique := map[[2]string]disk{}
 	for _, d := range disks {
-		list = append(list, d)
+		unique[[2]string{
+			d.volume,
+			d.path,
+		}] = d
 	}
 	disksMu.Unlock()
+
+	list := slices.Collect(maps.Values(unique))
 
 	free := map[string]float64{}
 	size := map[string]float64{}
