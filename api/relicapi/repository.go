@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"connectrpc.com/connect/v2"
@@ -413,6 +414,10 @@ func (s *repositoryServer) CreateRepository(
 		return nil, err
 	}
 
+	if err := readableMembers(ctx, s.d, r, nil); err != nil {
+		return nil, err
+	}
+
 	if err := s.d.Repositories.CreateRepository(ctx, r); err != nil {
 		return nil, err
 	}
@@ -451,6 +456,10 @@ func (s *repositoryServer) UpdateRepository(
 		return nil, err
 	}
 
+	if err := readableMembers(ctx, s.d, r, existing.Members()); err != nil {
+		return nil, err
+	}
+
 	r.Config.Extensions = existing.Config.Extensions
 	if err := s.d.Repositories.UpdateRepository(ctx, r); err != nil {
 		return nil, err
@@ -466,6 +475,25 @@ func (s *repositoryServer) UpdateRepository(
 	return &relicv1.UpdateRepositoryResponse{
 		Repository: RepositoryMessage(updated),
 	}, nil
+}
+
+func readableMembers(ctx context.Context, d Dependencies, r repository.Repository, kept []string) error {
+	for _, member := range r.Members() {
+		if slices.Contains(kept, member) {
+			continue
+		}
+
+		_, err := readableRepository(ctx, d, member)
+		if errors.Is(err, repository.ErrRepositoryNotFound) {
+			return fmt.Errorf("%w: member %s of %s does not exist", repository.ErrInvalidRepository, member, r.Name)
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *repositoryServer) DeleteRepository(

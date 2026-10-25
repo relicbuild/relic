@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -134,6 +135,66 @@ func TestProjects(t *testing.T) {
 
 	if _, err := repos("pa-lead").CreateRepository(ctx, newRepo("acme-libs", "acme")); err != nil {
 		t.Fatalf("a project admin creating a repository in the project: %v", err)
+	}
+
+	if _, err := relicv1connect.NewRepositoryServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL)).
+		CreateRepository(ctx, newRepo("secret-local", "")); err != nil {
+		t.Fatal(err)
+	}
+
+	virtual := func(name string, format relicv1.Format, members ...string) *relicv1.CreateRepositoryRequest {
+		return &relicv1.CreateRepositoryRequest{
+			Repository: &relicv1.Repository{
+				Name:    name,
+				Class:   relicv1.RepositoryClass_REPOSITORY_CLASS_VIRTUAL,
+				Format:  format,
+				Project: "acme",
+				Virtual: &relicv1.VirtualRepositorySettings{
+					Members: members,
+				},
+			},
+		}
+	}
+	for _, tt := range []struct {
+		name   string
+		format relicv1.Format
+		member string
+	}{
+		{
+			name:   "a member that does not exist",
+			format: relicv1.Format_FORMAT_GENERIC,
+			member: "nope-local",
+		},
+		{
+			name:   "an unreadable member of the same format",
+			format: relicv1.Format_FORMAT_GENERIC,
+			member: "secret-local",
+		},
+		{
+			name:   "an unreadable member of another format",
+			format: relicv1.Format_FORMAT_MAVEN,
+			member: "secret-local",
+		},
+	} {
+		_, err := repos("pa-lead").CreateRepository(ctx, virtual("acme-virt", tt.format, tt.member))
+		want := "member " + tt.member + " of acme-virt does not exist"
+
+		if code(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), want) {
+			t.Errorf("a project admin naming %s: %v, want %q", tt.name, err, want)
+		}
+	}
+
+	if _, err := repos("pa-lead").CreateRepository(
+		ctx,
+		virtual("acme-virt", relicv1.Format_FORMAT_GENERIC, "acme-libs"),
+	); err != nil {
+		t.Errorf("a project admin naming a project repository: %v", err)
+	}
+
+	if _, err := repos("pa-lead").DeleteRepository(ctx, &relicv1.DeleteRepositoryRequest{
+		Name: "acme-virt",
+	}); err != nil {
+		t.Fatal(err)
 	}
 
 	file := func(user, method, path, body string) int {
