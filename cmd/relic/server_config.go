@@ -342,16 +342,20 @@ func newSettingsErrors(before, after string) error {
 }
 
 func settingsErrors(settings string) []string {
+	var lines []string
+
+	if _, err := parseSettings(settings); err != nil {
+		lines = strings.Split(err.Error(), "\n")
+	}
+
 	env := keyValues(settings, "=")
 
 	err := app.CheckSettings(func(key string) string {
 		return env[key]
 	}, "server")
 	if err == nil {
-		return nil
+		return lines
 	}
-
-	var lines []string
 
 	for line := range strings.Lines(err.Error()) {
 		line = strings.TrimSuffix(line, "\n")
