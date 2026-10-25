@@ -96,15 +96,17 @@ func (s *Service) CreateRepository(ctx context.Context, r Repository) error {
 			return err
 		}
 
-		return s.db.CreateRepository(ctx, database.CreateRepositoryParams{
-			Key:     r.Name,
-			Class:   string(r.Class),
-			Format:  string(r.Format),
-			Project: r.Project,
-			Config:  config,
+		return s.withProject(ctx, r.Project, "", func() error {
+			return s.db.CreateRepository(ctx, database.CreateRepositoryParams{
+				Key:     r.Name,
+				Class:   string(r.Class),
+				Format:  string(r.Format),
+				Project: r.Project,
+				Config:  config,
+			})
 		})
 	})
-	if errors.Is(err, ErrRepositoryKeyCaseConflict) {
+	if errors.Is(err, ErrRepositoryKeyCaseConflict) || errors.Is(err, ErrInvalidRepository) {
 		return err
 	}
 
@@ -120,6 +122,29 @@ func (s *Service) CreateRepository(ctx context.Context, r Repository) error {
 }
 
 const repositoryKeysLock = "repository:keys"
+
+func (s *Service) withProject(ctx context.Context, key, current string, save func() error) error {
+	if project.IsDefault(key) || key == current {
+		return save()
+	}
+
+	if !project.ValidKey(key) {
+		return fmt.Errorf("%w: project key %q is not valid", ErrInvalidRepository, key)
+	}
+
+	return s.db.WithLock(ctx, project.Lock(key), func() error {
+		_, err := s.db.GetProject(ctx, key)
+		if errors.Is(database.NotFound(err), database.ErrNotFound) {
+			return fmt.Errorf("%w: project %s does not exist", ErrInvalidRepository, key)
+		}
+
+		if err != nil {
+			return fmt.Errorf("look up project %s: %w", key, err)
+		}
+
+		return save()
+	})
+}
 
 func (s *Service) refuseCaseVariant(ctx context.Context, key string) error {
 	repos, err := s.ListRepositories(ctx, "", "")
@@ -177,15 +202,21 @@ func (s *Service) UpdateRepository(ctx context.Context, r Repository) error {
 		return err
 	}
 
-	err = s.db.UpdateRepository(
-		ctx,
-		database.UpdateRepositoryParams{
-			Key:     r.Name,
-			Format:  string(r.Format),
-			Project: r.Project,
-			Config:  config,
-		},
-	)
+	err = s.withProject(ctx, r.Project, existing.Project, func() error {
+		return s.db.UpdateRepository(
+			ctx,
+			database.UpdateRepositoryParams{
+				Key:     r.Name,
+				Format:  string(r.Format),
+				Project: r.Project,
+				Config:  config,
+			},
+		)
+	})
+	if errors.Is(err, ErrInvalidRepository) {
+		return err
+	}
+
 	if err != nil {
 		return fmt.Errorf("update repository %s: %w", r.Name, err)
 	}

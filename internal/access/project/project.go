@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"relic/internal/access/auth"
@@ -21,6 +22,9 @@ var (
 	ErrNotFound       = errors.New("project not found")
 	ErrMemberNotFound = errors.New("project member not found")
 	ErrInvalid        = errors.New("invalid project")
+	// ErrHasRepositories refuses to delete a project that repositories
+	// still name.
+	ErrHasRepositories = errors.New("project has repositories")
 )
 
 // Role is what a member may do.
@@ -203,7 +207,7 @@ func (s *Service) Put(ctx context.Context, p Project) (Project, error) {
 		return Project{}, err
 	}
 
-	if err := s.db.WithLock(ctx, projectLock(p.Key), func() error {
+	if err := s.db.WithLock(ctx, Lock(p.Key), func() error {
 		stored, err := s.Get(ctx, p.Key)
 		if err != nil && !errors.Is(err, ErrNotFound) {
 			return err
@@ -314,7 +318,7 @@ func (s *Service) changeMembers(
 	key string,
 	change func([]Member) ([]Member, error),
 ) (Project, error) {
-	if err := s.db.WithLock(ctx, projectLock(key), func() error {
+	if err := s.db.WithLock(ctx, Lock(key), func() error {
 		p, err := s.Get(ctx, key)
 		if err != nil {
 			return err
@@ -357,7 +361,9 @@ func (s *Service) checkNewMembers(ctx context.Context, stored, members []Member)
 	return nil
 }
 
-func projectLock(key string) string { return "project:" + key }
+// Lock is the name of the database lock that changes to the project key, and
+// to the repositories naming it, hold.
+func Lock(key string) string { return "project:" + key }
 
 func (s *Service) store(ctx context.Context, p Project) error {
 	doc, err := json.Marshal(p)
@@ -429,9 +435,30 @@ func validate(p *Project) error {
 	return nil
 }
 
-// Delete removes a project; its repositories keep naming it.
+// Delete removes a project that no repository names.
 func (s *Service) Delete(ctx context.Context, key string) error {
-	return s.db.WithLock(ctx, projectLock(key), func() error {
+	return s.db.WithLock(ctx, Lock(key), func() error {
+		if s.repositoryProjects != nil {
+			repos, err := s.repositoryProjects(ctx)
+			if err != nil {
+				return err
+			}
+
+			var named []string
+
+			for repo, owner := range repos {
+				if owner == key {
+					named = append(named, repo)
+				}
+			}
+
+			if len(named) > 0 {
+				slices.Sort(named)
+
+				return fmt.Errorf("%w: move or delete %s first", ErrHasRepositories, strings.Join(named, ", "))
+			}
+		}
+
 		n, err := s.db.DeleteProject(ctx, key)
 		if err != nil {
 			return fmt.Errorf("delete project: %w", err)

@@ -83,6 +83,14 @@ func TestUsageReport(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
 	repos := repository.NewService(db, objectstoretest.NewMemory(), log)
 
+	if err := db.UpsertProject(ctx, database.UpsertProjectParams{
+		Key:    "acme",
+		Config: []byte(`{"key":"acme","name":"acme","members":[]}`),
+		Now:    time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	for name, project := range map[string]string{
 		"libs":  "acme",
 		"tools": "",

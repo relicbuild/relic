@@ -18,6 +18,7 @@ type relic struct {
 	repositories relicv1connect.RepositoryServiceClient
 	security     relicv1connect.SecurityServiceClient
 	artifacts    relicv1connect.ArtifactServiceClient
+	projects     relicv1connect.ProjectServiceClient
 }
 
 func newRelic(s Server) relic {
@@ -38,6 +39,7 @@ func newRelic(s Server) relic {
 		repositories: relicv1connect.NewRepositoryServiceClient(rpc),
 		security:     relicv1connect.NewSecurityServiceClient(rpc),
 		artifacts:    relicv1connect.NewArtifactServiceClient(rpc),
+		projects:     relicv1connect.NewProjectServiceClient(rpc),
 	}
 }
 
@@ -133,6 +135,10 @@ func (im *importer) putRepository(ctx context.Context, r *relicv1.Repository) er
 		return nil
 	}
 
+	if err := im.dropMissingProject(ctx, r); err != nil {
+		return err
+	}
+
 	if exists {
 		_, err = im.relic.repositories.UpdateRepository(ctx, &relicv1.UpdateRepositoryRequest{
 			Repository: r,
@@ -177,6 +183,31 @@ func (im *importer) putPermission(ctx context.Context, p *relicv1.Permission) er
 	}
 
 	im.progress("copied permission %s", p.GetName())
+
+	return nil
+}
+
+func (im *importer) dropMissingProject(ctx context.Context, r *relicv1.Repository) error {
+	key := r.GetProject()
+	if key == "" || key == "default" {
+		return nil
+	}
+
+	_, err := im.relic.projects.GetProject(ctx, &relicv1.GetProjectRequest{
+		Key: key,
+	})
+
+	exists, err := found(err)
+	if err != nil {
+		return err
+	}
+
+	if !exists {
+		im.note("repository %s: project %s does not exist in Relic and the repository is copied without it",
+			r.GetName(), key)
+
+		r.Project = ""
+	}
 
 	return nil
 }

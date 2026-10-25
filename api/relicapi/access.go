@@ -272,6 +272,7 @@ func codeOf(err error) *connect.Error {
 	case errors.Is(err, blocking.ErrInvalid):
 		return connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
 	case errors.Is(err, policy.ErrInUse),
+		errors.Is(err, project.ErrHasRepositories),
 		errors.Is(err, policy.ErrDecided),
 		errors.Is(err, release.ErrRefused),
 		errors.Is(err, repository.ErrNotLocal),
