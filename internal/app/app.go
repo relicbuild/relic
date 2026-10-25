@@ -1458,25 +1458,29 @@ func uiHeaders(next http.Handler) http.Handler {
 // Version is the release the binary was built as; empty uses the module version from the build info.
 var Version string
 
+// Revision is the commit the binary was built from; empty uses the build info's VCS revision.
+var Revision string
+
 func relicVersion() (version, revision string) {
 	version = "dev"
 	if Version != "" {
 		version = Version
 	}
 
-	bi, ok := debug.ReadBuildInfo()
-	if !ok {
-		return version, ""
-	}
-
-	if v := bi.Main.Version; Version == "" && v != "" && v != "(devel)" {
-		version = v
-	}
-
-	for _, s := range bi.Settings {
-		if s.Key == "vcs.revision" {
-			revision = s.Value
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		if v := bi.Main.Version; Version == "" && v != "" && v != "(devel)" {
+			version = v
 		}
+
+		for _, s := range bi.Settings {
+			if s.Key == "vcs.revision" {
+				revision = s.Value
+			}
+		}
+	}
+
+	if Revision != "" {
+		revision = Revision
 	}
 
 	if m := describedCommit.FindStringSubmatch(version); revision == "" && m != nil {

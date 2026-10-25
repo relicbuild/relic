@@ -22,8 +22,9 @@ COPY internal/ internal/
 COPY migrations/ migrations/
 COPY --from=web /src/web/.output/public/ internal/app/ui/dist/
 ARG VERSION=dev
+ARG REVISION
 RUN --mount=type=cache,id=relic-go-mod,target=/go/pkg/mod --mount=type=cache,id=relic-go-build,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/relic ./cmd/relic
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X main.version=${VERSION} -X main.revision=${REVISION}" -o /out/relic ./cmd/relic
 
 FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine3.24 AS indexer
 ARG INDEXER_PLATFORMS

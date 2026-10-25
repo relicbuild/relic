@@ -13,6 +13,9 @@ import (
 // workflow (-ldflags "-X main.version=v1.2.3").
 var version = "dev"
 
+// Set with -ldflags "-X main.revision=<commit>" where the build has no VCS information.
+var revision string
+
 type globals struct {
 	getenv      func(string) string
 	config      string
@@ -212,6 +215,8 @@ func serviceCmd(use, process string, getenv func(string) string) *cobra.Command 
 			if version != "dev" {
 				app.Version = version
 			}
+
+			app.Revision = revision
 
 			return app.Run(cmd.Context(), args, getenv, cmd.ErrOrStderr())
 		},

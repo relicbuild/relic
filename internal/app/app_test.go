@@ -430,6 +430,18 @@ func TestRelicVersionIsTheStampedRelease(t *testing.T) {
 	}
 }
 
+func TestRelicRevisionIsTheStampedRevision(t *testing.T) {
+	Revision = "acfc32502d6fac32f63fb1a8bb38122f7627611a"
+
+	t.Cleanup(func() {
+		Revision = ""
+	})
+
+	if _, r := relicVersion(); r != "acfc32502d6fac32f63fb1a8bb38122f7627611a" {
+		t.Errorf("revision = %q, want the stamped one", r)
+	}
+}
+
 func TestRelicRevisionComesFromADescribedVersion(t *testing.T) {
 	Version = "v0.2.0-beta.3-2-gf84fd3cb"
 
