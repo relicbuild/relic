@@ -321,6 +321,11 @@ is a pre-release: no `latest` image, and not GitHub's latest release.
 
 ## Skills
 
+`apm.yml` pins the skills below, and `apm install`
+([APM](https://github.com/microsoft/apm)) installs them into `.claude/skills/`;
+`apm.lock.yaml` records what they resolved to. Add a skill with
+`apm install <owner>/<repo>/<path>#<tag>`, and commit both files.
+
 | Task | Skills |
 | --- | --- |
 | Any Go change | `golang-how-to` (routes to the rest) |
@@ -332,6 +337,7 @@ is a pre-release: no `latest` image, and not GitHub's latest release.
 | Anything in `web/` | `nuxt-ui` |
 | Helm chart, Kubernetes | `kubernetes-skill` |
 | Metrics, traces, logs, dashboards, alerts | `golang-observability` |
+| Writing docs, commit messages and PR descriptions | `humanizer` |
 
 ## Rules
 

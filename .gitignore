@@ -55,3 +55,8 @@ web/e2e/results/
 # Task
 .task/
 ignore/
+
+# APM dependencies; the go.mod keeps Go tools out of them.
+apm_modules/*
+!apm_modules/go.mod
+.claude/skills/
