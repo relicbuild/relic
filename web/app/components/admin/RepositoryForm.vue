@@ -10,22 +10,6 @@ const emit = defineEmits<{ close: [saved: boolean] }>()
 const relic = useRelic()
 const toast = useToast()
 
-const defaultUpstream: Record<string, string> = {
-  maven: 'https://repo1.maven.org/maven2',
-  gradle: 'https://repo1.maven.org/maven2',
-  npm: 'https://registry.npmjs.org',
-  pypi: 'https://files.pythonhosted.org',
-  gomod: 'https://proxy.golang.org',
-  docker: 'https://registry-1.docker.io',
-  nuget: 'https://www.nuget.org',
-  rubygems: 'https://rubygems.org',
-  cargo: 'https://index.crates.io',
-  conan: 'https://center2.conan.io',
-  huggingface: 'https://huggingface.co',
-  alpine: 'https://dl-cdn.alpinelinux.org/alpine',
-  debian: 'https://deb.debian.org/debian'
-}
-
 const schema = z.object({
   name: z.string().regex(/^[a-zA-Z0-9][\w.-]{0,63}$/, 'Letters, digits, dot, dash and underscore; up to 64'),
   class: z.enum(['local', 'remote', 'virtual']),
@@ -99,8 +83,8 @@ const defaultSigningKey: Record<string, string> = {
 }
 const signsIndexes = computed(() => !!defaultSigningKey[state.format ?? ''] && state.class !== 'remote')
 watch(() => [state.class, state.format], () => {
-  if (state.class === 'remote' && !state.url) {
-    state.url = defaultUpstream[state.format ?? ''] ?? ''
+  if (state.class === 'remote') {
+    state.url = upstreamURL(state.format ?? '', state.url ?? '')
   }
 })
 
