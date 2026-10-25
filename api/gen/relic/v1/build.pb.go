@@ -1550,11 +1550,11 @@ const file_relic_v1_build_proto_rawDesc = "" +
 	"\x16PublishBuildRunRequest\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12-\n" +
 	"\x03run\x18\x02 \x01(\v2\x1b.relic.v1.PublishedBuildRunR\x03run\"\x19\n" +
-	"\x17PublishBuildRunResponse2\xa1\a\n" +
+	"\x17PublishBuildRunResponse2\xa3\a\n" +
 	"\fBuildService\x12c\n" +
 	"\n" +
-	"ListBuilds\x12\x1b.relic.v1.ListBuildsRequest\x1a\x1c.relic.v1.ListBuildsResponse\"\x1a\x88\xb5\x18\x02\x82\xd3\xe4\x93\x02\x10\x12\x0e/api/v1/builds\x12\x85\x01\n" +
-	"\x0fPublishBuildRun\x12 .relic.v1.PublishBuildRunRequest\x1a!.relic.v1.PublishBuildRunResponse\"-\x88\xb5\x18\x02\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/api/v1/builds/{run.name}/runs\x12{\n" +
+	"ListBuilds\x12\x1b.relic.v1.ListBuildsRequest\x1a\x1c.relic.v1.ListBuildsResponse\"\x1a\x88\xb5\x18\x02\x82\xd3\xe4\x93\x02\x10\x12\x0e/api/v1/builds\x12\x87\x01\n" +
+	"\x0fPublishBuildRun\x12 .relic.v1.PublishBuildRunRequest\x1a!.relic.v1.PublishBuildRunResponse\"/\x88\xb5\x18\x02\x82\xd3\xe4\x93\x02%:\x03run\"\x1e/api/v1/builds/{run.name}/runs\x12{\n" +
 	"\vGetBuildRun\x12\x1c.relic.v1.GetBuildRunRequest\x1a\x1d.relic.v1.GetBuildRunResponse\"/\x88\xb5\x18\x02\x82\xd3\xe4\x93\x02%\x12#/api/v1/builds/{name}/runs/{number}\x12x\n" +
 	"\rListBuildRuns\x12\x1e.relic.v1.ListBuildRunsRequest\x1a\x1f.relic.v1.ListBuildRunsResponse\"&\x88\xb5\x18\x02\x82\xd3\xe4\x93\x02\x1c\x12\x1a/api/v1/builds/{name}/runs\x12~\n" +
 	"\x0fDeleteBuildRuns\x12 .relic.v1.DeleteBuildRunsRequest\x1a!.relic.v1.DeleteBuildRunsResponse\"&\x88\xb5\x18\x02\x82\xd3\xe4\x93\x02\x1c*\x1a/api/v1/builds/{name}/runs\x12\x97\x01\n" +

@@ -43,7 +43,7 @@ service ReleaseService {
     option (relic.v1.access) = ACCESS_AUTHENTICATED;
     option (google.api.http) = {
       post: "/api/v1/releases/{spec.name}/versions"
-      body: "*"
+      body: "spec"
     };
   }
   // UpdateRelease adds sources to a draft version.
@@ -51,7 +51,7 @@ service ReleaseService {
     option (relic.v1.access) = ACCESS_AUTHENTICATED;
     option (google.api.http) = {
       patch: "/api/v1/releases/{spec.name}/versions/{spec.version}"
-      body: "*"
+      body: "spec"
     };
   }
   // FinalizeRelease turns a draft version into a completed one.

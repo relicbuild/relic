@@ -15,10 +15,10 @@ func TestPublishBuildRun(t *testing.T) {
 		"Content-Type": "application/json",
 	}
 
-	run := `{"run":{"name":"app","number":"7","started":"2026-09-25T10:00:00Z","agentName":"ci","agentVersion":"1.0",
+	run := `{"name":"app","number":"7","started":"2026-09-25T10:00:00Z","agentName":"ci","agentVersion":"1.0",
 		"vcs":[{"url":"https://git.example/app","revision":"abc","branch":"main"}],
 		"modules":[{"id":"app:7","type":"generic","artifacts":[{"name":"app.bin","path":"dist/app.bin","sha1":"s1","sha256":"s256","md5":"m5"}]}],
-		"properties":{"ci":"true"}}}`
+		"properties":{"ci":"true"}}`
 	if resp, b := do(
 		t,
 		srv,
@@ -91,7 +91,7 @@ func TestPublishBuildRun(t *testing.T) {
 		call{
 			method:  http.MethodPost,
 			path:    "/api/v1/builds/app/runs",
-			body:    `{"run":{"name":"app","number":"8"}}`,
+			body:    `{"name":"app","number":"8"}`,
 			headers: json,
 		},
 	); resp.StatusCode != http.StatusBadRequest {

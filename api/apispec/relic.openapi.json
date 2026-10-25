@@ -11322,26 +11322,30 @@
               "type": "string",
               "title": "name"
             }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "description": "project is the build's project; empty for builds outside projects.",
+            "schema": {
+              "type": "string",
+              "title": "project"
+            }
           }
         ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "project": {
-                    "type": "string",
-                    "title": "project",
-                    "description": "project is the build's project; empty for builds outside projects."
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/relic.v1.PublishedBuildRun"
                   }
-                },
-                "title": "PublishBuildRunRequest",
-                "additionalProperties": false
+                ],
+                "title": "run"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -14245,25 +14249,30 @@
               "type": "string",
               "title": "name"
             }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "description": "The project query parameter.",
+            "schema": {
+              "type": "string",
+              "title": "project"
+            }
           }
         ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "project": {
-                    "type": "string",
-                    "title": "project"
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/relic.v1.ReleaseSpec"
                   }
-                },
-                "title": "CreateReleaseRequest",
-                "additionalProperties": false
+                ],
+                "title": "spec"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -14737,25 +14746,30 @@
               "type": "string",
               "title": "version"
             }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "description": "The project query parameter.",
+            "schema": {
+              "type": "string",
+              "title": "project"
+            }
           }
         ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "project": {
-                    "type": "string",
-                    "title": "project"
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/relic.v1.ReleaseSpec"
                   }
-                },
-                "title": "UpdateReleaseRequest",
-                "additionalProperties": false
+                ],
+                "title": "spec"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {

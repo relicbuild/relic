@@ -250,9 +250,9 @@ func TestRelicAPIServices(t *testing.T) {
 			"2",
 			"3",
 		} {
-			run := `{"run":{"name":"svc","number":"` + n + `","started":"2026-09-2` + n + `T10:00:00Z",` +
+			run := `{"name":"svc","number":"` + n + `","started":"2026-09-2` + n + `T10:00:00Z",` +
 				`"modules":[{"id":"svc:app",` +
-				`"artifacts":[{"name":"app.jar","type":"jar","sha1":"` + hex.EncodeToString(sum[:]) + `"}]}]}}`
+				`"artifacts":[{"name":"app.jar","type":"jar","sha1":"` + hex.EncodeToString(sum[:]) + `"}]}]}`
 			admin.call(http.MethodPost, "/api/v1/builds/svc/runs", run, http.StatusOK)
 		}
 
@@ -311,7 +311,7 @@ func TestRelicAPIServices(t *testing.T) {
 		})
 
 		created := admin.call(http.MethodPost, "/api/v1/releases/shop/versions",
-			`{"spec":{"name":"shop","version":"1.0","sources":[{"files":[{"path":"rel-src/a.txt"}]}]}}`, http.StatusOK)
+			`{"name":"shop","version":"1.0","sources":[{"files":[{"path":"rel-src/a.txt"}]}]}`, http.StatusOK)
 		if !strings.Contains(created, "RELEASE_STATUS_COMPLETED") || !strings.Contains(created, `"path":"a.txt"`) {
 			t.Errorf("created release = %s", created)
 		}
@@ -319,26 +319,26 @@ func TestRelicAPIServices(t *testing.T) {
 		admin.call(
 			http.MethodPost,
 			"/api/v1/releases/shop/versions",
-			`{"spec":{"name":"shop","version":"1.0","sources":[{"files":[{"path":"rel-src/a.txt"}]}]}}`,
+			`{"name":"shop","version":"1.0","sources":[{"files":[{"path":"rel-src/a.txt"}]}]}`,
 			http.StatusConflict,
 		)
 		admin.call(
 			http.MethodPost,
 			"/api/v1/releases/shop/versions",
-			`{"spec":{"name":"shop","version":"bad","sources":[{"query":{},"files":[{"path":"rel-src/a.txt"}]}]}}`,
+			`{"name":"shop","version":"bad","sources":[{"query":{},"files":[{"path":"rel-src/a.txt"}]}]}`,
 			http.StatusBadRequest,
 		)
 
 		admin.call(
 			http.MethodPost,
 			"/api/v1/releases/shop/versions",
-			`{"spec":{"name":"shop","version":"2.0","draft":true,"sources":[{"files":[{"path":"rel-src/a.txt"}]}]}}`,
+			`{"name":"shop","version":"2.0","draft":true,"sources":[{"files":[{"path":"rel-src/a.txt"}]}]}`,
 			http.StatusOK,
 		)
 		admin.call(
 			http.MethodPatch,
 			"/api/v1/releases/shop/versions/2.0",
-			`{"spec":{"name":"shop","version":"2.0","sources":[{"files":[{"path":"rel-src/b.txt"}]}]}}`,
+			`{"name":"shop","version":"2.0","sources":[{"files":[{"path":"rel-src/b.txt"}]}]}`,
 			http.StatusOK,
 		)
 

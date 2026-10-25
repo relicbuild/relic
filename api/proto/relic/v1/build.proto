@@ -23,7 +23,7 @@ service BuildService {
     option (relic.v1.access) = ACCESS_AUTHENTICATED;
     option (google.api.http) = {
       post: "/api/v1/builds/{run.name}/runs"
-      body: "*"
+      body: "run"
     };
   }
   // GetBuildRun returns one build run's published information.

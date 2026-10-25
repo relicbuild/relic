@@ -120,12 +120,12 @@ func TestStorageRepositoryNamesAreReservedForTheirProject(t *testing.T) {
 		http.StatusOK,
 	)
 
-	run := `{"project":"beta","run":{"name":"app","number":"1","started":"2026-09-25T10:00:00Z"}}`
-	admin.call(http.MethodPost, "/api/v1/builds/app/runs", run, http.StatusBadRequest)
+	run := `{"name":"app","number":"1","started":"2026-09-25T10:00:00Z"}`
+	admin.call(http.MethodPost, "/api/v1/builds/app/runs?project=beta", run, http.StatusBadRequest)
 	admin.call(http.MethodGet, "/api/v1/repositories/beta-build-info", "", http.StatusNotFound)
 
 	admin.call(http.MethodPut, "/api/v1/projects/beta", `{"key":"beta","name":"Beta"}`, http.StatusOK)
-	admin.call(http.MethodPost, "/api/v1/builds/app/runs", run, http.StatusOK)
+	admin.call(http.MethodPost, "/api/v1/builds/app/runs?project=beta", run, http.StatusOK)
 
 	if got := admin.call(
 		http.MethodGet,
@@ -187,11 +187,11 @@ func TestProjectRolesCoverTheProjectsBuildsAndReleases(t *testing.T) {
 	upload(t, srv, "acme-libs", "lib.txt", "lib")
 
 	run := func(number string) string {
-		return `{"project":"acme","run":{"name":"acmeb","number":"` + number + `","started":"2026-10-24T10:00:00Z"}}`
+		return `{"name":"acmeb","number":"` + number + `","started":"2026-10-24T10:00:00Z"}`
 	}
 
-	dave.call(http.MethodPost, "/api/v1/builds/acmeb/runs", run("1"), http.StatusOK)
-	olga.call(http.MethodPost, "/api/v1/builds/acmeb/runs", run("2"), http.StatusForbidden)
+	dave.call(http.MethodPost, "/api/v1/builds/acmeb/runs?project=acme", run("1"), http.StatusOK)
+	olga.call(http.MethodPost, "/api/v1/builds/acmeb/runs?project=acme", run("2"), http.StatusForbidden)
 
 	for _, member := range []rest{
 		paula,
@@ -215,8 +215,8 @@ func TestProjectRolesCoverTheProjectsBuildsAndReleases(t *testing.T) {
 
 	created := paula.call(
 		http.MethodPost,
-		"/api/v1/releases/acmerel/versions",
-		`{"project":"acme","spec":{"name":"acmerel","version":"1","sources":[{"files":[{"path":"acme-libs/lib.txt"}]}]}}`,
+		"/api/v1/releases/acmerel/versions?project=acme",
+		`{"name":"acmerel","version":"1","sources":[{"files":[{"path":"acme-libs/lib.txt"}]}]}`,
 		http.StatusOK,
 	)
 	if !strings.Contains(created, "RELEASE_STATUS_COMPLETED") {
@@ -248,7 +248,7 @@ func TestDashboardSummaryCountsWhatTheCallerMayRead(t *testing.T) {
 	admin.call(
 		http.MethodPost,
 		"/api/v1/builds/app/runs",
-		`{"run":{"name":"app","number":"1","started":"2026-09-25T10:00:00Z"}}`,
+		`{"name":"app","number":"1","started":"2026-09-25T10:00:00Z"}`,
 		http.StatusOK,
 	)
 	admin.call(
