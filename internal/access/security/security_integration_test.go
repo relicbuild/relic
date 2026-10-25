@@ -706,6 +706,94 @@ func TestConcurrentCreationsOfCaseVariantsLeaveOneUser(t *testing.T) {
 	}
 }
 
+func TestPutGroupRefusesANameThatDiffersOnlyByCase(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	s := security.NewService(databasetest.NewDB(t), slog.New(slog.DiscardHandler))
+
+	if _, err := s.PutGroup(ctx, security.Group{
+		Name:  "Admins2",
+		Admin: true,
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.PutGroup(ctx, security.Group{
+		Name: "admins2",
+	}, nil); !errors.Is(err, security.ErrExists) {
+		t.Errorf("PutGroup(admins2) beside Admins2 = %v, want %v", err, security.ErrExists)
+	}
+
+	if err := s.CreateGroup(ctx, security.Group{
+		Name: "ADMINS2",
+	}, nil); !errors.Is(err, security.ErrExists) {
+		t.Errorf("CreateGroup(ADMINS2) beside Admins2 = %v, want %v", err, security.ErrExists)
+	}
+
+	if _, err := s.PutGroup(ctx, security.Group{
+		Name:        "Admins2",
+		Description: "administrators",
+		Admin:       true,
+	}, nil); err != nil {
+		t.Errorf("PutGroup(Admins2) under its own name = %v", err)
+	}
+
+	groups, err := s.ListGroups(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(groups) != 1 {
+		t.Errorf("groups = %v, want only Admins2", groups)
+	}
+}
+
+func TestConcurrentCreationsOfCaseVariantsLeaveOneGroup(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	s := security.NewService(databasetest.NewDB(t), slog.New(slog.DiscardHandler))
+	variants := []string{
+		"eng team",
+		"ENG TEAM",
+		"Eng Team",
+		"eNG tEAM",
+	}
+	start := make(chan struct{})
+	results := make(chan error, len(variants))
+
+	var creates sync.WaitGroup
+	for _, name := range variants {
+		creates.Go(func() {
+			<-start
+
+			results <- s.CreateGroup(ctx, security.Group{
+				Name: name,
+			}, nil)
+		})
+	}
+
+	close(start)
+	creates.Wait()
+	close(results)
+
+	created := 0
+
+	for err := range results {
+		switch {
+		case err == nil:
+			created++
+		case !errors.Is(err, security.ErrExists):
+			t.Errorf("create a variant of eng team: %v", err)
+		}
+	}
+
+	if created != 1 {
+		t.Errorf("%d concurrent creations of variants of eng team succeeded, want 1", created)
+	}
+}
+
 func TestPutUserReplacesAUserWhoseNameIsNoLongerAccepted(t *testing.T) {
 	t.Parallel()
 

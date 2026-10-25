@@ -483,38 +483,59 @@ func (s *Service) putGroup(ctx context.Context, g Group, members []string, creat
 		return false, fmt.Errorf("%w: name is required", ErrInvalid)
 	}
 
-	err = s.db.WithTx(ctx, func(q database.Querier) error {
-		created, err = q.UpsertGroup(
-			ctx,
-			database.UpsertGroupParams{
-				Name:               g.Name,
-				Description:        g.Description,
-				DefaultForNewUsers: g.DefaultForNewUsers,
-				Admin:              g.Admin,
-				Viewer:             g.Viewer,
-			},
-		)
-		if err != nil {
+	err = s.db.WithLock(ctx, groupNamesLock, func() error {
+		return s.db.WithTx(ctx, func(q database.Querier) error {
+			created, err = saveGroup(ctx, q, g, members, createOnly)
+
 			return err
-		}
-
-		if createOnly && !created {
-			return fmt.Errorf("%w: group %q", ErrExists, g.Name)
-		}
-
-		if members == nil {
-			return nil
-		}
-
-		if err := q.ClearInternalGroupMembers(ctx, g.Name); err != nil {
-			return err
-		}
-
-		return addMembers(ctx, q, g.Name, members)
+		})
 	})
 	s.invalidate()
 
 	return created, err
+}
+
+const groupNamesLock = "security:group-names"
+
+func saveGroup(ctx context.Context, q database.Querier, g Group, members []string, createOnly bool) (bool, error) {
+	groups, err := q.ListGroups(ctx)
+	if err != nil {
+		return false, fmt.Errorf("list groups: %w", err)
+	}
+
+	for _, other := range groups {
+		if other.Name != g.Name && strings.EqualFold(other.Name, g.Name) {
+			return false, fmt.Errorf("%w: group %q differs from %q only by case", ErrExists, other.Name, g.Name)
+		}
+	}
+
+	created, err := q.UpsertGroup(
+		ctx,
+		database.UpsertGroupParams{
+			Name:               g.Name,
+			Description:        g.Description,
+			DefaultForNewUsers: g.DefaultForNewUsers,
+			Admin:              g.Admin,
+			Viewer:             g.Viewer,
+		},
+	)
+	if err != nil {
+		return false, err
+	}
+
+	if createOnly && !created {
+		return false, fmt.Errorf("%w: group %q", ErrExists, g.Name)
+	}
+
+	if members == nil {
+		return created, nil
+	}
+
+	if err := q.ClearInternalGroupMembers(ctx, g.Name); err != nil {
+		return false, err
+	}
+
+	return created, addMembers(ctx, q, g.Name, members)
 }
 
 // AddMembers adds users to an existing group, keeping current members.
