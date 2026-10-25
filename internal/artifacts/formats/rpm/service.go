@@ -12,12 +12,12 @@ import (
 	"log/slog"
 	"path"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/ulikunitz/xz"
 
+	"relic/internal/artifacts/formats/indexcache"
 	"relic/internal/artifacts/repository"
 	"relic/internal/artifacts/signingkey"
 	"relic/internal/platform/telemetry"
@@ -44,24 +44,15 @@ const (
 	PropMetadata = "rpm.metadata"
 )
 
-const cacheTTL = 30 * time.Second
-
 const maxRepoMDBytes = 1 << 20
 
 // Service indexes and serves RPM repositories.
 type Service struct {
-	repos *repository.Service
-	keys  *signingkey.Service
-	log   *slog.Logger
-
-	mu    sync.Mutex
-	cache map[string]cachedRepodata
-	now   func() time.Time
-}
-
-type cachedRepodata struct {
-	files   Repodata
-	expires time.Time
+	repos   *repository.Service
+	keys    *signingkey.Service
+	log     *slog.Logger
+	now     func() time.Time
+	indexes *indexcache.Cache[Repodata]
 }
 
 // NewService returns a Service; it indexes .rpm files deployed to RPM
@@ -71,9 +62,11 @@ func NewService(repos *repository.Service, keySvc *signingkey.Service, log *slog
 		repos: repos,
 		keys:  keySvc,
 		log:   log,
-		cache: map[string]cachedRepodata{},
 		now:   time.Now,
 	}
+	s.indexes = indexcache.New[Repodata](string(Format), indexcache.DefaultSettings, func() time.Time {
+		return s.now()
+	})
 	repos.RegisterHook(Format, s.indexPackage)
 	repos.RegisterMetadata(isRepodataFile)
 
@@ -167,29 +160,26 @@ func ServesRepodata(r repository.Repository, root string) bool {
 	return depth == int(r.Config.MetadataDepth)
 }
 
-// Repodata builds the repodata of folder root in r: the packages below it,
+// Repodata returns the repodata of folder root in r: the packages below it,
 // or for a virtual repository its members' packages and remote members'
 // upstream repodata.
-func (s *Service) Repodata(ctx context.Context, r repository.Repository, root string) (files Repodata, err error) {
-	shared := r.Class == "virtual" && !repository.Filtered(ctx)
-	key := r.Name + "\x00" + root
-
-	if shared {
-		s.mu.Lock()
-		c, ok := s.cache[key]
-		s.mu.Unlock()
-
-		if ok && s.now().Before(c.expires) {
-			return c.files, nil
-		}
+func (s *Service) Repodata(ctx context.Context, r repository.Repository, root string) (Repodata, error) {
+	if r.Class != repository.ClassVirtual || repository.Filtered(ctx) {
+		return s.buildRepodata(ctx, r, root)
 	}
 
+	return s.indexes.Get(ctx, r.Name+"\x00"+root, func(ctx context.Context) (Repodata, error) {
+		return s.buildRepodata(ctx, r, root)
+	})
+}
+
+func (s *Service) buildRepodata(ctx context.Context, r repository.Repository, root string) (files Repodata, err error) {
 	ctx, span := telemetry.Tracer().Start(ctx, "rpm.Repodata")
 	started := time.Now()
 
 	defer func() {
 		telemetry.End(span, err)
-		telemetry.RPMRepodataGenerated(ctx, string(r.Class), err, time.Since(started))
+		telemetry.IndexBuilt(ctx, string(Format), string(r.Class), err, time.Since(started))
 	}()
 
 	var (
@@ -237,21 +227,7 @@ func (s *Service) Repodata(ctx context.Context, r repository.Repository, root st
 		}
 	}
 
-	files, err = Build(entries, upstreams, modified)
-	if err != nil {
-		return nil, err
-	}
-
-	if shared {
-		s.mu.Lock()
-		s.cache[key] = cachedRepodata{
-			files:   files,
-			expires: s.now().Add(cacheTTL),
-		}
-		s.mu.Unlock()
-	}
-
-	return files, nil
+	return Build(entries, upstreams, modified)
 }
 
 func latest(a, b time.Time) time.Time {

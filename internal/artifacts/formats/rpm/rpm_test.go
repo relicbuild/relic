@@ -25,7 +25,7 @@ type testPackage struct {
 	ghosts   []string
 }
 
-func buildRPM(t *testing.T, tp testPackage) []byte {
+func buildRPM(t testing.TB, tp testPackage) []byte {
 	t.Helper()
 
 	meta := rpmpack.RPMMetaData{

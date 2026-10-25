@@ -8,11 +8,12 @@ import (
 	"path"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
+	"relic/internal/artifacts/formats/indexcache"
 	"relic/internal/artifacts/repository"
 	"relic/internal/artifacts/signingkey"
+	"relic/internal/platform/telemetry"
 )
 
 // Format is the repository format this package serves.
@@ -33,22 +34,13 @@ var defaultArchitectures = []string{
 	"arm64",
 }
 
-const cacheTTL = 30 * time.Second
-
 // Service indexes and serves Debian repositories.
 type Service struct {
-	repos *repository.Service
-	keys  *signingkey.Service
-	log   *slog.Logger
-	now   func() time.Time
-
-	mu    sync.Mutex
-	cache map[string]cached
-}
-
-type cached struct {
-	idx     *Dist
-	expires time.Time
+	repos   *repository.Service
+	keys    *signingkey.Service
+	log     *slog.Logger
+	now     func() time.Time
+	indexes *indexcache.Cache[*Dist]
 }
 
 // NewService returns a Service; it reads the control file of .deb files
@@ -60,8 +52,10 @@ func NewService(repos *repository.Service, keySvc *signingkey.Service, log *slog
 		keys:  keySvc,
 		log:   log,
 		now:   time.Now,
-		cache: map[string]cached{},
 	}
+	s.indexes = indexcache.New[*Dist](string(Format), indexcache.DefaultSettings, func() time.Time {
+		return s.now()
+	})
 	repos.RegisterHook(Format, s.indexPackage)
 	repos.RegisterMetadata(func(name string) bool {
 		return slices.Contains([]string{
@@ -128,20 +122,27 @@ type Dist struct {
 	Release                   []byte
 }
 
-// Distribution builds dist's indexes for r: its own packages, or for a
+// Distribution returns dist's indexes for r: its own packages, or for a
 // virtual repository its members' (remote members' upstream indexes,
 // limited to the configured architectures).
 func (s *Service) Distribution(ctx context.Context, r repository.Repository, dist string) (*Dist, error) {
-	shared := r.Class == "virtual" && !repository.Filtered(ctx)
-	if shared {
-		s.mu.Lock()
-		c, ok := s.cache[r.Name+"\x00"+dist]
-		s.mu.Unlock()
-
-		if ok && s.now().Before(c.expires) {
-			return c.idx, nil
-		}
+	if r.Class != repository.ClassVirtual || repository.Filtered(ctx) {
+		return s.buildDistribution(ctx, r, dist)
 	}
+
+	return s.indexes.Get(ctx, r.Name+"\x00"+dist, func(ctx context.Context) (*Dist, error) {
+		return s.buildDistribution(ctx, r, dist)
+	})
+}
+
+func (s *Service) buildDistribution(ctx context.Context, r repository.Repository, dist string) (idx *Dist, err error) {
+	ctx, span := telemetry.Tracer().Start(ctx, "debian.Distribution")
+	started := time.Now()
+
+	defer func() {
+		telemetry.End(span, err)
+		telemetry.IndexBuilt(ctx, string(Format), string(r.Class), err, time.Since(started))
+	}()
 
 	paras := map[string]map[string][]string{}
 	seen := map[string]bool{}
@@ -212,21 +213,7 @@ func (s *Service) Distribution(ctx context.Context, r repository.Repository, dis
 		return nil, repository.ErrNotFound
 	}
 
-	idx, err := assemble(r.Name, dist, paras, modified)
-	if err != nil {
-		return nil, err
-	}
-
-	if shared {
-		s.mu.Lock()
-		s.cache[r.Name+"\x00"+dist] = cached{
-			idx:     idx,
-			expires: s.now().Add(cacheTTL),
-		}
-		s.mu.Unlock()
-	}
-
-	return idx, nil
+	return assemble(r.Name, dist, paras, modified)
 }
 
 func assemble(label, dist string, paras map[string]map[string][]string, now time.Time) (*Dist, error) {
