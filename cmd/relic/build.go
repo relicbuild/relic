@@ -59,16 +59,8 @@ func (g *globals) buildFile(name, number string) (string, error) {
 }
 
 func (g *globals) loadBuild(name, number string) (*relicv1.PublishedBuildRun, error) {
-	f, err := g.buildFile(name, number)
-	if err != nil {
-		return nil, err
-	}
-
-	run := &relicv1.PublishedBuildRun{}
-
-	b, err := os.ReadFile(f) //nolint:gosec // the user's own build directory
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
+	run, err := g.recordedBuild(name, number)
+	if errors.Is(err, fs.ErrNotExist) {
 		return &relicv1.PublishedBuildRun{
 			Name:         name,
 			Number:       number,
@@ -76,10 +68,23 @@ func (g *globals) loadBuild(name, number string) (*relicv1.PublishedBuildRun, er
 			AgentName:    "relic",
 			AgentVersion: "cli",
 		}, nil
-	case err != nil:
+	}
+
+	return run, err
+}
+
+func (g *globals) recordedBuild(name, number string) (*relicv1.PublishedBuildRun, error) {
+	f, err := g.buildFile(name, number)
+	if err != nil {
 		return nil, err
 	}
 
+	b, err := os.ReadFile(f) //nolint:gosec // the user's own build directory
+	if err != nil {
+		return nil, err
+	}
+
+	run := &relicv1.PublishedBuildRun{}
 	if err := protojson.Unmarshal(b, run); err != nil {
 		return nil, fmt.Errorf("read %s: %w", f, err)
 	}
@@ -879,7 +884,7 @@ func buildPublishCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "publish <name> <number>",
 		Short:   "Publish the run assembled so far",
-		Long:    "Publishes the run and forgets it locally (unless --keep). --dry-run prints it without publishing.",
+		Long:    "Publishes the run recorded locally and forgets it (unless --keep); it fails when none is recorded. --dry-run prints it without publishing.",
 		Example: "  relic build publish app 42\n  relic build publish app 42 --dry-run -o yaml",
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -893,7 +898,11 @@ func buildPublishCmd(g *globals) *cobra.Command {
 				defer unlock()
 			}
 
-			run, err := g.loadBuild(name, number)
+			run, err := g.recordedBuild(name, number)
+			if errors.Is(err, fs.ErrNotExist) {
+				return fmt.Errorf("no run %s/%s is recorded locally", name, number)
+			}
+
 			if err != nil {
 				return err
 			}
