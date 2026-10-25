@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"path"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pressly/goose/v3"
 	"github.com/riverqueue/river"
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
@@ -36,7 +38,7 @@ type engine interface {
 	query(ctx context.Context, sql string, args ...any) (Rows, error)
 	ping(ctx context.Context) error
 	close()
-	migrateTo(ctx context.Context, version int64) error
+	migrateTo(ctx context.Context, version int64) ([]Migration, error)
 	migrateJobQueue(ctx context.Context) error
 	newJobClient(cfg *river.Config) (JobClient, error)
 	jobQueries() jobQueries
@@ -89,18 +91,45 @@ func (db *DB) Close() { db.engine.close() }
 // Ping checks the database is reachable.
 func (db *DB) Ping(ctx context.Context) error { return db.engine.ping(ctx) }
 
-// Migrate applies all pending migrations, Relic's and the job queue's.
-func (db *DB) Migrate(ctx context.Context) error {
-	if err := db.engine.migrateTo(ctx, math.MaxInt64); err != nil {
-		return err
+// Migration is a schema migration that Migrate applied.
+type Migration struct {
+	Version  int64
+	Name     string
+	Duration time.Duration
+}
+
+// Migrate applies all pending migrations, Relic's and the job queue's, and
+// returns Relic's that it applied.
+func (db *DB) Migrate(ctx context.Context) ([]Migration, error) {
+	applied, err := db.engine.migrateTo(ctx, math.MaxInt64)
+	if err != nil {
+		return nil, err
 	}
 
-	return db.engine.migrateJobQueue(ctx)
+	return applied, db.engine.migrateJobQueue(ctx)
 }
 
 // MigrateTo applies the migrations up to version only.
-func (db *DB) MigrateTo(ctx context.Context, version int64) error {
+func (db *DB) MigrateTo(ctx context.Context, version int64) ([]Migration, error) {
 	return db.engine.migrateTo(ctx, version)
+}
+
+func migrateUpTo(ctx context.Context, provider *goose.Provider, version int64) ([]Migration, error) {
+	results, err := provider.UpTo(ctx, version)
+	if err != nil {
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
+
+	applied := make([]Migration, 0, len(results))
+	for _, r := range results {
+		applied = append(applied, Migration{
+			Version:  r.Source.Version,
+			Name:     strings.TrimSuffix(path.Base(r.Source.Path), path.Ext(r.Source.Path)),
+			Duration: r.Duration,
+		})
+	}
+
+	return applied, nil
 }
 
 // ErrRetryTransaction is returned by a WithTx function to run it again.

@@ -177,7 +177,7 @@ func Run(ctx context.Context, args []string, getenv func(string) string, stderr 
 	case "worker":
 		return runWorker(ctx, getenv, log)
 	default:
-		return migrate(ctx, getenv)
+		return migrate(ctx, getenv, log)
 	}
 }
 
@@ -199,7 +199,7 @@ func CheckSettings(getenv func(string) string, command string) error {
 	return errors.Join(errs...)
 }
 
-func migrate(ctx context.Context, getenv func(string) string) error {
+func migrate(ctx context.Context, getenv func(string) string, log *slog.Logger) error {
 	url := getenv("RELIC_DATABASE_URL")
 	if url == "" {
 		return errors.New("config: RELIC_DATABASE_URL is required")
@@ -211,10 +211,23 @@ func migrate(ctx context.Context, getenv func(string) string) error {
 	}
 	defer db.Close()
 
-	return db.Migrate(ctx)
+	return migrateDB(ctx, db, log)
 }
 
-func openDB(ctx context.Context, cfg config.Config) (*database.DB, error) {
+func migrateDB(ctx context.Context, db *database.DB, log *slog.Logger) error {
+	applied, err := db.Migrate(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, m := range applied {
+		log.InfoContext(ctx, "database migration applied", "version", m.Version, "name", m.Name, "duration", m.Duration)
+	}
+
+	return nil
+}
+
+func openDB(ctx context.Context, cfg config.Config, log *slog.Logger) (*database.DB, error) {
 	db, err := database.OpenWith(ctx, cfg.DatabaseURL, database.Options{
 		MaxConnections: cfg.DatabaseMaxConnections,
 	})
@@ -222,7 +235,7 @@ func openDB(ctx context.Context, cfg config.Config) (*database.DB, error) {
 		return nil, err
 	}
 
-	if err := db.Migrate(ctx); err != nil {
+	if err := migrateDB(ctx, db, log); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -230,8 +243,8 @@ func openDB(ctx context.Context, cfg config.Config) (*database.DB, error) {
 	return db, nil
 }
 
-func openServerDB(ctx context.Context, cfg config.Config) (*database.DB, error) {
-	db, err := openDB(ctx, cfg)
+func openServerDB(ctx context.Context, cfg config.Config, log *slog.Logger) (*database.DB, error) {
+	db, err := openDB(ctx, cfg, log)
 	if err != nil || cfg.DatabaseStatementTimeout == 0 {
 		return db, err
 	}
@@ -262,7 +275,7 @@ func runServer(ctx context.Context, getenv func(string) string, mode serverMode,
 		}
 	}
 
-	db, err := openServerDB(ctx, cfg)
+	db, err := openServerDB(ctx, cfg, log)
 	if err != nil {
 		return err
 	}
@@ -343,7 +356,7 @@ func runServer(ctx context.Context, getenv func(string) string, mode serverMode,
 		SignInNote:                 cfg.SignInNote,
 	}, log)
 	if mode.withWorker {
-		workerDB, openErr := openDB(ctx, cfg)
+		workerDB, openErr := openDB(ctx, cfg, log)
 		if openErr != nil {
 			return openErr
 		}
@@ -572,7 +585,7 @@ func runWorker(ctx context.Context, getenv func(string) string, log *slog.Logger
 		return fmt.Errorf("config: %w", err)
 	}
 
-	db, err := openDB(ctx, cfg)
+	db, err := openDB(ctx, cfg, log)
 	if err != nil {
 		return err
 	}

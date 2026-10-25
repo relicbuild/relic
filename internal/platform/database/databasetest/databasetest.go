@@ -138,7 +138,7 @@ func newDB(t testing.TB, version int64) *database.DB {
 	t.Cleanup(db.Close)
 
 	if version > 0 {
-		if err := db.MigrateTo(ctx, version); err != nil {
+		if _, err := db.MigrateTo(ctx, version); err != nil {
 			t.Fatalf("migrate: %v", err)
 		}
 	}
@@ -254,7 +254,7 @@ func createTemplate(ctx context.Context, name string) error {
 
 	defer db.Close()
 
-	if err := db.Migrate(ctx); err != nil {
+	if _, err := db.Migrate(ctx); err != nil {
 		return fmt.Errorf("migrate template: %w", err)
 	}
 
@@ -319,7 +319,7 @@ func newSQLiteDB(t testing.TB, version int64) *database.DB {
 	t.Cleanup(db.Close)
 
 	if version > 0 {
-		if err := db.MigrateTo(ctx, version); err != nil {
+		if _, err := db.MigrateTo(ctx, version); err != nil {
 			t.Fatalf("migrate: %v", err)
 		}
 	}
@@ -338,7 +338,7 @@ func migratedSQLite(ctx context.Context) (string, error) {
 		return dir, err
 	}
 
-	err = db.Migrate(ctx)
+	_, err = db.Migrate(ctx)
 
 	db.Close()
 

@@ -50,7 +50,7 @@ type CopyProgress func(table string, rows int64)
 
 // Copy copies every table of from into to, which must be empty.
 func Copy(ctx context.Context, from, to *DB, progress CopyProgress) error {
-	if err := to.Migrate(ctx); err != nil {
+	if _, err := to.Migrate(ctx); err != nil {
 		return fmt.Errorf("migrate the target: %w", err)
 	}
 

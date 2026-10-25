@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"encoding/pem"
@@ -11,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -107,6 +109,41 @@ func TestRunListsEveryConfigurationError(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestMigrateLogsTheAppliedMigrations(t *testing.T) {
+	t.Parallel()
+
+	var logged bytes.Buffer
+
+	log := slog.New(slog.NewTextHandler(&logged, nil))
+	url := "sqlite://" + filepath.Join(t.TempDir(), "relic.db")
+	getenv := func(key string) string {
+		if key == "RELIC_DATABASE_URL" {
+			return url
+		}
+
+		return ""
+	}
+
+	if err := migrate(t.Context(), getenv, log); err != nil {
+		t.Fatal(err)
+	}
+
+	if out := logged.String(); !regexp.MustCompile(`msg="database migration applied" version=\d+ name=\d{5}_\w+ `).
+		MatchString(out) {
+		t.Errorf("migrating a new database logged %q, want a line per migration", out)
+	}
+
+	logged.Reset()
+
+	if err := migrate(t.Context(), getenv, log); err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(logged.String(), "database migration applied") {
+		t.Errorf("migrating a migrated database logged %q", logged.String())
 	}
 }
 

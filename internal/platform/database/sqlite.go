@@ -342,23 +342,19 @@ func (r sqliteRows) Close() {
 	_ = r.Rows.Close()
 }
 
-func (e *sqliteEngine) migrateTo(ctx context.Context, version int64) error {
+func (e *sqliteEngine) migrateTo(ctx context.Context, version int64) ([]Migration, error) {
 	unlock, err := localdisk.Lock(e.path + ".migrate-lock")
 	if err != nil {
-		return fmt.Errorf("migration lock: %w", err)
+		return nil, fmt.Errorf("migration lock: %w", err)
 	}
 	defer unlock()
 
 	provider, err := goose.NewProvider(goose.DialectSQLite3, e.writer, migrations.SQLite)
 	if err != nil {
-		return fmt.Errorf("migrations: %w", err)
+		return nil, fmt.Errorf("migrations: %w", err)
 	}
 
-	if _, err := provider.UpTo(ctx, version); err != nil {
-		return fmt.Errorf("migrate: %w", err)
-	}
-
-	return nil
+	return migrateUpTo(ctx, provider, version)
 }
 
 func (e *sqliteEngine) migrateJobQueue(ctx context.Context) error {

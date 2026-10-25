@@ -26,7 +26,7 @@ func TestSQLiteWritesTakeTurnsWithABulkImport(t *testing.T) {
 
 	t.Cleanup(db.Close)
 
-	if err := db.Migrate(t.Context()); err != nil {
+	if _, err := db.Migrate(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -104,7 +104,7 @@ func TestSQLiteJobQueueWritesTakeTurnsWithABulkImport(t *testing.T) {
 
 	t.Cleanup(db.Close)
 
-	if err := db.Migrate(t.Context()); err != nil {
+	if _, err := db.Migrate(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -185,7 +185,7 @@ func TestSQLiteDeletesAWithdrawnAdvisoryThroughAnIndex(t *testing.T) {
 
 	t.Cleanup(db.Close)
 
-	if err := db.Migrate(t.Context()); err != nil {
+	if _, err := db.Migrate(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 
