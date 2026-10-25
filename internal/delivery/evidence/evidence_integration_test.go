@@ -246,6 +246,33 @@ func TestCreateRefusesEvidenceNoTrustedKeyVerifies(t *testing.T) {
 	}
 }
 
+func TestEvidenceNeedsAFile(t *testing.T) {
+	t.Parallel()
+
+	f := newEvidenceFixture(t)
+	f.subject = ""
+
+	if _, err := f.evidence.Create(t.Context(), Input{
+		Repository: "libs-local",
+		Path:       "dir",
+		Envelope:   f.envelope(t, f.signedByCI(t)),
+		User:       "admin",
+	}); !errors.Is(err, ErrInvalid) {
+		t.Errorf("Create about a folder = %v, want ErrInvalid", err)
+	}
+
+	if _, err := f.evidence.Record(
+		t.Context(),
+		"libs-local",
+		"dir",
+		"https://relic.example.com/test",
+		map[string]any{},
+		"admin",
+	); !errors.Is(err, ErrInvalid) {
+		t.Errorf("Record about a folder = %v, want ErrInvalid", err)
+	}
+}
+
 func TestDeletingAKeyUnverifiesItsEvidence(t *testing.T) {
 	t.Parallel()
 

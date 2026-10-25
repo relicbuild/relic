@@ -133,7 +133,7 @@ func (s *Service) Create(ctx context.Context, in Input) (Evidence, error) {
 		return Evidence{}, fmt.Errorf("%w: payload is not an in-toto statement", ErrInvalid)
 	}
 
-	subject, err := s.repos.Stat(ctx, subjectRepo, subjectPath)
+	subject, err := s.subjectFile(ctx, subjectRepo, subjectPath)
 	if err != nil {
 		return Evidence{}, err
 	}
@@ -200,7 +200,7 @@ func (s *Service) Record(
 	predicate any,
 	user string,
 ) (Evidence, error) {
-	subject, err := s.repos.Stat(ctx, subjectRepo, subjectPath)
+	subject, err := s.subjectFile(ctx, subjectRepo, subjectPath)
 	if err != nil {
 		return Evidence{}, err
 	}
@@ -328,7 +328,24 @@ func (s *Service) store(
 	return e, nil
 }
 
+func (s *Service) subjectFile(ctx context.Context, repoKey, p string) (repository.Item, error) {
+	subject, err := s.repos.Stat(ctx, repoKey, p)
+	if err != nil {
+		return repository.Item{}, err
+	}
+
+	if subject.IsFolder() {
+		return repository.Item{}, fmt.Errorf("%w: %s/%s is a folder; evidence is about a file", ErrInvalid, repoKey, p)
+	}
+
+	return subject, nil
+}
+
 func subjectDigestMatches(st statement, sha string) bool {
+	if sha == "" {
+		return false
+	}
+
 	for _, sub := range st.Subject {
 		if strings.EqualFold(sub.Digest["sha256"], sha) {
 			return true
