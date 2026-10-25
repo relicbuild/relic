@@ -521,16 +521,24 @@ func TestApkSetupWritesKeysUnderTheKeysFolderOnly(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
-		name, keyPair string
-		wantErr       bool
+		name, keyPair, branch string
+		wantErr               bool
 	}{
 		{
 			name:    "a plain key pair name",
 			keyPair: "relic-rsa",
+			branch:  "v3.22",
 		},
 		{
 			name:    "a key pair name with a path",
 			keyPair: "../../../tmp/relic-traversal",
+			branch:  "v3.22",
+			wantErr: true,
+		},
+		{
+			name:    "a branch with a path",
+			keyPair: "relic-rsa",
+			branch:  "../v3.22",
 			wantErr: true,
 		},
 	} {
@@ -547,7 +555,7 @@ func TestApkSetupWritesKeysUnderTheKeysFolderOnly(t *testing.T) {
 					},
 				},
 				flags: map[string]string{
-					"branch": "v3.22",
+					"branch": tc.branch,
 				},
 			})
 			if tc.wantErr {

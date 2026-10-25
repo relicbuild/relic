@@ -47,6 +47,8 @@ type signingKey struct {
 	name, publicKey string
 }
 
+const tokenPlaceholder = "<token>"
+
 type setupStep struct {
 	file      string
 	content   string
@@ -81,6 +83,10 @@ func withUserinfo(u, user, token string) (string, error) {
 	}
 
 	p.User = url.UserPassword(user, token)
+
+	if token == tokenPlaceholder {
+		return strings.Replace(p.String(), url.UserPassword("", token).String()+"@", ":"+token+"@", 1), nil
+	}
 
 	return p.String(), nil
 }
@@ -577,7 +583,8 @@ var setupClients = map[string]setupClient{
 		short:  "/etc/apk/repositories and the repository's signing key (run as root, e.g. in an image build)",
 		system: true,
 		flags: map[string]string{
-			"branch": "the Alpine branch, as the repository lays it out (v3.21, edge)",
+			"branch":              "the Alpine branch, as the repository lays it out (v3.21, edge)",
+			"alpine-repositories": "the Alpine repositories of the branch, space-separated (default main)",
 		},
 		steps: func(e setupEnv) ([]setupStep, error) {
 			branch := e.flags["branch"]
@@ -585,9 +592,19 @@ var setupClients = map[string]setupClient{
 				return nil, errors.New("apk: give the branch (--branch v3.21)")
 			}
 
-			repository, err := withUserinfo(strings.TrimSuffix(e.url, "/")+"/"+branch+"/main", e.user, e.token)
-			if err != nil {
-				return nil, fmt.Errorf("apk: %w", err)
+			var lines strings.Builder
+
+			for _, name := range strings.Fields(cmp.Or(e.flags["alpine-repositories"], "main")) {
+				if !plainFileName(name) || !plainFileName(branch) {
+					return nil, fmt.Errorf("apk: %s/%s is not a branch and repository of the layout", branch, name)
+				}
+
+				repository, err := withUserinfo(strings.TrimSuffix(e.url, "/")+"/"+branch+"/"+name, e.user, e.token)
+				if err != nil {
+					return nil, fmt.Errorf("apk: %w", err)
+				}
+
+				lines.WriteString(repository + "\n")
 			}
 
 			steps := []setupStep{
@@ -595,9 +612,10 @@ var setupClients = map[string]setupClient{
 					file:    "etc/apk/repositories",
 					block:   true,
 					mode:    0o600,
-					content: repository + "\n",
+					content: lines.String(),
 				},
 			}
+
 			for _, key := range e.signingKeys {
 				if !plainFileName(key.name) {
 					return nil, fmt.Errorf("apk: the key pair name %q cannot name a key file", key.name)
@@ -991,7 +1009,7 @@ func packageSetupCmd(g *globals) *cobra.Command {
 
 			switch {
 			case !write && !showToken:
-				e.token = "<token>"
+				e.token = tokenPlaceholder
 			case e.contextToken:
 				e.token, err = clientToken(cmd, c, args[0], args[1], expiresDays)
 				if err != nil {

@@ -252,6 +252,13 @@ spec: {class: local, format: debian, signingKey: deb-old, secondarySigningKey: d
 		t.Errorf("dnf repository file of a remote = %q, want no check of Relic's signature", remoteRepo)
 	}
 
+	out, err = setup("apk", "apk-local", "--branch", "v3.22", "--alpine-repositories", "main community")
+	if err != nil || !strings.Contains(out, ":<token>@") || strings.Contains(out, "%3C") ||
+		!strings.Contains(out, "/alpine/apk-local/v3.22/main\n") ||
+		!strings.Contains(out, "/alpine/apk-local/v3.22/community\n") {
+		t.Errorf("apk with two Alpine repositories = %q %v", out, err)
+	}
+
 	if _, err := setup("apk", "apk-rotating", "--branch", "v3.22", "--write"); err != nil {
 		t.Fatal(err)
 	}
