@@ -118,6 +118,7 @@ var setupClients = map[string]setupClient{
 		short: "~/.yarnrc.yml (Yarn 2 and later) and ~/.npmrc (Yarn 1)",
 		steps: func(e setupEnv) ([]setupStep, error) {
 			steps, _ := npmSteps(e)
+			steps[0].content += withoutScheme(e.url) + ":always-auth=true\n"
 
 			return append(steps, setupStep{
 				file:    ".yarnrc.yml",

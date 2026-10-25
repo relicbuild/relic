@@ -398,3 +398,28 @@ esac
 		t.Errorf("sources = %q", b)
 	}
 }
+
+func TestYarnSetupAuthenticatesUnscopedPackages(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+
+	err := applySetupSteps(t, "yarn", setupEnv{
+		repo:  "npm",
+		url:   "https://relic.example.com/npm/npm/",
+		token: "secret",
+		home:  home,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	b, err := os.ReadFile(filepath.Join(home, ".npmrc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(string(b), "\n//relic.example.com/npm/npm/:always-auth=true\n") {
+		t.Errorf(".npmrc = %q, want always-auth for the registry", b)
+	}
+}
