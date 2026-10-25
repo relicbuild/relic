@@ -276,6 +276,100 @@ func exchangeWorkloadToken(
 	return resp.GetAccessToken(), resp.GetUsername(), nil
 }
 
+func passwordCmd(g *globals) *cobra.Command {
+	var passwordStdin bool
+
+	cmd := &cobra.Command{
+		Use:   "password",
+		Short: "Change your password",
+		Long: "Changes the password of the user you are signed in as, given the current one. The new\n" +
+			"password needs at least 8 characters. On a terminal, the CLI asks for both passwords; with\n" +
+			"--password-stdin it reads the current password from the first line of standard input and the\n" +
+			"new one from the second. Tokens and sessions stay valid. Users of LDAP or single sign-on change\n" +
+			"their password there.",
+		Example: "  relic auth password\n" +
+			"  printf '%s\\n%s\\n' \"$OLD\" \"$NEW\" | relic auth password --password-stdin",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			current, next, err := readPasswordChange(cmd, passwordStdin)
+			if err != nil {
+				return err
+			}
+
+			c, err := g.dial()
+			if err != nil {
+				return err
+			}
+
+			if _, err := c.sessions.ChangePassword(cmd.Context(), &relicv1.ChangePasswordRequest{
+				CurrentPassword: current,
+				NewPassword:     next,
+			}); err != nil {
+				return fmt.Errorf("change the password: %w", err)
+			}
+
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "password changed")
+
+			return err
+		},
+	}
+	cmd.Flags().BoolVar(&passwordStdin, "password-stdin", false,
+		"read the current and the new password from two lines of standard input")
+
+	return cmd
+}
+
+func readPasswordChange(cmd *cobra.Command, fromStdin bool) (current, next string, err error) {
+	if fromStdin {
+		in := bufio.NewReader(cmd.InOrStdin())
+
+		var lines [2]string
+		for i := range lines {
+			line, err := in.ReadString('\n')
+			if err != nil && !errors.Is(err, io.EOF) {
+				return "", "", fmt.Errorf("read the passwords: %w", err)
+			}
+
+			lines[i] = strings.TrimRight(line, "\r\n")
+		}
+
+		if lines[0] == "" || lines[1] == "" {
+			return "", "", errors.New("standard input needs the current password and the new one, on two lines")
+		}
+
+		return lines[0], lines[1], nil
+	}
+
+	f, ok := cmd.InOrStdin().(*os.File)
+	if !ok || !term.IsTerminal(int(f.Fd())) {
+		return "", "", errors.New("standard input is not a terminal: use --password-stdin")
+	}
+
+	var answers [3]string
+
+	for i, prompt := range []string{
+		"Current password: ",
+		"New password: ",
+		"New password again: ",
+	} {
+		_, _ = fmt.Fprint(cmd.ErrOrStderr(), prompt)
+		b, err := term.ReadPassword(int(f.Fd()))
+		_, _ = fmt.Fprintln(cmd.ErrOrStderr())
+
+		if err != nil {
+			return "", "", fmt.Errorf("read the password: %w", err)
+		}
+
+		answers[i] = string(b)
+	}
+
+	if answers[1] != answers[2] {
+		return "", "", errors.New("the new passwords differ")
+	}
+
+	return answers[0], answers[1], nil
+}
+
 func readPassword(cmd *cobra.Command, fromStdin bool) (string, error) {
 	in := cmd.InOrStdin()
 	if fromStdin {

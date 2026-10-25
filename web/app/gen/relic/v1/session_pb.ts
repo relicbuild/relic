@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file relic/v1/session.proto.
  */
 export const file_relic_v1_session: GenFile = /*@__PURE__*/
-  fileDesc("ChZyZWxpYy92MS9zZXNzaW9uLnByb3RvEghyZWxpYy52MSIyCgxMb2dpblJlcXVlc3QSEAoIdXNlcm5hbWUYASABKAkSEAoIcGFzc3dvcmQYAiABKAkiZAoNTG9naW5SZXNwb25zZRImCglwcmluY2lwYWwYASABKAsyEy5yZWxpYy52MS5QcmluY2lwYWwSKwoHZXhwaXJlcxgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiDwoNTG9nb3V0UmVxdWVzdCIQCg5Mb2dvdXRSZXNwb25zZSI0ChNBcHByb3ZlTG9naW5SZXF1ZXN0Eg8KB3Nlc3Npb24YASABKAkSDAoEY29kZRgCIAEoCSIWChRBcHByb3ZlTG9naW5SZXNwb25zZSIXChVHZXRDdXJyZW50VXNlclJlcXVlc3QiTAoJUHJpbmNpcGFsEhAKCHVzZXJuYW1lGAEgASgJEg0KBWFkbWluGAIgASgIEg4KBmdyb3VwcxgDIAMoCRIOCgZ2aWV3ZXIYBCABKAgiQAoWR2V0Q3VycmVudFVzZXJSZXNwb25zZRImCglwcmluY2lwYWwYASABKAsyEy5yZWxpYy52MS5QcmluY2lwYWwiHAoaTGlzdFNpZ25JblByb3ZpZGVyc1JlcXVlc3QiSAoOU2lnbkluUHJvdmlkZXISDAoEbmFtZRgBIAEoCRIUCgxkaXNwbGF5X25hbWUYAiABKAkSEgoKc3RhcnRfcGF0aBgDIAEoCSJKChtMaXN0U2lnbkluUHJvdmlkZXJzUmVzcG9uc2USKwoJcHJvdmlkZXJzGAEgAygLMhgucmVsaWMudjEuU2lnbkluUHJvdmlkZXIiFgoUR2V0U2lnbkluTm90ZVJlcXVlc3QiJQoVR2V0U2lnbkluTm90ZVJlc3BvbnNlEgwKBG5vdGUYASABKAkiPwocRXhjaGFuZ2VXb3JrbG9hZFRva2VuUmVxdWVzdBIQCghpZGVudGl0eRgBIAEoCRINCgV0b2tlbhgCIAEoCSJjCh1FeGNoYW5nZVdvcmtsb2FkVG9rZW5SZXNwb25zZRIUCgxhY2Nlc3NfdG9rZW4YASABKAkSGgoSZXhwaXJlc19pbl9zZWNvbmRzGAIgASgDEhAKCHVzZXJuYW1lGAMgASgJIicKFFN0YXJ0V2ViTG9naW5SZXF1ZXN0Eg8KB3Nlc3Npb24YASABKAkiOwoVU3RhcnRXZWJMb2dpblJlc3BvbnNlEhQKDGFwcHJvdmVfcGF0aBgBIAEoCRIMCgRjb2RlGAIgASgJIjsKE1BvbGxXZWJMb2dpblJlcXVlc3QSDwoHc2Vzc2lvbhgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCSJaChRQb2xsV2ViTG9naW5SZXNwb25zZRIQCghhcHByb3ZlZBgBIAEoCBIUCgxhY2Nlc3NfdG9rZW4YAiABKAkSGgoSZXhwaXJlc19pbl9zZWNvbmRzGAMgASgDMtMICg5TZXNzaW9uU2VydmljZRJZCgVMb2dpbhIWLnJlbGljLnYxLkxvZ2luUmVxdWVzdBoXLnJlbGljLnYxLkxvZ2luUmVzcG9uc2UiH4i1GAGC0+STAhU6ASoiEC9hcGkvdjEvc2Vzc2lvbnMSYQoGTG9nb3V0EhcucmVsaWMudjEuTG9nb3V0UmVxdWVzdBoYLnJlbGljLnYxLkxvZ291dFJlc3BvbnNlIiSItRgBgtPkkwIaKhgvYXBpL3YxL3Nlc3Npb25zL2N1cnJlbnQSggEKDEFwcHJvdmVMb2dpbhIdLnJlbGljLnYxLkFwcHJvdmVMb2dpblJlcXVlc3QaHi5yZWxpYy52MS5BcHByb3ZlTG9naW5SZXNwb25zZSIziLUYAoLT5JMCKToBKiIkL2FwaS92MS9jbGktbG9naW5zL3tzZXNzaW9ufTphcHByb3ZlEokBChNMaXN0U2lnbkluUHJvdmlkZXJzEiQucmVsaWMudjEuTGlzdFNpZ25JblByb3ZpZGVyc1JlcXVlc3QaJS5yZWxpYy52MS5MaXN0U2lnbkluUHJvdmlkZXJzUmVzcG9uc2UiJYi1GAGC0+STAhsSGS9hcGkvdjEvc2lnbi1pbi1wcm92aWRlcnMScgoNR2V0U2lnbkluTm90ZRIeLnJlbGljLnYxLkdldFNpZ25Jbk5vdGVSZXF1ZXN0Gh8ucmVsaWMudjEuR2V0U2lnbkluTm90ZVJlc3BvbnNlIiCItRgBgtPkkwIWEhQvYXBpL3YxL3NpZ24taW4tbm90ZRKQAQoVRXhjaGFuZ2VXb3JrbG9hZFRva2VuEiYucmVsaWMudjEuRXhjaGFuZ2VXb3JrbG9hZFRva2VuUmVxdWVzdBonLnJlbGljLnYxLkV4Y2hhbmdlV29ya2xvYWRUb2tlblJlc3BvbnNlIiaItRgBgtPkkwIcOgEqIhcvYXBpL3YxL3dvcmtsb2FkLXRva2VucxJzCg1TdGFydFdlYkxvZ2luEh4ucmVsaWMudjEuU3RhcnRXZWJMb2dpblJlcXVlc3QaHy5yZWxpYy52MS5TdGFydFdlYkxvZ2luUmVzcG9uc2UiIYi1GAGC0+STAhc6ASoiEi9hcGkvdjEvd2ViLWxvZ2lucxJ/CgxQb2xsV2ViTG9naW4SHS5yZWxpYy52MS5Qb2xsV2ViTG9naW5SZXF1ZXN0Gh4ucmVsaWMudjEuUG9sbFdlYkxvZ2luUmVzcG9uc2UiMIi1GAGC0+STAiY6ASoiIS9hcGkvdjEvd2ViLWxvZ2lucy97c2Vzc2lvbn06cG9sbBJ1Cg5HZXRDdXJyZW50VXNlchIfLnJlbGljLnYxLkdldEN1cnJlbnRVc2VyUmVxdWVzdBogLnJlbGljLnYxLkdldEN1cnJlbnRVc2VyUmVzcG9uc2UiIIi1GAKC0+STAhYSFC9hcGkvdjEvc2Vzc2lvbi91c2VyYgZwcm90bzM", [file_google_api_annotations, file_google_protobuf_timestamp, file_relic_v1_options]);
+  fileDesc("ChZyZWxpYy92MS9zZXNzaW9uLnByb3RvEghyZWxpYy52MSIyCgxMb2dpblJlcXVlc3QSEAoIdXNlcm5hbWUYASABKAkSEAoIcGFzc3dvcmQYAiABKAkiZAoNTG9naW5SZXNwb25zZRImCglwcmluY2lwYWwYASABKAsyEy5yZWxpYy52MS5QcmluY2lwYWwSKwoHZXhwaXJlcxgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiDwoNTG9nb3V0UmVxdWVzdCIQCg5Mb2dvdXRSZXNwb25zZSI0ChNBcHByb3ZlTG9naW5SZXF1ZXN0Eg8KB3Nlc3Npb24YASABKAkSDAoEY29kZRgCIAEoCSIWChRBcHByb3ZlTG9naW5SZXNwb25zZSIXChVHZXRDdXJyZW50VXNlclJlcXVlc3QiTAoJUHJpbmNpcGFsEhAKCHVzZXJuYW1lGAEgASgJEg0KBWFkbWluGAIgASgIEg4KBmdyb3VwcxgDIAMoCRIOCgZ2aWV3ZXIYBCABKAgiQAoWR2V0Q3VycmVudFVzZXJSZXNwb25zZRImCglwcmluY2lwYWwYASABKAsyEy5yZWxpYy52MS5QcmluY2lwYWwiRwoVQ2hhbmdlUGFzc3dvcmRSZXF1ZXN0EhgKEGN1cnJlbnRfcGFzc3dvcmQYASABKAkSFAoMbmV3X3Bhc3N3b3JkGAIgASgJIhgKFkNoYW5nZVBhc3N3b3JkUmVzcG9uc2UiHAoaTGlzdFNpZ25JblByb3ZpZGVyc1JlcXVlc3QiSAoOU2lnbkluUHJvdmlkZXISDAoEbmFtZRgBIAEoCRIUCgxkaXNwbGF5X25hbWUYAiABKAkSEgoKc3RhcnRfcGF0aBgDIAEoCSJKChtMaXN0U2lnbkluUHJvdmlkZXJzUmVzcG9uc2USKwoJcHJvdmlkZXJzGAEgAygLMhgucmVsaWMudjEuU2lnbkluUHJvdmlkZXIiFgoUR2V0U2lnbkluTm90ZVJlcXVlc3QiJQoVR2V0U2lnbkluTm90ZVJlc3BvbnNlEgwKBG5vdGUYASABKAkiPwocRXhjaGFuZ2VXb3JrbG9hZFRva2VuUmVxdWVzdBIQCghpZGVudGl0eRgBIAEoCRINCgV0b2tlbhgCIAEoCSJjCh1FeGNoYW5nZVdvcmtsb2FkVG9rZW5SZXNwb25zZRIUCgxhY2Nlc3NfdG9rZW4YASABKAkSGgoSZXhwaXJlc19pbl9zZWNvbmRzGAIgASgDEhAKCHVzZXJuYW1lGAMgASgJIicKFFN0YXJ0V2ViTG9naW5SZXF1ZXN0Eg8KB3Nlc3Npb24YASABKAkiOwoVU3RhcnRXZWJMb2dpblJlc3BvbnNlEhQKDGFwcHJvdmVfcGF0aBgBIAEoCRIMCgRjb2RlGAIgASgJIjsKE1BvbGxXZWJMb2dpblJlcXVlc3QSDwoHc2Vzc2lvbhgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCSJaChRQb2xsV2ViTG9naW5SZXNwb25zZRIQCghhcHByb3ZlZBgBIAEoCBIUCgxhY2Nlc3NfdG9rZW4YAiABKAkSGgoSZXhwaXJlc19pbl9zZWNvbmRzGAMgASgDMtEJCg5TZXNzaW9uU2VydmljZRJZCgVMb2dpbhIWLnJlbGljLnYxLkxvZ2luUmVxdWVzdBoXLnJlbGljLnYxLkxvZ2luUmVzcG9uc2UiH4i1GAGC0+STAhU6ASoiEC9hcGkvdjEvc2Vzc2lvbnMSYQoGTG9nb3V0EhcucmVsaWMudjEuTG9nb3V0UmVxdWVzdBoYLnJlbGljLnYxLkxvZ291dFJlc3BvbnNlIiSItRgBgtPkkwIaKhgvYXBpL3YxL3Nlc3Npb25zL2N1cnJlbnQSggEKDEFwcHJvdmVMb2dpbhIdLnJlbGljLnYxLkFwcHJvdmVMb2dpblJlcXVlc3QaHi5yZWxpYy52MS5BcHByb3ZlTG9naW5SZXNwb25zZSIziLUYAoLT5JMCKToBKiIkL2FwaS92MS9jbGktbG9naW5zL3tzZXNzaW9ufTphcHByb3ZlEokBChNMaXN0U2lnbkluUHJvdmlkZXJzEiQucmVsaWMudjEuTGlzdFNpZ25JblByb3ZpZGVyc1JlcXVlc3QaJS5yZWxpYy52MS5MaXN0U2lnbkluUHJvdmlkZXJzUmVzcG9uc2UiJYi1GAGC0+STAhsSGS9hcGkvdjEvc2lnbi1pbi1wcm92aWRlcnMScgoNR2V0U2lnbkluTm90ZRIeLnJlbGljLnYxLkdldFNpZ25Jbk5vdGVSZXF1ZXN0Gh8ucmVsaWMudjEuR2V0U2lnbkluTm90ZVJlc3BvbnNlIiCItRgBgtPkkwIWEhQvYXBpL3YxL3NpZ24taW4tbm90ZRKQAQoVRXhjaGFuZ2VXb3JrbG9hZFRva2VuEiYucmVsaWMudjEuRXhjaGFuZ2VXb3JrbG9hZFRva2VuUmVxdWVzdBonLnJlbGljLnYxLkV4Y2hhbmdlV29ya2xvYWRUb2tlblJlc3BvbnNlIiaItRgBgtPkkwIcOgEqIhcvYXBpL3YxL3dvcmtsb2FkLXRva2VucxJzCg1TdGFydFdlYkxvZ2luEh4ucmVsaWMudjEuU3RhcnRXZWJMb2dpblJlcXVlc3QaHy5yZWxpYy52MS5TdGFydFdlYkxvZ2luUmVzcG9uc2UiIYi1GAGC0+STAhc6ASoiEi9hcGkvdjEvd2ViLWxvZ2lucxJ/CgxQb2xsV2ViTG9naW4SHS5yZWxpYy52MS5Qb2xsV2ViTG9naW5SZXF1ZXN0Gh4ucmVsaWMudjEuUG9sbFdlYkxvZ2luUmVzcG9uc2UiMIi1GAGC0+STAiY6ASoiIS9hcGkvdjEvd2ViLWxvZ2lucy97c2Vzc2lvbn06cG9sbBJ1Cg5HZXRDdXJyZW50VXNlchIfLnJlbGljLnYxLkdldEN1cnJlbnRVc2VyUmVxdWVzdBogLnJlbGljLnYxLkdldEN1cnJlbnRVc2VyUmVzcG9uc2UiIIi1GAKC0+STAhYSFC9hcGkvdjEvc2Vzc2lvbi91c2VyEnwKDkNoYW5nZVBhc3N3b3JkEh8ucmVsaWMudjEuQ2hhbmdlUGFzc3dvcmRSZXF1ZXN0GiAucmVsaWMudjEuQ2hhbmdlUGFzc3dvcmRSZXNwb25zZSIniLUYAoLT5JMCHToBKiIYL2FwaS92MS9zZXNzaW9uL3Bhc3N3b3JkYgZwcm90bzM", [file_google_api_annotations, file_google_protobuf_timestamp, file_relic_v1_options]);
 
 /**
  * @generated from message relic.v1.LoginRequest
@@ -188,6 +188,43 @@ export const GetCurrentUserResponseSchema: GenMessage<GetCurrentUserResponse> = 
   messageDesc(file_relic_v1_session, 8);
 
 /**
+ * @generated from message relic.v1.ChangePasswordRequest
+ */
+export type ChangePasswordRequest = Message<"relic.v1.ChangePasswordRequest"> & {
+  /**
+   * @generated from field: string current_password = 1;
+   */
+  currentPassword: string;
+
+  /**
+   * new_password needs at least 8 characters.
+   *
+   * @generated from field: string new_password = 2;
+   */
+  newPassword: string;
+};
+
+/**
+ * Describes the message relic.v1.ChangePasswordRequest.
+ * Use `create(ChangePasswordRequestSchema)` to create a new message.
+ */
+export const ChangePasswordRequestSchema: GenMessage<ChangePasswordRequest> = /*@__PURE__*/
+  messageDesc(file_relic_v1_session, 9);
+
+/**
+ * @generated from message relic.v1.ChangePasswordResponse
+ */
+export type ChangePasswordResponse = Message<"relic.v1.ChangePasswordResponse"> & {
+};
+
+/**
+ * Describes the message relic.v1.ChangePasswordResponse.
+ * Use `create(ChangePasswordResponseSchema)` to create a new message.
+ */
+export const ChangePasswordResponseSchema: GenMessage<ChangePasswordResponse> = /*@__PURE__*/
+  messageDesc(file_relic_v1_session, 10);
+
+/**
  * @generated from message relic.v1.ListSignInProvidersRequest
  */
 export type ListSignInProvidersRequest = Message<"relic.v1.ListSignInProvidersRequest"> & {
@@ -198,7 +235,7 @@ export type ListSignInProvidersRequest = Message<"relic.v1.ListSignInProvidersRe
  * Use `create(ListSignInProvidersRequestSchema)` to create a new message.
  */
 export const ListSignInProvidersRequestSchema: GenMessage<ListSignInProvidersRequest> = /*@__PURE__*/
-  messageDesc(file_relic_v1_session, 9);
+  messageDesc(file_relic_v1_session, 11);
 
 /**
  * SignInProvider is a button on the sign-in page.
@@ -229,7 +266,7 @@ export type SignInProvider = Message<"relic.v1.SignInProvider"> & {
  * Use `create(SignInProviderSchema)` to create a new message.
  */
 export const SignInProviderSchema: GenMessage<SignInProvider> = /*@__PURE__*/
-  messageDesc(file_relic_v1_session, 10);
+  messageDesc(file_relic_v1_session, 12);
 
 /**
  * @generated from message relic.v1.ListSignInProvidersResponse
@@ -246,7 +283,7 @@ export type ListSignInProvidersResponse = Message<"relic.v1.ListSignInProvidersR
  * Use `create(ListSignInProvidersResponseSchema)` to create a new message.
  */
 export const ListSignInProvidersResponseSchema: GenMessage<ListSignInProvidersResponse> = /*@__PURE__*/
-  messageDesc(file_relic_v1_session, 11);
+  messageDesc(file_relic_v1_session, 13);
 
 /**
  * @generated from message relic.v1.GetSignInNoteRequest
@@ -259,7 +296,7 @@ export type GetSignInNoteRequest = Message<"relic.v1.GetSignInNoteRequest"> & {
  * Use `create(GetSignInNoteRequestSchema)` to create a new message.
  */
 export const GetSignInNoteRequestSchema: GenMessage<GetSignInNoteRequest> = /*@__PURE__*/
-  messageDesc(file_relic_v1_session, 12);
+  messageDesc(file_relic_v1_session, 14);
 
 /**
  * @generated from message relic.v1.GetSignInNoteResponse
@@ -278,7 +315,7 @@ export type GetSignInNoteResponse = Message<"relic.v1.GetSignInNoteResponse"> & 
  * Use `create(GetSignInNoteResponseSchema)` to create a new message.
  */
 export const GetSignInNoteResponseSchema: GenMessage<GetSignInNoteResponse> = /*@__PURE__*/
-  messageDesc(file_relic_v1_session, 13);
+  messageDesc(file_relic_v1_session, 15);
 
 /**
  * @generated from message relic.v1.ExchangeWorkloadTokenRequest
@@ -304,7 +341,7 @@ export type ExchangeWorkloadTokenRequest = Message<"relic.v1.ExchangeWorkloadTok
  * Use `create(ExchangeWorkloadTokenRequestSchema)` to create a new message.
  */
 export const ExchangeWorkloadTokenRequestSchema: GenMessage<ExchangeWorkloadTokenRequest> = /*@__PURE__*/
-  messageDesc(file_relic_v1_session, 14);
+  messageDesc(file_relic_v1_session, 16);
 
 /**
  * @generated from message relic.v1.ExchangeWorkloadTokenResponse
@@ -333,7 +370,7 @@ export type ExchangeWorkloadTokenResponse = Message<"relic.v1.ExchangeWorkloadTo
  * Use `create(ExchangeWorkloadTokenResponseSchema)` to create a new message.
  */
 export const ExchangeWorkloadTokenResponseSchema: GenMessage<ExchangeWorkloadTokenResponse> = /*@__PURE__*/
-  messageDesc(file_relic_v1_session, 15);
+  messageDesc(file_relic_v1_session, 17);
 
 /**
  * @generated from message relic.v1.StartWebLoginRequest
@@ -350,7 +387,7 @@ export type StartWebLoginRequest = Message<"relic.v1.StartWebLoginRequest"> & {
  * Use `create(StartWebLoginRequestSchema)` to create a new message.
  */
 export const StartWebLoginRequestSchema: GenMessage<StartWebLoginRequest> = /*@__PURE__*/
-  messageDesc(file_relic_v1_session, 16);
+  messageDesc(file_relic_v1_session, 18);
 
 /**
  * @generated from message relic.v1.StartWebLoginResponse
@@ -376,7 +413,7 @@ export type StartWebLoginResponse = Message<"relic.v1.StartWebLoginResponse"> & 
  * Use `create(StartWebLoginResponseSchema)` to create a new message.
  */
 export const StartWebLoginResponseSchema: GenMessage<StartWebLoginResponse> = /*@__PURE__*/
-  messageDesc(file_relic_v1_session, 17);
+  messageDesc(file_relic_v1_session, 19);
 
 /**
  * @generated from message relic.v1.PollWebLoginRequest
@@ -400,7 +437,7 @@ export type PollWebLoginRequest = Message<"relic.v1.PollWebLoginRequest"> & {
  * Use `create(PollWebLoginRequestSchema)` to create a new message.
  */
 export const PollWebLoginRequestSchema: GenMessage<PollWebLoginRequest> = /*@__PURE__*/
-  messageDesc(file_relic_v1_session, 18);
+  messageDesc(file_relic_v1_session, 20);
 
 /**
  * @generated from message relic.v1.PollWebLoginResponse
@@ -429,7 +466,7 @@ export type PollWebLoginResponse = Message<"relic.v1.PollWebLoginResponse"> & {
  * Use `create(PollWebLoginResponseSchema)` to create a new message.
  */
 export const PollWebLoginResponseSchema: GenMessage<PollWebLoginResponse> = /*@__PURE__*/
-  messageDesc(file_relic_v1_session, 19);
+  messageDesc(file_relic_v1_session, 21);
 
 /**
  * SessionService signs the web UI in and out.
@@ -535,6 +572,16 @@ export const SessionService: GenService<{
     methodKind: "unary";
     input: typeof GetCurrentUserRequestSchema;
     output: typeof GetCurrentUserResponseSchema;
+  },
+  /**
+   * ChangePassword sets the caller's own password, given the current one.
+   *
+   * @generated from rpc relic.v1.SessionService.ChangePassword
+   */
+  changePassword: {
+    methodKind: "unary";
+    input: typeof ChangePasswordRequestSchema;
+    output: typeof ChangePasswordResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_relic_v1_session, 0);

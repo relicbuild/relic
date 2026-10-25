@@ -437,6 +437,95 @@ func (x *GetCurrentUserResponse) GetPrincipal() *Principal {
 	return nil
 }
 
+type ChangePasswordRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	CurrentPassword string                 `protobuf:"bytes,1,opt,name=current_password,json=currentPassword,proto3" json:"current_password,omitempty"`
+	// new_password needs at least 8 characters.
+	NewPassword   string `protobuf:"bytes,2,opt,name=new_password,json=newPassword,proto3" json:"new_password,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChangePasswordRequest) Reset() {
+	*x = ChangePasswordRequest{}
+	mi := &file_relic_v1_session_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangePasswordRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangePasswordRequest) ProtoMessage() {}
+
+func (x *ChangePasswordRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_relic_v1_session_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangePasswordRequest.ProtoReflect.Descriptor instead.
+func (*ChangePasswordRequest) Descriptor() ([]byte, []int) {
+	return file_relic_v1_session_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ChangePasswordRequest) GetCurrentPassword() string {
+	if x != nil {
+		return x.CurrentPassword
+	}
+	return ""
+}
+
+func (x *ChangePasswordRequest) GetNewPassword() string {
+	if x != nil {
+		return x.NewPassword
+	}
+	return ""
+}
+
+type ChangePasswordResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChangePasswordResponse) Reset() {
+	*x = ChangePasswordResponse{}
+	mi := &file_relic_v1_session_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangePasswordResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangePasswordResponse) ProtoMessage() {}
+
+func (x *ChangePasswordResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_relic_v1_session_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangePasswordResponse.ProtoReflect.Descriptor instead.
+func (*ChangePasswordResponse) Descriptor() ([]byte, []int) {
+	return file_relic_v1_session_proto_rawDescGZIP(), []int{10}
+}
+
 type ListSignInProvidersRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -445,7 +534,7 @@ type ListSignInProvidersRequest struct {
 
 func (x *ListSignInProvidersRequest) Reset() {
 	*x = ListSignInProvidersRequest{}
-	mi := &file_relic_v1_session_proto_msgTypes[9]
+	mi := &file_relic_v1_session_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -457,7 +546,7 @@ func (x *ListSignInProvidersRequest) String() string {
 func (*ListSignInProvidersRequest) ProtoMessage() {}
 
 func (x *ListSignInProvidersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_relic_v1_session_proto_msgTypes[9]
+	mi := &file_relic_v1_session_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -470,7 +559,7 @@ func (x *ListSignInProvidersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSignInProvidersRequest.ProtoReflect.Descriptor instead.
 func (*ListSignInProvidersRequest) Descriptor() ([]byte, []int) {
-	return file_relic_v1_session_proto_rawDescGZIP(), []int{9}
+	return file_relic_v1_session_proto_rawDescGZIP(), []int{11}
 }
 
 // SignInProvider is a button on the sign-in page.
@@ -486,7 +575,7 @@ type SignInProvider struct {
 
 func (x *SignInProvider) Reset() {
 	*x = SignInProvider{}
-	mi := &file_relic_v1_session_proto_msgTypes[10]
+	mi := &file_relic_v1_session_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -498,7 +587,7 @@ func (x *SignInProvider) String() string {
 func (*SignInProvider) ProtoMessage() {}
 
 func (x *SignInProvider) ProtoReflect() protoreflect.Message {
-	mi := &file_relic_v1_session_proto_msgTypes[10]
+	mi := &file_relic_v1_session_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -511,7 +600,7 @@ func (x *SignInProvider) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignInProvider.ProtoReflect.Descriptor instead.
 func (*SignInProvider) Descriptor() ([]byte, []int) {
-	return file_relic_v1_session_proto_rawDescGZIP(), []int{10}
+	return file_relic_v1_session_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *SignInProvider) GetName() string {
@@ -544,7 +633,7 @@ type ListSignInProvidersResponse struct {
 
 func (x *ListSignInProvidersResponse) Reset() {
 	*x = ListSignInProvidersResponse{}
-	mi := &file_relic_v1_session_proto_msgTypes[11]
+	mi := &file_relic_v1_session_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -556,7 +645,7 @@ func (x *ListSignInProvidersResponse) String() string {
 func (*ListSignInProvidersResponse) ProtoMessage() {}
 
 func (x *ListSignInProvidersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_relic_v1_session_proto_msgTypes[11]
+	mi := &file_relic_v1_session_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -569,7 +658,7 @@ func (x *ListSignInProvidersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSignInProvidersResponse.ProtoReflect.Descriptor instead.
 func (*ListSignInProvidersResponse) Descriptor() ([]byte, []int) {
-	return file_relic_v1_session_proto_rawDescGZIP(), []int{11}
+	return file_relic_v1_session_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListSignInProvidersResponse) GetProviders() []*SignInProvider {
@@ -587,7 +676,7 @@ type GetSignInNoteRequest struct {
 
 func (x *GetSignInNoteRequest) Reset() {
 	*x = GetSignInNoteRequest{}
-	mi := &file_relic_v1_session_proto_msgTypes[12]
+	mi := &file_relic_v1_session_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -599,7 +688,7 @@ func (x *GetSignInNoteRequest) String() string {
 func (*GetSignInNoteRequest) ProtoMessage() {}
 
 func (x *GetSignInNoteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_relic_v1_session_proto_msgTypes[12]
+	mi := &file_relic_v1_session_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -612,7 +701,7 @@ func (x *GetSignInNoteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSignInNoteRequest.ProtoReflect.Descriptor instead.
 func (*GetSignInNoteRequest) Descriptor() ([]byte, []int) {
-	return file_relic_v1_session_proto_rawDescGZIP(), []int{12}
+	return file_relic_v1_session_proto_rawDescGZIP(), []int{14}
 }
 
 type GetSignInNoteResponse struct {
@@ -625,7 +714,7 @@ type GetSignInNoteResponse struct {
 
 func (x *GetSignInNoteResponse) Reset() {
 	*x = GetSignInNoteResponse{}
-	mi := &file_relic_v1_session_proto_msgTypes[13]
+	mi := &file_relic_v1_session_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -637,7 +726,7 @@ func (x *GetSignInNoteResponse) String() string {
 func (*GetSignInNoteResponse) ProtoMessage() {}
 
 func (x *GetSignInNoteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_relic_v1_session_proto_msgTypes[13]
+	mi := &file_relic_v1_session_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -650,7 +739,7 @@ func (x *GetSignInNoteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSignInNoteResponse.ProtoReflect.Descriptor instead.
 func (*GetSignInNoteResponse) Descriptor() ([]byte, []int) {
-	return file_relic_v1_session_proto_rawDescGZIP(), []int{13}
+	return file_relic_v1_session_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *GetSignInNoteResponse) GetNote() string {
@@ -672,7 +761,7 @@ type ExchangeWorkloadTokenRequest struct {
 
 func (x *ExchangeWorkloadTokenRequest) Reset() {
 	*x = ExchangeWorkloadTokenRequest{}
-	mi := &file_relic_v1_session_proto_msgTypes[14]
+	mi := &file_relic_v1_session_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -684,7 +773,7 @@ func (x *ExchangeWorkloadTokenRequest) String() string {
 func (*ExchangeWorkloadTokenRequest) ProtoMessage() {}
 
 func (x *ExchangeWorkloadTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_relic_v1_session_proto_msgTypes[14]
+	mi := &file_relic_v1_session_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -697,7 +786,7 @@ func (x *ExchangeWorkloadTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExchangeWorkloadTokenRequest.ProtoReflect.Descriptor instead.
 func (*ExchangeWorkloadTokenRequest) Descriptor() ([]byte, []int) {
-	return file_relic_v1_session_proto_rawDescGZIP(), []int{14}
+	return file_relic_v1_session_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ExchangeWorkloadTokenRequest) GetIdentity() string {
@@ -726,7 +815,7 @@ type ExchangeWorkloadTokenResponse struct {
 
 func (x *ExchangeWorkloadTokenResponse) Reset() {
 	*x = ExchangeWorkloadTokenResponse{}
-	mi := &file_relic_v1_session_proto_msgTypes[15]
+	mi := &file_relic_v1_session_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -738,7 +827,7 @@ func (x *ExchangeWorkloadTokenResponse) String() string {
 func (*ExchangeWorkloadTokenResponse) ProtoMessage() {}
 
 func (x *ExchangeWorkloadTokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_relic_v1_session_proto_msgTypes[15]
+	mi := &file_relic_v1_session_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -751,7 +840,7 @@ func (x *ExchangeWorkloadTokenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExchangeWorkloadTokenResponse.ProtoReflect.Descriptor instead.
 func (*ExchangeWorkloadTokenResponse) Descriptor() ([]byte, []int) {
-	return file_relic_v1_session_proto_rawDescGZIP(), []int{15}
+	return file_relic_v1_session_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ExchangeWorkloadTokenResponse) GetAccessToken() string {
@@ -784,7 +873,7 @@ type StartWebLoginRequest struct {
 
 func (x *StartWebLoginRequest) Reset() {
 	*x = StartWebLoginRequest{}
-	mi := &file_relic_v1_session_proto_msgTypes[16]
+	mi := &file_relic_v1_session_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -796,7 +885,7 @@ func (x *StartWebLoginRequest) String() string {
 func (*StartWebLoginRequest) ProtoMessage() {}
 
 func (x *StartWebLoginRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_relic_v1_session_proto_msgTypes[16]
+	mi := &file_relic_v1_session_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -809,7 +898,7 @@ func (x *StartWebLoginRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartWebLoginRequest.ProtoReflect.Descriptor instead.
 func (*StartWebLoginRequest) Descriptor() ([]byte, []int) {
-	return file_relic_v1_session_proto_rawDescGZIP(), []int{16}
+	return file_relic_v1_session_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *StartWebLoginRequest) GetSession() string {
@@ -831,7 +920,7 @@ type StartWebLoginResponse struct {
 
 func (x *StartWebLoginResponse) Reset() {
 	*x = StartWebLoginResponse{}
-	mi := &file_relic_v1_session_proto_msgTypes[17]
+	mi := &file_relic_v1_session_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -843,7 +932,7 @@ func (x *StartWebLoginResponse) String() string {
 func (*StartWebLoginResponse) ProtoMessage() {}
 
 func (x *StartWebLoginResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_relic_v1_session_proto_msgTypes[17]
+	mi := &file_relic_v1_session_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -856,7 +945,7 @@ func (x *StartWebLoginResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartWebLoginResponse.ProtoReflect.Descriptor instead.
 func (*StartWebLoginResponse) Descriptor() ([]byte, []int) {
-	return file_relic_v1_session_proto_rawDescGZIP(), []int{17}
+	return file_relic_v1_session_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *StartWebLoginResponse) GetApprovePath() string {
@@ -884,7 +973,7 @@ type PollWebLoginRequest struct {
 
 func (x *PollWebLoginRequest) Reset() {
 	*x = PollWebLoginRequest{}
-	mi := &file_relic_v1_session_proto_msgTypes[18]
+	mi := &file_relic_v1_session_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -896,7 +985,7 @@ func (x *PollWebLoginRequest) String() string {
 func (*PollWebLoginRequest) ProtoMessage() {}
 
 func (x *PollWebLoginRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_relic_v1_session_proto_msgTypes[18]
+	mi := &file_relic_v1_session_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -909,7 +998,7 @@ func (x *PollWebLoginRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PollWebLoginRequest.ProtoReflect.Descriptor instead.
 func (*PollWebLoginRequest) Descriptor() ([]byte, []int) {
-	return file_relic_v1_session_proto_rawDescGZIP(), []int{18}
+	return file_relic_v1_session_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *PollWebLoginRequest) GetSession() string {
@@ -938,7 +1027,7 @@ type PollWebLoginResponse struct {
 
 func (x *PollWebLoginResponse) Reset() {
 	*x = PollWebLoginResponse{}
-	mi := &file_relic_v1_session_proto_msgTypes[19]
+	mi := &file_relic_v1_session_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -950,7 +1039,7 @@ func (x *PollWebLoginResponse) String() string {
 func (*PollWebLoginResponse) ProtoMessage() {}
 
 func (x *PollWebLoginResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_relic_v1_session_proto_msgTypes[19]
+	mi := &file_relic_v1_session_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -963,7 +1052,7 @@ func (x *PollWebLoginResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PollWebLoginResponse.ProtoReflect.Descriptor instead.
 func (*PollWebLoginResponse) Descriptor() ([]byte, []int) {
-	return file_relic_v1_session_proto_rawDescGZIP(), []int{19}
+	return file_relic_v1_session_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *PollWebLoginResponse) GetApproved() bool {
@@ -1011,7 +1100,11 @@ const file_relic_v1_session_proto_rawDesc = "" +
 	"\x06groups\x18\x03 \x03(\tR\x06groups\x12\x16\n" +
 	"\x06viewer\x18\x04 \x01(\bR\x06viewer\"K\n" +
 	"\x16GetCurrentUserResponse\x121\n" +
-	"\tprincipal\x18\x01 \x01(\v2\x13.relic.v1.PrincipalR\tprincipal\"\x1c\n" +
+	"\tprincipal\x18\x01 \x01(\v2\x13.relic.v1.PrincipalR\tprincipal\"e\n" +
+	"\x15ChangePasswordRequest\x12)\n" +
+	"\x10current_password\x18\x01 \x01(\tR\x0fcurrentPassword\x12!\n" +
+	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\"\x18\n" +
+	"\x16ChangePasswordResponse\"\x1c\n" +
 	"\x1aListSignInProvidersRequest\"f\n" +
 	"\x0eSignInProvider\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12!\n" +
@@ -1041,7 +1134,7 @@ const file_relic_v1_session_proto_rawDesc = "" +
 	"\x14PollWebLoginResponse\x12\x1a\n" +
 	"\bapproved\x18\x01 \x01(\bR\bapproved\x12!\n" +
 	"\faccess_token\x18\x02 \x01(\tR\vaccessToken\x12,\n" +
-	"\x12expires_in_seconds\x18\x03 \x01(\x03R\x10expiresInSeconds2\xd3\b\n" +
+	"\x12expires_in_seconds\x18\x03 \x01(\x03R\x10expiresInSeconds2\xd1\t\n" +
 	"\x0eSessionService\x12Y\n" +
 	"\x05Login\x12\x16.relic.v1.LoginRequest\x1a\x17.relic.v1.LoginResponse\"\x1f\x88\xb5\x18\x01\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/api/v1/sessions\x12a\n" +
 	"\x06Logout\x12\x17.relic.v1.LogoutRequest\x1a\x18.relic.v1.LogoutResponse\"$\x88\xb5\x18\x01\x82\xd3\xe4\x93\x02\x1a*\x18/api/v1/sessions/current\x12\x82\x01\n" +
@@ -1051,7 +1144,8 @@ const file_relic_v1_session_proto_rawDesc = "" +
 	"\x15ExchangeWorkloadToken\x12&.relic.v1.ExchangeWorkloadTokenRequest\x1a'.relic.v1.ExchangeWorkloadTokenResponse\"&\x88\xb5\x18\x01\x82\xd3\xe4\x93\x02\x1c:\x01*\"\x17/api/v1/workload-tokens\x12s\n" +
 	"\rStartWebLogin\x12\x1e.relic.v1.StartWebLoginRequest\x1a\x1f.relic.v1.StartWebLoginResponse\"!\x88\xb5\x18\x01\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/api/v1/web-logins\x12\x7f\n" +
 	"\fPollWebLogin\x12\x1d.relic.v1.PollWebLoginRequest\x1a\x1e.relic.v1.PollWebLoginResponse\"0\x88\xb5\x18\x01\x82\xd3\xe4\x93\x02&:\x01*\"!/api/v1/web-logins/{session}:poll\x12u\n" +
-	"\x0eGetCurrentUser\x12\x1f.relic.v1.GetCurrentUserRequest\x1a .relic.v1.GetCurrentUserResponse\" \x88\xb5\x18\x02\x82\xd3\xe4\x93\x02\x16\x12\x14/api/v1/session/userB}\n" +
+	"\x0eGetCurrentUser\x12\x1f.relic.v1.GetCurrentUserRequest\x1a .relic.v1.GetCurrentUserResponse\" \x88\xb5\x18\x02\x82\xd3\xe4\x93\x02\x16\x12\x14/api/v1/session/user\x12|\n" +
+	"\x0eChangePassword\x12\x1f.relic.v1.ChangePasswordRequest\x1a .relic.v1.ChangePasswordResponse\"'\x88\xb5\x18\x02\x82\xd3\xe4\x93\x02\x1d:\x01*\"\x18/api/v1/session/passwordB}\n" +
 	"\fcom.relic.v1B\fSessionProtoP\x01Z\x1erelic/api/gen/relic/v1;relicv1\xa2\x02\x03RXX\xaa\x02\bRelic.V1\xca\x02\bRelic\\V1\xe2\x02\x14Relic\\V1\\GPBMetadata\xea\x02\tRelic::V1b\x06proto3"
 
 var (
@@ -1066,7 +1160,7 @@ func file_relic_v1_session_proto_rawDescGZIP() []byte {
 	return file_relic_v1_session_proto_rawDescData
 }
 
-var file_relic_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_relic_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_relic_v1_session_proto_goTypes = []any{
 	(*LoginRequest)(nil),                  // 0: relic.v1.LoginRequest
 	(*LoginResponse)(nil),                 // 1: relic.v1.LoginResponse
@@ -1077,44 +1171,48 @@ var file_relic_v1_session_proto_goTypes = []any{
 	(*GetCurrentUserRequest)(nil),         // 6: relic.v1.GetCurrentUserRequest
 	(*Principal)(nil),                     // 7: relic.v1.Principal
 	(*GetCurrentUserResponse)(nil),        // 8: relic.v1.GetCurrentUserResponse
-	(*ListSignInProvidersRequest)(nil),    // 9: relic.v1.ListSignInProvidersRequest
-	(*SignInProvider)(nil),                // 10: relic.v1.SignInProvider
-	(*ListSignInProvidersResponse)(nil),   // 11: relic.v1.ListSignInProvidersResponse
-	(*GetSignInNoteRequest)(nil),          // 12: relic.v1.GetSignInNoteRequest
-	(*GetSignInNoteResponse)(nil),         // 13: relic.v1.GetSignInNoteResponse
-	(*ExchangeWorkloadTokenRequest)(nil),  // 14: relic.v1.ExchangeWorkloadTokenRequest
-	(*ExchangeWorkloadTokenResponse)(nil), // 15: relic.v1.ExchangeWorkloadTokenResponse
-	(*StartWebLoginRequest)(nil),          // 16: relic.v1.StartWebLoginRequest
-	(*StartWebLoginResponse)(nil),         // 17: relic.v1.StartWebLoginResponse
-	(*PollWebLoginRequest)(nil),           // 18: relic.v1.PollWebLoginRequest
-	(*PollWebLoginResponse)(nil),          // 19: relic.v1.PollWebLoginResponse
-	(*timestamppb.Timestamp)(nil),         // 20: google.protobuf.Timestamp
+	(*ChangePasswordRequest)(nil),         // 9: relic.v1.ChangePasswordRequest
+	(*ChangePasswordResponse)(nil),        // 10: relic.v1.ChangePasswordResponse
+	(*ListSignInProvidersRequest)(nil),    // 11: relic.v1.ListSignInProvidersRequest
+	(*SignInProvider)(nil),                // 12: relic.v1.SignInProvider
+	(*ListSignInProvidersResponse)(nil),   // 13: relic.v1.ListSignInProvidersResponse
+	(*GetSignInNoteRequest)(nil),          // 14: relic.v1.GetSignInNoteRequest
+	(*GetSignInNoteResponse)(nil),         // 15: relic.v1.GetSignInNoteResponse
+	(*ExchangeWorkloadTokenRequest)(nil),  // 16: relic.v1.ExchangeWorkloadTokenRequest
+	(*ExchangeWorkloadTokenResponse)(nil), // 17: relic.v1.ExchangeWorkloadTokenResponse
+	(*StartWebLoginRequest)(nil),          // 18: relic.v1.StartWebLoginRequest
+	(*StartWebLoginResponse)(nil),         // 19: relic.v1.StartWebLoginResponse
+	(*PollWebLoginRequest)(nil),           // 20: relic.v1.PollWebLoginRequest
+	(*PollWebLoginResponse)(nil),          // 21: relic.v1.PollWebLoginResponse
+	(*timestamppb.Timestamp)(nil),         // 22: google.protobuf.Timestamp
 }
 var file_relic_v1_session_proto_depIdxs = []int32{
 	7,  // 0: relic.v1.LoginResponse.principal:type_name -> relic.v1.Principal
-	20, // 1: relic.v1.LoginResponse.expires:type_name -> google.protobuf.Timestamp
+	22, // 1: relic.v1.LoginResponse.expires:type_name -> google.protobuf.Timestamp
 	7,  // 2: relic.v1.GetCurrentUserResponse.principal:type_name -> relic.v1.Principal
-	10, // 3: relic.v1.ListSignInProvidersResponse.providers:type_name -> relic.v1.SignInProvider
+	12, // 3: relic.v1.ListSignInProvidersResponse.providers:type_name -> relic.v1.SignInProvider
 	0,  // 4: relic.v1.SessionService.Login:input_type -> relic.v1.LoginRequest
 	2,  // 5: relic.v1.SessionService.Logout:input_type -> relic.v1.LogoutRequest
 	4,  // 6: relic.v1.SessionService.ApproveLogin:input_type -> relic.v1.ApproveLoginRequest
-	9,  // 7: relic.v1.SessionService.ListSignInProviders:input_type -> relic.v1.ListSignInProvidersRequest
-	12, // 8: relic.v1.SessionService.GetSignInNote:input_type -> relic.v1.GetSignInNoteRequest
-	14, // 9: relic.v1.SessionService.ExchangeWorkloadToken:input_type -> relic.v1.ExchangeWorkloadTokenRequest
-	16, // 10: relic.v1.SessionService.StartWebLogin:input_type -> relic.v1.StartWebLoginRequest
-	18, // 11: relic.v1.SessionService.PollWebLogin:input_type -> relic.v1.PollWebLoginRequest
+	11, // 7: relic.v1.SessionService.ListSignInProviders:input_type -> relic.v1.ListSignInProvidersRequest
+	14, // 8: relic.v1.SessionService.GetSignInNote:input_type -> relic.v1.GetSignInNoteRequest
+	16, // 9: relic.v1.SessionService.ExchangeWorkloadToken:input_type -> relic.v1.ExchangeWorkloadTokenRequest
+	18, // 10: relic.v1.SessionService.StartWebLogin:input_type -> relic.v1.StartWebLoginRequest
+	20, // 11: relic.v1.SessionService.PollWebLogin:input_type -> relic.v1.PollWebLoginRequest
 	6,  // 12: relic.v1.SessionService.GetCurrentUser:input_type -> relic.v1.GetCurrentUserRequest
-	1,  // 13: relic.v1.SessionService.Login:output_type -> relic.v1.LoginResponse
-	3,  // 14: relic.v1.SessionService.Logout:output_type -> relic.v1.LogoutResponse
-	5,  // 15: relic.v1.SessionService.ApproveLogin:output_type -> relic.v1.ApproveLoginResponse
-	11, // 16: relic.v1.SessionService.ListSignInProviders:output_type -> relic.v1.ListSignInProvidersResponse
-	13, // 17: relic.v1.SessionService.GetSignInNote:output_type -> relic.v1.GetSignInNoteResponse
-	15, // 18: relic.v1.SessionService.ExchangeWorkloadToken:output_type -> relic.v1.ExchangeWorkloadTokenResponse
-	17, // 19: relic.v1.SessionService.StartWebLogin:output_type -> relic.v1.StartWebLoginResponse
-	19, // 20: relic.v1.SessionService.PollWebLogin:output_type -> relic.v1.PollWebLoginResponse
-	8,  // 21: relic.v1.SessionService.GetCurrentUser:output_type -> relic.v1.GetCurrentUserResponse
-	13, // [13:22] is the sub-list for method output_type
-	4,  // [4:13] is the sub-list for method input_type
+	9,  // 13: relic.v1.SessionService.ChangePassword:input_type -> relic.v1.ChangePasswordRequest
+	1,  // 14: relic.v1.SessionService.Login:output_type -> relic.v1.LoginResponse
+	3,  // 15: relic.v1.SessionService.Logout:output_type -> relic.v1.LogoutResponse
+	5,  // 16: relic.v1.SessionService.ApproveLogin:output_type -> relic.v1.ApproveLoginResponse
+	13, // 17: relic.v1.SessionService.ListSignInProviders:output_type -> relic.v1.ListSignInProvidersResponse
+	15, // 18: relic.v1.SessionService.GetSignInNote:output_type -> relic.v1.GetSignInNoteResponse
+	17, // 19: relic.v1.SessionService.ExchangeWorkloadToken:output_type -> relic.v1.ExchangeWorkloadTokenResponse
+	19, // 20: relic.v1.SessionService.StartWebLogin:output_type -> relic.v1.StartWebLoginResponse
+	21, // 21: relic.v1.SessionService.PollWebLogin:output_type -> relic.v1.PollWebLoginResponse
+	8,  // 22: relic.v1.SessionService.GetCurrentUser:output_type -> relic.v1.GetCurrentUserResponse
+	10, // 23: relic.v1.SessionService.ChangePassword:output_type -> relic.v1.ChangePasswordResponse
+	14, // [14:24] is the sub-list for method output_type
+	4,  // [4:14] is the sub-list for method input_type
 	4,  // [4:4] is the sub-list for extension type_name
 	4,  // [4:4] is the sub-list for extension extendee
 	0,  // [0:4] is the sub-list for field type_name
@@ -1132,7 +1230,7 @@ func file_relic_v1_session_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_relic_v1_session_proto_rawDesc), len(file_relic_v1_session_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   20,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

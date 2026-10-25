@@ -22,6 +22,7 @@ var auditedMethods = map[string]bool{
 	"/relic.v1.SessionService/Login":               true,
 	"/relic.v1.SessionService/Logout":              true,
 	"/relic.v1.SessionService/ApproveLogin":        true,
+	"/relic.v1.SessionService/ChangePassword":      true,
 	"/relic.v1.SecurityService/CreateToken":        true,
 	"/relic.v1.SecurityService/RevokeToken":        true,
 	"/relic.v1.RepositoryService/CreateRepository": true,

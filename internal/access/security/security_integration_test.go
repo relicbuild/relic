@@ -800,6 +800,82 @@ func TestPutUserRefusesShortPasswords(t *testing.T) {
 	}
 }
 
+func TestChangePassword(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		user    string
+		next    string
+		wantErr error
+	}{
+		{
+			name: "an internal user",
+			user: "alice",
+			next: "Alice-new-pass-1",
+		},
+		{
+			name:    "a short password",
+			user:    "alice",
+			next:    "short",
+			wantErr: security.ErrInvalid,
+		},
+		{
+			name:    "a single sign-on user",
+			user:    "sam",
+			next:    "Sam-new-pass-12",
+			wantErr: security.ErrInvalid,
+		},
+		{
+			name:    "a user that does not exist",
+			user:    "nobody",
+			next:    "Nobody-pass-123",
+			wantErr: security.ErrInvalid,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			db := databasetest.NewDB(t)
+			s := security.NewService(db, slog.New(slog.DiscardHandler))
+
+			if _, err := s.PutUser(ctx, security.User{
+				Name:     "alice",
+				Password: "Alice-pass-123",
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := db.CreateSsoUser(ctx, database.CreateSsoUserParams{
+				ID:               uuid.NewV7(),
+				Username:         "sam",
+				IdentityProvider: "corp",
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := s.ChangePassword(ctx, tt.user, tt.next); !errors.Is(err, tt.wantErr) {
+				t.Fatalf("ChangePassword(%s) = %v, want %v", tt.user, err, tt.wantErr)
+			}
+
+			if tt.wantErr != nil {
+				return
+			}
+
+			u, err := db.GetUserByUsername(ctx, tt.user)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if ok, err := auth.VerifyPassword(tt.next, u.PasswordHash); err != nil || !ok {
+				t.Errorf("the new password does not verify: %v %v", ok, err)
+			}
+		})
+	}
+}
+
 func TestConcurrentCreationsOfCaseVariantsLeaveOneUser(t *testing.T) {
 	t.Parallel()
 

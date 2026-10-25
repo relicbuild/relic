@@ -13,6 +13,7 @@ import (
 
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/internal/access/auth"
+	"relic/internal/platform/httpserver"
 )
 
 const sessionTTL = 12 * time.Hour
@@ -129,6 +130,40 @@ func (s *sessionServer) GetCurrentUser(
 	return &relicv1.GetCurrentUserResponse{
 		Principal: principalOf(auth.FromContext(ctx)),
 	}, nil
+}
+
+func (s *sessionServer) ChangePassword(
+	ctx context.Context,
+	req *relicv1.ChangePasswordRequest,
+) (*relicv1.ChangePasswordResponse, error) {
+	r := httpRequest(ctx)
+	if s.d.Authenticator == nil || r == nil {
+		return nil, unimplemented("password change")
+	}
+
+	caller := auth.FromContext(ctx)
+	httpserver.SetAuditTarget(ctx, caller.Username)
+
+	err := s.d.Authenticator.ConfirmPassword(r, caller.Username, req.GetCurrentPassword())
+
+	var throttled *auth.ThrottledError
+	switch {
+	case errors.Is(err, auth.ErrBadCredentials):
+		return nil, connect.NewError(
+			connect.CodePermissionDenied,
+			"the current password is wrong, or Relic does not keep your password (LDAP, single sign-on)",
+		)
+	case errors.As(err, &throttled):
+		return nil, connect.NewError(connect.CodeResourceExhausted, err.Error()).WithCause(err)
+	case err != nil:
+		return nil, err
+	}
+
+	if err := s.d.Security.ChangePassword(ctx, caller.Username, req.GetNewPassword()); err != nil {
+		return nil, err
+	}
+
+	return &relicv1.ChangePasswordResponse{}, nil
 }
 
 func sessionCookie(r *http.Request, value string, maxAge int) *http.Cookie {

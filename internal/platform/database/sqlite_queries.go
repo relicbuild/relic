@@ -1589,6 +1589,9 @@ UPDATE users SET disabled = @disabled WHERE username = @username;`
 const sqliteSetUserEmail = `-- name: SetUserEmail :exec
 UPDATE users SET email = @email WHERE username = @username AND email <> @email;`
 
+const sqliteSetUserPassword = `-- name: SetUserPassword :execrows
+UPDATE users SET password_hash = @password_hash WHERE username = @username AND realm = 'internal';`
+
 const sqliteSeverityCountsForContents = `-- name: SeverityCountsForContents :many
 SELECT sha256, severity, count(*) AS count
 FROM scan_findings WHERE sha256 IN (SELECT value FROM json_each(@sha256s))
@@ -7316,6 +7319,15 @@ func (q *sqliteQueries) SetUserEmail(ctx context.Context, arg SetUserEmailParams
 	_, err := q.db.ExecContext(ctx, sqliteSetUserEmail, sql.Named("email", arg.Email), sql.Named("username", arg.Username))
 
 	return err
+}
+
+func (q *sqliteQueries) SetUserPassword(ctx context.Context, arg SetUserPasswordParams) (int64, error) {
+	res, err := q.db.ExecContext(ctx, sqliteSetUserPassword, sql.Named("password_hash", arg.PasswordHash), sql.Named("username", arg.Username))
+	if err != nil {
+		return 0, err
+	}
+
+	return res.RowsAffected()
 }
 
 func (q *sqliteQueries) SeverityCountsForContents(ctx context.Context, arg []string) ([]SeverityCountsForContentsRow, error) {

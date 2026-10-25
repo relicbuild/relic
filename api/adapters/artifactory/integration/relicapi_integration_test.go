@@ -398,6 +398,117 @@ func TestRelicAPISessionsEndWithTheTokenTheyWereMadeWith(t *testing.T) {
 	}
 }
 
+func TestRelicAPIChangePassword(t *testing.T) {
+	t.Parallel()
+	srv := server(t)
+	ctx := t.Context()
+
+	const (
+		password    = "Carl-pass-12345"
+		newPassword = "Carl-new-pass-1"
+	)
+
+	if _, err := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL)).
+		PutUser(ctx, &relicv1.PutUserRequest{
+			User: &relicv1.User{
+				Name:     "carl",
+				Email:    "carl@example.com",
+				Password: password,
+			},
+		}); err != nil {
+		t.Fatal(err)
+	}
+
+	token, err := relicv1connect.NewSecurityServiceClient(apiClient(relicHTTP("carl", password), srv.URL)).
+		CreateToken(ctx, &relicv1.CreateTokenRequest{
+			Description: "carl's token",
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	carl := relicv1connect.NewSessionServiceClient(apiClient(relicHTTP("carl", password), srv.URL))
+
+	for _, tt := range []struct {
+		name, current, next string
+		want                connect.Code
+	}{
+		{
+			name:    "a wrong current password",
+			current: "Wrong-pass-123",
+			next:    newPassword,
+			want:    connect.CodePermissionDenied,
+		},
+		{
+			name:    "a token instead of the current password",
+			current: token.GetAccessToken(),
+			next:    newPassword,
+			want:    connect.CodePermissionDenied,
+		},
+		{
+			name:    "a short new password",
+			current: password,
+			next:    "short",
+			want:    connect.CodeInvalidArgument,
+		},
+	} {
+		if _, err := carl.ChangePassword(ctx, &relicv1.ChangePasswordRequest{
+			CurrentPassword: tt.current,
+			NewPassword:     tt.next,
+		}); code(err) != tt.want {
+			t.Errorf("%s: %v, want %v", tt.name, err, tt.want)
+		}
+	}
+
+	if _, err := relicv1connect.NewSessionServiceClient(apiClient(relicHTTP("", ""), srv.URL)).
+		ChangePassword(ctx, &relicv1.ChangePasswordRequest{
+			CurrentPassword: password,
+			NewPassword:     newPassword,
+		}); code(err) != connect.CodeUnauthenticated {
+		t.Errorf("an anonymous password change: %v, want unauthenticated", err)
+	}
+
+	if _, err := carl.ChangePassword(ctx, &relicv1.ChangePasswordRequest{
+		CurrentPassword: password,
+		NewPassword:     newPassword,
+	}); err != nil {
+		t.Fatalf("change the password: %v", err)
+	}
+
+	signIn := func(secret string) error {
+		_, err := relicv1connect.NewSessionServiceClient(apiClient(relicHTTP("carl", secret), srv.URL)).
+			GetCurrentUser(ctx, &relicv1.GetCurrentUserRequest{})
+
+		return err
+	}
+
+	if err := signIn(password); code(err) != connect.CodeUnauthenticated {
+		t.Errorf("sign in with the old password: %v, want unauthenticated", err)
+	}
+
+	if err := signIn(newPassword); err != nil {
+		t.Errorf("sign in with the new password: %v", err)
+	}
+
+	events, err := relicv1connect.NewAuditServiceClient(apiClient(relicHTTP("admin", "password"), srv.URL)).
+		ListAuditEvents(ctx, &relicv1.ListAuditEventsRequest{
+			Actor: "carl",
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	changed := false
+	for _, e := range events.GetEvents() {
+		changed = changed || e.GetAction() == "relic.v1.SessionService/ChangePassword" && e.GetTarget() == "carl" &&
+			e.GetOutcome() == relicv1.AuditOutcome_AUDIT_OUTCOME_SUCCESS
+	}
+
+	if !changed {
+		t.Errorf("audit events = %v, want carl's password change", events.GetEvents())
+	}
+}
+
 type cookieJar struct {
 	cookie string
 }

@@ -369,6 +369,7 @@ type Querier interface {
 	SetRisksChecked(ctx context.Context, arg SetRisksCheckedParams) error
 	SetUserDisabled(ctx context.Context, arg SetUserDisabledParams) error
 	SetUserEmail(ctx context.Context, arg SetUserEmailParams) error
+	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) (int64, error)
 	SeverityCountsForContents(ctx context.Context, sha256s []string) ([]SeverityCountsForContentsRow, error)
 	SnapshotRepositoryUsage(ctx context.Context, day string) error
 	// The members an identity provider manages, with their user IDs.

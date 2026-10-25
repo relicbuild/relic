@@ -149,6 +149,34 @@ type userWrite struct {
 	withDisabled bool
 }
 
+// ChangePassword sets the password of username, a user whose password Relic
+// keeps; ErrInvalid for a short password or a user of a directory or an
+// identity provider.
+func (s *Service) ChangePassword(ctx context.Context, username, password string) error {
+	if err := CheckPassword(password); err != nil {
+		return err
+	}
+
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return err
+	}
+
+	n, err := s.db.SetUserPassword(ctx, database.SetUserPasswordParams{
+		Username:     username,
+		PasswordHash: hash,
+	})
+	if err != nil {
+		return fmt.Errorf("change password: %w", err)
+	}
+
+	if n == 0 {
+		return fmt.Errorf("%w: the password of %s is not kept by Relic", ErrInvalid, username)
+	}
+
+	return nil
+}
+
 func (s *Service) putUser(ctx context.Context, u User, w userWrite) (created bool, err error) {
 	existing, err := s.db.GetUserByUsername(ctx, u.Name)
 

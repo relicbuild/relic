@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { NavigationMenuItem } from '@nuxt/ui'
+import { ChangePasswordModal } from '#components'
 
 const open = ref(false)
 const { me, views, signOut } = useSession()
@@ -15,6 +16,7 @@ async function onSignOut() {
 }
 
 const overlay = useOverlay()
+const changePassword = overlay.create(ChangePasswordModal)
 const stopClosing = useRouter().afterEach((to, from) => {
   if (to.path !== from.path) {
     overlay.closeAll()
@@ -160,6 +162,14 @@ const searchGroups = computed(() => [{
           :avatar="{ text: me.username.slice(0, 2).toUpperCase(), alt: me.username }"
         />
         <div class="flex items-center gap-2" :class="collapsed ? 'flex-col' : ''">
+          <UButton
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-key-round"
+            :aria-label="`Change the password of ${me?.username ?? ''}`"
+            square
+            @click="changePassword.open()"
+          />
           <UButton
             color="neutral"
             variant="outline"

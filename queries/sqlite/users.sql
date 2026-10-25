@@ -20,6 +20,9 @@ ON CONFLICT (username) DO UPDATE
 SET email = excluded.email, password_hash = excluded.password_hash, admin = excluded.admin, viewer = excluded.viewer, extensions = excluded.extensions
 RETURNING (SELECT n = 0 FROM prior) AS created;
 
+-- name: SetUserPassword :execrows
+UPDATE users SET password_hash = @password_hash WHERE username = @username AND realm = 'internal';
+
 -- name: DeleteUser :execrows
 DELETE FROM users WHERE username = @username;
 

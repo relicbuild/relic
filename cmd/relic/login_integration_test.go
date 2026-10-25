@@ -224,6 +224,64 @@ spec:
 	}
 }
 
+func TestPasswordChangesYourPassword(t *testing.T) {
+	t.Parallel()
+
+	srv := testServer(t)
+	config := filepath.Join(t.TempDir(), "config.yaml")
+
+	login := func(password string) error {
+		_, err := relic(t, config, password+"\n", "auth", "login", srv.URL, "--user", "admin", "--password-stdin")
+
+		return err
+	}
+
+	if err := login("password"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range []struct {
+		name, stdin string
+	}{
+		{
+			name:  "a wrong current password",
+			stdin: "Wrong-pass-123\nAdmin-new-pass-1\n",
+		},
+		{
+			name:  "a short new password",
+			stdin: "password\nshort\n",
+		},
+		{
+			name:  "no new password",
+			stdin: "password\n",
+		},
+	} {
+		if _, err := relic(t, config, tt.stdin, "auth", "password", "--password-stdin"); err == nil {
+			t.Errorf("%s was accepted", tt.name)
+		}
+	}
+
+	if out, err := relic(
+		t,
+		config,
+		"password\nAdmin-new-pass-1\n",
+		"auth",
+		"password",
+		"--password-stdin",
+	); err != nil ||
+		out != "password changed\n" {
+		t.Fatalf("auth password = %q %v", out, err)
+	}
+
+	if err := login("password"); err == nil {
+		t.Error("the old password still signs in")
+	}
+
+	if err := login("Admin-new-pass-1"); err != nil {
+		t.Errorf("the new password does not sign in: %v", err)
+	}
+}
+
 func TestLogoutRevokesTheContextsToken(t *testing.T) {
 	t.Parallel()
 

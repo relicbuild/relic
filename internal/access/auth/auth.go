@@ -400,6 +400,39 @@ func (a *Authenticator) Password(r *http.Request, username, password string) (Pr
 	return p, err
 }
 
+// ConfirmPassword checks password against the password Relic stores for username, counting failures toward the backoff.
+func (a *Authenticator) ConfirmPassword(r *http.Request, username, password string) error {
+	client := clientAddr(r)
+	if wait := a.backoff.Wait(client); wait > 0 {
+		return &ThrottledError{
+			Wait: wait,
+		}
+	}
+
+	user, err := a.users.GetUserByUsername(r.Context(), username)
+	if err != nil && !errors.Is(database.NotFound(err), database.ErrNotFound) {
+		return fmt.Errorf("look up user: %w", err)
+	}
+
+	hash := user.PasswordHash
+	if err != nil || user.Realm == RealmLDAP || user.Realm == RealmSSO {
+		hash = dummyHash()
+	}
+
+	ok, err := VerifyPassword(password, hash)
+	if err != nil {
+		return fmt.Errorf("verify password for %s: %w", username, err)
+	}
+
+	if !ok || hash != user.PasswordHash {
+		a.backoff.Fail(client)
+
+		return ErrBadCredentials
+	}
+
+	return nil
+}
+
 func (a *Authenticator) bearer(ctx context.Context, token string) (Principal, error) {
 	tok, err := a.tokens.Verify(ctx, token)
 	if errors.Is(err, ErrInvalidToken) {

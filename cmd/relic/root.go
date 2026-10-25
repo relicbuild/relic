@@ -73,6 +73,7 @@ func rootCmd(g *globals) *cobra.Command {
 		group("auth", "Sign in, switch contexts and manage access tokens", "",
 			loginCmd(g),
 			logoutCmd(g),
+			passwordCmd(g),
 			authStatusCmd(g),
 			contextCmd(g),
 			tokenCmd(g),
