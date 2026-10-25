@@ -267,8 +267,12 @@ task test:k8s        # one kind cluster: the chart, Kubernetes pulls, restart, u
 - Integration tests share one PostgreSQL server when
   `RELIC_TEST_POSTGRESQL_URL` is set (`test/postgresql.sh` starts it; the
   Taskfile does this). The SQLite pass runs only the packages that use a test
-  database (`test/database-packages.sh`). The race detector runs nightly in CI
-  and with `task test:race`; `task test:all` runs it, then tiers 1 and 2.
+  database (`test/database-packages.sh`). The race detector runs in CI when its
+  `race` input is set, and with `task test:race`; `task test:all` runs it, then
+  tiers 1 and 2.
+- CI runs only on demand, to save GitHub Actions minutes: run it once on the
+  branch before merging (`gh workflow run ci --ref <branch>`, `-f k8s=true`
+  for the k8s tier). Never add automatic triggers.
 
 ## JFrog compatibility
 

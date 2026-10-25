@@ -1,11 +1,8 @@
 name: ci
 
+# On demand only (the Actions tab or `gh workflow run ci --ref <branch>`), to
+# save GitHub Actions minutes: run it once on a branch before merging.
 on:
-  pull_request:
-    branches: [main]
-  schedule:
-    # Nightly: the integration suite with the race detector, and the k8s tier.
-    - cron: "23 2 * * *"
   workflow_dispatch:
     inputs:
       base:
@@ -13,6 +10,10 @@ on:
         required: false
       k8s:
         description: Also run the k8s tier (the Helm chart and everything Kubernetes-specific on kind)
+        type: boolean
+        default: false
+      race:
+        description: Run the integration suite with the race detector
         type: boolean
         default: false
 
@@ -105,10 +106,10 @@ jobs:
       - name: one PostgreSQL for every package
         if: matrix.database == 'postgresql'
         run: echo "RELIC_TEST_POSTGRESQL_URL=$(test/postgresql.sh)" >>"$GITHUB_ENV"
-      # The race detector doubles the suite's time; pull requests run it on the
-      # unit tests, the nightly run on these too.
+      # The race detector doubles the suite's time: the unit tests always run
+      # with it, the integration suite when the race input is set.
       - run: >-
-          go test ${{ github.event_name == 'schedule' && '-race' || '' }} -tags integration
+          go test ${{ inputs.race && '-race' || '' }} -tags integration
           ${{ matrix.database == 'sqlite' && '$(test/database-packages.sh)' || './...' }}
 
   web-check:
@@ -222,7 +223,7 @@ jobs:
 
   e2e-k8s:
     name: e2e:k8s
-    if: inputs.k8s || github.event_name == 'schedule'
+    if: inputs.k8s
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
