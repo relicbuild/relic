@@ -744,6 +744,64 @@ func TestChartWorkerVulnerabilityDatabaseWithoutPersistence(t *testing.T) {
 	}
 }
 
+func TestChartKeepsEveryVolumeClaimOnUninstall(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name   string
+		args   []string
+		claims []string
+	}{
+		{
+			"separate worker",
+			external,
+			[]string{
+				"r-relic-vulnerability-database",
+			},
+		},
+		{
+			"single node",
+			singleNode,
+			[]string{
+				"r-relic-data",
+				"r-relic-vulnerability-database",
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			objs, stderr := render(t, tt.args...)
+			if stderr != "" {
+				t.Fatal(stderr)
+			}
+
+			var claims []string
+
+			for _, o := range objs {
+				if o.Kind != "PersistentVolumeClaim" {
+					continue
+				}
+
+				claims = append(claims, o.Metadata.Name)
+
+				if o.Metadata.Annotations["helm.sh/resource-policy"] != "keep" {
+					t.Errorf(
+						"%s is deleted on uninstall, so a reinstall adopts it while it terminates",
+						o.Metadata.Name,
+					)
+				}
+			}
+
+			slices.Sort(claims)
+
+			if !slices.Equal(claims, tt.claims) {
+				t.Errorf("volume claims = %v, want %v", claims, tt.claims)
+			}
+		})
+	}
+}
+
 func TestChartLDAPCA(t *testing.T) {
 	t.Parallel()
 
