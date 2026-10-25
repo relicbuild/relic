@@ -724,6 +724,63 @@ func gemRequirement(reqs []Requirement) UserMarshal {
 // SpecsIndex is specs.4.8 (Marshal of [[name, Gem::Version, platform]]),
 // gzipped, for the given specs.
 func SpecsIndex(specs []Spec) ([]byte, error) {
+	return gzipped(Marshal(specsEntries(specs)))
+}
+
+const maxSpecsIndexBytes = 512 << 20
+
+// ErrInvalidIndex is returned for an upstream specs index that is not a Marshal array.
+var ErrInvalidIndex = errors.New("gems: invalid specs index")
+
+// SpecsIndexAfter is the gzipped specs index upstream (as a remote's
+// upstream serves it) with entries for specs after its own.
+func SpecsIndexAfter(upstream []byte, specs []Spec) ([]byte, error) {
+	if len(specs) == 0 {
+		return upstream, nil
+	}
+
+	zr, err := gzip.NewReader(bytes.NewReader(upstream))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidIndex, err)
+	}
+
+	raw, err := io.ReadAll(io.LimitReader(zr, maxSpecsIndexBytes+1))
+	if err != nil || len(raw) > maxSpecsIndexBytes {
+		return nil, fmt.Errorf("%w: unreadable or too large", ErrInvalidIndex)
+	}
+
+	entries, ok := bytes.CutPrefix(raw, []byte{
+		4,
+		8,
+		'[',
+	})
+	if !ok {
+		return nil, fmt.Errorf("%w: not an array", ErrInvalidIndex)
+	}
+
+	count, entries, err := readInt(entries)
+	if err != nil || count < 0 {
+		return nil, fmt.Errorf("%w: entry count", ErrInvalidIndex)
+	}
+
+	var out bytes.Buffer
+
+	out.Write([]byte{
+		4,
+		8,
+		'[',
+	})
+
+	counter := &encoder{}
+	counter.int(count + len(specs))
+	out.Write(counter.buf.Bytes())
+	out.Write(entries)
+	out.Write(marshalAppended(specsEntries(specs)))
+
+	return gzipped(out.Bytes())
+}
+
+func specsEntries(specs []Spec) []any {
 	list := make([]any, 0, len(specs))
 	for _, s := range specs {
 		list = append(list, []any{
@@ -733,10 +790,14 @@ func SpecsIndex(specs []Spec) ([]byte, error) {
 		})
 	}
 
+	return list
+}
+
+func gzipped(raw []byte) ([]byte, error) {
 	var buf bytes.Buffer
 
 	zw := gzip.NewWriter(&buf)
-	if _, err := zw.Write(Marshal(list)); err != nil {
+	if _, err := zw.Write(raw); err != nil {
 		return nil, err
 	}
 
@@ -745,6 +806,29 @@ func SpecsIndex(specs []Spec) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+// RemoteSpecsIndex is a specs index file as r's first remote member's upstream serves it, or false when r has
+// no remote member or the caller may not see all of the remote.
+func (s *Service) RemoteSpecsIndex(ctx context.Context, r repository.Repository, file string) ([]byte, bool, error) {
+	for _, m := range s.members(ctx, r, 0) {
+		if m.Class != "remote" {
+			continue
+		}
+
+		if repository.Restricted(ctx, m.Name) {
+			return nil, false, nil
+		}
+
+		body, err := s.remoteFile(ctx, m, file, file)
+		if err != nil {
+			return nil, false, err
+		}
+
+		return body, true, nil
+	}
+
+	return nil, false, nil
 }
 
 // QuickSpec is quick/Marshal.4.8/<full name>.gemspec.rz: a zlib-deflated
