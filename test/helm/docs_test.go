@@ -2,11 +2,15 @@ package helm_test
 
 import (
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 
 	"go.yaml.in/yaml/v3"
+	"golang.org/x/mod/semver"
 )
+
+const minimumHelmVersion = "v3.17.0"
 
 const kubernetesDocs = "../../web/layers/site/content/docs/2.installation/4.kubernetes/"
 
@@ -84,6 +88,40 @@ func TestMonitoringRefusalPrintsTheCommandsOfTheMonitoringPage(t *testing.T) {
 	for _, command := range commands {
 		if !strings.Contains(page, "```bash\n"+command+"\n```") {
 			t.Errorf("9.monitoring.md does not give %q", command)
+		}
+	}
+}
+
+func TestHelmIsTheChartsMinimumOrLater(t *testing.T) {
+	t.Parallel()
+
+	helm, err := exec.LookPath("helm")
+	if err != nil {
+		t.Skip("helm is not installed")
+	}
+
+	out, err := exec.CommandContext(t.Context(), helm, "version", "--template", "{{.Version}}").Output()
+	if err != nil {
+		t.Fatalf("helm version: %v", err)
+	}
+
+	installed := strings.TrimSpace(string(out))
+	if !semver.IsValid(installed) || semver.Compare(installed, minimumHelmVersion) < 0 {
+		t.Fatalf("helm %s is older than %s, the oldest Helm that renders the chart", installed, minimumHelmVersion)
+	}
+}
+
+func TestKubernetesDocsNameTheMinimumHelm(t *testing.T) {
+	t.Parallel()
+
+	want := "The chart needs Helm " + strings.TrimPrefix(minimumHelmVersion, "v") + " or later."
+
+	for _, name := range []string{
+		"1.overview.md",
+		"2.quick-start.md",
+	} {
+		if !strings.Contains(strings.Join(strings.Fields(docsPage(t, name)), " "), want) {
+			t.Errorf("%s does not say %q", name, want)
 		}
 	}
 }
