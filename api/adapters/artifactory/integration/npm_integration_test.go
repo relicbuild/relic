@@ -700,10 +700,16 @@ func TestNpmSigningKeysAndAttestationsComeFromTheUpstream(t *testing.T) {
 	keys := `{"keys":[{"keyid":"SHA256:example","keytype":"ecdsa-sha2-nistp256","key":"MFkw"}]}`
 	attestations := `{"attestations":[{"predicateType":"https://slsa.dev/provenance/v1"}]}`
 
+	var upstreamURL string
+
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
 		switch r.URL.EscapedPath() {
+		case "/@acme%2Fsigned", "/@acme%2fsigned":
+			_, _ = io.WriteString(w, `{"name":"@acme/signed","dist-tags":{"latest":"1.0.0"},"versions":{"1.0.0":{
+			  "dist":{"tarball":"`+upstreamURL+`/@acme/signed/-/signed-1.0.0.tgz",
+			  "attestations":{"url":"`+upstreamURL+`/-/npm/v1/attestations/@acme%2fsigned@1.0.0"}}}}}`)
 		case "/-/npm/v1/keys":
 			_, _ = io.WriteString(w, keys)
 		case "/-/npm/v1/attestations/@acme%2Fsigned@1.0.0":
@@ -713,6 +719,8 @@ func TestNpmSigningKeysAndAttestationsComeFromTheUpstream(t *testing.T) {
 		}
 	}))
 	t.Cleanup(upstream.Close)
+
+	upstreamURL = upstream.URL
 
 	srv := server(t)
 	for _, r := range []struct {
@@ -738,6 +746,24 @@ func TestNpmSigningKeysAndAttestationsComeFromTheUpstream(t *testing.T) {
 		}); resp.StatusCode/100 != 2 {
 			t.Fatalf("create %s = %d %s", r.name, resp.StatusCode, body)
 		}
+	}
+
+	var signed struct {
+		Versions map[string]struct {
+			Dist struct {
+				Attestations struct {
+					URL string `json:"url"`
+				} `json:"attestations"`
+			} `json:"dist"`
+		} `json:"versions"`
+	}
+	if code := getJSON(t, srv, "/artifactory/api/npm/npm/@acme%2fsigned", &signed); code != 200 {
+		t.Fatalf("packument = %d", code)
+	}
+
+	want := srv.URL + "/artifactory/api/npm/npm/-/npm/v1/attestations/@acme%2Fsigned@1.0.0"
+	if got := signed.Versions["1.0.0"].Dist.Attestations.URL; got != want {
+		t.Errorf("attestations URL = %s, want %s", got, want)
 	}
 
 	tests := []struct {

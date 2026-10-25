@@ -336,6 +336,10 @@ func (s *Service) remotePackument(
 		m, _ := v.(map[string]any)
 		dist, _ := m["dist"].(map[string]any)
 
+		if attestations, ok := dist["attestations"].(map[string]any); ok {
+			attestations["url"] = tarballBase + "/-/npm/v1/attestations/" + escapeName(name) + "@" + ver
+		}
+
 		tarball, _ := dist["tarball"].(string)
 		if tarball == "" {
 			continue
