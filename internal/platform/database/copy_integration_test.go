@@ -3,12 +3,14 @@
 package database_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"testing"
+	"time"
 
 	"relic/internal/platform/database"
 	"relic/internal/platform/database/databasetest"
@@ -174,6 +176,44 @@ func TestCopyRoundTrip(t *testing.T) {
 				t.Errorf("%s, %s:\n got  %v\n want %v", name, table, got[table], want[table])
 			}
 		}
+	}
+}
+
+func TestCopySQLiteToSQLite(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+
+	open := func(name string) *database.DB {
+		db, err := database.Open(ctx, "sqlite://"+filepath.Join(t.TempDir(), name))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		t.Cleanup(db.Close)
+
+		if _, err := db.Migrate(ctx); err != nil {
+			t.Fatal(err)
+		}
+
+		return db
+	}
+
+	src, dst := open("source.db"), open("target.db")
+
+	if _, err := src.UpsertGroup(ctx, database.UpsertGroupParams{
+		Name: "devs",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := database.Copy(ctx, src, dst, nil); err != nil {
+		t.Fatalf("copy SQLite to SQLite: %v", err)
+	}
+
+	if _, err := dst.GetGroup(ctx, "devs"); err != nil {
+		t.Errorf("the copy lacks the group: %v", err)
 	}
 }
 
