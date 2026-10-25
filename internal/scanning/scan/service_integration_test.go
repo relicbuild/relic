@@ -187,6 +187,10 @@ func TestScanPipeline(t *testing.T) {
 		t.Fatalf("findings = %d, %v", len(findings), err)
 	}
 
+	if known, err := db.KnownCVEIDs(ctx); err != nil || !slices.Contains(known, "CVE-2021-23337") {
+		t.Errorf("CVEs known after the scan = %v, %v; want the findings' CVEs", known, err)
+	}
+
 	src, _ := os.ReadFile(seen)
 	if !strings.HasPrefix(string(src), "dir:") {
 		t.Errorf("npm tarball not cataloged as an extracted directory: %q", src)

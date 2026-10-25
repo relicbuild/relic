@@ -910,10 +910,18 @@ func (s *Service) save(
 		}
 
 		if rep != nil {
+			var cves []string
+
 			for _, f := range append(slices.Clone(rep.Findings), found...) {
 				if err := insertFinding(ctx, q, sha256Hex, f); err != nil {
 					return err
 				}
+
+				cves = append(cves, f.CVEs()...)
+			}
+
+			if err := q.RegisterCVEs(ctx, nonNil(cves)); err != nil {
+				return fmt.Errorf("register the findings' CVEs: %w", err)
 			}
 		}
 

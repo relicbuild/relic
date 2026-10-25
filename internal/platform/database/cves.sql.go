@@ -348,6 +348,18 @@ func (q *Queries) MarkCVERecordChecked(ctx context.Context, arg MarkCVERecordChe
 	return err
 }
 
+const registerCVEs = `-- name: RegisterCVEs :exec
+INSERT INTO cves (id)
+SELECT DISTINCT upper(c) FROM unnest($1::text[]) AS c
+WHERE c ILIKE 'CVE-%'
+ON CONFLICT (id) DO NOTHING
+`
+
+func (q *Queries) RegisterCVEs(ctx context.Context, ids []string) error {
+	_, err := q.db.Exec(ctx, registerCVEs, ids)
+	return err
+}
+
 const registerFindingCVEs = `-- name: RegisterFindingCVEs :execrows
 INSERT INTO cves (id)
 SELECT DISTINCT upper(c) FROM (

@@ -333,6 +333,7 @@ type Querier interface {
 	RecordDownloads(ctx context.Context, arg RecordDownloadsParams) error
 	RecordPolicyDecision(ctx context.Context, arg RecordPolicyDecisionParams) error
 	RecordReplicationRun(ctx context.Context, arg RecordReplicationRunParams) error
+	RegisterCVEs(ctx context.Context, ids []string) error
 	RegisterFindingCVEs(ctx context.Context) (int64, error)
 	// Whether the registry entry at a path is indexed with the content sha256 and
 	// has an approval of it; no row when the path is not an entry.

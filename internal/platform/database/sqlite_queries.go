@@ -1413,6 +1413,12 @@ const sqliteRecordReplicationRun = `-- name: RecordReplicationRun :exec
 UPDATE replications SET last_run = @last_run, last_status = @last_status, last_error = @last_error
 WHERE repository = @repository;`
 
+const sqliteRegisterCVEs = `-- name: RegisterCVEs :exec
+INSERT INTO cves (id)
+SELECT DISTINCT upper(j.value) FROM json_each(@ids) j
+WHERE lower(j.value) LIKE 'cve-%'
+ON CONFLICT (id) DO NOTHING;`
+
 const sqliteRegisterFindingCVEs = `-- name: RegisterFindingCVEs :execrows
 INSERT INTO cves (id)
 SELECT DISTINCT upper(c) FROM (
@@ -7056,6 +7062,12 @@ func (q *sqliteQueries) RecordPolicyDecision(ctx context.Context, arg RecordPoli
 
 func (q *sqliteQueries) RecordReplicationRun(ctx context.Context, arg RecordReplicationRunParams) error {
 	_, err := q.db.ExecContext(ctx, sqliteRecordReplicationRun, sql.Named("last_run", sqliteNullTime(arg.LastRun)), sql.Named("last_status", arg.LastStatus), sql.Named("last_error", arg.LastError), sql.Named("repository", arg.Repository))
+
+	return err
+}
+
+func (q *sqliteQueries) RegisterCVEs(ctx context.Context, arg []string) error {
+	_, err := q.db.ExecContext(ctx, sqliteRegisterCVEs, sql.Named("ids", sqliteJSON(arg)))
 
 	return err
 }
