@@ -423,3 +423,96 @@ func TestYarnSetupAuthenticatesUnscopedPackages(t *testing.T) {
 		t.Errorf(".npmrc = %q, want always-auth for the registry", b)
 	}
 }
+
+func TestYarnSetupKeepsYarnrcValid(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		old     string
+		repos   []string
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "a second repository replaces the first",
+			old:  "enableTelemetry: false\n",
+			repos: []string{
+				"npm",
+				"npm-local",
+			},
+			want: "enableTelemetry: false\n" +
+				"# relic setup npm-local begin\n" +
+				"npmRegistryServer: \"https://relic.example.com/npm/npm-local/\"\n" +
+				"npmAlwaysAuth: true\n" +
+				"npmAuthToken: \"secret\"\n" +
+				"# relic setup npm-local end\n",
+		},
+		{
+			name: "the same repository again",
+			repos: []string{
+				"npm",
+				"npm",
+			},
+			want: "# relic setup npm begin\n" +
+				"npmRegistryServer: \"https://relic.example.com/npm/npm/\"\n" +
+				"npmAlwaysAuth: true\n" +
+				"npmAuthToken: \"secret\"\n" +
+				"# relic setup npm end\n",
+		},
+		{
+			name: "a registry set outside the blocks",
+			old:  "npmRegistryServer: \"https://registry.example.com\"\n",
+			repos: []string{
+				"npm",
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			home := t.TempDir()
+			yarnrc := filepath.Join(home, ".yarnrc.yml")
+
+			if tt.old != "" {
+				if err := os.WriteFile(yarnrc, []byte(tt.old), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			var err error
+
+			for _, repo := range tt.repos {
+				err = applySetupSteps(t, "yarn", setupEnv{
+					repo:  repo,
+					url:   "https://relic.example.com/npm/" + repo + "/",
+					token: "secret",
+					home:  home,
+				})
+				if err != nil {
+					break
+				}
+			}
+
+			b, _ := os.ReadFile(yarnrc)
+
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("setup yarn: %v, want an error: %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr {
+				if string(b) != tt.old {
+					t.Errorf(".yarnrc.yml = %q, want it unchanged", b)
+				}
+
+				return
+			}
+
+			if string(b) != tt.want {
+				t.Errorf(".yarnrc.yml = %q, want %q", b, tt.want)
+			}
+		})
+	}
+}

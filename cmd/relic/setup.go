@@ -42,10 +42,11 @@ type setupEnv struct {
 }
 
 type setupStep struct {
-	file    string
-	content string
-	block   bool
-	mode    fs.FileMode
+	file      string
+	content   string
+	block     bool
+	soleBlock bool
+	mode      fs.FileMode
 	// command runs with stdin, env added to its environment, and argumentFile
 	// passed as a private @file of one argument per line.
 	command      []string
@@ -121,10 +122,11 @@ var setupClients = map[string]setupClient{
 			steps[0].content += withoutScheme(e.url) + ":always-auth=true\n"
 
 			return append(steps, setupStep{
-				file:    ".yarnrc.yml",
-				block:   true,
-				mode:    0o600,
-				content: "npmRegistryServer: \"" + e.url + "\"\nnpmAlwaysAuth: true\nnpmAuthToken: \"" + e.token + "\"\n",
+				file:      ".yarnrc.yml",
+				block:     true,
+				soleBlock: true,
+				mode:      0o600,
+				content:   "npmRegistryServer: \"" + e.url + "\"\nnpmAlwaysAuth: true\nnpmAuthToken: \"" + e.token + "\"\n",
 			}), nil
 		},
 	},
@@ -1240,6 +1242,62 @@ func withBlock(old, repo, content string) (string, error) {
 	return old + block, nil
 }
 
+var setupBlockBegin = regexp.MustCompile(`(?m)^# relic setup (\S+) begin\r?$`)
+
+var yamlTopLevelKey = regexp.MustCompile(`(?m)^([A-Za-z0-9_-]+)\s*:`)
+
+func withSoleBlock(old, repo, content string) (string, error) {
+	kept := old
+
+	for _, match := range setupBlockBegin.FindAllStringSubmatch(old, -1) {
+		if match[1] == repo {
+			continue
+		}
+
+		var err error
+		if kept, err = withoutBlock(kept, match[1]); err != nil {
+			return "", err
+		}
+	}
+
+	outside, err := withoutBlock(kept, repo)
+	if err != nil {
+		return "", err
+	}
+
+	set := map[string]bool{}
+	for _, match := range yamlTopLevelKey.FindAllStringSubmatch(outside, -1) {
+		set[match[1]] = true
+	}
+
+	for _, match := range yamlTopLevelKey.FindAllStringSubmatch(content, -1) {
+		if set[match[1]] {
+			return "", fmt.Errorf(
+				"%s is already set outside relic's block; remove it, or merge by hand (relic package setup without --write prints it)",
+				match[1],
+			)
+		}
+	}
+
+	return withBlock(kept, repo, content)
+}
+
+func withoutBlock(old, repo string) (string, error) {
+	begin, end := blockMarkers(repo)
+
+	i, _ := markerLine(old, begin)
+	if i < 0 {
+		return old, nil
+	}
+
+	_, after := markerLine(old[i:], end)
+	if after < 0 {
+		return "", fmt.Errorf("%q has no matching %q; fix the file by hand", begin, end)
+	}
+
+	return old[:i] + old[i+after:], nil
+}
+
 var homeVariables = []string{
 	"HOME",
 	"USERPROFILE",
@@ -1333,6 +1391,11 @@ func applySetupStep(cmd *cobra.Command, e setupEnv, client setupClient, s setupS
 	content := s.content
 
 	switch {
+	case s.soleBlock:
+		content, err = withSoleBlock(string(old), e.repo, s.content)
+		if err != nil {
+			return fmt.Errorf("setup: %s: %w", path, err)
+		}
 	case s.block:
 		content, err = withBlock(string(old), e.repo, s.content)
 		if err != nil {
