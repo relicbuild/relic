@@ -7,10 +7,13 @@ useSeoMeta({
 
 const copy = useCopy()
 const server = useServerAddress()
-const installOrigin = useAppConfig().relic.dashboard ? useRequestURL().origin : 'https://relic.build'
+const dashboard = useAppConfig().relic.dashboard
+const installOrigin = dashboard ? useRequestURL().origin : 'https://relic.build'
+const serverRelease = dashboard ? releaseTag(String(useRuntimeConfig().public.relicVersion ?? '')) : ''
+const installEnvironment = serverRelease ? `RELIC_VERSION=${serverRelease} ` : ''
 
 const connectCommands = [
-  { label: 'install', icon: 'i-lucide-download', command: `curl -fsSL ${installOrigin}/install.sh | sh` },
+  { label: 'install', icon: 'i-lucide-download', command: `curl -fsSL ${installOrigin}/install.sh | ${installEnvironment}sh` },
   { label: 'relic', icon: 'i-lucide-package', command: `relic auth login ${server.origin}` },
   { label: 'jf', icon: 'i-lucide-terminal', command: `jf config add relic --url ${server.origin}` }
 ]
