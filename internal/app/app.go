@@ -398,7 +398,7 @@ func runServer(ctx context.Context, getenv func(string) string, mode serverMode,
 
 func serverTLSConfig(ctx context.Context, cfg config.TLS, listenAddress string, log *slog.Logger) (*tls.Config, error) {
 	if cfg.CertificateFile != "" {
-		files, err := servertls.LoadCertificateFiles(cfg.CertificateFile, cfg.KeyFile)
+		files, err := servertls.LoadCertificateFiles(ctx, cfg.CertificateFile, cfg.KeyFile, log)
 		if err != nil {
 			return nil, err
 		}

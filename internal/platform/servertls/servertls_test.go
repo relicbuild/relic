@@ -1,15 +1,18 @@
 package servertls
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/tls"
 	"crypto/x509"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -219,7 +222,7 @@ func TestCertificateFilesReloadWhenChanged(t *testing.T) {
 
 	writeKeyPair(t, certificatePath, keyPath, "first.example.com", issueTime)
 
-	files, err := LoadCertificateFiles(certificatePath, keyPath)
+	files, err := LoadCertificateFiles(t.Context(), certificatePath, keyPath, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,6 +248,79 @@ func TestCertificateFilesReloadWhenChanged(t *testing.T) {
 	}
 }
 
+func TestCertificateFilesLogReloads(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	certificatePath := filepath.Join(dir, "tls.crt")
+	keyPath := filepath.Join(dir, "tls.key")
+
+	writeKeyPair(t, certificatePath, keyPath, "first.example.com", issueTime)
+
+	var logged bytes.Buffer
+
+	files, err := LoadCertificateFiles(
+		t.Context(),
+		certificatePath,
+		keyPath,
+		slog.New(slog.NewTextHandler(&logged, nil)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	keyInfo, err := os.Stat(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(certificatePath, []byte("garbage"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	brokenAt := time.Now().Add(time.Minute)
+	touch(t, certificatePath, brokenAt)
+
+	for range 3 {
+		served, err := files.GetCertificate(nil)
+		if err != nil || served.Leaf.DNSNames[0] != "first.example.com" {
+			t.Fatalf("with a broken certificate file, served %v, %v; want the previous certificate", served, err)
+		}
+	}
+
+	if n := strings.Count(logged.String(), "TLS certificate files changed but cannot be loaded"); n != 1 {
+		t.Errorf("a broken renewal logged %d warnings, want 1: %s", n, logged.String())
+	}
+
+	writeKeyPair(t, certificatePath, keyPath, "unchanged.example.com", issueTime)
+	touch(t, certificatePath, brokenAt)
+	touch(t, keyPath, keyInfo.ModTime())
+
+	if served, _ := files.GetCertificate(nil); served.Leaf.DNSNames[0] != "first.example.com" {
+		t.Errorf("files whose times did not change were read again: served %v", served.Leaf.DNSNames)
+	}
+
+	writeKeyPair(t, certificatePath, keyPath, "second.example.com", issueTime.Add(time.Hour))
+	touch(t, certificatePath, time.Now().Add(2*time.Minute))
+
+	served, err := files.GetCertificate(nil)
+	if err != nil || served.Leaf.DNSNames[0] != "second.example.com" {
+		t.Fatalf("after the renewal was fixed, served %v, %v", served, err)
+	}
+
+	if !strings.Contains(logged.String(), "TLS certificate files reloaded") {
+		t.Errorf("a successful reload was not logged: %s", logged.String())
+	}
+}
+
+func touch(t *testing.T, path string, modified time.Time) {
+	t.Helper()
+
+	if err := os.Chtimes(path, modified, modified); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLoadCertificateFilesRejectsAMismatchedKey(t *testing.T) {
 	t.Parallel()
 
@@ -256,7 +332,12 @@ func TestLoadCertificateFilesRejectsAMismatchedKey(t *testing.T) {
 	writeKeyPair(t, certificatePath, keyPath, "relic.example.com", issueTime)
 	writeKeyPair(t, filepath.Join(dir, "other.crt"), otherKeyPath, "relic.example.com", issueTime)
 
-	if _, err := LoadCertificateFiles(certificatePath, otherKeyPath); err == nil {
+	if _, err := LoadCertificateFiles(
+		t.Context(),
+		certificatePath,
+		otherKeyPath,
+		slog.New(slog.DiscardHandler),
+	); err == nil {
 		t.Error("a key that does not match the certificate was accepted")
 	}
 }
