@@ -11,6 +11,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"os"
@@ -93,26 +94,7 @@ func Start(t *testing.T, people []Person, groups []Group) *Server {
 		})
 	}
 
-	c, err := testcontainers.Run(ctx, Image,
-		testcontainers.WithEnv(map[string]string{
-			"LDAP_ORGANISATION":        "Relic tests",
-			"LDAP_DOMAIN":              "example.org",
-			"LDAP_ADMIN_PASSWORD":      AdminPassword,
-			"LDAP_TLS_CRT_FILENAME":    "ldap.crt",
-			"LDAP_TLS_KEY_FILENAME":    "ldap.key",
-			"LDAP_TLS_CA_CRT_FILENAME": "ca.crt",
-			"LDAP_TLS_VERIFY_CLIENT":   "never",
-		}),
-		testcontainers.WithCmd("--copy-service"),
-		testcontainers.WithFiles(files...),
-		testcontainers.WithExposedPorts("389/tcp", "636/tcp"),
-		testcontainers.WithWaitStrategy(wait.ForAll(
-			wait.ForListeningPort("389/tcp"), wait.ForListeningPort("636/tcp"),
-		).WithDeadline(3*time.Minute)),
-	)
-	if err != nil {
-		t.Fatalf("start %s: %v", Image, err)
-	}
+	c := startContainer(t, files)
 
 	t.Cleanup(func() {
 		_ = testcontainers.TerminateContainer(c)
@@ -370,4 +352,70 @@ func writeCerts(t *testing.T, dir, host string) []byte {
 	}
 
 	return caPEM
+}
+
+// startAttempts bounds how often a container that fails to start is replaced.
+const startAttempts = 3
+
+func startContainer(t *testing.T, files []testcontainers.ContainerFile) testcontainers.Container {
+	t.Helper()
+
+	for attempt := 1; ; attempt++ {
+		c, err := testcontainers.Run(t.Context(), Image,
+			testcontainers.WithEnv(map[string]string{
+				"LDAP_ORGANISATION":        "Relic tests",
+				"LDAP_DOMAIN":              "example.org",
+				"LDAP_ADMIN_PASSWORD":      AdminPassword,
+				"LDAP_TLS_CRT_FILENAME":    "ldap.crt",
+				"LDAP_TLS_KEY_FILENAME":    "ldap.key",
+				"LDAP_TLS_CA_CRT_FILENAME": "ca.crt",
+				"LDAP_TLS_VERIFY_CLIENT":   "never",
+			}),
+			testcontainers.WithCmd("--copy-service"),
+			testcontainers.WithFiles(files...),
+			testcontainers.WithExposedPorts("389/tcp", "636/tcp"),
+			testcontainers.WithWaitStrategy(wait.ForAll(
+				wait.ForListeningPort("389/tcp"), wait.ForListeningPort("636/tcp"),
+			).WithDeadline(3*time.Minute)),
+		)
+		if err == nil {
+			return c
+		}
+
+		logged := containerLog(c)
+		_ = testcontainers.TerminateContainer(c)
+
+		if attempt == startAttempts {
+			t.Fatalf("start %s: %v\n%s", Image, err, logged)
+		}
+
+		t.Logf("start %s, attempt %d: %v\n%s", Image, attempt, err, logged)
+	}
+}
+
+// containerLog is the end of what c printed, or why it cannot be read.
+func containerLog(c testcontainers.Container) string {
+	if c == nil {
+		return "no container"
+	}
+
+	r, err := c.Logs(context.Background())
+	if err != nil {
+		return "container log: " + err.Error()
+	}
+	defer func() {
+		_ = r.Close()
+	}()
+
+	b, err := io.ReadAll(r)
+	if err != nil {
+		return "container log: " + err.Error()
+	}
+
+	const tail = 8 << 10
+	if len(b) > tail {
+		b = b[len(b)-tail:]
+	}
+
+	return string(b)
 }
