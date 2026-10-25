@@ -135,7 +135,7 @@ func (b *Backoff) Fail(client netip.Addr) {
 	}
 
 	f.count++
-	if over := f.count - b.free; over > 0 {
+	if over := f.count - b.free + 1; over > 0 {
 		delay := maxDelay
 		if over <= 20 {
 			delay = min(minDelay<<(over-1), maxDelay)

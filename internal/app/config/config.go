@@ -58,8 +58,7 @@ type Config struct {
 	// (RELIC_MAX_CONNECTIONS, default 8192; 0 turns it off).
 	MaxConnections int
 	// FailedSignInsBeforeBackoff is how many failed password attempts a
-	// client address gets within ten minutes before each further one makes
-	// it wait (RELIC_FAILED_SIGN_INS_BEFORE_BACKOFF, default 20; threat
+	// client address may make within ten minutes before it has to wait (RELIC_FAILED_SIGN_INS_BEFORE_BACKOFF, default 20; threat
 	// model M3).
 	FailedSignInsBeforeBackoff int
 	// TrustedProxies are the reverse proxies whose X-Forwarded-* headers
