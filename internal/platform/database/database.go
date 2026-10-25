@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"net"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -272,6 +274,30 @@ func NotFound(err error) error {
 // IsNoRows reports whether err is a single-row query that matched no row.
 func IsNoRows(err error) bool {
 	return errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows)
+}
+
+// IsUnavailable reports whether err means the database could not be reached
+// or dropped the connection, rather than refusing the statement.
+func IsUnavailable(err error) bool {
+	if _, ok := errors.AsType[*pgconn.ConnectError](err); ok {
+		return true
+	}
+
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok {
+		return strings.HasPrefix(pgErr.Code, "08") || slices.Contains([]string{
+			"57P01",
+			"57P02",
+			"57P03",
+		}, pgErr.Code)
+	}
+
+	if _, ok := errors.AsType[*net.OpError](err); ok {
+		return true
+	}
+
+	liteErr, ok := errors.AsType[*sqlite.Error](err)
+
+	return ok && liteErr.Code()&0xff == sqlite3.SQLITE_CANTOPEN
 }
 
 // IsUniqueViolation reports whether err is a unique-constraint error.

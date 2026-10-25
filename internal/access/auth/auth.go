@@ -627,6 +627,11 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 			return
 		case WriteThrottled(w, r, err):
 			return
+		case database.IsUnavailable(err):
+			a.log.WarnContext(r.Context(), "authentication failed: database unavailable", "error", err)
+			httperror.Write(w, r, http.StatusServiceUnavailable, "database unavailable")
+
+			return
 		case err != nil:
 			a.log.ErrorContext(r.Context(), "authentication failed", "error", err)
 			httperror.Write(w, r, http.StatusInternalServerError, "authentication failed")

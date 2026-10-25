@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,8 @@ import (
 	"testing"
 	"time"
 	"uuid"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"relic/internal/platform/database"
 	"relic/internal/platform/sealing"
@@ -278,6 +281,67 @@ func TestMiddlewareAndRequire(t *testing.T) {
 
 			if rec.Code == http.StatusUnauthorized && rec.Header().Get("WWW-Authenticate") == "" {
 				t.Error("401 without WWW-Authenticate")
+			}
+		})
+	}
+}
+
+type unreachableUsers struct {
+	err error
+}
+
+func (u unreachableUsers) GetUserByUsername(context.Context, string) (database.User, error) {
+	return database.User{}, fmt.Errorf("get user: %w", u.err)
+}
+
+func TestMiddlewareAnswers503WhileTheDatabaseIsDown(t *testing.T) {
+	t.Parallel()
+
+	_, connectErr := pgconn.Connect(t.Context(), "postgres://relic@127.0.0.1:1/relic?sslmode=disable&connect_timeout=5")
+	if connectErr == nil {
+		t.Fatal("connecting to a closed port succeeded")
+	}
+
+	tests := []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{
+			name:   "the database refuses connections",
+			err:    connectErr,
+			status: http.StatusServiceUnavailable,
+		},
+		{
+			name:   "another lookup failure",
+			err:    errors.New("scan: unexpected column"),
+			status: http.StatusInternalServerError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			a := NewAuthenticator(unreachableUsers{
+				err: tt.err,
+			}, fakeGroups{}, fakeTokens{}, slog.New(slog.DiscardHandler))
+			h := a.Middleware(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				t.Error("the request went past authentication")
+			}))
+
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/repositories", nil)
+			req.SetBasicAuth("bob", "userpw")
+
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			if rec.Code != tt.status {
+				t.Errorf("response = %d %s, want %d", rec.Code, rec.Body, tt.status)
+			}
+
+			if tt.status == http.StatusServiceUnavailable &&
+				!strings.Contains(rec.Body.String(), "database unavailable") {
+				t.Errorf("body = %s, want it to name the database", rec.Body)
 			}
 		})
 	}
