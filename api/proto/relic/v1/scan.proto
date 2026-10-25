@@ -777,6 +777,9 @@ message ImportVexResponse {
   // skipped counts the statements left out: other statuses, and those
   // naming no package URL.
   int32 skipped = 2;
+  // existing counts the statements whose ignore rule is already stored;
+  // they create no rule.
+  int32 existing = 3;
 }
 
 message ExplainDownloadRequest {

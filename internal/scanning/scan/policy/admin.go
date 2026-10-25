@@ -416,32 +416,57 @@ func insertIgnoreRule(ctx context.Context, q database.Querier, r IgnoreRule, use
 	return r, nil
 }
 
-// CreateIgnoreRules stores rules in one transaction, all or none, and
-// returns them with their IDs.
-func (a *Admin) CreateIgnoreRules(ctx context.Context, rules []IgnoreRule, user string) ([]IgnoreRule, error) {
+// ImportIgnoreRules stores the rules whose scope is new, all or none, and counts the others.
+func (a *Admin) ImportIgnoreRules(
+	ctx context.Context,
+	rules []IgnoreRule,
+	user string,
+) ([]IgnoreRule, int, error) {
 	out := make([]IgnoreRule, 0, len(rules))
+	existing := 0
 
 	defer a.changed()
 
 	err := a.DB.WithTx(ctx, func(q database.Querier) error {
 		out = out[:0]
+		existing = 0
+
+		rows, err := q.ListIgnoreRules(ctx)
+		if err != nil {
+			return fmt.Errorf("list ignore rules: %w", err)
+		}
+
+		known := make([]IgnoreRule, 0, len(rows)+len(rules))
+		for _, row := range rows {
+			var r IgnoreRule
+			if json.Unmarshal(row.Doc, &r) == nil {
+				known = append(known, r)
+			}
+		}
 
 		for _, r := range rules {
+			if slices.ContainsFunc(known, r.SameScope) {
+				existing++
+
+				continue
+			}
+
 			created, err := insertIgnoreRule(ctx, q, r, user)
 			if err != nil {
 				return err
 			}
 
+			known = append(known, created)
 			out = append(out, created)
 		}
 
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	return out, nil
+	return out, existing, nil
 }
 
 // DeleteIgnoreRule deletes a rule.

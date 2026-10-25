@@ -4504,6 +4504,12 @@
             "title": "skipped",
             "format": "int32",
             "description": "skipped counts the statements left out: other statuses, and those\n naming no package URL."
+          },
+          "existing": {
+            "type": "integer",
+            "title": "existing",
+            "format": "int32",
+            "description": "existing counts the statements whose ignore rule is already stored;\n they create no rule."
           }
         },
         "title": "ImportVexResponse",

@@ -4658,7 +4658,10 @@ type ImportVexResponse struct {
 	Rules []*IgnoreRule          `protobuf:"bytes,1,rep,name=rules,proto3" json:"rules,omitempty"`
 	// skipped counts the statements left out: other statuses, and those
 	// naming no package URL.
-	Skipped       int32 `protobuf:"varint,2,opt,name=skipped,proto3" json:"skipped,omitempty"`
+	Skipped int32 `protobuf:"varint,2,opt,name=skipped,proto3" json:"skipped,omitempty"`
+	// existing counts the statements whose ignore rule is already stored;
+	// they create no rule.
+	Existing      int32 `protobuf:"varint,3,opt,name=existing,proto3" json:"existing,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4703,6 +4706,13 @@ func (x *ImportVexResponse) GetRules() []*IgnoreRule {
 func (x *ImportVexResponse) GetSkipped() int32 {
 	if x != nil {
 		return x.Skipped
+	}
+	return 0
+}
+
+func (x *ImportVexResponse) GetExisting() int32 {
+	if x != nil {
+		return x.Existing
 	}
 	return 0
 }
@@ -5404,10 +5414,11 @@ const file_relic_v1_scan_proto_rawDesc = "" +
 	"\bdocument\x18\x01 \x01(\tR\bdocument\x12\x18\n" +
 	"\askipped\x18\x02 \x01(\x05R\askipped\".\n" +
 	"\x10ImportVexRequest\x12\x1a\n" +
-	"\bdocument\x18\x01 \x01(\tR\bdocument\"Y\n" +
+	"\bdocument\x18\x01 \x01(\tR\bdocument\"u\n" +
 	"\x11ImportVexResponse\x12*\n" +
 	"\x05rules\x18\x01 \x03(\v2\x14.relic.v1.IgnoreRuleR\x05rules\x12\x18\n" +
-	"\askipped\x18\x02 \x01(\x05R\askipped\"L\n" +
+	"\askipped\x18\x02 \x01(\x05R\askipped\x12\x1a\n" +
+	"\bexisting\x18\x03 \x01(\x05R\bexisting\"L\n" +
 	"\x16ExplainDownloadRequest\x12\x1e\n" +
 	"\n" +
 	"repository\x18\x01 \x01(\tR\n" +

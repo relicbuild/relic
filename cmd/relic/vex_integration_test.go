@@ -24,7 +24,7 @@ func TestVexCommands(t *testing.T) {
 
 	out, err := relic(t, config, doc, "security", "vex", "import", "-")
 	if err != nil || !hasTableRowWith(out, "CVE-2021-23337", "pkg:npm/lodash@4.17.15") ||
-		!strings.HasSuffix(out, "1 ignore rules created, 1 statements left out\n") {
+		!strings.HasSuffix(out, "1 ignore rules created, 0 already stored, 1 statements left out\n") {
 		t.Fatalf("import = %q %v", out, err)
 	}
 
@@ -48,7 +48,7 @@ func TestVexCommands(t *testing.T) {
 		"import",
 		file,
 	); err != nil ||
-		!strings.Contains(out, "1 ignore rules created") {
+		!strings.HasSuffix(out, "0 ignore rules created, 1 already stored, 0 statements left out\n") {
 		t.Errorf("re-import = %q %v", out, err)
 	}
 
@@ -75,7 +75,7 @@ func TestVexCommands(t *testing.T) {
 	}
 
 	if out, err := relic(t, config, "", "security", "vex", "import", cdxFile); err != nil ||
-		!hasTableRowWith(out, "CVE-2021-23337", "pkg:npm/lodash@4.17.15") {
+		!strings.HasSuffix(out, "0 ignore rules created, 1 already stored, 0 statements left out\n") {
 		t.Errorf("CycloneDX re-import = %q %v", out, err)
 	}
 

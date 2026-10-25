@@ -164,8 +164,9 @@ func vexImportCmd(g *globals) *cobra.Command {
 
 				_, err := fmt.Fprintf(
 					w,
-					"%d ignore rules created, %d statements left out\n",
+					"%d ignore rules created, %d already stored, %d statements left out\n",
 					len(r.GetRules()),
+					r.GetExisting(),
 					r.GetSkipped(),
 				)
 

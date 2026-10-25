@@ -93,10 +93,12 @@ func (s *scanServer) ImportVex(
 	}
 	user := auth.FromContext(ctx).Name()
 
-	created, err := s.d.ScanPolicies.CreateIgnoreRules(ctx, rules, user)
+	created, existing, err := s.d.ScanPolicies.ImportIgnoreRules(ctx, rules, user)
 	if err != nil {
-		return nil, fmt.Errorf("create ignore rules: %w", err)
+		return nil, fmt.Errorf("import ignore rules: %w", err)
 	}
+
+	out.Existing = int32(min(existing, 1<<30)) //nolint:gosec // bounded
 
 	for _, r := range created {
 		out.Rules = append(out.Rules, ignoreRuleMessage(r))
@@ -111,6 +113,8 @@ func (s *scanServer) ImportVex(
 		len(out.GetRules()),
 		"skipped",
 		skipped,
+		"existing",
+		existing,
 		"user",
 		user,
 	)

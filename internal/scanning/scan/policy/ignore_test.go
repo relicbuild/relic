@@ -5,6 +5,88 @@ import (
 	"time"
 )
 
+func TestIgnoreRule_SameScope(t *testing.T) {
+	t.Parallel()
+
+	expiry := time.Date(2026, 9, 23, 0, 0, 0, 0, time.UTC)
+	base := IgnoreRule{
+		ID:    "a",
+		Notes: "VEX 1",
+		CVEs: []string{
+			"CVE-2024-0001",
+		},
+		Packages: []string{
+			"pkg:npm/lodash@4.17.15",
+		},
+	}
+
+	tests := []struct {
+		name   string
+		change func(*IgnoreRule)
+		want   bool
+	}{
+		{
+			name: "another ID and notes",
+			change: func(r *IgnoreRule) {
+				r.ID = "b"
+				r.Notes = "VEX 2"
+			},
+			want: true,
+		},
+		{
+			name: "empty instead of absent filters",
+			change: func(r *IgnoreRule) {
+				r.Licenses = []string{}
+			},
+			want: true,
+		},
+		{
+			name: "another package",
+			change: func(r *IgnoreRule) {
+				r.Packages = []string{
+					"pkg:npm/left-pad@1.3.0",
+				}
+			},
+		},
+		{
+			name: "a watch",
+			change: func(r *IgnoreRule) {
+				r.Watches = []string{
+					"prod",
+				}
+			},
+		},
+		{
+			name: "an expiry",
+			change: func(r *IgnoreRule) {
+				r.Expires = &expiry
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			other := base
+			tt.change(&other)
+
+			if got := base.SameScope(other); got != tt.want {
+				t.Errorf("SameScope = %v, want %v", got, tt.want)
+			}
+		})
+	}
+
+	withExpiry := base
+	withExpiry.Expires = &expiry
+	sameInstant := expiry.In(time.FixedZone("CET", 3600))
+	otherExpiry := base
+	otherExpiry.Expires = &sameInstant
+
+	if !withExpiry.SameScope(otherExpiry) {
+		t.Error("SameScope of the same expiry in another zone = false, want true")
+	}
+}
+
 func TestIgnoreRule(t *testing.T) {
 	t.Parallel()
 
