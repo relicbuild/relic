@@ -207,6 +207,10 @@ func (s *Service) ScanArtifact(ctx context.Context, sha256Hex, fileName string) 
 		name = "artifact"
 	}
 
+	if IsModelFile(name) {
+		return s.scanModel(ctx, sha256Hex, since, filepath.Join(dir, "in", name))
+	}
+
 	var source, reason, file string
 	if name == imageManifestName {
 		source, err = s.prepareImage(ctx, sha256Hex, filepath.Join(dir, "oci"))
@@ -359,10 +363,41 @@ func (s *Service) withOSDistro(ctx context.Context, sha256Hex, fileName string, 
 	return sbom, unmatched, nil
 }
 
+func (s *Service) scanModel(ctx context.Context, sha256Hex string, since time.Time, file string) error {
+	if err := s.download(ctx, sha256Hex, file); err != nil {
+		return err
+	}
+
+	modelAnalyzers := slices.DeleteFunc(slices.Clone(s.analyzers), func(a Analyzer) bool {
+		return a.Name() != AnalyzerModel
+	})
+
+	issues, failed := s.analyzeWith(ctx, modelAnalyzers, "file:"+file)
+
+	status := StatusDone
+	if failed != "" {
+		status = StatusPartial
+	}
+
+	if err := s.finish(ctx, sha256Hex, since, status, failed, nil, nil); err != nil {
+		return err
+	}
+
+	return s.saveIssues(ctx, sha256Hex, issues)
+}
+
 func (s *Service) analyze(ctx context.Context, source string) (issues []Issue, failed string) {
+	return s.analyzeWith(ctx, s.analyzers, source)
+}
+
+func (s *Service) analyzeWith(
+	ctx context.Context,
+	analyzers []Analyzer,
+	source string,
+) (issues []Issue, failed string) {
 	var failures []string
 
-	for _, a := range s.analyzers {
+	for _, a := range analyzers {
 		var found []Issue
 
 		err := telemetry.ScanStage(ctx, a.Name(), func(ctx context.Context) error {
