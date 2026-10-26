@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -277,11 +278,28 @@ type Exec struct {
 	Env       []string // added to a minimal environment
 	Timeout   time.Duration
 	MaxOutput int64
+	// Slots bounds the scanners that run at once and sets each one's
+	// GOMEMLIMIT; nil runs them unbounded.
+	Slots *ScannerSlots
 }
 
 var defaultExecTimeout = 10 * time.Minute
 
 func (e Exec) run(ctx context.Context, args ...string) ([]byte, error) {
+	return e.runInSlot(ctx, false, args...)
+}
+
+func (e Exec) runAlone(ctx context.Context, args ...string) ([]byte, error) {
+	return e.runInSlot(ctx, true, args...)
+}
+
+func (e Exec) runInSlot(ctx context.Context, databaseChange bool, args ...string) ([]byte, error) {
+	memory, release, err := e.Slots.acquire(ctx, databaseChange)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
 	timeout := e.Timeout
 	if timeout <= 0 {
 		timeout = defaultExecTimeout
@@ -297,6 +315,9 @@ func (e Exec) run(ctx context.Context, args ...string) ([]byte, error) {
 		"PATH=/usr/local/bin:/usr/bin:/bin",
 		"HOME=" + os.TempDir(),
 	}, e.Env...)
+	if memory > 0 {
+		cmd.Env = append(cmd.Env, "GOMEMLIMIT="+strconv.FormatInt(memory, 10))
+	}
 
 	limit := e.MaxOutput
 	if limit <= 0 {
@@ -315,7 +336,7 @@ func (e Exec) run(ctx context.Context, args ...string) ([]byte, error) {
 	}
 	killGroup(cmd)
 	cmd.WaitDelay = 5 * time.Second
-	err := cmd.Run()
+	err = cmd.Run()
 
 	if stdout.overflow {
 		return nil, ErrTooLarge
@@ -447,7 +468,7 @@ func (g Grype) changeDB(ctx context.Context, args ...string) error {
 		return err
 	}
 
-	_, err := g.databaseExec().run(ctx, args...)
+	_, err := g.databaseExec().runAlone(ctx, args...)
 
 	return errors.Join(err, g.removeAbandonedDownloads())
 }

@@ -564,7 +564,7 @@ func NewWorkerClient(
 
 		periodic = append(periodic, scanPeriodicJobs()...)
 		queues[ScanQueue] = river.QueueConfig{
-			MaxWorkers: 2,
+			MaxWorkers: scanWorkers(scanning),
 		}
 		queues[GraphQueue] = river.QueueConfig{
 			MaxWorkers: 4,

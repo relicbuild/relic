@@ -154,9 +154,16 @@ func Run(ctx context.Context, args []string, getenv func(string) string, stderr 
 
 	log := tel.Logger
 
-	if limit := memoryLimit(getenv, cgroupMemoryMax); limit > 0 {
+	container := containerMemory(cgroupMemoryMax)
+
+	var scanBudget int64
+	if args[0] == "worker" || withWorker {
+		scanBudget = scannerMemory(getenv, container)
+	}
+
+	if limit := memoryLimit(getenv, container, scanBudget); limit > 0 {
 		debug.SetMemoryLimit(limit)
-		log.InfoContext(ctx, "memory limit set from the container's", "bytes", limit)
+		log.InfoContext(ctx, "memory limit set from the container's", "bytes", limit, "scanners", scanBudget)
 	}
 
 	log.InfoContext(ctx, "uploads to object storage in flight at most",
@@ -1240,25 +1247,51 @@ func routes(checks []relicapi.HealthCheck) *httpserver.Router {
 	return rt
 }
 
-func scanning(db *database.DB, blobs objectstore.Store, cfg config.Scan, log *slog.Logger) *backgroundjobs.Scanning {
+func scannersInstalled(cfg config.Scan) (syftPath, grypePath string, err error) {
 	syftPath, err1 := exec.LookPath(cfg.SyftPath)
-
 	grypePath, err2 := exec.LookPath(cfg.GrypePath)
-	if err := errors.Join(err1, err2); err != nil {
+
+	return syftPath, grypePath, errors.Join(err1, err2)
+}
+
+func scannerMemory(getenv func(string) string, container int64) int64 {
+	cfg, err := config.Load(getenv)
+	if err != nil {
+		return 0
+	}
+
+	if _, _, err := scannersInstalled(cfg.Scan); err != nil {
+		return 0
+	}
+
+	return scanMemoryBudget(cfg.Scan.MemoryBudget, container)
+}
+
+func scanning(db *database.DB, blobs objectstore.Store, cfg config.Scan, log *slog.Logger) *backgroundjobs.Scanning {
+	syftPath, grypePath, err := scannersInstalled(cfg)
+	if err != nil {
 		log.Warn("Relic Scan disabled: scanner binaries not found", "error", err)
 		return nil
 	}
 
+	slots := scan.NewScannerSlots(scanMemoryBudget(cfg.MemoryBudget, containerMemory(cgroupMemoryMax)))
+	log.Info("Relic Scan: scanner memory", "budget", slots.Budget(), "scanners", slots.Count(),
+		"each", slots.ScannerMemory())
+
 	grype := scan.Grype{
 		Exec: scan.Exec{
-			Path: grypePath,
+			Path:  grypePath,
+			Slots: slots,
 		},
 		DatabaseDir: cfg.VulnerabilityDatabaseDir,
 		UpdateURL:   cfg.VulnerabilityDatabaseURL,
 		Offline:     cfg.VulnerabilityDatabaseOff,
 	}
 	syft := scan.Syft{
-		Path: syftPath,
+		Exec: scan.Exec{
+			Path:  syftPath,
+			Slots: slots,
+		},
 	}
 	feeds := cvecatalog.Feeds{
 		EPSS:    cfg.EPSSFeedURL,
@@ -1268,7 +1301,7 @@ func scanning(db *database.DB, blobs objectstore.Store, cfg config.Scan, log *sl
 
 	svc := scan.NewService(db, blobs, syft, grype, scan.Limits{}, log)
 	svc.SetMalicious(malicious.NewCatalog(db))
-	svc.SetAnalyzers(analyzers(cfg, log)...)
+	svc.SetAnalyzers(analyzers(cfg, slots, log)...)
 
 	if cfg.SecretValidation {
 		log.Warn("Relic Scan validates the secrets it finds with their providers (RELIC_SECRET_VALIDATION_ENABLED)")
@@ -1299,6 +1332,7 @@ func scanning(db *database.DB, blobs objectstore.Store, cfg config.Scan, log *sl
 		svc.SetReachability(&scan.GoReachability{
 			Exec: scan.Exec{
 				Path:    p,
+				Slots:   slots,
 				Timeout: 5 * time.Minute,
 			},
 			DatabaseDir: goDB.Dir,
@@ -1307,6 +1341,7 @@ func scanning(db *database.DB, blobs objectstore.Store, cfg config.Scan, log *sl
 
 	return &backgroundjobs.Scanning{
 		Service:           svc,
+		Slots:             slots,
 		Grype:             grype,
 		Imports:           scan.NewDatabaseImports(blobs, log),
 		Malicious:         feed,
@@ -1316,7 +1351,7 @@ func scanning(db *database.DB, blobs objectstore.Store, cfg config.Scan, log *sl
 	}
 }
 
-func analyzers(cfg config.Scan, log *slog.Logger) []scan.Analyzer {
+func analyzers(cfg config.Scan, slots *scan.ScannerSlots, log *slog.Logger) []scan.Analyzer {
 	out := []scan.Analyzer{
 		scan.Model{},
 	}
@@ -1324,7 +1359,8 @@ func analyzers(cfg config.Scan, log *slog.Logger) []scan.Analyzer {
 	if p, err := exec.LookPath(cfg.GitleaksPath); err == nil {
 		out = append(out, scan.Gitleaks{
 			Exec: scan.Exec{
-				Path: p,
+				Path:  p,
+				Slots: slots,
 			},
 			Unredacted: cfg.SecretValidation,
 		})
@@ -1335,7 +1371,8 @@ func analyzers(cfg config.Scan, log *slog.Logger) []scan.Analyzer {
 	if p, err := exec.LookPath(cfg.TrivyPath); err == nil {
 		out = append(out, scan.Trivy{
 			Exec: scan.Exec{
-				Path: p,
+				Path:  p,
+				Slots: slots,
 			},
 			CacheDir: filepath.Join(cfg.VulnerabilityDatabaseDir, "trivy"),
 		})
@@ -1354,6 +1391,7 @@ func analyzers(cfg config.Scan, log *slog.Logger) []scan.Analyzer {
 		out = append(out, scan.ScanCode{
 			Exec: scan.Exec{
 				Path:    p,
+				Slots:   slots,
 				Timeout: 20 * time.Minute,
 			},
 		})
