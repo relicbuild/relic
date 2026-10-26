@@ -1,8 +1,8 @@
 package npm
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"maps"
 	"slices"
@@ -15,7 +15,7 @@ import (
 )
 
 // checkTarball refuses a tarball whose version is cooling down, and finds its
-// dist.shasum, both in its packument.
+// dist.shasum, both in its cached packument or else the upstream one.
 func (s *Service) checkTarball(
 	ctx context.Context,
 	r repository.Repository,
@@ -34,6 +34,12 @@ func (s *Service) checkTarball(
 		return repository.Checksums{}, nil
 	}
 
+	if index, ok := s.cachedIndex(ctx, r, name); ok {
+		if sums, matched, err := s.tarballChecksums(index, file, cooldown); matched {
+			return sums, err
+		}
+	}
+
 	accept := AbbreviatedMediaType
 	if cooldown > 0 {
 		accept = "application/json"
@@ -41,7 +47,7 @@ func (s *Service) checkTarball(
 
 	upstream := strings.TrimSuffix(cfg.URL, "/")
 
-	body, err := s.repos.FetchUpstream(ctx, r, upstream+"/"+escapeName(name), accept, 256<<20)
+	body, err := s.repos.FetchUpstream(ctx, r, upstream+"/"+escapeName(name), accept, maxPackumentBytes)
 	if errors.Is(err, repository.ErrNotFound) {
 		return repository.Checksums{}, nil
 	}
@@ -50,36 +56,54 @@ func (s *Service) checkTarball(
 		return repository.Checksums{}, err
 	}
 
-	var doc struct {
-		Time     map[string]string `json:"time"`
-		Versions map[string]struct {
-			Dist struct {
-				Tarball string `json:"tarball"`
-				Shasum  string `json:"shasum"`
-			} `json:"dist"`
-		} `json:"versions"`
-	}
-	if err := json.Unmarshal(body, &doc); err != nil {
+	index, err := readPackumentIndex(bytes.NewReader(body))
+	if err != nil {
 		return repository.Checksums{}, nil //nolint:nilerr // an unreadable packument checks nothing
 	}
 
-	for version, v := range doc.Versions {
-		if !strings.HasSuffix(v.Dist.Tarball, "/-/"+file) {
+	sums, _, err := s.tarballChecksums(index, file, cooldown)
+
+	return sums, err
+}
+
+func (s *Service) cachedIndex(ctx context.Context, r repository.Repository, name string) (packumentIndex, bool) {
+	item, err := s.repos.Stat(ctx, r.Name, packumentCachePath(name))
+	if err != nil || item.IsFolder() {
+		return packumentIndex{}, false
+	}
+
+	index, err := s.packumentIndex(ctx, item)
+
+	return index, err == nil
+}
+
+func (s *Service) tarballChecksums(
+	index packumentIndex,
+	file string,
+	cooldown time.Duration,
+) (repository.Checksums, bool, error) {
+	matched := false
+
+	for _, v := range index.versions {
+		if !strings.HasSuffix(v.tarball, "/-/"+file) {
 			continue
 		}
 
-		if published, ok := publishTime(doc.Time, version); ok && cooldown > 0 && s.now().Sub(published) < cooldown {
-			return repository.Checksums{}, repository.ErrCoolingDown
+		matched = true
+
+		if published, ok := publishTime(index.times, v.version); ok && cooldown > 0 &&
+			s.now().Sub(published) < cooldown {
+			return repository.Checksums{}, true, repository.ErrCoolingDown
 		}
 
-		if len(v.Dist.Shasum) == 40 {
+		if len(v.shasum) == 40 {
 			return repository.Checksums{
-				SHA1: strings.ToLower(v.Dist.Shasum),
-			}, nil
+				SHA1: strings.ToLower(v.shasum),
+			}, true, nil
 		}
 	}
 
-	return repository.Checksums{}, nil
+	return repository.Checksums{}, matched, nil
 }
 
 func publishTime(times map[string]string, version string) (time.Time, bool) {
