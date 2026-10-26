@@ -25,6 +25,7 @@ import (
 
 	"relic/internal/artifacts/repository"
 	"relic/internal/platform/database"
+	"relic/internal/platform/memorylimit"
 )
 
 // Format is the repository format this package serves.
@@ -63,10 +64,14 @@ func NewService(db *database.DB, repos *repository.Service, log *slog.Logger) *S
 		repos: repos,
 		log:   log,
 		now:   time.Now,
-		indexes: newBoundedCache("index", packumentIndexCacheBytes, func(x packumentIndex) int64 {
-			return x.bytes()
-		}),
-		documents: newBoundedCache("document", packumentDocumentCacheBytes, func(b []byte) int64 {
+		indexes: newBoundedCache(
+			"index",
+			memorylimit.Share(packumentIndexCacheBytes, 32),
+			func(x packumentIndex) int64 {
+				return x.bytes()
+			},
+		),
+		documents: newBoundedCache("document", memorylimit.Share(packumentDocumentCacheBytes, 8), func(b []byte) int64 {
 			return int64(cap(b))
 		}),
 		client: &http.Client{

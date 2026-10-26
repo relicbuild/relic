@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"relic/internal/artifacts/repository"
+	"relic/internal/platform/memorylimit"
 
 	"golang.org/x/mod/semver"
 )
@@ -65,7 +66,7 @@ type Service struct {
 func NewService(repos *repository.Service, log *slog.Logger) *Service {
 	s := &Service{
 		repos:   repos,
-		nuspecs: newNuspecCache(nuspecCacheBytes),
+		nuspecs: newNuspecCache(int(memorylimit.Share(nuspecCacheBytes, 32))),
 		log:     log,
 	}
 	repos.RegisterHook(Format, s.index)

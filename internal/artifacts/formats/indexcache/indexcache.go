@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"relic/internal/platform/memorylimit"
 	"relic/internal/platform/telemetry"
 )
 
@@ -71,6 +72,8 @@ type flight[V any] struct {
 // New returns a Cache for format's indexes; size counts an index's bytes and
 // now is the clock.
 func New[V any](format string, settings Settings, size func(V) int64, now func() time.Time) *Cache[V] {
+	settings.Bytes = memorylimit.Share(settings.Bytes, 16)
+
 	return &Cache[V]{
 		format:   format,
 		settings: settings,
