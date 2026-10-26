@@ -1,13 +1,11 @@
 package objectstore
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"iter"
-	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -31,31 +29,13 @@ const (
 	uploadPartSize    int64 = 5 << 20
 	uploadConcurrency       = 2
 	maxUploadParts    int64 = 10000
-	// maxUnknownUploadSize keeps the parts of an upload within uploadSlotMemory.
+	// maxUnknownUploadSize keeps the parts of an upload within s3UploadMemory.
 	maxUnknownUploadSize int64 = 64 << 30
 	abortTimeout               = 30 * time.Second
 	// responseTimeout bounds the wait for a response's headers; a large
 	// server-side copy answers within it.
 	responseTimeout = 5 * time.Minute
 )
-
-const (
-	uploadSlotMemory            int64 = 40 << 20
-	reservedMemory              int64 = 256 << 20
-	minUploadSlots                    = 4
-	maxUploadSlots                    = 64
-	defaultMaxConcurrentUploads       = 16
-)
-
-// UploadSlots is how many uploads may be in flight under Go's soft memory
-// limit.
-func UploadSlots(memoryLimit int64) int {
-	if memoryLimit <= 0 || memoryLimit == math.MaxInt64 {
-		return defaultMaxConcurrentUploads
-	}
-
-	return int(min(max((memoryLimit-reservedMemory)/uploadSlotMemory, minUploadSlots), maxUploadSlots))
-}
 
 const minCopyPartSize int64 = 512 << 20
 
@@ -88,7 +68,7 @@ type S3Store struct {
 	client   *s3.Client
 	presign  *s3.PresignClient
 	uploader *transfermanager.Client
-	uploads  chan struct{}
+	uploads  uploadGate
 	blobs    string
 	tmp      string
 
@@ -159,7 +139,7 @@ func newS3(cfg S3Config, httpClient aws.HTTPClient) *S3Store {
 			o.FailTimeout = abortTimeout
 			o.RequestChecksumCalculation = checksums
 		}),
-		uploads: make(chan struct{}, cmp.Or(cfg.MaxConcurrentUploads, defaultMaxConcurrentUploads)),
+		uploads: newUploadGate(cfg.MaxConcurrentUploads),
 		blobs:   cfg.ArtifactsBucket,
 		tmp:     cfg.TemporaryBucket,
 
@@ -199,15 +179,11 @@ func (s *S3Store) copyPartSize(size int64) int64 {
 
 // Put implements Store.
 func (s *S3Store) Put(ctx context.Context, key string, r io.Reader, size int64) error {
-	select {
-	case s.uploads <- struct{}{}:
-	case <-ctx.Done():
-		return fmt.Errorf("put %s: waiting for an upload slot: %w", key, ctx.Err())
+	release, err := s.uploads.acquire(ctx, key)
+	if err != nil {
+		return err
 	}
-
-	defer func() {
-		<-s.uploads
-	}()
+	defer release()
 
 	bucket, object := s.locate(key)
 	in := &transfermanager.UploadObjectInput{

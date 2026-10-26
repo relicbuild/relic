@@ -166,9 +166,6 @@ func Run(ctx context.Context, args []string, getenv func(string) string, stderr 
 		log.InfoContext(ctx, "memory limit set from the container's", "bytes", limit, "scanners", scanBudget)
 	}
 
-	log.InfoContext(ctx, "uploads to object storage in flight at most",
-		"slots", objectstore.UploadSlots(debug.SetMemoryLimit(-1)))
-
 	if args[0] != "migrate" {
 		if _, err := tel.ServeMetrics(ctx); err != nil {
 			return err
@@ -526,6 +523,9 @@ func blobStore(
 	stop context.CancelCauseFunc,
 	log *slog.Logger,
 ) (objectstore.Store, error) {
+	uploadSlots := objectstore.UploadSlots(cfg.ObjectStorage.Type, debug.SetMemoryLimit(-1))
+	log.InfoContext(ctx, "uploads to object storage in flight at most", "slots", uploadSlots)
+
 	blobs, err := objectstore.Open(ctx, objectstore.Config{
 		Type: cfg.ObjectStorage.Type,
 		S3: objectstore.S3Config{
@@ -536,21 +536,23 @@ func blobStore(
 			ArtifactsBucket:      cfg.ObjectStorage.ArtifactsBucket,
 			TemporaryBucket:      cfg.ObjectStorage.TemporaryBucket,
 			ChecksumWhenRequired: cfg.ObjectStorage.Checksum == "when_required",
-			MaxConcurrentUploads: objectstore.UploadSlots(debug.SetMemoryLimit(-1)),
+			MaxConcurrentUploads: uploadSlots,
 			ServerSideEncryption: cfg.ObjectStorage.ServerSideEncryption,
 			SSEKMSKeyID:          cfg.ObjectStorage.SSEKMSKeyID,
 			StorageClass:         cfg.ObjectStorage.StorageClass,
 		},
 		Azure: objectstore.AzureConfig{
-			AccountURL:       cfg.ObjectStorage.Endpoint,
-			ConnectionString: cfg.ObjectStorage.AzureConnectionString,
-			ArtifactsBucket:  cfg.ObjectStorage.ArtifactsBucket,
-			TemporaryBucket:  cfg.ObjectStorage.TemporaryBucket,
+			AccountURL:           cfg.ObjectStorage.Endpoint,
+			ConnectionString:     cfg.ObjectStorage.AzureConnectionString,
+			ArtifactsBucket:      cfg.ObjectStorage.ArtifactsBucket,
+			TemporaryBucket:      cfg.ObjectStorage.TemporaryBucket,
+			MaxConcurrentUploads: uploadSlots,
 		},
 		GCS: objectstore.GCSConfig{
-			Endpoint:        cfg.ObjectStorage.Endpoint,
-			ArtifactsBucket: cfg.ObjectStorage.ArtifactsBucket,
-			TemporaryBucket: cfg.ObjectStorage.TemporaryBucket,
+			Endpoint:             cfg.ObjectStorage.Endpoint,
+			ArtifactsBucket:      cfg.ObjectStorage.ArtifactsBucket,
+			TemporaryBucket:      cfg.ObjectStorage.TemporaryBucket,
+			MaxConcurrentUploads: uploadSlots,
 		},
 		FilesystemPath: cfg.ObjectStorage.Path,
 	})

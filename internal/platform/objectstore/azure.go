@@ -39,13 +39,15 @@ type AzureConfig struct {
 	// identity, the environment).
 	ConnectionString string
 	// ArtifactsBucket and TemporaryBucket name the two containers.
-	ArtifactsBucket string
-	TemporaryBucket string
+	ArtifactsBucket      string
+	TemporaryBucket      string
+	MaxConcurrentUploads int
 }
 
 // AzureStore implements Store on Azure Blob Storage.
 type AzureStore struct {
-	client *azblob.Client
+	client  *azblob.Client
+	uploads uploadGate
 	// sharedKey signs presigned URLs when the account key is configured.
 	sharedKey  *azblob.SharedKeyCredential
 	blobs, tmp string
@@ -54,8 +56,9 @@ type AzureStore struct {
 // NewAzure returns a store for cfg.
 func NewAzure(cfg AzureConfig) (*AzureStore, error) {
 	s := &AzureStore{
-		blobs: cfg.ArtifactsBucket,
-		tmp:   cfg.TemporaryBucket,
+		uploads: newUploadGate(cfg.MaxConcurrentUploads),
+		blobs:   cfg.ArtifactsBucket,
+		tmp:     cfg.TemporaryBucket,
 	}
 
 	var err error
@@ -115,6 +118,12 @@ func (s *AzureStore) blob(key string) *blob.Client {
 // Put implements Store. A failed read of r commits no block list, so the
 // key is left as it was.
 func (s *AzureStore) Put(ctx context.Context, key string, r io.Reader, _ int64) error {
+	release, err := s.uploads.acquire(ctx, key)
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	container, name := s.locate(key)
 
 	if _, err := s.client.UploadStream(ctx, container, name, r, &azblob.UploadStreamOptions{
