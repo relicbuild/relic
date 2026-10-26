@@ -237,6 +237,12 @@ tasks:
     cmds:
       - go test -tags e2e -count=1 -v -timeout 120m ./test/e2e -run TestKubernetes -tier k8s
 
+  test:perf:
+    desc: "Memory under load: one server in a container with a memory limit (-memory, default 512m) through uploads, downloads, a 1 GiB file and the package managers' largest documents; the report and heap profiles go to $TMPDIR/relic-perf"
+    cmds:
+      - mkdir -p "${TMPDIR:-/tmp}/relic-perf"
+      - go test -tags perf -count=1 -v -timeout 120m ./test/perf -run TestMemory -artifacts -outputdir "${TMPDIR:-/tmp}/relic-perf" {{.CLI_ARGS}}
+
   test:clean:
     desc: "Remove what the tests keep between runs: any stack or cluster left by -keep or an interrupted run, the images the suite built, and the vulnerability database cache"
     cmds:
