@@ -19,9 +19,15 @@ var (
 	// PromQL: sum by (format) (rate(relic_index_cache_total{result="miss"}[5m]))   (requests that waited for a build)
 	indexCache = counterVec(
 		"index_cache_total",
-		"Lookups of the generated indexes of virtual repositories: hit (served fresh), stale (served while a rebuild runs), miss (waited for a build).",
+		"Lookups of generated indexes: hit (served fresh), stale (served while a rebuild runs), miss (waited for a build).",
 		"format",
 		"result",
+	)
+
+	indexCacheBytes = gaugeVec(
+		"index_cache_bytes",
+		"Bytes the kept generated indexes take, by format.",
+		"format",
 	)
 )
 
@@ -30,8 +36,12 @@ func IndexBuilt(ctx context.Context, format, class string, err error, took time.
 	observe(ctx, indexBuildDuration.WithLabelValues(Format(format), Class(class), Result(err)), took.Seconds())
 }
 
-// IndexCacheLookup counts a lookup of a virtual repository's generated
-// indexes.
+// IndexCacheLookup counts a lookup of generated indexes.
 func IndexCacheLookup(format, outcome string) {
 	indexCache.WithLabelValues(Format(format), result(outcome)).Inc()
+}
+
+// IndexCacheResized adds delta to the bytes format's kept indexes take.
+func IndexCacheResized(format string, delta int64) {
+	indexCacheBytes.WithLabelValues(Format(format)).Add(float64(delta))
 }

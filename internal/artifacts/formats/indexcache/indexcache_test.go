@@ -15,9 +15,12 @@ var testSettings = Settings{
 	Fresh:   30 * time.Second,
 	Stale:   10 * time.Minute,
 	Entries: 8,
+	Bytes:   1 << 20,
 	Builds:  4,
 	Timeout: time.Hour,
 }
+
+func unitSize(int) int64 { return 1 }
 
 type counted struct {
 	builds  atomic.Int32
@@ -98,7 +101,7 @@ func TestCacheGet(t *testing.T) {
 		t.Parallel()
 
 		synctest.Test(t, func(t *testing.T) {
-			cache := New[int]("debian", testSettings, time.Now)
+			cache := New[int]("debian", testSettings, unitSize, time.Now)
 			b := newCounted()
 
 			done := make(chan []int)
@@ -122,11 +125,30 @@ func TestCacheGet(t *testing.T) {
 		})
 	})
 
+	t.Run("an index larger than the byte bound is still kept", func(t *testing.T) {
+		t.Parallel()
+
+		synctest.Test(t, func(t *testing.T) {
+			huge := func(int) int64 {
+				return 2 * testSettings.Bytes
+			}
+			cache := New[int]("rpm", testSettings, huge, time.Now)
+			b := newCounted()
+			close(b.release)
+
+			_, _ = cache.Get(t.Context(), "baseos", b.build)
+
+			if v, _ := cache.Get(t.Context(), "baseos", b.build); v != 1 || b.builds.Load() != 1 {
+				t.Errorf("an oversized index = %d after %d builds, want 1 after 1", v, b.builds.Load())
+			}
+		})
+	})
+
 	t.Run("a fresh index is served without a build", func(t *testing.T) {
 		t.Parallel()
 
 		synctest.Test(t, func(t *testing.T) {
-			cache := New[int]("debian", testSettings, time.Now)
+			cache := New[int]("debian", testSettings, unitSize, time.Now)
 			b := newCounted()
 			close(b.release)
 
@@ -144,7 +166,7 @@ func TestCacheGet(t *testing.T) {
 		t.Parallel()
 
 		synctest.Test(t, func(t *testing.T) {
-			cache := New[int]("debian", testSettings, time.Now)
+			cache := New[int]("debian", testSettings, unitSize, time.Now)
 			b := newCounted()
 
 			first := make(chan int)
@@ -188,7 +210,7 @@ func TestCacheGet(t *testing.T) {
 		t.Parallel()
 
 		synctest.Test(t, func(t *testing.T) {
-			cache := New[int]("debian", testSettings, time.Now)
+			cache := New[int]("debian", testSettings, unitSize, time.Now)
 			b := newCounted()
 			close(b.release)
 
@@ -206,7 +228,7 @@ func TestCacheGet(t *testing.T) {
 		t.Parallel()
 
 		synctest.Test(t, func(t *testing.T) {
-			cache := New[int]("debian", testSettings, time.Now)
+			cache := New[int]("debian", testSettings, unitSize, time.Now)
 			b := newCounted()
 
 			leaving, leave := context.WithCancel(t.Context())
@@ -244,7 +266,7 @@ func TestCacheGet(t *testing.T) {
 		t.Parallel()
 
 		synctest.Test(t, func(t *testing.T) {
-			cache := New[int]("debian", testSettings, time.Now)
+			cache := New[int]("debian", testSettings, unitSize, time.Now)
 			b := newCounted()
 			close(b.release)
 			b.fail.Store(true)
@@ -279,7 +301,7 @@ func TestCacheGet(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			settings := testSettings
 			settings.Entries = 2
-			cache := New[int]("debian", settings, time.Now)
+			cache := New[int]("debian", settings, unitSize, time.Now)
 			b := newCounted()
 			close(b.release)
 
@@ -301,13 +323,51 @@ func TestCacheGet(t *testing.T) {
 		})
 	})
 
+	t.Run("the kept indexes stay within the byte bound", func(t *testing.T) {
+		t.Parallel()
+
+		synctest.Test(t, func(t *testing.T) {
+			settings := testSettings
+			settings.Bytes = 10
+			cache := New[int]("debian", settings, func(v int) int64 {
+				return int64(v)
+			}, time.Now)
+
+			for _, key := range []string{
+				"bookworm",
+				"trixie",
+				"noble",
+			} {
+				_, _ = cache.Get(t.Context(), key, func(context.Context) (int, error) {
+					return 4, nil
+				})
+
+				time.Sleep(time.Second)
+			}
+
+			if len(cache.entries) != 2 || cache.entries["bookworm"] != nil || cache.bytes != 8 {
+				t.Errorf("kept %d indexes of %d bytes, bookworm kept: %v; want 2 of 8 bytes without bookworm",
+					len(cache.entries), cache.bytes, cache.entries["bookworm"] != nil)
+			}
+
+			_, _ = cache.Get(t.Context(), "jammy", func(context.Context) (int, error) {
+				return 11, nil
+			})
+
+			if len(cache.entries) != 1 || cache.entries["jammy"] == nil || cache.bytes != 11 {
+				t.Errorf("kept %d indexes of %d bytes after one larger than the bound; want only it, 11 bytes",
+					len(cache.entries), cache.bytes)
+			}
+		})
+	})
+
 	t.Run("builds of different indexes are bounded", func(t *testing.T) {
 		t.Parallel()
 
 		synctest.Test(t, func(t *testing.T) {
 			settings := testSettings
 			settings.Builds = 2
-			cache := New[int]("debian", settings, time.Now)
+			cache := New[int]("debian", settings, unitSize, time.Now)
 			b := newCounted()
 
 			var wg sync.WaitGroup

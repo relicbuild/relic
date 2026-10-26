@@ -64,7 +64,7 @@ func NewService(repos *repository.Service, keySvc *signingkey.Service, log *slog
 		log:   log,
 		now:   time.Now,
 	}
-	s.indexes = indexcache.New[Repodata](string(Format), indexcache.DefaultSettings, func() time.Time {
+	s.indexes = indexcache.New[Repodata](string(Format), indexcache.DefaultSettings, Repodata.Size, func() time.Time {
 		return s.now()
 	})
 	repos.RegisterHook(Format, s.indexPackage)

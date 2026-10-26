@@ -58,7 +58,7 @@ func NewService(db *database.DB, repos *repository.Service, keySvc *signingkey.S
 		log:   log,
 		now:   time.Now,
 	}
-	s.indexes = indexcache.New[*Dist](string(Format), indexcache.DefaultSettings, func() time.Time {
+	s.indexes = indexcache.New[*Dist](string(Format), indexcache.DefaultSettings, (*Dist).Size, func() time.Time {
 		return s.now()
 	})
 	repos.RegisterHook(Format, s.indexPackage)
@@ -125,6 +125,16 @@ type Dist struct {
 	Components, Architectures []string
 	Files                     map[string][]byte
 	Release                   []byte
+}
+
+// Size is the bytes of d's files.
+func (d *Dist) Size() int64 {
+	n := int64(len(d.Release))
+	for _, body := range d.Files {
+		n += int64(len(body))
+	}
+
+	return n
 }
 
 // Distribution returns dist's indexes for r: its own packages, or for a
