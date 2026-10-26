@@ -92,6 +92,22 @@ ORDER BY path, name;
 -- name: ListRepositoryItems :many
 SELECT * FROM items WHERE repo_key = @repo_key ORDER BY path, name;
 
+-- name: ListSubtreePage :many
+-- ListSubtree's items after (@after_path, @after_name), at most @max.
+SELECT * FROM items
+WHERE repo_key = @repo_key
+  AND ((path = @path AND name = @name) OR path = @full_path OR path LIKE @prefix ESCAPE '\')
+  AND (path, name) > (@after_path, @after_name)
+ORDER BY path, name
+LIMIT @max;
+
+-- name: ListRepositoryItemsPage :many
+-- ListRepositoryItems' items after (@after_path, @after_name), at most @max.
+SELECT * FROM items
+WHERE repo_key = @repo_key AND (path, name) > (@after_path, @after_name)
+ORDER BY path, name
+LIMIT @max;
+
 -- name: FindFilesBySha256 :many
 -- Files in a repository with the given content, below prefix (LIKE-escaped
 -- folder path + '/%', or '%' for the whole repository).

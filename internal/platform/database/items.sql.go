@@ -756,6 +756,61 @@ func (q *Queries) ListRepositoryItems(ctx context.Context, repoKey string) ([]It
 	return items, nil
 }
 
+const listRepositoryItemsPage = `-- name: ListRepositoryItemsPage :many
+SELECT id, repo_key, path, name, type, size, sha1, sha256, md5, created, created_by, modified, modified_by, updated FROM items
+WHERE repo_key = $1 AND (path, name) > ($2::text, $3::text)
+ORDER BY path, name
+LIMIT $4
+`
+
+type ListRepositoryItemsPageParams struct {
+	RepoKey   string
+	AfterPath string
+	AfterName string
+	Max       int32
+}
+
+// ListRepositoryItems' items after (@after_path, @after_name), at most @max.
+func (q *Queries) ListRepositoryItemsPage(ctx context.Context, arg ListRepositoryItemsPageParams) ([]Item, error) {
+	rows, err := q.db.Query(ctx, listRepositoryItemsPage,
+		arg.RepoKey,
+		arg.AfterPath,
+		arg.AfterName,
+		arg.Max,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Item{}
+	for rows.Next() {
+		var i Item
+		if err := rows.Scan(
+			&i.ID,
+			&i.RepoKey,
+			&i.Path,
+			&i.Name,
+			&i.Type,
+			&i.Size,
+			&i.Sha1,
+			&i.Sha256,
+			&i.Md5,
+			&i.Created,
+			&i.CreatedBy,
+			&i.Modified,
+			&i.ModifiedBy,
+			&i.Updated,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStaleFilesInFolders = `-- name: ListStaleFilesInFolders :many
 SELECT f.repo_key, f.path, f.name
 FROM items d
@@ -829,6 +884,71 @@ func (q *Queries) ListSubtree(ctx context.Context, arg ListSubtreeParams) ([]Ite
 		arg.Name,
 		arg.FullPath,
 		arg.Prefix,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Item{}
+	for rows.Next() {
+		var i Item
+		if err := rows.Scan(
+			&i.ID,
+			&i.RepoKey,
+			&i.Path,
+			&i.Name,
+			&i.Type,
+			&i.Size,
+			&i.Sha1,
+			&i.Sha256,
+			&i.Md5,
+			&i.Created,
+			&i.CreatedBy,
+			&i.Modified,
+			&i.ModifiedBy,
+			&i.Updated,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSubtreePage = `-- name: ListSubtreePage :many
+SELECT id, repo_key, path, name, type, size, sha1, sha256, md5, created, created_by, modified, modified_by, updated FROM items
+WHERE repo_key = $1
+  AND ((path = $2 AND name = $3) OR path = $4 OR path LIKE $5::text ESCAPE '\')
+  AND (path, name) > ($6::text, $7::text)
+ORDER BY path, name
+LIMIT $8
+`
+
+type ListSubtreePageParams struct {
+	RepoKey   string
+	Path      string
+	Name      string
+	FullPath  string
+	Prefix    string
+	AfterPath string
+	AfterName string
+	Max       int32
+}
+
+// ListSubtree's items after (@after_path, @after_name), at most @max.
+func (q *Queries) ListSubtreePage(ctx context.Context, arg ListSubtreePageParams) ([]Item, error) {
+	rows, err := q.db.Query(ctx, listSubtreePage,
+		arg.RepoKey,
+		arg.Path,
+		arg.Name,
+		arg.FullPath,
+		arg.Prefix,
+		arg.AfterPath,
+		arg.AfterName,
+		arg.Max,
 	)
 	if err != nil {
 		return nil, err

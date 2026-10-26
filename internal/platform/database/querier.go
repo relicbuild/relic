@@ -283,6 +283,8 @@ type Querier interface {
 	// When each downloaded file of a repository was last downloaded.
 	ListRepositoryDownloads(ctx context.Context, repoKey string) ([]ListRepositoryDownloadsRow, error)
 	ListRepositoryItems(ctx context.Context, repoKey string) ([]Item, error)
+	// ListRepositoryItems' items after (@after_path, @after_name), at most @max.
+	ListRepositoryItemsPage(ctx context.Context, arg ListRepositoryItemsPageParams) ([]Item, error)
 	ListRepositoryProjects(ctx context.Context) ([]ListRepositoryProjectsRow, error)
 	ListRepositoryUsage(ctx context.Context, arg ListRepositoryUsageParams) ([]UsageDaily, error)
 	ListRiskUncheckedScans(ctx context.Context, arg ListRiskUncheckedScansParams) ([]ListRiskUncheckedScansRow, error)
@@ -295,6 +297,8 @@ type Querier interface {
 	ListStaleFilesInFolders(ctx context.Context, arg ListStaleFilesInFoldersParams) ([]ListStaleFilesInFoldersRow, error)
 	ListStaleScans(ctx context.Context, arg ListStaleScansParams) ([]string, error)
 	ListSubtree(ctx context.Context, arg ListSubtreeParams) ([]Item, error)
+	// ListSubtree's items after (@after_path, @after_name), at most @max.
+	ListSubtreePage(ctx context.Context, arg ListSubtreePageParams) ([]Item, error)
 	ListTombstones(ctx context.Context, repoKey string) ([]ReplicationTombstone, error)
 	ListTrashEntries(ctx context.Context, arg ListTrashEntriesParams) ([]ListTrashEntriesRow, error)
 	ListTrashPropertyValues(ctx context.Context, arg ListTrashPropertyValuesParams) ([]string, error)

@@ -1173,6 +1173,13 @@ WHERE i.repo_key = @repo_key;`
 const sqliteListRepositoryItems = `-- name: ListRepositoryItems :many
 SELECT * FROM items WHERE repo_key = @repo_key ORDER BY path, name;`
 
+const sqliteListRepositoryItemsPage = `-- name: ListRepositoryItemsPage :many
+-- ListRepositoryItems' items after (@after_path, @after_name), at most @max.
+SELECT * FROM items
+WHERE repo_key = @repo_key AND (path, name) > (@after_path, @after_name)
+ORDER BY path, name
+LIMIT @max;`
+
 const sqliteListRepositoryProjects = `-- name: ListRepositoryProjects :many
 SELECT key, project FROM repositories WHERE project <> '' ORDER BY key;`
 
@@ -1233,6 +1240,15 @@ SELECT * FROM items
 WHERE repo_key = @repo_key
   AND ((path = @path AND name = @name) OR path = @full_path OR path LIKE @prefix ESCAPE '\')
 ORDER BY path, name;`
+
+const sqliteListSubtreePage = `-- name: ListSubtreePage :many
+-- ListSubtree's items after (@after_path, @after_name), at most @max.
+SELECT * FROM items
+WHERE repo_key = @repo_key
+  AND ((path = @path AND name = @name) OR path = @full_path OR path LIKE @prefix ESCAPE '\')
+  AND (path, name) > (@after_path, @after_name)
+ORDER BY path, name
+LIMIT @max;`
 
 const sqliteListTombstones = `-- name: ListTombstones :many
 SELECT * FROM replication_tombstones WHERE repo_key = @repo_key ORDER BY path;`
@@ -6280,6 +6296,36 @@ func (q *sqliteQueries) ListRepositoryItems(ctx context.Context, arg string) ([]
 	return items, nil
 }
 
+func (q *sqliteQueries) ListRepositoryItemsPage(ctx context.Context, arg ListRepositoryItemsPageParams) ([]Item, error) {
+	rows, err := q.query(ctx, "ListRepositoryItemsPage", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated"}, sqliteListRepositoryItemsPage, sql.Named("repo_key", arg.RepoKey), sql.Named("after_path", arg.AfterPath), sql.Named("after_name", arg.AfterName), sql.Named("max", arg.Max))
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	items := []Item{}
+
+	for rows.Next() {
+		var i Item
+		if err := rows.Scan(sqliteUUIDScanner{&i.ID}, &i.RepoKey, &i.Path, &i.Name, &i.Type, &i.Size, &i.Sha1, &i.Sha256, &i.Md5, sqliteTimeScanner{&i.Created}, &i.CreatedBy, sqliteTimeScanner{&i.Modified}, &i.ModifiedBy, sqliteTimeScanner{&i.Updated}); err != nil {
+			return nil, err
+		}
+
+		items = append(items, i)
+	}
+
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
+
 func (q *sqliteQueries) ListRepositoryProjects(ctx context.Context) ([]ListRepositoryProjectsRow, error) {
 	rows, err := q.query(ctx, "ListRepositoryProjects", []string{"key", "project"}, sqliteListRepositoryProjects)
 	if err != nil {
@@ -6552,6 +6598,36 @@ func (q *sqliteQueries) ListStaleScans(ctx context.Context, arg ListStaleScansPa
 
 func (q *sqliteQueries) ListSubtree(ctx context.Context, arg ListSubtreeParams) ([]Item, error) {
 	rows, err := q.query(ctx, "ListSubtree", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated"}, sqliteListSubtree, sql.Named("repo_key", arg.RepoKey), sql.Named("path", arg.Path), sql.Named("name", arg.Name), sql.Named("full_path", arg.FullPath), sql.Named("prefix", arg.Prefix))
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	items := []Item{}
+
+	for rows.Next() {
+		var i Item
+		if err := rows.Scan(sqliteUUIDScanner{&i.ID}, &i.RepoKey, &i.Path, &i.Name, &i.Type, &i.Size, &i.Sha1, &i.Sha256, &i.Md5, sqliteTimeScanner{&i.Created}, &i.CreatedBy, sqliteTimeScanner{&i.Modified}, &i.ModifiedBy, sqliteTimeScanner{&i.Updated}); err != nil {
+			return nil, err
+		}
+
+		items = append(items, i)
+	}
+
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
+
+func (q *sqliteQueries) ListSubtreePage(ctx context.Context, arg ListSubtreePageParams) ([]Item, error) {
+	rows, err := q.query(ctx, "ListSubtreePage", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated"}, sqliteListSubtreePage, sql.Named("repo_key", arg.RepoKey), sql.Named("path", arg.Path), sql.Named("name", arg.Name), sql.Named("full_path", arg.FullPath), sql.Named("prefix", arg.Prefix), sql.Named("after_path", arg.AfterPath), sql.Named("after_name", arg.AfterName), sql.Named("max", arg.Max))
 	if err != nil {
 		return nil, err
 	}
