@@ -77,6 +77,12 @@ func (h *Handler) gitLFSBatch(w http.ResponseWriter, r *http.Request, m Mount) {
 		return
 	}
 
+	release := h.buffers.reserve(w, r, gitLFSMaxBatchBytes, 2)
+	if release == nil {
+		return
+	}
+	defer release()
+
 	var req struct {
 		Operation string              `json:"operation"`
 		Transfers []string            `json:"transfers"`

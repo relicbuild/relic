@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"strings"
 
 	"relic/internal/access/auth"
@@ -91,6 +92,7 @@ type Handler struct {
 	tfProviders *terraform.Service
 	blocker     *blocking.Blocker
 	downloads   *usage.ItemDownloads
+	buffers     *bufferPool
 	log         *slog.Logger
 }
 
@@ -119,6 +121,7 @@ func New(d Dependencies) *Handler {
 		tfProviders: d.TerraformProviders,
 		blocker:     d.Blocker,
 		downloads:   d.Downloads,
+		buffers:     newBufferPool(bufferBudget(debug.SetMemoryLimit(-1))),
 		log:         d.Log,
 	}
 }

@@ -278,7 +278,7 @@ func (h *Handler) gemPush(w http.ResponseWriter, r *http.Request, rp repository.
 		return
 	}
 
-	release := reserveBuffer(w, r, maxGemBytes, 1)
+	release := h.buffers.reserve(w, r, maxGemBytes, 1)
 	if release == nil {
 		return
 	}

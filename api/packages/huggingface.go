@@ -553,7 +553,10 @@ func (h *Handler) hfCommits(
 	h.hfFail(w, r, lastErr)
 }
 
-const hfMaxPathsInfoBody = 1 << 20
+const (
+	hfMaxPathsInfoBody = 1 << 20
+	hfMaxRequestBody   = 16 << 20
+)
 
 func (h *Handler) hfPathsInfo(
 	w http.ResponseWriter,
@@ -789,13 +792,19 @@ func (h *Handler) hfPreupload(w http.ResponseWriter, r *http.Request, rp reposit
 		return
 	}
 
+	release := h.buffers.reserve(w, r, hfMaxRequestBody, 2)
+	if release == nil {
+		return
+	}
+	defer release()
+
 	var req struct {
 		Files []struct {
 			Path string `json:"path"`
 			Size int64  `json:"size"`
 		} `json:"files"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<20)).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, hfMaxRequestBody)).Decode(&req); err != nil {
 		hfError(w, http.StatusBadRequest, "", "invalid preupload body")
 		return
 	}
@@ -831,6 +840,12 @@ func (h *Handler) hfLFSBatch(w http.ResponseWriter, r *http.Request, m Mount, rp
 		return
 	}
 
+	release := h.buffers.reserve(w, r, hfMaxRequestBody, 2)
+	if release == nil {
+		return
+	}
+	defer release()
+
 	var req struct {
 		Operation string `json:"operation"`
 		Objects   []struct {
@@ -838,7 +853,7 @@ func (h *Handler) hfLFSBatch(w http.ResponseWriter, r *http.Request, m Mount, rp
 			Size int64  `json:"size"`
 		} `json:"objects"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<20)).
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, hfMaxRequestBody)).
 		Decode(&req); err != nil ||
 		req.Operation != "upload" {
 		hfError(w, http.StatusBadRequest, "", "only LFS uploads are supported")
@@ -917,7 +932,7 @@ func (h *Handler) hfCommit(
 		return
 	}
 
-	release := reserveBuffer(w, r, hfMaxCommit, 2)
+	release := h.buffers.reserve(w, r, hfMaxCommit, 2)
 	if release == nil {
 		return
 	}

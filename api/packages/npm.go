@@ -183,7 +183,7 @@ func (h *Handler) npmPublish(w http.ResponseWriter, r *http.Request, req npmRequ
 		return
 	}
 
-	release := reserveBuffer(w, r, maxPublishBytes, 2)
+	release := h.buffers.reserve(w, r, maxPublishBytes, 3)
 	if release == nil {
 		return
 	}
@@ -250,6 +250,12 @@ func (h *Handler) npmUnpublish(w http.ResponseWriter, r *http.Request, req npmRe
 	)
 
 	if r.Method == http.MethodPut {
+		release := h.buffers.reserve(w, r, maxPublishBytes, 2)
+		if release == nil {
+			return
+		}
+		defer release()
+
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxPublishBytes)).Decode(&doc); err != nil ||
 			doc.Name != name || len(doc.Versions) == 0 {
 			httperror.Write(w, r, http.StatusBadRequest, "the packument must name the package and keep a version")
@@ -656,6 +662,12 @@ func (h *Handler) npmAudit(w http.ResponseWriter, r *http.Request, req npmReques
 		h.npmError(w, r, err)
 		return
 	}
+
+	release := h.buffers.reserve(w, r, npm.MaxAuditBody, 1)
+	if release == nil {
+		return
+	}
+	defer release()
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, npm.MaxAuditBody))
 	if _, tooLarge := errors.AsType[*http.MaxBytesError](err); tooLarge {
