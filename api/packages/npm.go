@@ -92,13 +92,15 @@ func (h *Handler) npmPackageRequest(w http.ResponseWriter, r *http.Request, req 
 			return
 		}
 
-		doc, err := h.npm.Packument(r.Context(), req.repo, name, req.mount.base(r)+"/"+req.repo)
+		body, err := h.npm.Document(r.Context(), req.repo, name, req.mount.base(r)+"/"+req.repo)
 		if err != nil {
 			h.npmError(w, r, err)
 			return
 		}
 
-		writeJSON(w, http.StatusOK, doc)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		_, _ = w.Write(body)
 	case tail == "" && r.Method == http.MethodPut:
 		h.npmPublish(w, r, req, name)
 	case strings.HasPrefix(tail, "-rev/") && (r.Method == http.MethodPut || r.Method == http.MethodDelete):
@@ -287,13 +289,13 @@ func (h *Handler) npmDistTags(w http.ResponseWriter, r *http.Request, req npmReq
 			return
 		}
 
-		doc, err := h.npm.Packument(ctx, req.repo, name, req.mount.base(r)+"/"+req.repo)
+		tags, err := h.npm.DistTags(ctx, req.repo, name)
 		if err != nil {
 			h.npmError(w, r, err)
 			return
 		}
 
-		writeJSON(w, http.StatusOK, doc["dist-tags"])
+		writeJSON(w, http.StatusOK, tags)
 	case r.Method == http.MethodPut && tag != "":
 		dest, err := h.repos.DeployTarget(ctx, req.repo)
 		if err != nil {

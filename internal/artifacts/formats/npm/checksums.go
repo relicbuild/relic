@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -89,44 +91,18 @@ func publishTime(times map[string]string, version string) (time.Time, bool) {
 	return t, err == nil
 }
 
-// coolDown leaves out of a packument the versions published after cutoff.
-func coolDown(doc Packument, cutoff time.Time) {
-	times := publishTimes(doc)
-
-	dropVersions(doc, func(version string) bool {
-		published, ok := publishTime(times, version)
-		return ok && published.After(cutoff)
-	})
-}
-
-func publishTimes(doc Packument) map[string]string {
-	raw, _ := doc["time"].(map[string]any)
-
-	times := make(map[string]string, len(raw))
-	for k, v := range raw {
-		if s, ok := v.(string); ok {
-			times[k] = s
-		}
-	}
-
-	return times
-}
-
-// dropVersions leaves out of a packument the versions drop names, and points
-// the latest tag, when it named one, at the newest version left (by publish
+// dropVersions removes from kept the versions drop names, and points the
+// latest tag, when it named one, at the newest version left (by publish
 // time, else by semver); other tags that named one are removed.
-func dropVersions(doc Packument, drop func(version string) bool) {
-	versions, _ := doc["versions"].(map[string]any)
-	times := publishTimes(doc)
-
+func dropVersions(kept map[string]bool, times, tags map[string]string, drop func(version string) bool) {
 	var (
 		newest     string
 		newestTime time.Time
 	)
 
-	for version := range versions {
+	for _, version := range slices.Sorted(maps.Keys(kept)) {
 		if drop(version) {
-			delete(versions, version)
+			delete(kept, version)
 			continue
 		}
 
@@ -140,10 +116,8 @@ func dropVersions(doc Packument, drop func(version string) bool) {
 		}
 	}
 
-	tags, _ := doc["dist-tags"].(map[string]any)
-	for tag, v := range tags {
-		version, _ := v.(string)
-		if _, kept := versions[version]; kept {
+	for tag, version := range tags {
+		if kept[version] {
 			continue
 		}
 
