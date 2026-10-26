@@ -7,6 +7,7 @@ package gems
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"compress/zlib"
@@ -559,31 +560,87 @@ func (s *Service) Versions(
 	r repository.Repository,
 	locals []Spec,
 	infos map[string][]byte,
-) ([]byte, error) {
+) (io.ReadCloser, error) {
+	lines := versionLines(locals, infos)
+
 	for _, m := range s.members(ctx, r, 0) {
 		if m.Class != "remote" {
 			continue
 		}
 
-		upstream, err := s.remoteFile(ctx, m, "versions", "versions")
+		if repository.Restricted(ctx, m.Name) {
+			upstream, err := s.remoteFile(ctx, m, "versions", "versions")
+			if err != nil {
+				return nil, err
+			}
+
+			upstream = visibleVersions(ctx, m.Name, upstream)
+
+			return io.NopCloser(io.MultiReader(&newlineTerminated{
+				r: bytes.NewReader(upstream),
+			}, bytes.NewReader(lines))), nil
+		}
+
+		upstream, err := s.openRemoteFile(ctx, m, "versions", "versions")
 		if err != nil {
 			return nil, err
 		}
 
-		if repository.Restricted(ctx, m.Name) {
-			upstream = visibleVersions(ctx, m.Name, upstream)
-		}
-
-		if len(upstream) > 0 && upstream[len(upstream)-1] != '\n' {
-			upstream = append(upstream, '\n')
-		}
-
-		return append(upstream, versionLines(locals, infos)...), nil
+		return struct {
+			io.Reader
+			io.Closer
+		}{
+			io.MultiReader(&newlineTerminated{
+				r: upstream,
+			}, bytes.NewReader(lines)),
+			upstream,
+		}, nil
 	}
 
 	head := "created_at: " + time.Now().UTC().Format(time.RFC3339) + "\n---\n"
 
-	return append([]byte(head), versionLines(locals, infos)...), nil
+	return io.NopCloser(io.MultiReader(strings.NewReader(head), bytes.NewReader(lines))), nil
+}
+
+type newlineTerminated struct {
+	r       io.Reader
+	read    bool
+	last    byte
+	pending bool
+}
+
+func (t *newlineTerminated) Read(p []byte) (int, error) {
+	if t.pending {
+		if len(p) == 0 {
+			return 0, nil
+		}
+
+		p[0] = '\n'
+		t.pending = false
+
+		return 1, io.EOF
+	}
+
+	n, err := t.r.Read(p)
+	if n > 0 {
+		t.read, t.last = true, p[n-1]
+	}
+
+	if !errors.Is(err, io.EOF) || !t.read || t.last == '\n' {
+		return n, err
+	}
+
+	t.last = '\n'
+
+	if n < len(p) {
+		p[n] = '\n'
+
+		return n + 1, io.EOF
+	}
+
+	t.pending = true
+
+	return n, nil
 }
 
 func visibleVersions(ctx context.Context, repoKey string, body []byte) []byte {
@@ -649,7 +706,11 @@ func versionLines(locals []Spec, infos map[string][]byte) []byte {
 	return []byte(b.String())
 }
 
-func (s *Service) remoteFile(ctx context.Context, r repository.Repository, p, cachePath string) ([]byte, error) {
+func (s *Service) openRemoteFile(
+	ctx context.Context,
+	r repository.Repository,
+	p, cachePath string,
+) (io.ReadCloser, error) {
 	base := strings.TrimSuffix(s.repos.UpstreamOf(r).URL, "/")
 
 	item, err := s.repos.ResolveURL(ctx, r, base+"/"+p, ".gems/"+cachePath)
@@ -657,7 +718,11 @@ func (s *Service) remoteFile(ctx context.Context, r repository.Repository, p, ca
 		return nil, err
 	}
 
-	rc, err := s.repos.Open(ctx, item, nil)
+	return s.repos.Open(ctx, item, nil)
+}
+
+func (s *Service) remoteFile(ctx context.Context, r repository.Repository, p, cachePath string) ([]byte, error) {
+	rc, err := s.openRemoteFile(ctx, r, p, cachePath)
 	if err != nil {
 		return nil, err
 	}
@@ -732,24 +797,25 @@ const maxSpecsIndexBytes = 512 << 20
 // ErrInvalidIndex is returned for an upstream specs index that is not a Marshal array.
 var ErrInvalidIndex = errors.New("gems: invalid specs index")
 
-// SpecsIndexAfter is the gzipped specs index upstream (as a remote's
-// upstream serves it) with entries for specs after its own.
-func SpecsIndexAfter(upstream []byte, specs []Spec) ([]byte, error) {
+// SpecsIndexAfter returns the gzipped specs index upstream (as a remote's
+// upstream serves it) with entries for specs after its own; it checks the
+// start of upstream and reads the rest as the result is written.
+func SpecsIndexAfter(upstream io.Reader, specs []Spec) (io.WriterTo, error) {
 	if len(specs) == 0 {
-		return upstream, nil
+		return verbatim{
+			r: upstream,
+		}, nil
 	}
 
-	zr, err := gzip.NewReader(bytes.NewReader(upstream))
+	zr, err := gzip.NewReader(upstream)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidIndex, err)
 	}
 
-	raw, err := io.ReadAll(io.LimitReader(zr, maxSpecsIndexBytes+1))
-	if err != nil || len(raw) > maxSpecsIndexBytes {
-		return nil, fmt.Errorf("%w: unreadable or too large", ErrInvalidIndex)
-	}
+	raw := bufio.NewReader(io.LimitReader(zr, maxSpecsIndexBytes+1))
+	head, _ := raw.Peek(8)
 
-	entries, ok := bytes.CutPrefix(raw, []byte{
+	entries, ok := bytes.CutPrefix(head, []byte{
 		4,
 		8,
 		'[',
@@ -758,26 +824,79 @@ func SpecsIndexAfter(upstream []byte, specs []Spec) ([]byte, error) {
 		return nil, fmt.Errorf("%w: not an array", ErrInvalidIndex)
 	}
 
-	count, entries, err := readInt(entries)
+	count, rest, err := readInt(entries)
 	if err != nil || count < 0 {
 		return nil, fmt.Errorf("%w: entry count", ErrInvalidIndex)
 	}
 
-	var out bytes.Buffer
+	if _, err := raw.Discard(len(head) - len(rest)); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidIndex, err)
+	}
 
-	out.Write([]byte{
+	return &specsIndexStream{
+		entries: raw,
+		count:   count,
+		specs:   specs,
+	}, nil
+}
+
+type verbatim struct {
+	r io.Reader
+}
+
+func (v verbatim) WriteTo(w io.Writer) (int64, error) { return io.Copy(w, v.r) }
+
+type specsIndexStream struct {
+	entries io.Reader
+	count   int
+	specs   []Spec
+}
+
+func (s *specsIndexStream) WriteTo(w io.Writer) (int64, error) {
+	out := &countingWriter{
+		w: w,
+	}
+	zw := gzip.NewWriter(out)
+
+	counter := &encoder{}
+	counter.int(s.count + len(s.specs))
+
+	if _, err := zw.Write(append([]byte{
 		4,
 		8,
 		'[',
-	})
+	}, counter.buf.Bytes()...)); err != nil {
+		return out.n, err
+	}
 
-	counter := &encoder{}
-	counter.int(count + len(specs))
-	out.Write(counter.buf.Bytes())
-	out.Write(entries)
-	out.Write(marshalAppended(specsEntries(specs)))
+	copied, err := io.Copy(zw, s.entries)
+	if err != nil {
+		return out.n, fmt.Errorf("%w: %w", ErrInvalidIndex, err)
+	}
 
-	return gzipped(out.Bytes())
+	if copied > maxSpecsIndexBytes {
+		return out.n, fmt.Errorf("%w: too large", ErrInvalidIndex)
+	}
+
+	if _, err := zw.Write(marshalAppended(specsEntries(s.specs))); err != nil {
+		return out.n, err
+	}
+
+	err = zw.Close()
+
+	return out.n, err
+}
+
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+
+	return n, err
 }
 
 func specsEntries(specs []Spec) []any {
@@ -808,9 +927,13 @@ func gzipped(raw []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// RemoteSpecsIndex is a specs index file as r's first remote member's upstream serves it, or false when r has
-// no remote member or the caller may not see all of the remote.
-func (s *Service) RemoteSpecsIndex(ctx context.Context, r repository.Repository, file string) ([]byte, bool, error) {
+// RemoteSpecsIndex opens a specs index file as r's first remote member's upstream serves it, or returns false
+// when r has no remote member or the caller may not see all of the remote.
+func (s *Service) RemoteSpecsIndex(
+	ctx context.Context,
+	r repository.Repository,
+	file string,
+) (io.ReadCloser, bool, error) {
 	for _, m := range s.members(ctx, r, 0) {
 		if m.Class != "remote" {
 			continue
@@ -820,7 +943,7 @@ func (s *Service) RemoteSpecsIndex(ctx context.Context, r repository.Repository,
 			return nil, false, nil
 		}
 
-		body, err := s.remoteFile(ctx, m, file, file)
+		body, err := s.openRemoteFile(ctx, m, file, file)
 		if err != nil {
 			return nil, false, err
 		}
