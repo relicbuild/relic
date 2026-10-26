@@ -176,11 +176,20 @@ func TestV2Entries(t *testing.T) {
 		)
 	}
 
+	if _, err := repos.Deploy(ctx, repository.DeployInput{
+		Repository: "nuget-local",
+		Path:       "uploads/unread.nupkg",
+		Body:       bytes.NewReader(nupkgOf(t, "Unread", "1.0.0")),
+		User:       "admin",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	blobs.Inject(objectstoretest.Fault{
 		Op: objectstoretest.OpGet,
 	})
 
-	if entries, err := svc.V2Entries(ctx, local, "Demo"); err == nil {
+	if entries, err := svc.V2Entries(ctx, local, "Unread"); err == nil {
 		t.Errorf("V2Entries with unreadable package metadata = %+v, nil; want the error", entries)
 	}
 }

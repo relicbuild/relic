@@ -4,7 +4,6 @@ package nuget
 
 import (
 	"archive/zip"
-	"bytes"
 	"context"
 	"encoding/json"
 	"encoding/xml"
@@ -54,16 +53,18 @@ func Path(id, version string) string {
 
 // Service implements feeds on top of repo.Service.
 type Service struct {
-	repos *repository.Service
-	log   *slog.Logger
+	repos   *repository.Service
+	nuspecs *nuspecCache
+	log     *slog.Logger
 }
 
 // NewService returns a Service and registers its deploy hook, which sets
 // nuget.id and nuget.version on .nupkg files deployed by any route.
 func NewService(repos *repository.Service, log *slog.Logger) *Service {
 	s := &Service{
-		repos: repos,
-		log:   log,
+		repos:   repos,
+		nuspecs: newNuspecCache(nuspecCacheBytes),
+		log:     log,
 	}
 	repos.RegisterHook(Format, s.index)
 	repos.RegisterMetadata(func(name string) bool {
@@ -103,9 +104,9 @@ type Nuspec struct {
 
 // ReadNuspec reads the .nuspec at the root of a .nupkg (a zip archive).
 func ReadNuspec(r io.ReaderAt, size int64) (Nuspec, []byte, error) {
-	zr, err := zip.NewReader(r, size)
+	zr, err := zipArchive(r, size)
 	if err != nil {
-		return Nuspec{}, nil, fmt.Errorf("%w: not a zip archive", ErrInvalid)
+		return Nuspec{}, nil, err
 	}
 
 	for _, f := range zr.File {
@@ -134,6 +135,19 @@ func ReadNuspec(r io.ReaderAt, size int64) (Nuspec, []byte, error) {
 	}
 
 	return Nuspec{}, nil, fmt.Errorf("%w: no .nuspec", ErrInvalid)
+}
+
+func zipArchive(r io.ReaderAt, size int64) (*zip.Reader, error) {
+	zr, err := zip.NewReader(r, size)
+	if errors.Is(err, zip.ErrFormat) || errors.Is(err, zip.ErrAlgorithm) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return nil, fmt.Errorf("%w: not a zip archive", ErrInvalid)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("read the archive: %w", err)
+	}
+
+	return zr, nil
 }
 
 // Push stores a pushed package (a .nupkg spooled to file) at its layout
@@ -197,21 +211,7 @@ func (s *Service) index(ctx context.Context, r repository.Repository, item repos
 		return err
 	}
 
-	rc, err := s.repos.Open(ctx, item, nil)
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		_ = rc.Close()
-	}()
-
-	body, err := io.ReadAll(io.LimitReader(rc, 512<<20))
-	if err != nil {
-		return err
-	}
-
-	n, _, err := ReadNuspec(bytes.NewReader(body), int64(len(body)))
+	n, _, err := ReadNuspec(s.repos.ReaderAt(ctx, item), item.Size)
 	if err != nil {
 		return err
 	}
@@ -543,22 +543,22 @@ func (s *Service) adopt(
 
 // Nuspec returns a stored package's manifest.
 func (s *Service) Nuspec(ctx context.Context, item repository.Item) ([]byte, Nuspec, error) {
-	rc, err := s.repos.Open(ctx, item, nil)
-	if err != nil {
-		return nil, Nuspec{}, err
+	if cached, ok := s.nuspecs.get(item.Checksums.SHA256); ok {
+		return cached.raw, cached.nuspec, nil
 	}
-	defer func() {
-		_ = rc.Close()
-	}()
 
-	body, err := io.ReadAll(io.LimitReader(rc, 512<<20))
+	n, raw, err := ReadNuspec(s.repos.ReaderAt(ctx, item), item.Size)
 	if err != nil {
 		return nil, Nuspec{}, err
 	}
 
-	n, raw, err := ReadNuspec(bytes.NewReader(body), int64(len(body)))
+	s.nuspecs.add(cachedNuspec{
+		sha256: item.Checksums.SHA256,
+		raw:    raw,
+		nuspec: n,
+	})
 
-	return raw, n, err
+	return raw, n, nil
 }
 
 // Search lists packages whose id contains q, with their versions: those
