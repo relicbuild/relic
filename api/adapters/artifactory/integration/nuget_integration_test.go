@@ -224,7 +224,7 @@ func TestNuGetFeed(t *testing.T) {
 			method: "GET",
 			path:   "/artifactory/api/nuget/v3/nuget/registration/relic.demo/index.json",
 		},
-	); !strings.Contains(got, `"upper": "1.10.0"`) {
+	); !strings.Contains(got, `"upper":"1.10.0"`) {
 		t.Errorf("registration = %s", got)
 	}
 
@@ -235,7 +235,7 @@ func TestNuGetFeed(t *testing.T) {
 		if resp, got := do(t, srv, call{
 			method: "GET",
 			path:   "/artifactory/api/nuget/v3/nuget/registration/" + path,
-		}); resp.StatusCode != want || want == 200 && !strings.Contains(got, `"version": "1.10.0"`) {
+		}); resp.StatusCode != want || want == 200 && !strings.Contains(got, `"version":"1.10.0"`) {
 			t.Errorf("registration leaf %s = %d %s, want %d", path, resp.StatusCode, got, want)
 		}
 	}
@@ -247,7 +247,7 @@ func TestNuGetFeed(t *testing.T) {
 			method: "GET",
 			path:   "/artifactory/api/nuget/v3/nuget/query?q=demo",
 		},
-	); !strings.Contains(got, `"totalHits": 1`) {
+	); !strings.Contains(got, `"totalHits":1`) {
 		t.Errorf("query = %s", got)
 	}
 

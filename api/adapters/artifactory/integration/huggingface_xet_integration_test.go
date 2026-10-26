@@ -179,13 +179,13 @@ func testXetUpload(t *testing.T, mount string) {
 	}
 
 	if resp, body := casCall(t, srv, write, "POST", xorbPath, string(upload.Xorb)); resp.StatusCode != 200 ||
-		!strings.Contains(body, `"was_inserted": true`) {
+		!strings.Contains(body, `"was_inserted":true`) {
 		t.Fatalf("xorb upload = %d %s", resp.StatusCode, body)
 	}
 
 	if resp, body := casCall(t, srv, write, "POST", xorbPath, string(upload.Xorb)); !strings.Contains(
 		body,
-		`"was_inserted": false`,
+		`"was_inserted":false`,
 	) {
 		t.Errorf("xorb upload again = %d %s", resp.StatusCode, body)
 	}
@@ -212,7 +212,7 @@ func testXetUpload(t *testing.T, mount string) {
 		"/v1/shards",
 		string(upload.ShardBytes(t)),
 	); resp.StatusCode != 200 ||
-		!strings.Contains(body, `"result": 1`) {
+		!strings.Contains(body, `"result":1`) {
 		t.Fatalf("shard upload = %d %s", resp.StatusCode, body)
 	}
 

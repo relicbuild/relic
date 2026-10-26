@@ -50,7 +50,7 @@ func TestTerraformModules(t *testing.T) {
 		noAuth: true,
 	}); !strings.Contains(
 		body,
-		`"modules.v1": "/terraform/v1/modules/"`,
+		`"modules.v1":"/terraform/v1/modules/"`,
 	) {
 		t.Errorf("discovery = %s", body)
 	}
@@ -63,7 +63,7 @@ func TestTerraformModules(t *testing.T) {
 			path:   "/artifactory/api/terraform/v1/modules/tf-local__acme/network/aws/versions",
 		},
 	)
-	if !strings.Contains(body, `"version": "0.9.0"`) || !strings.Contains(body, `"version": "1.2.0"`) {
+	if !strings.Contains(body, `"version":"0.9.0"`) || !strings.Contains(body, `"version":"1.2.0"`) {
 		t.Errorf("versions = %s", body)
 	}
 
@@ -137,7 +137,7 @@ func TestTerraformModules(t *testing.T) {
 			method: "GET",
 			path:   "/artifactory/api/terraform/v1/modules/tf__mods__acme/network/aws/versions",
 		},
-	); resp.StatusCode != 200 || !strings.Contains(body, `"version": "2.0.0"`) {
+	); resp.StatusCode != 200 || !strings.Contains(body, `"version":"2.0.0"`) {
 		t.Errorf("versions in a repository whose key holds __ = %d %s", resp.StatusCode, body)
 	}
 }
@@ -241,8 +241,8 @@ func TestTerraformModulesThroughARemote(t *testing.T) {
 			method: "GET",
 			path:   "/terraform/v1/modules/" + ns + "/label/null/versions",
 		})
-		if resp.StatusCode != 200 || !strings.Contains(body, `"version": "0.25.0"`) ||
-			!strings.Contains(body, `"version": "0.24.1"`) {
+		if resp.StatusCode != 200 || !strings.Contains(body, `"version":"0.25.0"`) ||
+			!strings.Contains(body, `"version":"0.24.1"`) {
 			t.Errorf("%s versions = %d %s, want the upstream's", ns, resp.StatusCode, body)
 		}
 	}

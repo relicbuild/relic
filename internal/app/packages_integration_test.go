@@ -72,7 +72,7 @@ func TestNativePackageEndpoints(t *testing.T) {
 		method: http.MethodPut,
 		path:   "/maven/mvn-local/org/app/1.0/app-1.0.jar",
 		body:   jar,
-	}); resp.StatusCode != http.StatusCreated || !strings.Contains(body, `"path": "org/app/1.0/app-1.0.jar"`) {
+	}); resp.StatusCode != http.StatusCreated || !strings.Contains(body, `"path":"org/app/1.0/app-1.0.jar"`) {
 		t.Fatalf("maven deploy = %d %s", resp.StatusCode, body)
 	}
 
@@ -140,7 +140,7 @@ func TestNativePackageEndpoints(t *testing.T) {
 	if resp, body := do(t, srv, call{
 		method: http.MethodGet,
 		path:   "/npm/npm-local/native-pkg",
-	}); resp.StatusCode != http.StatusOK || !strings.Contains(body, `"tarball": "`+tarball+`"`) {
+	}); resp.StatusCode != http.StatusOK || !strings.Contains(body, `"tarball":"`+tarball+`"`) {
 		t.Fatalf("packument = %d %s; want tarball %s", resp.StatusCode, body, tarball)
 	}
 
@@ -181,7 +181,7 @@ func TestNativePackageEndpoints(t *testing.T) {
 				path:   "/cargo/cargo-local/index/config.json",
 			},
 			status: http.StatusOK,
-			want:   `"dl": "` + srv.URL + "/cargo/cargo-local/v1/crates",
+			want:   `"dl":"` + srv.URL + "/cargo/cargo-local/v1/crates",
 		},
 		{
 			name: "Helm index",
@@ -234,7 +234,7 @@ func TestNativePackageEndpoints(t *testing.T) {
 				noAuth: true,
 			},
 			status: http.StatusOK,
-			want:   `"modules.v1": "/terraform/v1/modules/"`,
+			want:   `"modules.v1":"/terraform/v1/modules/"`,
 		},
 		{
 			name: "Hugging Face answers in the Hub's error shape",
@@ -243,7 +243,7 @@ func TestNativePackageEndpoints(t *testing.T) {
 				path:   "/huggingface/missing/api/models/org/model/revision/main",
 			},
 			status: http.StatusNotFound,
-			want:   `"error": "repository not found"`,
+			want:   `"error":"repository not found"`,
 		},
 		{
 			name: "Errors in Relic's envelope",

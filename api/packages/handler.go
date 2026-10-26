@@ -211,7 +211,5 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, err error) 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	_ = enc.Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }

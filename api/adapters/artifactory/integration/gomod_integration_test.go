@@ -103,13 +103,13 @@ func TestGoModuleProxy(t *testing.T) {
 			"latest prefers releases",
 			"/artifactory/api/go/go/example.com/lib/@latest",
 			200,
-			`"Version": "v1.0.0"`,
+			`"Version":"v1.0.0"`,
 		},
 		{
 			"synthesized info",
 			"/artifactory/api/go/go-local/example.com/lib/@v/v0.9.0.info",
 			200,
-			`"Version": "v0.9.0"`,
+			`"Version":"v0.9.0"`,
 		},
 		{
 			"mod",
@@ -133,7 +133,7 @@ func TestGoModuleProxy(t *testing.T) {
 			"latest.info query",
 			"/artifactory/api/go/go/example.com/lib/@v/latest.info",
 			200,
-			`"Version": "v1.0.0"`,
+			`"Version":"v1.0.0"`,
 		},
 		{
 			"unknown version",
@@ -151,7 +151,7 @@ func TestGoModuleProxy(t *testing.T) {
 			"remote info",
 			"/artifactory/api/go/go/example.com/!upper/@v/v0.2.0.info",
 			200,
-			`"Time": "2026-01-02T03:04:05Z"`,
+			`"Time":"2026-01-02T03:04:05Z"`,
 		},
 		{
 			"remote mod",
