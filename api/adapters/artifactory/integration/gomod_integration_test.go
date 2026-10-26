@@ -201,6 +201,16 @@ func TestGoModuleProxy(t *testing.T) {
 		t.Errorf("remote cache = %d", resp.StatusCode)
 	}
 
+	do(
+		t,
+		srv,
+		call{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/go-uncached",
+			body:   `{"rclass":"local","packageType":"go"}`,
+		},
+	)
+
 	rows, err := db.Query(t.Context(), "ALTER TABLE repositories RENAME TO repositories_unavailable")
 	if err != nil {
 		t.Fatal(err)
@@ -209,8 +219,8 @@ func TestGoModuleProxy(t *testing.T) {
 	rows.Close()
 
 	for _, path := range []string{
-		"/artifactory/api/go/go-local/example.com/lib/@v/list",
-		"/artifactory/api/go/go-local/sumdb/sum.golang.org/supported",
+		"/artifactory/api/go/go-uncached/example.com/lib/@v/list",
+		"/artifactory/api/go/go-uncached/sumdb/sum.golang.org/supported",
 	} {
 		if resp, body := do(t, srv, call{
 			method: "GET",

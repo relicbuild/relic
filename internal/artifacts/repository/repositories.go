@@ -96,6 +96,8 @@ func (s *Service) CreateRepository(ctx context.Context, r Repository) error {
 		return err
 	}
 
+	defer s.repositories.invalidate()
+
 	err = s.db.WithLock(ctx, repositoryKeysLock, func() error {
 		if err := s.refuseCaseVariant(ctx, r.Name); err != nil {
 			return err
@@ -186,7 +188,7 @@ func (s *Service) UpdateRepository(ctx context.Context, r Repository) error {
 		return err
 	}
 
-	existing, err := s.GetRepository(ctx, r.Name)
+	existing, err := s.loadRepository(ctx, r.Name)
 	if err != nil {
 		return err
 	}
@@ -225,6 +227,8 @@ func (s *Service) UpdateRepository(ctx context.Context, r Repository) error {
 		return err
 	}
 
+	defer s.repositories.invalidate()
+
 	err = s.withProject(ctx, r.Project, existing.Project, func() error {
 		return s.db.UpdateRepository(
 			ctx,
@@ -249,6 +253,24 @@ func (s *Service) UpdateRepository(ctx context.Context, r Repository) error {
 
 // GetRepository returns one repository.
 func (s *Service) GetRepository(ctx context.Context, key string) (Repository, error) {
+	if r, ok := s.repositories.lookup(key); ok {
+		return r, nil
+	}
+
+	generation := s.repositories.currentGeneration()
+	loaded := time.Now()
+
+	r, err := s.loadRepository(ctx, key)
+	if err != nil {
+		return Repository{}, err
+	}
+
+	s.repositories.store(r, generation, loaded)
+
+	return r, nil
+}
+
+func (s *Service) loadRepository(ctx context.Context, key string) (Repository, error) {
 	row, err := s.db.GetRepository(ctx, key)
 	if errors.Is(database.NotFound(err), database.ErrNotFound) {
 		return Repository{}, ErrRepositoryNotFound
@@ -326,6 +348,8 @@ func (s *Service) ListRepositories(ctx context.Context, class Class, format Form
 
 // DeleteRepository removes a repository and all its items.
 func (s *Service) DeleteRepository(ctx context.Context, key string) error {
+	defer s.repositories.invalidate()
+
 	return s.db.WithTx(ctx, func(q database.Querier) error {
 		if err := checkHolds(ctx, q, key, ""); err != nil {
 			return err
@@ -369,7 +393,7 @@ func (s *Service) checkMembers(ctx context.Context, r Repository) error {
 	}
 
 	for _, key := range r.Members() {
-		member, err := s.GetRepository(ctx, key)
+		member, err := s.loadRepository(ctx, key)
 		if errors.Is(err, ErrRepositoryNotFound) {
 			return fmt.Errorf("%w: member %s of %s does not exist", ErrInvalidRepository, key, r.Name)
 		}
