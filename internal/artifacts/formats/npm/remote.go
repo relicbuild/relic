@@ -64,6 +64,8 @@ type remotePackument struct {
 	kept        map[string]bool
 	tags        map[string]string
 	restricted  bool
+	modified    string
+	form        Form
 }
 
 func packumentDecoder(r io.Reader) *jsontext.Decoder {
@@ -104,6 +106,7 @@ func (s *Service) remotePackument(
 		kept:        make(map[string]bool, len(index.versions)),
 		tags:        maps.Clone(index.tags),
 		restricted:  repository.Restricted(ctx, r.Name),
+		modified:    index.times["modified"],
 	}
 
 	paths := make(map[string]string, len(index.versions))
@@ -198,6 +201,7 @@ func (p *remotePackument) key() string {
 	field(p.upstream)
 	field(p.tarballBase)
 	field(fmt.Sprint(p.restricted))
+	field(fmt.Sprint(p.form))
 
 	for _, version := range slices.Sorted(maps.Keys(p.kept)) {
 		field(version)
@@ -353,9 +357,12 @@ func readStrings(dec *jsontext.Decoder) (map[string]string, error) {
 	return out, nil
 }
 
-func (s *Service) remoteDocument(ctx context.Context, p *remotePackument) ([]byte, error) {
+func (s *Service) remoteDocument(ctx context.Context, remote *remotePackument, form Form) ([]byte, error) {
+	p := *remote
+	p.form = form
+
 	return s.documents.get(ctx, p.key(), func(ctx context.Context) ([]byte, error) {
-		return s.renderDocument(ctx, p)
+		return s.renderDocument(ctx, &p)
 	})
 }
 
@@ -403,6 +410,10 @@ func (p *remotePackument) render(w io.Writer, r io.Reader) error {
 	}
 
 	err := eachMember(dec, func(key string) error {
+		if p.form == FormAbbreviated && key != "name" && key != "dist-tags" && key != "versions" {
+			return dec.SkipValue()
+		}
+
 		if err := enc.WriteToken(jsontext.String(key)); err != nil {
 			return err
 		}
@@ -424,6 +435,17 @@ func (p *remotePackument) render(w io.Writer, r io.Reader) error {
 	})
 	if err != nil {
 		return err
+	}
+
+	if p.form == FormAbbreviated && p.modified != "" {
+		for _, token := range []jsontext.Token{
+			jsontext.String("modified"),
+			jsontext.String(p.modified),
+		} {
+			if err := enc.WriteToken(token); err != nil {
+				return err
+			}
+		}
 	}
 
 	return enc.WriteToken(jsontext.EndObject)
@@ -466,6 +488,10 @@ func (p *remotePackument) renderVersion(dec *jsontext.Decoder, enc *jsontext.Enc
 	}
 
 	err := eachMember(dec, func(key string) error {
+		if p.form == FormAbbreviated && !abbreviatedVersionFields[key] {
+			return dec.SkipValue()
+		}
+
 		if err := enc.WriteToken(jsontext.String(key)); err != nil {
 			return err
 		}

@@ -1,6 +1,10 @@
 package packages
 
-import "testing"
+import (
+	"testing"
+
+	"relic/internal/artifacts/formats/npm"
+)
 
 func TestNpmPackage(t *testing.T) {
 	t.Parallel()
@@ -67,5 +71,65 @@ func TestNpmPackageRejectsBadEscapes(t *testing.T) {
 		if name, tail, err := npmPackage(rest); err == nil {
 			t.Errorf("npmPackage(%q) = %q, %q, want an error", rest, name, tail)
 		}
+	}
+}
+
+func TestNpmDocumentForm(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		accept []string
+		want   npm.Form
+	}{
+		{
+			name: "npm's own header",
+			accept: []string{
+				"application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*",
+			},
+			want: npm.FormAbbreviated,
+		},
+		{
+			name: "the abbreviated form alone",
+			accept: []string{
+				"application/vnd.npm.install-v1+json",
+			},
+			want: npm.FormAbbreviated,
+		},
+		{
+			name: "JSON preferred",
+			accept: []string{
+				"application/vnd.npm.install-v1+json;q=0.5",
+				"application/json",
+			},
+			want: npm.FormFull,
+		},
+		{
+			name: "the abbreviated form refused",
+			accept: []string{
+				"application/vnd.npm.install-v1+json;q=0, */*",
+			},
+			want: npm.FormFull,
+		},
+		{
+			name: "anything",
+			accept: []string{
+				"*/*",
+			},
+			want: npm.FormFull,
+		},
+		{
+			name: "no header",
+			want: npm.FormFull,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := npmDocumentForm(tt.accept); got != tt.want {
+				t.Errorf("npmDocumentForm(%q) = %v, want %v", tt.accept, got, tt.want)
+			}
+		})
 	}
 }

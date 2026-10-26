@@ -202,16 +202,20 @@ type document struct {
 	remote *remotePackument
 }
 
-// Document returns the JSON of the document for name in repoKey; callers
-// must not modify it.
-func (s *Service) Document(ctx context.Context, repoKey, name, tarballBase string) ([]byte, error) {
+// Document returns the JSON of the document for name in repoKey in form;
+// callers must not modify it.
+func (s *Service) Document(ctx context.Context, repoKey, name, tarballBase string, form Form) ([]byte, error) {
 	d, err := s.document(ctx, repoKey, name, tarballBase)
 	if err != nil {
 		return nil, err
 	}
 
 	if d.remote != nil {
-		return s.remoteDocument(ctx, d.remote)
+		return s.remoteDocument(ctx, d.remote, form)
+	}
+
+	if form == FormAbbreviated {
+		return json.Marshal(abbreviate(d.local))
 	}
 
 	return json.Marshal(d.local)
@@ -232,7 +236,7 @@ func (s *Service) packument(ctx context.Context, d document) (Packument, error) 
 		return d.local, nil
 	}
 
-	body, err := s.remoteDocument(ctx, d.remote)
+	body, err := s.remoteDocument(ctx, d.remote, FormFull)
 	if err != nil {
 		return nil, err
 	}

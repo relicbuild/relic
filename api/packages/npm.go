@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -92,13 +93,22 @@ func (h *Handler) npmPackageRequest(w http.ResponseWriter, r *http.Request, req 
 			return
 		}
 
-		body, err := h.npm.Document(r.Context(), req.repo, name, req.mount.base(r)+"/"+req.repo)
+		form := npmDocumentForm(r.Header.Values("Accept"))
+
+		body, err := h.npm.Document(r.Context(), req.repo, name, req.mount.base(r)+"/"+req.repo, form)
 		if err != nil {
 			h.npmError(w, r, err)
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Add("Vary", "Accept")
+
+		if form == npm.FormAbbreviated {
+			w.Header().Set("Content-Type", npm.AbbreviatedMediaType)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+		}
+
 		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 		_, _ = w.Write(body)
 	case tail == "" && r.Method == http.MethodPut:
@@ -123,6 +133,39 @@ func (h *Handler) npmPackageRequest(w http.ResponseWriter, r *http.Request, req 
 	default:
 		httperror.Write(w, r, http.StatusMethodNotAllowed, "unsupported npm request")
 	}
+}
+
+func npmDocumentForm(accept []string) npm.Form {
+	var abbreviated, full float64
+
+	for _, header := range accept {
+		for mediaRange := range strings.SplitSeq(header, ",") {
+			mediaType, params, err := mime.ParseMediaType(mediaRange)
+			if err != nil {
+				continue
+			}
+
+			quality := 1.0
+			if q, ok := params["q"]; ok {
+				if quality, err = strconv.ParseFloat(q, 64); err != nil {
+					continue
+				}
+			}
+
+			switch mediaType {
+			case npm.AbbreviatedMediaType:
+				abbreviated = max(abbreviated, quality)
+			case "application/json":
+				full = max(full, quality)
+			}
+		}
+	}
+
+	if abbreviated > 0 && abbreviated >= full {
+		return npm.FormAbbreviated
+	}
+
+	return npm.FormFull
 }
 
 func (h *Handler) npmPublish(w http.ResponseWriter, r *http.Request, req npmRequest, name string) {

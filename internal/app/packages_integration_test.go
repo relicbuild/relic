@@ -146,6 +146,18 @@ func TestNativePackageEndpoints(t *testing.T) {
 
 	if resp, body := do(t, srv, call{
 		method: http.MethodGet,
+		path:   "/npm/npm-local/native-pkg",
+		headers: map[string]string{
+			"Accept": "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*",
+		},
+	}); resp.StatusCode != http.StatusOK ||
+		resp.Header.Get("Content-Type") != "application/vnd.npm.install-v1+json" ||
+		resp.Header.Get("Vary") != "Accept" || strings.Contains(body, `"time"`) {
+		t.Fatalf("abbreviated packument = %d %v %s", resp.StatusCode, resp.Header, body)
+	}
+
+	if resp, body := do(t, srv, call{
+		method: http.MethodGet,
 		path:   strings.TrimPrefix(tarball, srv.URL),
 	}); resp.StatusCode != http.StatusOK || body != string(tgz) {
 		t.Fatalf("tarball = %d, %d bytes; want the published %d bytes", resp.StatusCode, len(body), len(tgz))

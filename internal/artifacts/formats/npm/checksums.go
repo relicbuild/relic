@@ -14,10 +14,6 @@ import (
 	"relic/internal/artifacts/repository"
 )
 
-// abbreviatedMetadata is the npm registry's small packument, which lists each
-// version's dist but not its publish time.
-const abbreviatedMetadata = "application/vnd.npm.install-v1+json"
-
 // checkTarball refuses a tarball whose version is cooling down, and finds its
 // dist.shasum, both in its packument.
 func (s *Service) checkTarball(
@@ -38,7 +34,7 @@ func (s *Service) checkTarball(
 		return repository.Checksums{}, nil
 	}
 
-	accept := abbreviatedMetadata
+	accept := AbbreviatedMediaType
 	if cooldown > 0 {
 		accept = "application/json"
 	}

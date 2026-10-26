@@ -4,12 +4,16 @@ package npm_test
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -127,7 +131,7 @@ func TestLargeRemotePackumentIsRenderedOnceForConcurrentClients(t *testing.T) {
 
 	for i := range clients {
 		wg.Go(func() {
-			bodies[i], errs[i] = svc.Document(t.Context(), "npmjs", "big", "http://relic/npm/npmjs")
+			bodies[i], errs[i] = svc.Document(t.Context(), "npmjs", "big", "http://relic/npm/npmjs", npm.FormFull)
 		})
 	}
 
@@ -174,7 +178,7 @@ func TestLargeRemotePackumentIsRenderedOnceForConcurrentClients(t *testing.T) {
 		t.Errorf("versions = %d, 1.0.7 tarball = %q", len(doc.Versions), doc.Versions["1.0.7"].Dist.Tarball)
 	}
 
-	again, err := svc.Document(t.Context(), "npmjs", "big", "http://relic/npm/npmjs")
+	again, err := svc.Document(t.Context(), "npmjs", "big", "http://relic/npm/npmjs", npm.FormFull)
 	if err != nil || &again[0] != &bodies[0][0] || svc.Renders() != 1 {
 		t.Errorf("a later request = %v, renders = %d; want the cached document", err, svc.Renders())
 	}
@@ -234,7 +238,7 @@ func TestRemotePackumentFollowsEachCaller(t *testing.T) {
 	read := func(ctx context.Context) packument {
 		t.Helper()
 
-		body, err := svc.Document(ctx, "npmjs", "@acme/pad", "http://relic/npm/npmjs")
+		body, err := svc.Document(ctx, "npmjs", "@acme/pad", "http://relic/npm/npmjs", npm.FormFull)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -265,7 +269,7 @@ func TestRemotePackumentFollowsEachCaller(t *testing.T) {
 		"@acme/pad/-/pad-1.0.0.tgz": true,
 	})
 
-	if _, err := svc.Document(restricted, "npmjs", "@acme/pad", "http://relic/npm/npmjs"); err == nil {
+	if _, err := svc.Document(restricted, "npmjs", "@acme/pad", "http://relic/npm/npmjs", npm.FormFull); err == nil {
 		t.Error("a caller who sees no version got a packument")
 	}
 
@@ -292,5 +296,111 @@ func TestRemotePackumentFollowsEachCaller(t *testing.T) {
 	tags, err := svc.DistTags(t.Context(), "npmjs", "@acme/pad")
 	if err != nil || tags["latest"] != "1.1.0" {
 		t.Errorf("dist-tags = %v, %v; want latest at 1.1.0", tags, err)
+	}
+}
+
+func TestAbbreviatedPackument(t *testing.T) {
+	t.Parallel()
+
+	upstream := newUpstreamRegistry(t, "left-pad", func(base string) []byte {
+		return []byte(`{"_id":"left-pad","name":"left-pad","readme":"long","description":"pads",
+		  "dist-tags":{"latest":"1.0.0"},
+		  "time":{"created":"2020-01-01T00:00:00.000Z","modified":"2020-02-01T00:00:00.000Z",
+		    "1.0.0":"2020-01-01T00:00:00.000Z"},
+		  "versions":{"1.0.0":{"name":"left-pad","version":"1.0.0","readme":"long","scripts":{"test":"t"},
+		    "dependencies":{"a":"1"},"engines":{"node":">=8"},"deprecated":"use padStart",
+		    "dist":{"tarball":"` + base + `/left-pad/-/left-pad-1.0.0.tgz","shasum":"abc"}}}}`)
+	})
+	svc, repos := remoteService(t, upstream.server.URL, 0)
+
+	if err := repos.CreateRepository(t.Context(), repository.Repository{
+		Name:   "npm-local",
+		Class:  repository.ClassLocal,
+		Format: npm.Format,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	tarball := base64.StdEncoding.EncodeToString([]byte("tarball"))
+	if err := svc.Publish(t.Context(), "npm-local", publishDocument(t, `{"name":"demo","versions":{
+	  "1.0.0":{"name":"demo","version":"1.0.0","readme":"long","scripts":{"test":"t"},"bin":{"demo":"cli.js"},
+	    "dist":{"tarball":"http://relic/npm/demo/-/demo-1.0.0.tgz"}}},
+	  "_attachments":{"demo-1.0.0.tgz":{"data":"`+tarball+`"}}}`), "admin"); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		repo    string
+		pkg     string
+		version map[string]any
+	}{
+		{
+			name: "remote",
+			repo: "npmjs",
+			pkg:  "left-pad",
+			version: map[string]any{
+				"name":    "left-pad",
+				"version": "1.0.0",
+				"dependencies": map[string]any{
+					"a": "1",
+				},
+				"engines": map[string]any{
+					"node": ">=8",
+				},
+				"deprecated": "use padStart",
+				"dist": map[string]any{
+					"tarball": "http://relic/npm/npmjs/left-pad/-/left-pad-1.0.0.tgz",
+					"shasum":  "abc",
+				},
+			},
+		},
+		{
+			name: "local",
+			repo: "npm-local",
+			pkg:  "demo",
+			version: map[string]any{
+				"name":    "demo",
+				"version": "1.0.0",
+				"bin": map[string]any{
+					"demo": "cli.js",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			body, err := svc.Document(t.Context(), tt.repo, tt.pkg, "http://relic/npm/"+tt.repo, npm.FormAbbreviated)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var doc map[string]any
+			if err := json.Unmarshal(body, &doc); err != nil {
+				t.Fatal(err)
+			}
+
+			if fields := slices.Sorted(maps.Keys(doc)); !slices.Equal(fields, []string{
+				"dist-tags",
+				"modified",
+				"name",
+				"versions",
+			}) {
+				t.Errorf("fields = %v, want name, modified, dist-tags and versions", fields)
+			}
+
+			versions, _ := doc["versions"].(map[string]any)
+			version, _ := versions["1.0.0"].(map[string]any)
+
+			if tt.repo == "npm-local" {
+				delete(version, "dist")
+			}
+
+			if !reflect.DeepEqual(version, tt.version) {
+				t.Errorf("version = %v, want %v", version, tt.version)
+			}
+		})
 	}
 }
