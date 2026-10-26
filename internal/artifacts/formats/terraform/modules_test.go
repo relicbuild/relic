@@ -1,9 +1,13 @@
 package terraform
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 )
@@ -105,15 +109,34 @@ func zipOf(t *testing.T, files map[string]string) []byte {
 	return buf.Bytes()
 }
 
+func temporaryFile(t *testing.T, body []byte) *os.File {
+	t.Helper()
+
+	f, err := os.Create(filepath.Join(t.TempDir(), "archive"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_ = f.Close()
+	})
+
+	if _, err := f.Write(body); err != nil {
+		t.Fatal(err)
+	}
+
+	return f
+}
+
 func TestRepackModule(t *testing.T) {
 	t.Parallel()
 
-	archive := zipOf(t, map[string]string{
+	archive := temporaryFile(t, zipOf(t, map[string]string{
 		"label-0.25.0/main.tf":               "root",
 		"label-0.25.0/modules/null/main.tf":  "null",
 		"label-0.25.0/modules/null/../x.tf":  "outside",
 		"label-0.25.0/modules/other/main.tf": "other",
-	})
+	}))
 
 	for _, tc := range []struct {
 		name    string
@@ -154,7 +177,9 @@ func TestRepackModule(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			repacked, err := repackModule(archive, tc.src)
+			var out bytes.Buffer
+
+			err := repackModule(archive, tc.src, &out)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatal("repackModule succeeded, want an error")
@@ -167,7 +192,7 @@ func TestRepackModule(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			zr, err := zip.NewReader(bytes.NewReader(repacked), int64(len(repacked)))
+			zr, err := zip.NewReader(bytes.NewReader(out.Bytes()), int64(out.Len()))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -183,5 +208,76 @@ func TestRepackModule(t *testing.T) {
 				t.Errorf("repacked files = %q, want %q", names, tc.want)
 			}
 		})
+	}
+}
+
+func TestRepackModuleFromATarGzip(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+
+	for name, body := range map[string]string{
+		"./main.tf":          "root",
+		"./scripts/run.sh":   "#!/bin/sh",
+		"./modules/x/var.tf": "x",
+	} {
+		mode := int64(0o644)
+		if filepath.Ext(name) == ".sh" {
+			mode = 0o755
+		}
+
+		if err := tw.WriteHeader(&tar.Header{
+			Name:     name,
+			Mode:     mode,
+			Size:     int64(len(body)),
+			Typeflag: tar.TypeReg,
+		}); err != nil {
+			t.Fatal(err)
+		}
+
+		_, _ = tw.Write([]byte(body))
+	}
+
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	if err := repackModule(temporaryFile(t, buf.Bytes()), moduleSource{
+		tarGzip: true,
+	}, &out); err != nil {
+		t.Fatal(err)
+	}
+
+	zr, err := zip.NewReader(bytes.NewReader(out.Bytes()), int64(out.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	modes := map[string]os.FileMode{}
+	for _, f := range zr.File {
+		modes[f.Name] = f.Mode().Perm()
+	}
+
+	want := map[string]os.FileMode{
+		"main.tf":          0o644,
+		"scripts/run.sh":   0o755,
+		"modules/x/var.tf": 0o644,
+	}
+	if len(modes) != len(want) {
+		t.Errorf("repacked files = %v, want %v", modes, want)
+	}
+
+	for name, mode := range want {
+		if modes[name] != mode {
+			t.Errorf("repacked %s has mode %v, want %v", name, modes[name], mode)
+		}
 	}
 }

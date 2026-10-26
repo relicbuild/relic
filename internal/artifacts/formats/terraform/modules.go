@@ -3,7 +3,6 @@ package terraform
 import (
 	"archive/tar"
 	"archive/zip"
-	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/json"
@@ -12,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"regexp"
 	"strings"
@@ -106,6 +106,31 @@ func (s *Service) RemoteModule(
 		return repository.Item{}, ErrNotFound
 	}
 
+	return s.moduleFetches.Do(ctx, r.Name+"\x00"+cached, func(ctx context.Context) (repository.Item, error) {
+		var item repository.Item
+
+		err := s.repos.WithLock(ctx, "terraform-module:"+r.Name+"\x00"+cached, func() error {
+			found, err := s.repos.Stat(ctx, r.Name, cached)
+			if err == nil {
+				item = found
+				return nil
+			}
+
+			item, err = s.fetchModule(ctx, r, m, version, cached)
+
+			return err
+		})
+
+		return item, err
+	})
+}
+
+func (s *Service) fetchModule(
+	ctx context.Context,
+	r repository.Repository,
+	m Module,
+	version, cached string,
+) (repository.Item, error) {
 	base := strings.TrimSuffix(s.repos.UpstreamOf(r).URL, "/")
 	downloadURL := base + "/v1/modules/" + m.Folder() + "/" + url.PathEscape(version) + "/download"
 
@@ -123,16 +148,32 @@ func (s *Service) RemoteModule(
 	if err != nil {
 		return repository.Item{}, err
 	}
+	defer removeTemporary(archive)
 
-	repacked, err := repackModule(archive, src)
+	repacked, err := os.CreateTemp("", "relic-terraform-module-*.zip")
 	if err != nil {
+		return repository.Item{}, err
+	}
+	defer removeTemporary(repacked)
+
+	if err := repackModule(archive, src, repacked); err != nil {
+		return repository.Item{}, err
+	}
+
+	size, err := repacked.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return repository.Item{}, err
+	}
+
+	if _, err := repacked.Seek(0, io.SeekStart); err != nil {
 		return repository.Item{}, err
 	}
 
 	item, err := s.repos.Cache(ctx, repository.DeployInput{
 		Repository: r.Name,
 		Path:       cached,
-		Body:       bytes.NewReader(repacked),
+		Body:       repacked,
+		Size:       size,
 		User:       repository.SystemUser,
 	})
 	if err != nil {
@@ -194,7 +235,7 @@ func (s *Service) upstreamGet(ctx context.Context, r repository.Repository, u st
 	return resp, nil
 }
 
-func (s *Service) fetchModuleArchive(ctx context.Context, r repository.Repository, u string) ([]byte, error) {
+func (s *Service) fetchModuleArchive(ctx context.Context, r repository.Repository, u string) (*os.File, error) {
 	resp, err := s.upstreamGet(ctx, r, u)
 	if err != nil {
 		return nil, err
@@ -212,16 +253,28 @@ func (s *Service) fetchModuleArchive(ctx context.Context, r repository.Repositor
 		return nil, fmt.Errorf("%w: module archive returned %s", repository.ErrUpstream, resp.Status)
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxModuleArchiveBytes+1))
+	archive, err := os.CreateTemp("", "relic-terraform-archive-*")
 	if err != nil {
+		return nil, err
+	}
+
+	n, err := io.Copy(archive, io.LimitReader(resp.Body, maxModuleArchiveBytes+1))
+	if err != nil {
+		removeTemporary(archive)
 		return nil, fmt.Errorf("%w: read module archive: %w", repository.ErrUpstream, err)
 	}
 
-	if len(body) > maxModuleArchiveBytes {
+	if n > maxModuleArchiveBytes {
+		removeTemporary(archive)
 		return nil, fmt.Errorf("%w: module archive larger than %d bytes", repository.ErrUpstream, maxModuleArchiveBytes)
 	}
 
-	return body, nil
+	return archive, nil
+}
+
+func removeTemporary(f *os.File) {
+	_ = f.Close()
+	_ = os.Remove(f.Name())
 }
 
 type moduleSource struct {
@@ -323,107 +376,109 @@ func localPath(p string) bool {
 		!strings.Contains(p, "\\")
 }
 
-type moduleFile struct {
-	name string
-	mode int64
-	body []byte
+type moduleWriter struct {
+	src     moduleSource
+	zw      *zip.Writer
+	files   int
+	total   int64
+	written int
 }
 
-func repackModule(archive []byte, src moduleSource) ([]byte, error) {
-	files, err := moduleFiles(archive, src.tarGzip)
+func (m *moduleWriter) add(name string, mode int64, r io.Reader) error {
+	m.files++
+	if m.files > maxModuleFiles {
+		return fmt.Errorf("more than %d files", maxModuleFiles)
+	}
+
+	body := io.LimitReader(r, maxModuleUnpackedBytes-m.total+1)
+
+	name, keep := m.moduleName(strings.TrimPrefix(name, "./"))
+	if !keep {
+		n, err := io.Copy(io.Discard, body)
+		return m.count(n, err)
+	}
+
+	header := &zip.FileHeader{
+		Name:   name,
+		Method: zip.Deflate,
+	}
+	header.SetMode(0o644)
+
+	if mode&0o111 != 0 {
+		header.SetMode(0o755)
+	}
+
+	w, err := m.zw.CreateHeader(header)
 	if err != nil {
-		return nil, fmt.Errorf("%w: module archive: %w", repository.ErrUpstream, err)
+		return err
 	}
 
-	var buf bytes.Buffer
+	m.written++
 
-	zw := zip.NewWriter(&buf)
-	written := 0
+	n, err := io.Copy(w, body)
 
-	for _, f := range files {
-		name := f.name
-		if src.stripTop {
-			_, name, _ = strings.Cut(name, "/")
-		}
-
-		if src.subdir != "" {
-			var ok bool
-			if name, ok = strings.CutPrefix(name, src.subdir+"/"); !ok {
-				continue
-			}
-		}
-
-		if name == "" || !localPath(name) {
-			continue
-		}
-
-		header := &zip.FileHeader{
-			Name:   name,
-			Method: zip.Deflate,
-		}
-		header.SetMode(0o644)
-
-		if f.mode&0o111 != 0 {
-			header.SetMode(0o755)
-		}
-
-		w, err := zw.CreateHeader(header)
-		if err != nil {
-			return nil, err
-		}
-
-		if _, err := w.Write(f.body); err != nil {
-			return nil, err
-		}
-
-		written++
-	}
-
-	if err := zw.Close(); err != nil {
-		return nil, err
-	}
-
-	if written == 0 {
-		return nil, fmt.Errorf("%w: the module archive has no files under %q", repository.ErrUpstream, src.subdir)
-	}
-
-	return buf.Bytes(), nil
+	return m.count(n, err)
 }
 
-func moduleFiles(archive []byte, tarGzip bool) ([]moduleFile, error) {
-	var (
-		files []moduleFile
-		total int64
-	)
+func (m *moduleWriter) count(n int64, err error) error {
+	if err != nil {
+		return err
+	}
 
-	add := func(name string, mode int64, r io.Reader) error {
-		if len(files) >= maxModuleFiles {
-			return fmt.Errorf("more than %d files", maxModuleFiles)
+	m.total += n
+	if m.total > maxModuleUnpackedBytes {
+		return fmt.Errorf("more than %d bytes uncompressed", maxModuleUnpackedBytes)
+	}
+
+	return nil
+}
+
+func (m *moduleWriter) moduleName(name string) (string, bool) {
+	if m.src.stripTop {
+		_, name, _ = strings.Cut(name, "/")
+	}
+
+	if m.src.subdir != "" {
+		var ok bool
+		if name, ok = strings.CutPrefix(name, m.src.subdir+"/"); !ok {
+			return "", false
 		}
+	}
 
-		body, err := io.ReadAll(io.LimitReader(r, maxModuleUnpackedBytes-total+1))
+	return name, name != "" && localPath(name)
+}
+
+func repackModule(archive *os.File, src moduleSource, out io.Writer) error {
+	m := &moduleWriter{
+		src: src,
+		zw:  zip.NewWriter(out),
+	}
+
+	if err := m.addArchive(archive); err != nil {
+		return fmt.Errorf("%w: module archive: %w", repository.ErrUpstream, err)
+	}
+
+	if err := m.zw.Close(); err != nil {
+		return err
+	}
+
+	if m.written == 0 {
+		return fmt.Errorf("%w: the module archive has no files under %q", repository.ErrUpstream, src.subdir)
+	}
+
+	return nil
+}
+
+func (m *moduleWriter) addArchive(archive *os.File) error {
+	if !m.src.tarGzip {
+		info, err := archive.Stat()
 		if err != nil {
 			return err
 		}
 
-		total += int64(len(body))
-		if total > maxModuleUnpackedBytes {
-			return fmt.Errorf("more than %d bytes uncompressed", maxModuleUnpackedBytes)
-		}
-
-		files = append(files, moduleFile{
-			name: strings.TrimPrefix(name, "./"),
-			mode: mode,
-			body: body,
-		})
-
-		return nil
-	}
-
-	if !tarGzip {
-		zr, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
+		zr, err := zip.NewReader(archive, info.Size())
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		for _, f := range zr.File {
@@ -433,23 +488,27 @@ func moduleFiles(archive []byte, tarGzip bool) ([]moduleFile, error) {
 
 			rc, err := f.Open()
 			if err != nil {
-				return nil, err
+				return err
 			}
 
-			err = add(f.Name, int64(f.Mode().Perm()), rc)
+			err = m.add(f.Name, int64(f.Mode().Perm()), rc)
 			_ = rc.Close()
 
 			if err != nil {
-				return nil, err
+				return err
 			}
 		}
 
-		return files, nil
+		return nil
 	}
 
-	gz, err := gzip.NewReader(bytes.NewReader(archive))
+	if _, err := archive.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+
+	gz, err := gzip.NewReader(archive)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	tr := tar.NewReader(gz)
@@ -457,19 +516,19 @@ func moduleFiles(archive []byte, tarGzip bool) ([]moduleFile, error) {
 	for {
 		header, err := tr.Next()
 		if errors.Is(err, io.EOF) {
-			return files, nil
+			return nil
 		}
 
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		if header.Typeflag != tar.TypeReg {
 			continue
 		}
 
-		if err := add(header.Name, header.Mode, tr); err != nil {
-			return nil, err
+		if err := m.add(header.Name, header.Mode, tr); err != nil {
+			return err
 		}
 	}
 }

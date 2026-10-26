@@ -33,8 +33,9 @@ type Archive struct {
 
 // Service reads providers from repositories.
 type Service struct {
-	repos *repository.Service
-	log   *slog.Logger
+	repos         *repository.Service
+	moduleFetches repository.Coalescer[repository.Item]
+	log           *slog.Logger
 }
 
 const versionsCache = "versions.terraform.json"
