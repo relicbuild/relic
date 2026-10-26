@@ -9,7 +9,7 @@ var (
 	// PromQL: histogram_quantile(0.95, sum by (le, format, class) (rate(relic_index_build_duration_seconds_bucket[5m])))
 	indexBuildDuration = histogramVec(
 		"index_build_duration_seconds",
-		"Time to generate a Debian distribution's or an RPM repository's indexes, by format, repository class and result (success, error).",
+		"Time to generate a repository's indexes (Debian distributions, RPM repodata, Helm indexes), by format, repository class and result (success, error).",
 		requestBuckets,
 		"format",
 		"class",

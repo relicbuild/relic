@@ -6,6 +6,8 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -18,7 +20,9 @@ import (
 	"sync"
 	"time"
 
+	"relic/internal/artifacts/formats/indexcache"
 	"relic/internal/artifacts/repository"
+	"relic/internal/platform/telemetry"
 
 	"go.yaml.in/yaml/v3"
 	"golang.org/x/mod/semver"
@@ -39,10 +43,21 @@ const (
 // ErrInvalidChart is returned for a .tgz without a readable Chart.yaml.
 var ErrInvalidChart = errors.New("not a Helm chart")
 
+var indexSettings = indexcache.Settings{
+	Fresh:   time.Hour,
+	Stale:   24 * time.Hour,
+	Entries: 64,
+	Bytes:   256 << 20,
+	Builds:  2,
+	Timeout: 10 * time.Minute,
+}
+
 // Service implements chart repositories on top of repo.Service.
 type Service struct {
-	repos *repository.Service
-	log   *slog.Logger
+	repos   *repository.Service
+	log     *slog.Logger
+	now     func() time.Time
+	indexes *indexcache.Cache[[]byte]
 
 	mu          sync.Mutex
 	metas       map[string]map[string]any
@@ -55,9 +70,15 @@ func NewService(repos *repository.Service, log *slog.Logger) *Service {
 	s := &Service{
 		repos:       repos,
 		log:         log,
+		now:         time.Now,
 		metas:       map[string]map[string]any{},
 		foreignURLs: map[string]map[string]string{},
 	}
+	s.indexes = indexcache.New[[]byte](string(Format), indexSettings, func(body []byte) int64 {
+		return int64(len(body))
+	}, func() time.Time {
+		return s.now()
+	})
 	repos.RegisterHook(Format, s.indexChart)
 	repos.RegisterMetadata(func(name string) bool {
 		return name == IndexFile
@@ -210,32 +231,139 @@ func (s *Service) members(ctx context.Context, r repository.Repository, depth in
 	return out
 }
 
-// BuildIndex returns r's index.yaml.
+// BuildIndex returns r's index.yaml; callers whose visibility hides nothing
+// in r's members share one build per content of the members.
 func (s *Service) BuildIndex(ctx context.Context, r repository.Repository) ([]byte, error) {
+	members := s.members(ctx, r, 0)
+	if repository.AnyRestricted(ctx, members) {
+		sources, err := s.sources(ctx, members)
+		if err != nil {
+			return nil, err
+		}
+
+		return s.buildIndex(ctx, r, sources)
+	}
+
+	ctx = repository.Unfiltered(ctx)
+
+	sources, err := s.sources(ctx, members)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.indexes.Get(ctx, indexKey(sources), func(ctx context.Context) ([]byte, error) {
+		return s.buildIndex(ctx, r, sources)
+	})
+}
+
+type memberIndex struct {
+	repo     repository.Repository
+	upstream *repository.Item
+	charts   []repository.Item
+	err      error
+}
+
+func (s *Service) sources(ctx context.Context, members []repository.Repository) ([]memberIndex, error) {
+	out := make([]memberIndex, 0, len(members))
+
+	for _, m := range members {
+		source := memberIndex{
+			repo: m,
+		}
+
+		if m.Class == repository.ClassRemote {
+			item, err := s.repos.Resolve(ctx, m.Name, IndexFile)
+
+			switch {
+			case err == nil:
+				source.upstream = &item
+			case errors.Is(err, repository.ErrUpstream):
+				source.err = err
+			case !errors.Is(err, repository.ErrNotFound):
+				return nil, err
+			}
+		} else {
+			charts, err := s.localCharts(ctx, m.Name)
+			if err != nil {
+				return nil, err
+			}
+
+			source.charts = charts
+		}
+
+		out = append(out, source)
+	}
+
+	return out, nil
+}
+
+func indexKey(sources []memberIndex) string {
+	digest := sha256.New()
+
+	for _, source := range sources {
+		_, _ = fmt.Fprintf(digest, "%s\x00%s\x00", source.repo.Name, source.repo.Upstream().URL)
+
+		switch {
+		case source.err != nil:
+			_, _ = io.WriteString(digest, "unavailable\x00")
+		case source.upstream != nil:
+			_, _ = fmt.Fprintf(digest, "upstream\x00%s\x00", source.upstream.Checksums.SHA256)
+		}
+
+		for _, chart := range source.charts {
+			_, _ = fmt.Fprintf(
+				digest,
+				"%s\x00%s\x00%d\x00",
+				chart.Path(),
+				chart.Checksums.SHA256,
+				chart.Created.UnixNano(),
+			)
+		}
+
+		_, _ = io.WriteString(digest, "\x01")
+	}
+
+	return hex.EncodeToString(digest.Sum(nil))
+}
+
+func (s *Service) buildIndex(
+	ctx context.Context,
+	r repository.Repository,
+	sources []memberIndex,
+) (body []byte, err error) {
+	ctx, span := telemetry.Tracer().Start(ctx, "helm.BuildIndex")
+	started := time.Now()
+
+	defer func() {
+		telemetry.End(span, err)
+		telemetry.IndexBuilt(ctx, string(Format), string(r.Class), err, time.Since(started))
+	}()
+
 	idx := Index{
 		APIVersion: "v1",
 		Entries:    map[string][]map[string]any{},
-		Generated:  time.Now().UTC().Format(time.RFC3339),
+		Generated:  s.now().UTC().Format(time.RFC3339),
 	}
 	seen := map[string]bool{}
 
 	var upstreamErr error
 
-	for _, m := range s.members(ctx, r, 0) {
-		var (
-			entries []map[string]any
-			err     error
-		)
-		if m.Class == "remote" {
-			entries, _, err = s.remoteEntries(ctx, m)
-		} else {
-			entries, err = s.localEntries(ctx, m.Name)
+	for _, source := range sources {
+		var entries []map[string]any
+
+		switch {
+		case source.err != nil:
+			err = source.err
+		case source.upstream != nil:
+			entries, _, err = s.remoteEntries(ctx, source.repo, *source.upstream)
+		default:
+			entries = s.localEntries(ctx, source.repo.Name, source.charts)
 		}
 
 		if errors.Is(err, repository.ErrUpstream) {
-			s.log.WarnContext(ctx, "skipping member index", "repo", r.Name, "member", m.Name, "error", err)
+			s.log.WarnContext(ctx, "skipping member index", "repo", r.Name, "member", source.repo.Name, "error", err)
 
-			upstreamErr = err
+			upstreamErr, err = err, nil
 
 			continue
 		}
@@ -273,7 +401,7 @@ func (s *Service) BuildIndex(ctx context.Context, r repository.Repository) ([]by
 	return yaml.Marshal(idx)
 }
 
-func (s *Service) localEntries(ctx context.Context, repoKey string) ([]map[string]any, error) {
+func (s *Service) localCharts(ctx context.Context, repoKey string) ([]repository.Item, error) {
 	root, err := s.repos.Stat(ctx, repoKey, "")
 	if err != nil {
 		return nil, err
@@ -284,13 +412,15 @@ func (s *Service) localEntries(ctx context.Context, repoKey string) ([]map[strin
 		return nil, err
 	}
 
-	var entries []map[string]any
+	return slices.DeleteFunc(items, func(it repository.Item) bool {
+		return it.IsFolder() || !strings.HasSuffix(it.Name, ".tgz")
+	}), nil
+}
 
-	for _, it := range items {
-		if it.IsFolder() || !strings.HasSuffix(it.Name, ".tgz") {
-			continue
-		}
+func (s *Service) localEntries(ctx context.Context, repoKey string, charts []repository.Item) []map[string]any {
+	entries := make([]map[string]any, 0, len(charts))
 
+	for _, it := range charts {
 		meta, err := s.chartMeta(ctx, it)
 		if err != nil {
 			s.log.WarnContext(ctx, "skipping chart in index", "repo", repoKey, "path", it.Path(), "error", err)
@@ -307,22 +437,14 @@ func (s *Service) localEntries(ctx context.Context, repoKey string) ([]map[strin
 		entries = append(entries, e)
 	}
 
-	return entries, nil
+	return entries
 }
 
 func (s *Service) remoteEntries(
 	ctx context.Context,
 	r repository.Repository,
+	item repository.Item,
 ) ([]map[string]any, map[string]string, error) {
-	item, err := s.repos.Resolve(ctx, r.Name, IndexFile)
-	if errors.Is(err, repository.ErrNotFound) {
-		return nil, nil, nil
-	}
-
-	if err != nil {
-		return nil, nil, err
-	}
-
 	rc, err := s.repos.Open(ctx, item, nil)
 	if err != nil {
 		return nil, nil, err
@@ -332,13 +454,8 @@ func (s *Service) remoteEntries(
 		_ = rc.Close()
 	}()
 
-	body, err := io.ReadAll(io.LimitReader(rc, maxIndexBytes))
-	if err != nil {
-		return nil, nil, err
-	}
-
 	var idx Index
-	if err := yaml.Unmarshal(body, &idx); err != nil {
+	if err := yaml.NewDecoder(io.LimitReader(rc, maxIndexBytes)).Decode(&idx); err != nil && !errors.Is(err, io.EOF) {
 		return nil, nil, fmt.Errorf("%w: index of %s: %w", repository.ErrUpstream, r.Name, err)
 	}
 
@@ -455,7 +572,7 @@ func (s *Service) foreignURL(ctx context.Context, r repository.Repository, p str
 	s.mu.Unlock()
 
 	if !ok {
-		if _, foreign, err = s.remoteEntries(ctx, r); err != nil {
+		if _, foreign, err = s.remoteEntries(ctx, r, item); err != nil {
 			return "", err
 		}
 	}
