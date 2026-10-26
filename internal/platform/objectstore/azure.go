@@ -195,6 +195,11 @@ func (s *AzureStore) Copy(ctx context.Context, srcKey, dstKey string) error {
 	return s.Put(ctx, dstKey, body, -1)
 }
 
+// LocalPath implements Store.
+func (*AzureStore) LocalPath(string) (string, bool) {
+	return "", false
+}
+
 // Delete implements Store; a missing key is not an error.
 func (s *AzureStore) Delete(ctx context.Context, key string) error {
 	container, name := s.locate(key)

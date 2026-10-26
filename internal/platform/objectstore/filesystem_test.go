@@ -297,3 +297,137 @@ func TestSweepTemporaryListsStoresWithoutTheirOwnSweep(t *testing.T) {
 		t.Errorf("keys left = %v", got)
 	}
 }
+
+func TestLocalPath(t *testing.T) {
+	t.Parallel()
+
+	key := objectstore.Key("cd" + strings.Repeat("0", 62))
+
+	tests := []struct {
+		name  string
+		store objectstore.Store
+		local bool
+	}{
+		{
+			name:  "filesystem",
+			store: newFilesystem(t),
+			local: true,
+		},
+		{
+			name:  "instrumented filesystem",
+			store: objectstore.Instrument(newFilesystem(t)),
+			local: true,
+		},
+		{
+			name:  "memory",
+			store: objectstoretest.NewMemory(),
+			local: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if err := tt.store.Put(t.Context(), key, strings.NewReader("stored"), 6); err != nil {
+				t.Fatal(err)
+			}
+
+			path, ok := tt.store.LocalPath(key)
+			if ok != tt.local {
+				t.Fatalf("LocalPath(%s) = %q, %v, want local %v", key, path, ok, tt.local)
+			}
+
+			if !ok {
+				return
+			}
+
+			b, err := os.ReadFile(path) //nolint:gosec // the test's own store
+			if err != nil || string(b) != "stored" || !filepath.IsAbs(path) {
+				t.Errorf("LocalPath(%s) = %q holding %q, %v; want an absolute path to the content", key, path, b, err)
+			}
+		})
+	}
+}
+
+func TestLocalPathRejectsKeysOutsideTheStore(t *testing.T) {
+	t.Parallel()
+
+	if path, ok := newFilesystem(t).LocalPath("../outside"); ok {
+		t.Errorf("LocalPath(../outside) = %q, want none", path)
+	}
+}
+
+func TestSweepTemporaryRemovesWorkspacesByTheirOwnAge(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	s := newFilesystem(t)
+	old := time.Now().Add(-2 * objectstore.TemporaryTTL)
+	stored := objectstore.Key("ef" + strings.Repeat("0", 62))
+
+	if err := s.Put(ctx, stored, strings.NewReader("stored"), 6); err != nil {
+		t.Fatal(err)
+	}
+
+	storedPath, _ := s.LocalPath(stored)
+	if err := os.Chtimes(storedPath, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	workspaces, ok := s.LocalPath(objectstore.WorkspaceKeyPrefix)
+	if !ok {
+		t.Fatal("no local workspace directory")
+	}
+
+	workspace := func(name string, modified time.Time, files ...string) string {
+		t.Helper()
+
+		dir := filepath.Join(workspaces, name)
+		if err := os.MkdirAll(filepath.Join(dir, "nested"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		for _, f := range files {
+			if err := os.Link(storedPath, filepath.Join(dir, f)); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		if err := os.Chtimes(dir, modified, modified); err != nil {
+			t.Fatal(err)
+		}
+
+		return dir
+	}
+
+	running := workspace("running", time.Now(), "app-1.0.jar", "nested/layer")
+	crashed := workspace("crashed", old, "app-1.0.jar")
+	empty := workspace("empty", old)
+
+	if _, err := objectstore.SweepTemporary(ctx, s, objectstore.TemporaryTTL); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, f := range []string{
+		filepath.Join(running, "app-1.0.jar"),
+		filepath.Join(running, "nested", "layer"),
+		storedPath,
+	} {
+		if _, err := os.Stat(f); err != nil {
+			t.Errorf("%s was swept: %v", f, err)
+		}
+	}
+
+	for _, dir := range []string{
+		crashed,
+		empty,
+	} {
+		if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("the old workspace %s survived: %v", dir, err)
+		}
+	}
+
+	if _, err := os.Stat(workspaces); err != nil {
+		t.Errorf("the workspace directory itself was swept: %v", err)
+	}
+}

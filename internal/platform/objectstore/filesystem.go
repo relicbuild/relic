@@ -397,6 +397,16 @@ func (s *FilesystemStore) List(ctx context.Context, prefix string) iter.Seq2[Obj
 	}
 }
 
+// LocalPath implements Store.
+func (s *FilesystemStore) LocalPath(key string) (string, bool) {
+	p, err := s.path(key)
+	if err != nil {
+		return "", false
+	}
+
+	return filepath.Join(s.root.Name(), p), true
+}
+
 // PresignGet implements Store.
 func (s *FilesystemStore) PresignGet(context.Context, string, time.Duration) (string, error) {
 	return "", ErrPresignNotSupported
@@ -407,6 +417,7 @@ func (s *FilesystemStore) PresignGet(context.Context, string, time.Duration) (st
 func (s *FilesystemStore) SweepTemporary(ctx context.Context, olderThan time.Duration) (int, error) {
 	cutoff := time.Now().Add(-olderThan)
 	removed := 0
+	workspaces := path.Join(temporaryDir, strings.TrimPrefix(WorkspaceKeyPrefix, TemporaryKeyPrefix))
 
 	for _, dir := range []string{
 		temporaryDir,
@@ -419,6 +430,19 @@ func (s *FilesystemStore) SweepTemporary(ctx context.Context, olderThan time.Dur
 
 			if err := ctx.Err(); err != nil {
 				return err
+			}
+
+			if d.IsDir() && path.Dir(p) == workspaces {
+				swept, err := s.sweepWorkspace(p, d, cutoff)
+				if swept {
+					removed++
+				}
+
+				if err != nil {
+					return err
+				}
+
+				return fs.SkipDir
 			}
 
 			if d.IsDir() {
@@ -452,6 +476,27 @@ func (s *FilesystemStore) SweepTemporary(ctx context.Context, olderThan time.Dur
 	}
 
 	return removed, nil
+}
+
+func (s *FilesystemStore) sweepWorkspace(dir string, d fs.DirEntry, cutoff time.Time) (bool, error) {
+	info, err := d.Info()
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+
+	if err != nil {
+		return false, err
+	}
+
+	if info.ModTime().After(cutoff) {
+		return false, nil
+	}
+
+	if err := s.root.RemoveAll(dir); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 func mapFSErr(err error) error {

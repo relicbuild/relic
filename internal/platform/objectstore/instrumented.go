@@ -123,6 +123,10 @@ func (i instrumented) List(ctx context.Context, prefix string) iter.Seq2[Object,
 	}
 }
 
+func (i instrumented) LocalPath(key string) (string, bool) {
+	return i.next.LocalPath(key)
+}
+
 func (i instrumented) PresignGet(ctx context.Context, key string, ttl time.Duration) (string, error) {
 	ctx, end := telemetry.StartObjectStorage(ctx, "presign", area(key))
 	u, err := i.next.PresignGet(ctx, key, ttl)
