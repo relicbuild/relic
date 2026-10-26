@@ -4,6 +4,7 @@ package nuget
 
 import (
 	"archive/zip"
+	"cmp"
 	"context"
 	"encoding/json"
 	"encoding/xml"
@@ -11,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/url"
 	"os"
 	"regexp"
@@ -588,36 +590,21 @@ func (s *Service) Search(
 			}
 		}
 
-		root, err := s.repos.Stat(ctx, m.Name, "")
-		if errors.Is(err, repository.ErrNotFound) && m.Class == "remote" {
+		if _, err := s.repos.Stat(ctx, m.Name, ""); errors.Is(err, repository.ErrNotFound) && m.Class == "remote" {
 			continue
+		} else if err != nil {
+			return nil, 0, err
 		}
 
+		stored, err := s.storedPackages(ctx, m.Name)
 		if err != nil {
 			return nil, 0, err
 		}
 
-		items, err := s.repos.Subtree(ctx, root)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		for _, it := range items {
-			if it.IsFolder() || !strings.HasSuffix(strings.ToLower(it.Name), ".nupkg") {
-				continue
+		for _, p := range stored {
+			if strings.Contains(strings.ToLower(p.id), q) {
+				addSearchResult(byID, p.id, p.version)
 			}
-
-			props, err := s.repos.Properties(ctx, it)
-			if err != nil || len(props["nuget.id"]) == 0 || len(props["nuget.version"]) == 0 {
-				continue
-			}
-
-			id, v := props["nuget.id"][0], strings.ToLower(props["nuget.version"][0])
-			if !strings.Contains(strings.ToLower(id), q) {
-				continue
-			}
-
-			addSearchResult(byID, id, v)
 		}
 	}
 
@@ -643,6 +630,61 @@ func (s *Service) Search(
 	}
 
 	return out, total, nil
+}
+
+type storedPackage struct {
+	id, version string
+}
+
+func (s *Service) storedPackages(ctx context.Context, repoKey string) ([]storedPackage, error) {
+	ids, err := s.lowestPropertyValues(ctx, repoKey, "nuget.id")
+	if err != nil {
+		return nil, err
+	}
+
+	versions, err := s.lowestPropertyValues(ctx, repoKey, "nuget.version")
+	if err != nil {
+		return nil, err
+	}
+
+	files := slices.SortedFunc(maps.Values(ids), func(a, b repository.PropertyFile) int {
+		return cmp.Or(strings.Compare(a.Item.Parent, b.Item.Parent), strings.Compare(a.Item.Name, b.Item.Name))
+	})
+
+	out := make([]storedPackage, 0, len(files))
+
+	for _, f := range files {
+		version, ok := versions[f.Item.Path()]
+		if !ok || !strings.HasSuffix(strings.ToLower(f.Item.Name), ".nupkg") {
+			continue
+		}
+
+		out = append(out, storedPackage{
+			id:      f.Value,
+			version: strings.ToLower(version.Value),
+		})
+	}
+
+	return out, nil
+}
+
+func (s *Service) lowestPropertyValues(
+	ctx context.Context,
+	repoKey, key string,
+) (map[string]repository.PropertyFile, error) {
+	files, err := s.repos.FilesWithPropertyKey(ctx, repoKey, key)
+	if err != nil {
+		return nil, err
+	}
+
+	byPath := make(map[string]repository.PropertyFile, len(files))
+	for _, f := range files {
+		if lowest, ok := byPath[f.Item.Path()]; !ok || f.Value < lowest.Value {
+			byPath[f.Item.Path()] = f
+		}
+	}
+
+	return byPath, nil
 }
 
 func addSearchResult(byID map[string]*SearchResult, id string, versions ...string) {
