@@ -167,8 +167,12 @@ type grypeVuln struct {
 
 // ParseGrype converts Grype's JSON report into a Report.
 func ParseGrype(data []byte) (Report, error) {
+	return decodeGrype(bytes.NewReader(data))
+}
+
+func decodeGrype(r io.Reader) (Report, error) {
 	var gr grypeReport
-	if err := json.Unmarshal(data, &gr); err != nil {
+	if err := json.NewDecoder(r).Decode(&gr); err != nil {
 		return Report{}, fmt.Errorf("parse grype report: %w", err)
 	}
 
@@ -286,14 +290,41 @@ type Exec struct {
 var defaultExecTimeout = 10 * time.Minute
 
 func (e Exec) run(ctx context.Context, args ...string) ([]byte, error) {
-	return e.runInSlot(ctx, false, args...)
+	return e.read(e.output(ctx, false, args...))
 }
 
 func (e Exec) runAlone(ctx context.Context, args ...string) ([]byte, error) {
-	return e.runInSlot(ctx, true, args...)
+	return e.read(e.output(ctx, true, args...))
 }
 
-func (e Exec) runInSlot(ctx context.Context, databaseChange bool, args ...string) ([]byte, error) {
+func (Exec) read(out *os.File, err error) ([]byte, error) {
+	if err != nil {
+		return nil, err
+	}
+
+	defer removeOutput(out)
+
+	info, err := out.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("scanner output: %w", err)
+	}
+
+	b := make([]byte, info.Size())
+	if _, err := io.ReadFull(out, b); err != nil {
+		return nil, fmt.Errorf("read scanner output: %w", err)
+	}
+
+	return b, nil
+}
+
+func removeOutput(out *os.File) {
+	_ = out.Close()
+	_ = os.Remove(out.Name())
+}
+
+// output runs the scanner with its stdout in a temporary file, which it
+// returns at its start; the caller removes it with removeOutput.
+func (e Exec) output(ctx context.Context, databaseChange bool, args ...string) (*os.File, error) {
 	memory, release, err := e.Slots.acquire(ctx, databaseChange)
 	if err != nil {
 		return nil, err
@@ -324,9 +355,15 @@ func (e Exec) runInSlot(ctx context.Context, databaseChange bool, args ...string
 		limit = 256 << 20
 	}
 
-	var stdout limitedBuffer
+	spool, err := os.CreateTemp("", "relic-scanner-*.out")
+	if err != nil {
+		return nil, fmt.Errorf("scanner output: %w", err)
+	}
 
-	stdout.limit = limit
+	stdout := limitedFile{
+		file:  spool,
+		limit: limit,
+	}
 
 	var stderr bytes.Buffer
 
@@ -338,19 +375,28 @@ func (e Exec) runInSlot(ctx context.Context, databaseChange bool, args ...string
 	cmd.WaitDelay = 5 * time.Second
 	err = cmd.Run()
 
-	if stdout.overflow {
-		return nil, ErrTooLarge
+	switch {
+	case stdout.overflow:
+		err = ErrTooLarge
+	case err != nil:
+		if detail := strings.TrimSpace(stderr.String()); detail != "" {
+			err = fmt.Errorf("%s: %w: %s", filepath.Base(e.Path), err, detail)
+		} else {
+			err = fmt.Errorf("%s: %w", filepath.Base(e.Path), err)
+		}
+	default:
+		if _, seekErr := spool.Seek(0, io.SeekStart); seekErr != nil {
+			err = fmt.Errorf("scanner output: %w", seekErr)
+		}
 	}
 
 	if err != nil {
-		if detail := strings.TrimSpace(stderr.String()); detail != "" {
-			return nil, fmt.Errorf("%s: %w: %s", filepath.Base(e.Path), err, detail)
-		}
+		removeOutput(spool)
 
-		return nil, fmt.Errorf("%s: %w", filepath.Base(e.Path), err)
+		return nil, err
 	}
 
-	return stdout.Bytes(), nil
+	return spool, nil
 }
 
 // Syft is the subprocess Cataloger.
@@ -411,7 +457,7 @@ func (g Grype) Match(ctx context.Context, sbomPath string) (Report, error) {
 	e := g.Exec
 	e.Env = g.env()
 
-	out, err := e.run(ctx, "sbom:"+sbomPath, "-o", "json")
+	out, err := e.output(ctx, false, "sbom:"+sbomPath, "-o", "json")
 	if err != nil {
 		if _, dbErr := g.DBBuilt(ctx); errors.Is(dbErr, ErrInvalidDB) {
 			return Report{}, dbErr
@@ -419,8 +465,9 @@ func (g Grype) Match(ctx context.Context, sbomPath string) (Report, error) {
 
 		return Report{}, err
 	}
+	defer removeOutput(out)
 
-	return ParseGrype(out)
+	return decodeGrype(out)
 }
 
 const databaseTimeout = 30 * time.Minute
@@ -565,24 +612,26 @@ func (g Grype) ImportDB(ctx context.Context, archive string) error {
 	return g.changeDB(ctx, "db", "import", archive)
 }
 
-// limitedBuffer collects output up to limit. It does not embed
-// bytes.Buffer, whose ReadFrom would let io.Copy bypass Write.
-type limitedBuffer struct {
-	buf      bytes.Buffer
+// limitedFile writes output to a file up to limit bytes. It does not embed
+// *os.File, whose ReadFrom would let io.Copy bypass Write.
+type limitedFile struct {
+	file     *os.File
+	written  int64
 	limit    int64
 	overflow bool
 }
 
-func (b *limitedBuffer) Write(p []byte) (int, error) {
-	if int64(b.buf.Len()+len(p)) > b.limit {
-		b.overflow = true
+func (f *limitedFile) Write(p []byte) (int, error) {
+	if f.written+int64(len(p)) > f.limit {
+		f.overflow = true
 		return 0, ErrTooLarge
 	}
 
-	return b.buf.Write(p)
-}
+	n, err := f.file.Write(p)
+	f.written += int64(n)
 
-func (b *limitedBuffer) Bytes() []byte { return b.buf.Bytes() }
+	return n, err
+}
 
 type limitedWriter struct {
 	w io.Writer

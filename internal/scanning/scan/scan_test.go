@@ -69,12 +69,19 @@ func TestExecLimitsAndEnvironment(t *testing.T) { //nolint:paralleltest // uses 
 
 	t.Setenv("SECRET", "leaked")
 
+	spool := t.TempDir()
+	t.Setenv("TMPDIR", spool)
+
 	out, err := Exec{
 		Path:      script,
 		MaxOutput: 1 << 20,
 	}.run(context.Background(), "arg")
-	if err != nil || !strings.HasPrefix(string(out), "|arg\n") {
+	if err != nil || !strings.HasPrefix(string(out), "|arg\n") || len(out) != len("|arg\n")+5000 {
 		t.Errorf("run = %q, %v (environment must not be inherited)", out[:min(len(out), 20)], err)
+	}
+
+	if spooled, err := os.ReadDir(spool); err != nil || len(spooled) != 0 {
+		t.Errorf("output files left after a run = %v, %v", spooled, err)
 	}
 
 	if _, err := (Exec{
@@ -94,6 +101,32 @@ func TestExecLimitsAndEnvironment(t *testing.T) { //nolint:paralleltest // uses 
 	}).run(context.Background()); err == nil ||
 		time.Since(start) > 15*time.Second {
 		t.Errorf("timeout not enforced: %v after %v", err, time.Since(start))
+	}
+
+	if spooled, err := os.ReadDir(spool); err != nil || len(spooled) != 0 {
+		t.Errorf("output files left after failed runs = %v, %v", spooled, err)
+	}
+}
+
+func TestExecWritesItsOutputToAFile(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	spool := t.TempDir()
+	t.Setenv("TMPDIR", spool)
+
+	script := filepath.Join(t.TempDir(), "scanner")
+	scripttest.Write(t, script, "#!/bin/sh\nprintf 'spooled'\nls \"$TMPDIR\"\n")
+
+	out, err := Exec{
+		Path: script,
+		Env: []string{
+			"TMPDIR=" + spool,
+		},
+	}.run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.HasPrefix(string(out), "spooled") || !strings.Contains(string(out), "relic-scanner-") {
+		t.Errorf("run = %q, want the output spooled to a file in the temporary directory", out)
 	}
 }
 
