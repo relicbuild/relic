@@ -396,6 +396,9 @@ type Querier interface {
 	UpsertLdapGroupMapping(ctx context.Context, arg UpsertLdapGroupMappingParams) error
 	UpsertLdapServer(ctx context.Context, arg UpsertLdapServerParams) error
 	UpsertMaliciousPackage(ctx context.Context, arg UpsertMaliciousPackageParams) error
+	// The arrays are read in parallel; each of @versions is a JSON array of
+	// versions and each of @ranges the ranges' JSON. A key appears once.
+	UpsertMaliciousPackages(ctx context.Context, arg UpsertMaliciousPackagesParams) error
 	UpsertNpmVersion(ctx context.Context, arg UpsertNpmVersionParams) error
 	UpsertProject(ctx context.Context, arg UpsertProjectParams) error
 	UpsertPromotionGate(ctx context.Context, arg UpsertPromotionGateParams) error

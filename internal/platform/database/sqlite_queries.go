@@ -1703,6 +1703,24 @@ ON CONFLICT (ecosystem, name, id) DO UPDATE
 SET all_versions = excluded.all_versions, versions = excluded.versions, ranges = excluded.ranges,
     summary = excluded.summary, modified = excluded.modified;`
 
+const sqliteUpsertMaliciousPackages = `-- name: UpsertMaliciousPackages :exec
+-- The arrays come as JSON arrays, read in parallel by index; each of
+-- @versions is a JSON array of versions and each of @ranges the ranges' JSON.
+INSERT INTO malicious_packages (id, ecosystem, name, all_versions, versions, ranges, summary, modified)
+SELECT i.value, e.value, n.value, a.value, v.value, r.value, s.value, m.value
+FROM json_each(@ids) AS i
+JOIN json_each(@ecosystems) AS e ON e.key = i.key
+JOIN json_each(@names) AS n ON n.key = i.key
+JOIN json_each(@all_versions) AS a ON a.key = i.key
+JOIN json_each(@versions) AS v ON v.key = i.key
+JOIN json_each(@ranges) AS r ON r.key = i.key
+JOIN json_each(@summaries) AS s ON s.key = i.key
+JOIN json_each(@modified) AS m ON m.key = i.key
+WHERE true
+ON CONFLICT (ecosystem, name, id) DO UPDATE
+SET all_versions = excluded.all_versions, versions = excluded.versions, ranges = excluded.ranges,
+    summary = excluded.summary, modified = excluded.modified;`
+
 const sqliteUpsertNpmVersion = `-- name: UpsertNpmVersion :exec
 INSERT INTO npm_versions (item_id, repo_key, name, version, manifest, integrity)
 VALUES (@item_id, @repo_key, @name, @version, CAST(@manifest AS TEXT), @integrity)
@@ -7658,6 +7676,12 @@ func (q *sqliteQueries) UpsertLdapServer(ctx context.Context, arg UpsertLdapServ
 
 func (q *sqliteQueries) UpsertMaliciousPackage(ctx context.Context, arg UpsertMaliciousPackageParams) error {
 	_, err := q.db.ExecContext(ctx, sqliteUpsertMaliciousPackage, sql.Named("id", arg.ID), sql.Named("ecosystem", arg.Ecosystem), sql.Named("name", arg.Name), sql.Named("all_versions", arg.AllVersions), sql.Named("versions", sqliteJSON(arg.Versions)), sql.Named("ranges", arg.Ranges), sql.Named("summary", arg.Summary), sql.Named("modified", sqliteTime(arg.Modified)))
+
+	return err
+}
+
+func (q *sqliteQueries) UpsertMaliciousPackages(ctx context.Context, arg UpsertMaliciousPackagesParams) error {
+	_, err := q.db.ExecContext(ctx, sqliteUpsertMaliciousPackages, sql.Named("ids", sqliteJSON(arg.Ids)), sql.Named("ecosystems", sqliteJSON(arg.Ecosystems)), sql.Named("names", sqliteJSON(arg.Names)), sql.Named("all_versions", sqliteJSON(arg.AllVersions)), sql.Named("versions", sqliteJSON(arg.Versions)), sql.Named("ranges", sqliteJSON(arg.Ranges)), sql.Named("summaries", sqliteJSON(arg.Summaries)), sql.Named("modified", sqliteTimes(arg.Modified)))
 
 	return err
 }

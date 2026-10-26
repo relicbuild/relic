@@ -12,6 +12,20 @@ ON CONFLICT (ecosystem, name, id) DO UPDATE
 SET all_versions = excluded.all_versions, versions = excluded.versions, ranges = excluded.ranges,
     summary = excluded.summary, modified = excluded.modified;
 
+-- name: UpsertMaliciousPackages :exec
+-- The arrays are read in parallel; each of @versions is a JSON array of
+-- versions and each of @ranges the ranges' JSON. A key appears once.
+INSERT INTO malicious_packages (id, ecosystem, name, all_versions, versions, ranges, summary, modified)
+SELECT p.id, p.ecosystem, p.name, p.all_versions, ARRAY(SELECT jsonb_array_elements_text(p.versions::jsonb)),
+       p.ranges::jsonb, p.summary, p.modified
+FROM (SELECT unnest(@ids::text[]) AS id, unnest(@ecosystems::text[]) AS ecosystem, unnest(@names::text[]) AS name,
+             unnest(@all_versions::bool[]) AS all_versions, unnest(@versions::text[]) AS versions,
+             unnest(@ranges::text[]) AS ranges, unnest(@summaries::text[]) AS summary,
+             unnest(@modified::timestamptz[]) AS modified) AS p
+ON CONFLICT (ecosystem, name, id) DO UPDATE
+SET all_versions = excluded.all_versions, versions = excluded.versions, ranges = excluded.ranges,
+    summary = excluded.summary, modified = excluded.modified;
+
 -- name: DeleteMaliciousAdvisory :exec
 DELETE FROM malicious_packages WHERE id = @id;
 

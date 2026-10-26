@@ -216,3 +216,43 @@ func (q *Queries) UpsertMaliciousPackage(ctx context.Context, arg UpsertMaliciou
 	)
 	return err
 }
+
+const upsertMaliciousPackages = `-- name: UpsertMaliciousPackages :exec
+INSERT INTO malicious_packages (id, ecosystem, name, all_versions, versions, ranges, summary, modified)
+SELECT p.id, p.ecosystem, p.name, p.all_versions, ARRAY(SELECT jsonb_array_elements_text(p.versions::jsonb)),
+       p.ranges::jsonb, p.summary, p.modified
+FROM (SELECT unnest($1::text[]) AS id, unnest($2::text[]) AS ecosystem, unnest($3::text[]) AS name,
+             unnest($4::bool[]) AS all_versions, unnest($5::text[]) AS versions,
+             unnest($6::text[]) AS ranges, unnest($7::text[]) AS summary,
+             unnest($8::timestamptz[]) AS modified) AS p
+ON CONFLICT (ecosystem, name, id) DO UPDATE
+SET all_versions = excluded.all_versions, versions = excluded.versions, ranges = excluded.ranges,
+    summary = excluded.summary, modified = excluded.modified
+`
+
+type UpsertMaliciousPackagesParams struct {
+	Ids         []string
+	Ecosystems  []string
+	Names       []string
+	AllVersions []bool
+	Versions    []string
+	Ranges      []string
+	Summaries   []string
+	Modified    []time.Time
+}
+
+// The arrays are read in parallel; each of @versions is a JSON array of
+// versions and each of @ranges the ranges' JSON. A key appears once.
+func (q *Queries) UpsertMaliciousPackages(ctx context.Context, arg UpsertMaliciousPackagesParams) error {
+	_, err := q.db.Exec(ctx, upsertMaliciousPackages,
+		arg.Ids,
+		arg.Ecosystems,
+		arg.Names,
+		arg.AllVersions,
+		arg.Versions,
+		arg.Ranges,
+		arg.Summaries,
+		arg.Modified,
+	)
+	return err
+}
