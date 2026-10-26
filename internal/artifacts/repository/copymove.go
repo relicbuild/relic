@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"uuid"
 
 	"relic/internal/access/auth"
 	"relic/internal/platform/database"
@@ -69,6 +70,7 @@ type copyPlan struct {
 	projectQuota int64
 	uploadLimit  int64
 	files        []string
+	folders      map[string]bool
 }
 
 // CopyAll copies or moves several items in one transaction: all of them or none.
@@ -121,6 +123,14 @@ func (s *Service) CopyAll(ctx context.Context, inputs []CopyInput) error {
 }
 
 func (s *Service) runHooksOfCopies(ctx context.Context, repoKey string, files []string) {
+	if len(files) == 0 {
+		return
+	}
+
+	if r, err := s.GetRepository(ctx, repoKey); err == nil && s.hooks[r.Format] == nil {
+		return
+	}
+
 	for _, f := range files {
 		it, err := s.Stat(ctx, repoKey, f)
 		if errors.Is(err, ErrNotFound) {
@@ -391,6 +401,7 @@ func (s *Service) moveBatch(
 
 	err := s.db.WithTx(ctx, func(q database.Querier) error {
 		done, moved = 0, nil
+		plan.folders = map[string]bool{}
 
 		if prepare != nil {
 			if err := prepare(q); err != nil {
@@ -461,6 +472,13 @@ func moveBatchEntry(
 		}
 	}
 
+	if plan.in.Permits == nil {
+		target, moved, err := moveFileRow(ctx, q, plan, it, now)
+		if err != nil || moved {
+			return target, err
+		}
+	}
+
 	target, err := copyEntry(ctx, q, plan, it, now)
 	if err != nil {
 		return "", err
@@ -471,6 +489,74 @@ func moveBatchEntry(
 	}
 
 	return target, nil
+}
+
+func moveFileRow(
+	ctx context.Context,
+	q database.Querier,
+	plan *copyPlan,
+	file Item,
+	now time.Time,
+) (target string, moved bool, err error) {
+	if plan.uploadLimit > 0 && file.Size > plan.uploadLimit {
+		return "", false, nil
+	}
+
+	target = plan.path
+	if file.Path() != plan.in.Source.Path() {
+		target += "/" + strings.TrimPrefix(file.Path(), plan.in.Source.Path()+"/")
+	}
+
+	parent, name := SplitPath(target)
+	repoKey := plan.destination.Name
+
+	if !plan.folders[parent] {
+		if err := ensureFolders(ctx, q, repoKey, parent, plan.in.User, now); err != nil {
+			return "", false, err
+		}
+
+		plan.folders[parent] = true
+	}
+
+	id, err := q.InsertMovedFile(ctx, database.InsertMovedFileParams{
+		ID:        uuid.NewV7(),
+		RepoKey:   repoKey,
+		Path:      parent,
+		Name:      name,
+		Size:      file.Size,
+		Sha1:      &file.Checksums.SHA1,
+		Sha256:    &file.Checksums.SHA256,
+		Md5:       &file.Checksums.MD5,
+		Created:   file.Created,
+		CreatedBy: file.CreatedBy,
+		Now:       now,
+		Username:  plan.in.User,
+	})
+	if database.IsNoRows(err) {
+		return "", false, nil
+	}
+
+	if err != nil {
+		return "", false, fmt.Errorf("insert %s/%s: %w", repoKey, target, err)
+	}
+
+	if err := q.CopyItemProperties(ctx, database.CopyItemPropertiesParams{
+		ToID:   id,
+		FromID: file.ID,
+	}); err != nil {
+		return "", false, fmt.Errorf("copy the properties of %s/%s: %w", file.Repository, file.Path(), err)
+	}
+
+	n, err := q.DeleteItemByID(ctx, file.ID)
+	if err != nil {
+		return "", false, fmt.Errorf("delete %s/%s: %w", file.Repository, file.Path(), err)
+	}
+
+	if n != 1 {
+		return "", false, fmt.Errorf("%w: %s/%s changed during the move", ErrConflict, file.Repository, file.Path())
+	}
+
+	return target, true, nil
 }
 
 var errDryRun = errors.New("dry run")

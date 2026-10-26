@@ -149,6 +149,10 @@ DELETE FROM group_members WHERE group_name = @group_name AND source = 'sso';`
 const sqliteClearUserGroups = `-- name: ClearUserGroups :exec
 DELETE FROM group_members WHERE username = @username;`
 
+const sqliteCopyItemProperties = `-- name: CopyItemProperties :exec
+INSERT INTO item_properties (item_id, key, value)
+SELECT @to_id, p.key, p.value FROM item_properties p WHERE p.item_id = @from_id;`
+
 const sqliteCountAdmins = `-- name: CountAdmins :one
 SELECT count(*) FROM users WHERE admin;`
 
@@ -328,6 +332,9 @@ DELETE FROM scan_ignore_rules WHERE id = @id;`
 
 const sqliteDeleteIssues = `-- name: DeleteIssues :exec
 DELETE FROM scan_issues WHERE sha256 = @sha256;`
+
+const sqliteDeleteItemByID = `-- name: DeleteItemByID :execrows
+DELETE FROM items WHERE id = @id;`
 
 const sqliteDeleteItemProperties = `-- name: DeleteItemProperties :exec
 DELETE FROM item_properties WHERE item_id = @item_id;`
@@ -779,6 +786,14 @@ const sqliteInsertKeyPair = `-- name: InsertKeyPair :exec
 INSERT INTO key_pairs (name, kind, private_key, public_key)
 VALUES (@name, @kind, @private_key, @public_key)
 ON CONFLICT (name) DO NOTHING;`
+
+const sqliteInsertMovedFile = `-- name: InsertMovedFile :one
+INSERT INTO items (id, repo_key, path, name, type, size, sha1, sha256, md5,
+                   created, created_by, modified, modified_by, updated)
+VALUES (@id, @repo_key, @path, @name, 'file', @size, @sha1, @sha256, @md5,
+        @created, @created_by, @now, @username, @now)
+ON CONFLICT (repo_key, path, name) DO NOTHING
+RETURNING id;`
 
 const sqliteInsertOperationalRisk = `-- name: InsertOperationalRisk :exec
 INSERT INTO scan_operational_risks (sha256, purl, kind, severity, package_name, package_version, product, cycle,
@@ -2132,6 +2147,12 @@ func (q *sqliteQueries) ClearUserGroups(ctx context.Context, arg string) error {
 	return err
 }
 
+func (q *sqliteQueries) CopyItemProperties(ctx context.Context, arg CopyItemPropertiesParams) error {
+	_, err := q.db.ExecContext(ctx, sqliteCopyItemProperties, sql.Named("to_id", arg.ToID.String()), sql.Named("from_id", arg.FromID.String()))
+
+	return err
+}
+
 func (q *sqliteQueries) CountAdmins(ctx context.Context) (int64, error) {
 	var i int64
 
@@ -2613,6 +2634,15 @@ func (q *sqliteQueries) DeleteIssues(ctx context.Context, arg string) error {
 	_, err := q.db.ExecContext(ctx, sqliteDeleteIssues, sql.Named("sha256", arg))
 
 	return err
+}
+
+func (q *sqliteQueries) DeleteItemByID(ctx context.Context, arg uuid.UUID) (int64, error) {
+	res, err := q.db.ExecContext(ctx, sqliteDeleteItemByID, sql.Named("id", arg.String()))
+	if err != nil {
+		return 0, err
+	}
+
+	return res.RowsAffected()
 }
 
 func (q *sqliteQueries) DeleteItemProperties(ctx context.Context, arg uuid.UUID) error {
@@ -4465,6 +4495,29 @@ func (q *sqliteQueries) InsertKeyPair(ctx context.Context, arg InsertKeyPairPara
 	_, err := q.db.ExecContext(ctx, sqliteInsertKeyPair, sql.Named("name", arg.Name), sql.Named("kind", arg.Kind), sql.Named("private_key", arg.PrivateKey), sql.Named("public_key", arg.PublicKey))
 
 	return err
+}
+
+func (q *sqliteQueries) InsertMovedFile(ctx context.Context, arg InsertMovedFileParams) (uuid.UUID, error) {
+	var i uuid.UUID
+
+	rows, err := q.query(ctx, "InsertMovedFile", nil, sqliteInsertMovedFile, sql.Named("id", arg.ID.String()), sql.Named("repo_key", arg.RepoKey), sql.Named("path", arg.Path), sql.Named("name", arg.Name), sql.Named("size", arg.Size), sql.Named("sha1", arg.Sha1), sql.Named("sha256", arg.Sha256), sql.Named("md5", arg.Md5), sql.Named("created", sqliteTime(arg.Created)), sql.Named("created_by", arg.CreatedBy), sql.Named("now", sqliteTime(arg.Now)), sql.Named("username", arg.Username))
+	if err != nil {
+		return i, err
+	}
+
+	defer rows.Close()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return i, err
+		}
+
+		return i, sql.ErrNoRows
+	}
+
+	err = rows.Scan(sqliteUUIDScanner{&i})
+
+	return i, err
 }
 
 func (q *sqliteQueries) InsertOperationalRisk(ctx context.Context, arg InsertOperationalRiskParams) error {

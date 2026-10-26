@@ -37,6 +37,7 @@ type Querier interface {
 	ClearInternalGroupMembers(ctx context.Context, groupName string) error
 	ClearSsoGroupMembers(ctx context.Context, groupName string) error
 	ClearUserGroups(ctx context.Context, username string) error
+	CopyItemProperties(ctx context.Context, arg CopyItemPropertiesParams) error
 	CountAdmins(ctx context.Context) (int64, error)
 	CountAuditEvents(ctx context.Context, arg CountAuditEventsParams) (int64, error)
 	CountCVEs(ctx context.Context, arg CountCVEsParams) (int64, error)
@@ -77,6 +78,7 @@ type Querier interface {
 	DeleteIdentityProvider(ctx context.Context, name string) (int64, error)
 	DeleteIgnoreRule(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteIssues(ctx context.Context, sha256 string) error
+	DeleteItemByID(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteItemProperties(ctx context.Context, itemID uuid.UUID) error
 	DeleteItemPropertyKeys(ctx context.Context, arg DeleteItemPropertyKeysParams) error
 	DeleteKeyPair(ctx context.Context, name string) (int64, error)
@@ -197,6 +199,7 @@ type Querier interface {
 	InsertIssue(ctx context.Context, arg InsertIssueParams) error
 	// A concurrent insert of the same name wins; callers read it back.
 	InsertKeyPair(ctx context.Context, arg InsertKeyPairParams) error
+	InsertMovedFile(ctx context.Context, arg InsertMovedFileParams) (uuid.UUID, error)
 	InsertOperationalRisk(ctx context.Context, arg InsertOperationalRiskParams) error
 	InsertPermission(ctx context.Context, arg InsertPermissionParams) error
 	InsertReachability(ctx context.Context, arg InsertReachabilityParams) error

@@ -26,6 +26,21 @@ WHERE id = @id;
 -- name: SetItemCreated :exec
 UPDATE items SET created = @created, created_by = @created_by WHERE id = @id;
 
+-- name: InsertMovedFile :one
+INSERT INTO items (id, repo_key, path, name, type, size, sha1, sha256, md5,
+                   created, created_by, modified, modified_by, updated)
+VALUES (@id, @repo_key, @path, @name, 'file', @size, @sha1, @sha256, @md5,
+        @created, @created_by, @now, @username, @now)
+ON CONFLICT (repo_key, path, name) DO NOTHING
+RETURNING id;
+
+-- name: CopyItemProperties :exec
+INSERT INTO item_properties (item_id, key, value)
+SELECT @to_id::uuid, p.key, p.value FROM item_properties p WHERE p.item_id = @from_id;
+
+-- name: DeleteItemByID :execrows
+DELETE FROM items WHERE id = @id;
+
 -- name: EnsureFolders :many
 WITH wanted AS (
     SELECT unnest(@ids::uuid[]) AS id, unnest(@paths::text[]) AS path, unnest(@names::text[]) AS name

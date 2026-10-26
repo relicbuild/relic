@@ -29,6 +29,21 @@ func (q *Queries) AddItemProperties(ctx context.Context, arg AddItemPropertiesPa
 	return err
 }
 
+const copyItemProperties = `-- name: CopyItemProperties :exec
+INSERT INTO item_properties (item_id, key, value)
+SELECT $1::uuid, p.key, p.value FROM item_properties p WHERE p.item_id = $2
+`
+
+type CopyItemPropertiesParams struct {
+	ToID   uuid.UUID
+	FromID uuid.UUID
+}
+
+func (q *Queries) CopyItemProperties(ctx context.Context, arg CopyItemPropertiesParams) error {
+	_, err := q.db.Exec(ctx, copyItemProperties, arg.ToID, arg.FromID)
+	return err
+}
+
 const deleteEmptyFolder = `-- name: DeleteEmptyFolder :execrows
 DELETE FROM items
 WHERE items.repo_key = $1 AND items.path = $2 AND items.name = $3 AND items.type = 'folder'
@@ -49,6 +64,18 @@ func (q *Queries) DeleteEmptyFolder(ctx context.Context, arg DeleteEmptyFolderPa
 		arg.Name,
 		arg.FullPath,
 	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteItemByID = `-- name: DeleteItemByID :execrows
+DELETE FROM items WHERE id = $1
+`
+
+func (q *Queries) DeleteItemByID(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteItemByID, id)
 	if err != nil {
 		return 0, err
 	}
@@ -516,6 +543,50 @@ func (q *Queries) InsertFile(ctx context.Context, arg InsertFileParams) (uuid.UU
 		arg.Sha1,
 		arg.Sha256,
 		arg.Md5,
+		arg.Now,
+		arg.Username,
+	)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const insertMovedFile = `-- name: InsertMovedFile :one
+INSERT INTO items (id, repo_key, path, name, type, size, sha1, sha256, md5,
+                   created, created_by, modified, modified_by, updated)
+VALUES ($1, $2, $3, $4, 'file', $5, $6, $7, $8,
+        $9, $10, $11, $12, $11)
+ON CONFLICT (repo_key, path, name) DO NOTHING
+RETURNING id
+`
+
+type InsertMovedFileParams struct {
+	ID        uuid.UUID
+	RepoKey   string
+	Path      string
+	Name      string
+	Size      int64
+	Sha1      *string
+	Sha256    *string
+	Md5       *string
+	Created   time.Time
+	CreatedBy string
+	Now       time.Time
+	Username  string
+}
+
+func (q *Queries) InsertMovedFile(ctx context.Context, arg InsertMovedFileParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, insertMovedFile,
+		arg.ID,
+		arg.RepoKey,
+		arg.Path,
+		arg.Name,
+		arg.Size,
+		arg.Sha1,
+		arg.Sha256,
+		arg.Md5,
+		arg.Created,
+		arg.CreatedBy,
 		arg.Now,
 		arg.Username,
 	)
