@@ -111,9 +111,6 @@ func publishTime(times map[string]string, version string) (time.Time, bool) {
 	return t, err == nil
 }
 
-// dropVersions removes from kept the versions drop names, and points the
-// latest tag, when it named one, at the newest version left (by publish
-// time, else by semver); other tags that named one are removed.
 func dropVersions(kept map[string]bool, times, tags map[string]string, drop func(version string) bool) {
 	var (
 		newest     string

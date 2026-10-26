@@ -1009,13 +1009,9 @@ func (s *Service) Stat(ctx context.Context, repoKey, path string) (Item, error) 
 // StatPaths returns the items at paths, keyed by the path as given; a path
 // nothing is stored at is left out.
 func (s *Service) StatPaths(ctx context.Context, repoKey string, paths []string) (map[string]Item, error) {
-	r, err := s.db.GetRepository(ctx, repoKey)
+	r, err := s.GetRepository(ctx, repoKey)
 	if err != nil {
-		if errors.Is(database.NotFound(err), database.ErrNotFound) {
-			return nil, ErrRepositoryNotFound
-		}
-
-		return nil, fmt.Errorf("get repository %s: %w", repoKey, err)
+		return nil, err
 	}
 
 	found := make(map[string]Item, len(paths))
@@ -1067,7 +1063,7 @@ func (s *Service) StatPaths(ctx context.Context, repoKey string, paths []string)
 	return found, nil
 }
 
-func rootItem(repoKey string, r database.Repository) Item {
+func rootItem(repoKey string, r Repository) Item {
 	return Item{
 		Repository: repoKey,
 		Parent:     RootPath,
@@ -1079,7 +1075,7 @@ func rootItem(repoKey string, r database.Repository) Item {
 	}
 }
 
-func storedItem(row database.Item, r database.Repository) Item {
+func storedItem(row database.Item, r Repository) Item {
 	it := domainItem(row)
 
 	it.format, it.class, it.source = string(r.Format), string(r.Class), "local"

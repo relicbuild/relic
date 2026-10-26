@@ -322,8 +322,6 @@ func removeOutput(out *os.File) {
 	_ = os.Remove(out.Name())
 }
 
-// output runs the scanner with its stdout in a temporary file, which it
-// returns at its start; the caller removes it with removeOutput.
 func (e Exec) output(ctx context.Context, databaseChange bool, args ...string) (*os.File, error) {
 	memory, release, err := e.Slots.acquire(ctx, databaseChange)
 	if err != nil {
@@ -612,8 +610,7 @@ func (g Grype) ImportDB(ctx context.Context, archive string) error {
 	return g.changeDB(ctx, "db", "import", archive)
 }
 
-// limitedFile writes output to a file up to limit bytes. It does not embed
-// *os.File, whose ReadFrom would let io.Copy bypass Write.
+// Embedding *os.File would let io.Copy bypass Write through its ReadFrom.
 type limitedFile struct {
 	file     *os.File
 	written  int64
