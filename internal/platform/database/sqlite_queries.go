@@ -435,10 +435,10 @@ JOIN json_each(@paths) AS p ON p.key = w.key
 JOIN json_each(@names) AS n ON n.key = w.key
 WHERE true
 ON CONFLICT (repo_key, path, name) DO NOTHING;
-SELECT i.path, i.name FROM items i
-JOIN json_each(@paths) AS p ON i.path = p.value
-JOIN json_each(@names) AS n ON n.key = p.key AND i.name = n.value
-WHERE i.repo_key = @repo_key AND i.type = 'file';`
+SELECT i.path, i.name FROM json_each(@paths) AS p
+JOIN json_each(@names) AS n ON n.key = p.key
+CROSS JOIN items i
+WHERE i.repo_key = @repo_key AND i.path = p.value AND i.name = n.value AND i.type = 'file';`
 
 const sqliteFindBuildNames = `-- name: FindBuildNames :many
 SELECT DISTINCT name FROM builds
