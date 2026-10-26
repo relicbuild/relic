@@ -207,15 +207,24 @@ func (s *Service) ScanArtifact(ctx context.Context, sha256Hex, fileName string) 
 		name = "artifact"
 	}
 
+	inputs, err := s.inputDir(dir)
+	if err != nil {
+		return fmt.Errorf("scan input dir: %w", err)
+	}
+
+	defer func() {
+		_ = os.RemoveAll(inputs)
+	}()
+
 	if IsModelFile(name) {
-		return s.scanModel(ctx, sha256Hex, since, filepath.Join(dir, "in", name))
+		return s.scanModel(ctx, sha256Hex, since, filepath.Join(inputs, name))
 	}
 
 	var source, reason, file string
 	if name == imageManifestName {
-		source, err = s.prepareImage(ctx, sha256Hex, filepath.Join(dir, "oci"))
+		source, err = s.prepareImage(ctx, sha256Hex, filepath.Join(inputs, "oci"))
 	} else {
-		file = filepath.Join(dir, "in", name)
+		file = filepath.Join(inputs, name)
 		if err := s.download(ctx, sha256Hex, file); err != nil {
 			return err
 		}
@@ -541,9 +550,26 @@ func (s *Service) matchSBOM(ctx context.Context, dir string, sbom []byte) (Repor
 	return rep, err
 }
 
+func (s *Service) inputDir(dir string) (string, error) {
+	workspaces, local := s.blobs.LocalPath(objectstore.WorkspaceKeyPrefix)
+	if !local {
+		return filepath.Join(dir, "in"), nil
+	}
+
+	if err := os.MkdirAll(workspaces, 0o700); err != nil {
+		return "", err
+	}
+
+	return os.MkdirTemp(workspaces, "relic-scan-")
+}
+
 func (s *Service) download(ctx context.Context, sha256Hex, path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
+	}
+
+	if stored, local := s.blobs.LocalPath(objectstore.Key(sha256Hex)); local && os.Link(stored, path) == nil {
+		return nil
 	}
 
 	rc, _, err := s.blobs.Get(ctx, objectstore.Key(sha256Hex), nil)
