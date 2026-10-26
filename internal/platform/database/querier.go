@@ -161,6 +161,8 @@ type Querier interface {
 	GetRepository(ctx context.Context, key string) (Repository, error)
 	GetScanArtifact(ctx context.Context, sha256 string) (ScanArtifact, error)
 	GetScanPolicy(ctx context.Context, name string) (ScanPolicy, error)
+	GetScanSbom(ctx context.Context, sha256 string) (GetScanSbomRow, error)
+	GetScanStatus(ctx context.Context, sha256 string) (GetScanStatusRow, error)
 	GetScanWatch(ctx context.Context, name string) (ScanWatch, error)
 	GetSigningKeys(ctx context.Context) ([]SigningKey, error)
 	GetSsoUser(ctx context.Context, id uuid.UUID) (User, error)

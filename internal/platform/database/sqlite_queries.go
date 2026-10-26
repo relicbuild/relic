@@ -625,6 +625,12 @@ SELECT * FROM scan_artifacts WHERE sha256 = @sha256;`
 const sqliteGetScanPolicy = `-- name: GetScanPolicy :one
 SELECT * FROM scan_policies WHERE name = @name;`
 
+const sqliteGetScanSbom = `-- name: GetScanSbom :one
+SELECT sbom, updated FROM scan_artifacts WHERE sha256 = @sha256;`
+
+const sqliteGetScanStatus = `-- name: GetScanStatus :one
+SELECT sha256, status, updated FROM scan_artifacts WHERE sha256 = @sha256;`
+
 const sqliteGetScanWatch = `-- name: GetScanWatch :one
 SELECT * FROM scan_watches WHERE name = @name;`
 
@@ -3988,6 +3994,52 @@ func (q *sqliteQueries) GetScanPolicy(ctx context.Context, arg string) (ScanPoli
 	}
 
 	err = rows.Scan(&i.Name, &i.Kind, &i.Doc, sqliteTimeScanner{&i.Created}, sqliteTimeScanner{&i.Updated})
+
+	return i, err
+}
+
+func (q *sqliteQueries) GetScanSbom(ctx context.Context, arg string) (GetScanSbomRow, error) {
+	var i GetScanSbomRow
+
+	rows, err := q.query(ctx, "GetScanSbom", []string{"sbom", "updated"}, sqliteGetScanSbom, sql.Named("sha256", arg))
+	if err != nil {
+		return i, err
+	}
+
+	defer rows.Close()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return i, err
+		}
+
+		return i, sql.ErrNoRows
+	}
+
+	err = rows.Scan(&i.Sbom, sqliteTimeScanner{&i.Updated})
+
+	return i, err
+}
+
+func (q *sqliteQueries) GetScanStatus(ctx context.Context, arg string) (GetScanStatusRow, error) {
+	var i GetScanStatusRow
+
+	rows, err := q.query(ctx, "GetScanStatus", []string{"sha256", "status", "updated"}, sqliteGetScanStatus, sql.Named("sha256", arg))
+	if err != nil {
+		return i, err
+	}
+
+	defer rows.Close()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return i, err
+		}
+
+		return i, sql.ErrNoRows
+	}
+
+	err = rows.Scan(&i.Sha256, &i.Status, sqliteTimeScanner{&i.Updated})
 
 	return i, err
 }

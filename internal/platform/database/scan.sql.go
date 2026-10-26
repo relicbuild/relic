@@ -361,6 +361,39 @@ func (q *Queries) GetScanArtifact(ctx context.Context, sha256 string) (ScanArtif
 	return i, err
 }
 
+const getScanSbom = `-- name: GetScanSbom :one
+SELECT sbom, updated FROM scan_artifacts WHERE sha256 = $1
+`
+
+type GetScanSbomRow struct {
+	Sbom    []byte
+	Updated time.Time
+}
+
+func (q *Queries) GetScanSbom(ctx context.Context, sha256 string) (GetScanSbomRow, error) {
+	row := q.db.QueryRow(ctx, getScanSbom, sha256)
+	var i GetScanSbomRow
+	err := row.Scan(&i.Sbom, &i.Updated)
+	return i, err
+}
+
+const getScanStatus = `-- name: GetScanStatus :one
+SELECT sha256, status, updated FROM scan_artifacts WHERE sha256 = $1
+`
+
+type GetScanStatusRow struct {
+	Sha256  string
+	Status  string
+	Updated time.Time
+}
+
+func (q *Queries) GetScanStatus(ctx context.Context, sha256 string) (GetScanStatusRow, error) {
+	row := q.db.QueryRow(ctx, getScanStatus, sha256)
+	var i GetScanStatusRow
+	err := row.Scan(&i.Sha256, &i.Status, &i.Updated)
+	return i, err
+}
+
 const imageManifestsInFolders = `-- name: ImageManifestsInFolders :many
 SELECT path, sha256::text AS sha256
 FROM items

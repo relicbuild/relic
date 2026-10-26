@@ -127,7 +127,7 @@ func (b *Blocker) quarantine(ctx context.Context, repoKey, itemPath, sha256Hex s
 
 	status := ""
 
-	a, err := b.db.GetScanArtifact(ctx, sha256Hex)
+	a, err := b.db.GetScanStatus(ctx, sha256Hex)
 
 	switch {
 	case err == nil:

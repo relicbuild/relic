@@ -24,6 +24,12 @@ SELECT DISTINCT path FROM items WHERE sha256 = @sha256 AND type = 'file' ORDER B
 -- name: GetScanArtifact :one
 SELECT * FROM scan_artifacts WHERE sha256 = @sha256;
 
+-- name: GetScanStatus :one
+SELECT sha256, status, updated FROM scan_artifacts WHERE sha256 = @sha256;
+
+-- name: GetScanSbom :one
+SELECT sbom, updated FROM scan_artifacts WHERE sha256 = @sha256;
+
 -- name: FinishScanArtifact :exec
 UPDATE scan_artifacts
 SET status = @status, reason = @reason, sbom = @sbom, components = @components, db_built = @db_built, updated = @now

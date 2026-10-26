@@ -42,6 +42,8 @@ type Blocker struct {
 	watches  []policy.Watch
 	policies map[string]policy.Policy
 	ignores  []policy.IgnoreRule
+
+	components componentCache
 }
 
 // New returns a Blocker.
@@ -249,7 +251,7 @@ func (b *Blocker) decide(ctx context.Context, repoKey, itemPath, sha256Hex strin
 		return Decision{}, nil
 	}
 
-	a, err := b.db.GetScanArtifact(ctx, sha256Hex)
+	a, err := b.db.GetScanStatus(ctx, sha256Hex)
 
 	notScanned := errors.Is(database.NotFound(err), database.ErrNotFound) ||
 		(err == nil && a.Status == scan.StatusQueued)
@@ -422,7 +424,7 @@ func (b *Blocker) decide(ctx context.Context, repoKey, itemPath, sha256Hex strin
 		}
 	}
 
-	d, err := b.checkLicenses(covering, pols, ignores, repoKey+"/"+itemPath, a.Sbom, issues)
+	d, err := b.checkLicenses(ctx, covering, pols, ignores, repoKey+"/"+itemPath, a, issues)
 	if err == nil && !d.Blocked {
 		d = note
 	}
@@ -431,11 +433,12 @@ func (b *Blocker) decide(ctx context.Context, repoKey, itemPath, sha256Hex strin
 }
 
 func (b *Blocker) checkLicenses(
+	ctx context.Context,
 	covering []policy.Watch,
 	pols map[string]policy.Policy,
 	ignores []policy.IgnoreRule,
 	artifactPath string,
-	sbom []byte,
+	status database.GetScanStatusRow,
 	issues []database.ScanIssue,
 ) (Decision, error) {
 	if !slices.ContainsFunc(covering, func(w policy.Watch) bool {
@@ -446,13 +449,9 @@ func (b *Blocker) checkLicenses(
 		return Decision{}, nil
 	}
 
-	var comps []scan.Component
-
-	if sbom != nil {
-		var err error
-		if comps, err = scan.Components(sbom); err != nil {
-			return Decision{}, fmt.Errorf("read SBOM: %w", err)
-		}
+	comps, err := b.components.load(ctx, b.db, status.Sha256, status.Updated)
+	if err != nil {
+		return Decision{}, err
 	}
 
 	for _, i := range issues {

@@ -376,7 +376,7 @@ func (s *Service) scanCounts(ctx context.Context, shas []string) (map[string]int
 	}
 
 	for _, sha := range shas {
-		a, err := s.db.GetScanArtifact(ctx, sha)
+		a, err := s.db.GetScanStatus(ctx, sha)
 
 		switch {
 		case errors.Is(database.NotFound(err), database.ErrNotFound):
