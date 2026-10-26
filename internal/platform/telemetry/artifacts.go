@@ -61,6 +61,12 @@ var (
 		requestBuckets,
 	)
 
+	// PromQL: sum(increase(relic_item_downloads_dropped_total[1h]))
+	itemDownloadsDropped = counterVec(
+		"item_downloads_dropped_total",
+		"Downloads left out of the per-item download counts because too many items were waiting for a database write.",
+	)
+
 	// PromQL: sum(rate(relic_move_batch_items_total[5m]))
 	moveBatchItems = counterVec(
 		"move_batch_items_total",
@@ -73,6 +79,12 @@ var (
 func MoveBatch(ctx context.Context, items int, elapsed time.Duration) {
 	moveBatchItems.WithLabelValues().Add(float64(items))
 	observe(ctx, moveBatchDuration.WithLabelValues(), elapsed.Seconds())
+}
+
+// ItemDownloadsDropped counts downloads left out of the per-item download
+// counts.
+func ItemDownloadsDropped(downloads int64) {
+	itemDownloadsDropped.WithLabelValues().Add(float64(downloads))
 }
 
 // Tracer is the tracer of Relic's own spans.
