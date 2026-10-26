@@ -498,25 +498,88 @@ func (t *replicationTarget) Files(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("%s", resp.Status)
 	}
 
-	var list struct {
-		Files []struct {
-			URI    string `json:"uri"`
-			Folder bool   `json:"folder"`
-		} `json:"files"`
+	return targetFiles(resp.Body, maxTargetListingBytes)
+}
+
+const maxTargetListingBytes = 1 << 30
+
+func targetFiles(body io.Reader, limit int64) ([]string, error) {
+	limited := &io.LimitedReader{
+		R: body,
+		N: limit + 1,
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+
+	paths, err := decodeTargetFiles(json.NewDecoder(limited))
+	if limited.N <= 0 {
+		return nil, fmt.Errorf("target listing larger than %d bytes", limit)
+	}
+
+	if err != nil {
 		return nil, fmt.Errorf("decode target listing: %w", err)
+	}
+
+	return paths, nil
+}
+
+func decodeTargetFiles(dec *json.Decoder) ([]string, error) {
+	if err := expectDelim(dec, '{'); err != nil {
+		return nil, err
 	}
 
 	var paths []string
 
-	for _, f := range list.Files {
-		if !f.Folder {
-			paths = append(paths, strings.TrimPrefix(f.URI, "/"))
+	for dec.More() {
+		key, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+
+		if key != "files" {
+			var skipped json.RawMessage
+			if err := dec.Decode(&skipped); err != nil {
+				return nil, err
+			}
+
+			continue
+		}
+
+		if err := expectDelim(dec, '['); err != nil {
+			return nil, err
+		}
+
+		for dec.More() {
+			var f struct {
+				URI    string `json:"uri"`
+				Folder bool   `json:"folder"`
+			}
+			if err := dec.Decode(&f); err != nil {
+				return nil, err
+			}
+
+			if !f.Folder {
+				paths = append(paths, strings.TrimPrefix(f.URI, "/"))
+			}
+		}
+
+		if err := expectDelim(dec, ']'); err != nil {
+			return nil, err
 		}
 	}
 
-	return paths, nil
+	return paths, expectDelim(dec, '}')
+}
+
+func expectDelim(dec *json.Decoder, want json.Delim) error {
+	token, err := dec.Token()
+	if err != nil {
+		return err
+	}
+
+	if token != want {
+		return fmt.Errorf("got %v, want %v", token, want)
+	}
+
+	return nil
 }
 
 func (t *replicationTarget) Delete(ctx context.Context, path string) error {
