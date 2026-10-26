@@ -131,11 +131,11 @@ type Dist struct {
 // virtual repository its members' (remote members' upstream indexes,
 // limited to the configured architectures).
 func (s *Service) Distribution(ctx context.Context, r repository.Repository, dist string) (*Dist, error) {
-	if r.Class != repository.ClassVirtual || repository.Filtered(ctx) {
+	if r.Class != repository.ClassVirtual || repository.AnyRestricted(ctx, s.members(ctx, r, 0)) {
 		return s.buildDistribution(ctx, r, dist)
 	}
 
-	return s.indexes.Get(ctx, r.Name+"\x00"+dist, func(ctx context.Context) (*Dist, error) {
+	return s.indexes.Get(repository.Unfiltered(ctx), r.Name+"\x00"+dist, func(ctx context.Context) (*Dist, error) {
 		return s.buildDistribution(ctx, r, dist)
 	})
 }

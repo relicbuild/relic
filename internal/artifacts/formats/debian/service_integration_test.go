@@ -118,7 +118,18 @@ func (f *debianFixture) deploy(t testing.TB, name string, props repository.Prope
 func (f *debianFixture) packages(t *testing.T, r repository.Repository, dist, file string) []string {
 	t.Helper()
 
-	d, err := f.svc.Distribution(t.Context(), r, dist)
+	return f.packagesFor(t, t.Context(), r, dist, file)
+}
+
+func (f *debianFixture) packagesFor(
+	t *testing.T,
+	ctx context.Context,
+	r repository.Repository,
+	dist, file string,
+) []string {
+	t.Helper()
+
+	d, err := f.svc.Distribution(ctx, r, dist)
 	if err != nil {
 		t.Fatalf("%s %s: %v", r.Name, dist, err)
 	}
@@ -202,6 +213,80 @@ func TestDistributionServesTheBuiltCopyWhileItRebuilds(t *testing.T) {
 		"second",
 	}) {
 		t.Errorf("after the rebuild = %v, want both packages", got)
+	}
+}
+
+type hidingVisibility struct {
+	repo, hidden string
+}
+
+func (v hidingVisibility) Visible(repoKey, path string) bool {
+	return repoKey != v.repo || !strings.HasPrefix(path, v.hidden)
+}
+
+func (v hidingVisibility) Restricted(repoKey string) bool { return repoKey == v.repo }
+
+func TestDistributionServesCallersNoMemberRestrictsFromTheCache(t *testing.T) {
+	t.Parallel()
+
+	f := newDebianFixture(t)
+	bookworm := repository.Properties{
+		PropDistribution: {
+			"bookworm",
+		},
+	}
+	f.deploy(t, "first", bookworm)
+
+	const file = "main/binary-amd64/Packages"
+
+	ctx := repository.WithVisibility(t.Context(), hidingVisibility{
+		repo: "another-repository",
+	})
+
+	if got := f.packagesFor(t, ctx, f.virtual, "bookworm", file); !slices.Equal(got, []string{
+		"first",
+	}) {
+		t.Fatalf("the first build lists %v", got)
+	}
+
+	f.deploy(t, "second", bookworm)
+
+	if got := f.packagesFor(t, ctx, f.virtual, "bookworm", file); !slices.Equal(got, []string{
+		"first",
+	}) {
+		t.Errorf("a second request = %v, want the cached build", got)
+	}
+}
+
+func TestDistributionHidesARestrictedMembersPackages(t *testing.T) {
+	t.Parallel()
+
+	f := newDebianFixture(t)
+	bookworm := repository.Properties{
+		PropDistribution: {
+			"bookworm",
+		},
+	}
+	f.deploy(t, "shown", bookworm)
+	f.deploy(t, "hidden", bookworm)
+
+	const file = "main/binary-amd64/Packages"
+
+	if got := f.packages(t, f.virtual, "bookworm", file); len(got) != 2 {
+		t.Fatalf("an unfiltered build lists %v, want both packages", got)
+	}
+
+	ctx := repository.WithVisibility(t.Context(), hidingVisibility{
+		repo:   f.local.Name,
+		hidden: "pool/hidden",
+	})
+
+	for range 2 {
+		if got := f.packagesFor(t, ctx, f.virtual, "bookworm", file); !slices.Equal(got, []string{
+			"shown",
+		}) {
+			t.Errorf("a caller who may not see pool/hidden gets %v, want shown only", got)
+		}
 	}
 }
 

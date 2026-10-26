@@ -25,6 +25,22 @@ func Filtered(ctx context.Context) bool {
 	return ok
 }
 
+// Unfiltered returns ctx without its visibility filter.
+func Unfiltered(ctx context.Context) context.Context {
+	return context.WithValue(ctx, visibilityKey{}, nil)
+}
+
+// AnyRestricted reports whether ctx's filter may hide paths in any of repos.
+func AnyRestricted(ctx context.Context, repos []Repository) bool {
+	for _, r := range repos {
+		if Restricted(ctx, r.Name) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // Restricted reports whether ctx's filter may hide paths in repoKey.
 func Restricted(ctx context.Context, repoKey string) bool {
 	v, ok := ctx.Value(visibilityKey{}).(Visibility)
