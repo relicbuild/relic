@@ -1,6 +1,12 @@
 -- name: GetItem :one
 SELECT * FROM items WHERE repo_key = @repo_key AND path = @path AND name = @name;
 
+-- name: ListItemsAt :many
+-- The paths and names come as parallel JSON arrays, zipped by index.
+SELECT * FROM items
+WHERE repo_key = @repo_key
+  AND (path, name) IN (SELECT p.value, n.value FROM json_each(@paths) AS p JOIN json_each(@names) AS n ON n.key = p.key);
+
 -- name: GetItemForUpdate :one
 SELECT * FROM items WHERE repo_key = @repo_key AND path = @path AND name = @name;
 

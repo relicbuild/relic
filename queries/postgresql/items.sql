@@ -1,6 +1,11 @@
 -- name: GetItem :one
 SELECT * FROM items WHERE repo_key = @repo_key AND path = @path AND name = @name;
 
+-- name: ListItemsAt :many
+SELECT * FROM items
+WHERE repo_key = @repo_key
+  AND (path, name) IN (SELECT unnest(@paths::text[]), unnest(@names::text[]));
+
 -- name: GetItemForUpdate :one
 SELECT * FROM items WHERE repo_key = @repo_key AND path = @path AND name = @name FOR UPDATE;
 

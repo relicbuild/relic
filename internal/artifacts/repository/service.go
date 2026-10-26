@@ -992,15 +992,7 @@ func (s *Service) Stat(ctx context.Context, repoKey, path string) (Item, error) 
 	}
 
 	if p == "" {
-		return Item{
-			Repository: repoKey,
-			Parent:     RootPath,
-			Name:       RootPath,
-			Type:       TypeFolder,
-			Created:    r.Created,
-			Modified:   r.Updated,
-			Updated:    r.Updated,
-		}, nil
+		return rootItem(repoKey, r), nil
 	}
 
 	parent, name := SplitPath(p)
@@ -1018,6 +1010,83 @@ func (s *Service) Stat(ctx context.Context, repoKey, path string) (Item, error) 
 		return Item{}, fmt.Errorf("stat %s/%s: %w", repoKey, p, err)
 	}
 
+	return storedItem(row, r), nil
+}
+
+// StatPaths returns the items at paths, keyed by the path as given; a path
+// nothing is stored at is left out.
+func (s *Service) StatPaths(ctx context.Context, repoKey string, paths []string) (map[string]Item, error) {
+	r, err := s.db.GetRepository(ctx, repoKey)
+	if err != nil {
+		if errors.Is(database.NotFound(err), database.ErrNotFound) {
+			return nil, ErrRepositoryNotFound
+		}
+
+		return nil, fmt.Errorf("get repository %s: %w", repoKey, err)
+	}
+
+	found := make(map[string]Item, len(paths))
+	given := make(map[string][]string, len(paths))
+
+	var parents, names []string
+
+	for _, requested := range paths {
+		p, err := CleanPath(requested)
+		if err != nil {
+			return nil, err
+		}
+
+		if p == "" {
+			found[requested] = rootItem(repoKey, r)
+
+			continue
+		}
+
+		if _, seen := given[p]; !seen {
+			parent, name := SplitPath(p)
+			parents = append(parents, parent)
+			names = append(names, name)
+		}
+
+		given[p] = append(given[p], requested)
+	}
+
+	if len(parents) == 0 {
+		return found, nil
+	}
+
+	rows, err := s.db.ListItemsAt(ctx, database.ListItemsAtParams{
+		RepoKey: repoKey,
+		Paths:   parents,
+		Names:   names,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("stat %d paths in %s: %w", len(parents), repoKey, err)
+	}
+
+	for _, row := range rows {
+		it := storedItem(row, r)
+		for _, requested := range given[JoinPath(row.Path, row.Name)] {
+			found[requested] = it
+		}
+	}
+
+	return found, nil
+}
+
+func rootItem(repoKey string, r database.Repository) Item {
+	return Item{
+		Repository: repoKey,
+		Parent:     RootPath,
+		Name:       RootPath,
+		Type:       TypeFolder,
+		Created:    r.Created,
+		Modified:   r.Updated,
+		Updated:    r.Updated,
+	}
+}
+
+func storedItem(row database.Item, r database.Repository) Item {
 	it := domainItem(row)
 
 	it.format, it.class, it.source = r.Format, r.Class, "local"
@@ -1025,7 +1094,7 @@ func (s *Service) Stat(ctx context.Context, repoKey, path string) (Item, error) 
 		it.source = "cache"
 	}
 
-	return it, nil
+	return it
 }
 
 // RecordDownload counts a full download of item for telemetry (the

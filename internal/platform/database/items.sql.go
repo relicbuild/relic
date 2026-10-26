@@ -617,6 +617,53 @@ func (q *Queries) ListFilesUnder(ctx context.Context, arg ListFilesUnderParams) 
 	return items, nil
 }
 
+const listItemsAt = `-- name: ListItemsAt :many
+SELECT id, repo_key, path, name, type, size, sha1, sha256, md5, created, created_by, modified, modified_by, updated FROM items
+WHERE repo_key = $1
+  AND (path, name) IN (SELECT unnest($2::text[]), unnest($3::text[]))
+`
+
+type ListItemsAtParams struct {
+	RepoKey string
+	Paths   []string
+	Names   []string
+}
+
+func (q *Queries) ListItemsAt(ctx context.Context, arg ListItemsAtParams) ([]Item, error) {
+	rows, err := q.db.Query(ctx, listItemsAt, arg.RepoKey, arg.Paths, arg.Names)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Item{}
+	for rows.Next() {
+		var i Item
+		if err := rows.Scan(
+			&i.ID,
+			&i.RepoKey,
+			&i.Path,
+			&i.Name,
+			&i.Type,
+			&i.Size,
+			&i.Sha1,
+			&i.Sha256,
+			&i.Md5,
+			&i.Created,
+			&i.CreatedBy,
+			&i.Modified,
+			&i.ModifiedBy,
+			&i.Updated,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listItemsWithProperty = `-- name: ListItemsWithProperty :many
 SELECT i.id, i.repo_key, i.path, i.name, i.type, i.size, i.sha1, i.sha256, i.md5, i.created, i.created_by, i.modified, i.modified_by, i.updated, p.value AS property_value FROM items i
 JOIN item_properties p ON p.item_id = i.id

@@ -247,6 +247,7 @@ type Querier interface {
 	ListIdentityProviders(ctx context.Context) ([]IdentityProvider, error)
 	ListIgnoreRules(ctx context.Context) ([]ScanIgnoreRule, error)
 	ListIssues(ctx context.Context, sha256 string) ([]ScanIssue, error)
+	ListItemsAt(ctx context.Context, arg ListItemsAtParams) ([]Item, error)
 	ListItemsWithProperty(ctx context.Context, arg ListItemsWithPropertyParams) ([]ListItemsWithPropertyRow, error)
 	ListKeyPairs(ctx context.Context) ([]KeyPair, error)
 	ListLdapGroupMappings(ctx context.Context) ([]LdapGroupMapping, error)

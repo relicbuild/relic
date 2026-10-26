@@ -2,7 +2,6 @@ package blocking
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -45,18 +44,31 @@ func (b *Blocker) VersionGate(catalog *malicious.Catalog, repos *repository.Serv
 			}
 		}
 
+		var paths []string
+
+		for _, v := range versions {
+			if !refused[v.Version] && v.Path != "" {
+				paths = append(paths, v.Path)
+			}
+		}
+
+		if len(paths) == 0 {
+			return refused, nil
+		}
+
+		items, err := repos.StatPaths(ctx, r.Name, paths)
+		if err != nil {
+			return nil, err
+		}
+
 		for _, v := range versions {
 			if refused[v.Version] || v.Path == "" {
 				continue
 			}
 
-			it, err := repos.Stat(ctx, r.Name, v.Path)
-			if errors.Is(err, repository.ErrNotFound) || (err == nil && it.IsFolder()) {
+			it, ok := items[v.Path]
+			if !ok || it.IsFolder() {
 				continue
-			}
-
-			if err != nil {
-				return nil, err
 			}
 
 			d, err := b.quarantine(ctx, r.Name, v.Path, it.Checksums.SHA256)

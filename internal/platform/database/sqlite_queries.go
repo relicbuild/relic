@@ -1015,6 +1015,12 @@ SELECT * FROM scan_issues WHERE sha256 = @sha256
 ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
          analyzer, file, line, rule;`
 
+const sqliteListItemsAt = `-- name: ListItemsAt :many
+-- The paths and names come as parallel JSON arrays, zipped by index.
+SELECT * FROM items
+WHERE repo_key = @repo_key
+  AND (path, name) IN (SELECT p.value, n.value FROM json_each(@paths) AS p JOIN json_each(@names) AS n ON n.key = p.key);`
+
 const sqliteListItemsWithProperty = `-- name: ListItemsWithProperty :many
 SELECT i.*, p.value AS property_value FROM items i
 JOIN item_properties p ON p.item_id = i.id
@@ -5429,6 +5435,36 @@ func (q *sqliteQueries) ListIssues(ctx context.Context, arg string) ([]ScanIssue
 	for rows.Next() {
 		var i ScanIssue
 		if err := rows.Scan(&i.Sha256, &i.Analyzer, &i.Rule, &i.Severity, &i.Title, &i.File, &i.Line, &i.Resource, &i.Validation, sqliteNullTimeScanner{&i.Validated}); err != nil {
+			return nil, err
+		}
+
+		items = append(items, i)
+	}
+
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
+
+func (q *sqliteQueries) ListItemsAt(ctx context.Context, arg ListItemsAtParams) ([]Item, error) {
+	rows, err := q.query(ctx, "ListItemsAt", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated"}, sqliteListItemsAt, sql.Named("repo_key", arg.RepoKey), sql.Named("paths", sqliteJSON(arg.Paths)), sql.Named("names", sqliteJSON(arg.Names)))
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	items := []Item{}
+
+	for rows.Next() {
+		var i Item
+		if err := rows.Scan(sqliteUUIDScanner{&i.ID}, &i.RepoKey, &i.Path, &i.Name, &i.Type, &i.Size, &i.Sha1, &i.Sha256, &i.Md5, sqliteTimeScanner{&i.Created}, &i.CreatedBy, sqliteTimeScanner{&i.Modified}, &i.ModifiedBy, sqliteTimeScanner{&i.Updated}); err != nil {
 			return nil, err
 		}
 
