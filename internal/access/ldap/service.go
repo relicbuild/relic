@@ -347,6 +347,12 @@ func (s *Service) Authenticate(ctx context.Context, username, password string) e
 }
 
 func (s *Service) provision(ctx context.Context, st Server, username string, e Entry) error {
+	if e.Email != "" && !security.ValidEmail(e.Email) {
+		s.log.WarnContext(ctx, "directory email ignored: not a single address", "server", st.Name, "user", username)
+
+		e.Email = ""
+	}
+
 	user, err := s.db.GetUserByUsername(ctx, username)
 	switch {
 	case errors.Is(database.NotFound(err), database.ErrNotFound):

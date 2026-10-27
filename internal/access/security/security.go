@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/mail"
 	"regexp"
 	"slices"
 	"strings"
@@ -123,6 +124,22 @@ func CheckPassword(password string) error {
 	return nil
 }
 
+// ValidEmail reports whether email is a single bare address, such as
+// alice@example.com, without a display name or surrounding spaces.
+func ValidEmail(email string) bool {
+	addr, err := mail.ParseAddress(email)
+
+	return err == nil && addr.Name == "" && addr.Address == email
+}
+
+func checkEmail(email string) error {
+	if email != "" && !ValidEmail(email) {
+		return fmt.Errorf("%w: email %q is not a single address such as alice@example.com", ErrInvalid, email)
+	}
+
+	return nil
+}
+
 const usernamesLock = "security:usernames"
 
 // WithNewUsername runs create, which adds the user name, under the usernames lock, and refuses it with ErrExists
@@ -191,6 +208,10 @@ func (s *Service) putUser(ctx context.Context, u User, w userWrite) (created boo
 
 	if !exists && !ValidUsername(u.Name) {
 		return false, InvalidUsername(u.Name)
+	}
+
+	if err := checkEmail(u.Email); err != nil {
+		return false, err
 	}
 
 	hash := existing.PasswordHash

@@ -153,3 +153,53 @@ func TestPutLdapServerKeepsTheManagerPasswordOnItsHost(t *testing.T) {
 		})
 	}
 }
+
+func TestProvisionStoresNoInvalidEmail(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db := databasetest.NewDB(t)
+	s := NewService(db, nil, nil, slog.New(slog.DiscardHandler))
+	corp := Server{
+		Name:           "corp",
+		AutoCreateUser: true,
+	}
+
+	steps := []struct {
+		name      string
+		email     string
+		wantEmail string
+	}{
+		{
+			name:      "a new user with an invalid email",
+			email:     "not-an-email",
+			wantEmail: "",
+		},
+		{
+			name:      "a valid email",
+			email:     "ann@example.org",
+			wantEmail: "ann@example.org",
+		},
+		{
+			name:      "an invalid email for a user who has one",
+			email:     "ann@example.org, bob@example.org",
+			wantEmail: "ann@example.org",
+		},
+	}
+	for _, step := range steps {
+		if err := s.provision(ctx, corp, "ann", Entry{
+			Email: step.email,
+		}); err != nil {
+			t.Fatalf("%s: provision = %v", step.name, err)
+		}
+
+		u, err := db.GetUserByUsername(ctx, "ann")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if u.Email != step.wantEmail {
+			t.Errorf("%s: email = %q, want %q", step.name, u.Email, step.wantEmail)
+		}
+	}
+}
