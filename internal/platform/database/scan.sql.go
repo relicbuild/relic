@@ -594,6 +594,38 @@ func (q *Queries) ListContentFolders(ctx context.Context, sha256 *string) ([]str
 	return items, nil
 }
 
+const listContentPropertyValues = `-- name: ListContentPropertyValues :many
+SELECT DISTINCT p.value FROM items i
+JOIN item_properties p ON p.item_id = i.id
+WHERE i.sha256 = $1 AND i.type = 'file' AND p.key = $2
+ORDER BY p.value LIMIT 20
+`
+
+type ListContentPropertyValuesParams struct {
+	Sha256 *string
+	Key    string
+}
+
+func (q *Queries) ListContentPropertyValues(ctx context.Context, arg ListContentPropertyValuesParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listContentPropertyValues, arg.Sha256, arg.Key)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var value string
+		if err := rows.Scan(&value); err != nil {
+			return nil, err
+		}
+		items = append(items, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listFindings = `-- name: ListFindings :many
 SELECT sha256, vuln_id, purl, package_name, package_version, severity, summary, cves, fixed_versions, cvss, urls FROM scan_findings WHERE sha256 = $1 ORDER BY severity, vuln_id, purl
 `

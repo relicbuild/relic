@@ -164,6 +164,7 @@ func TestOSPackageDistro(t *testing.T) {
 		fileName      string
 		sbom          []byte
 		folders       []string
+		distributions []string
 		want          distro
 		wantUnmatched bool
 	}{
@@ -228,6 +229,77 @@ func TestOSPackageDistro(t *testing.T) {
 			wantUnmatched: true,
 		},
 		{
+			name:     "a Debian package that names no release, in a bookworm distribution",
+			fileName: "liblz4-1_1.9.4-1_amd64.deb",
+			sbom:     sbomOf("deb", "1.9.4-1"),
+			distributions: []string{
+				"bookworm",
+			},
+			want: distro{
+				ID:        "debian",
+				VersionID: "12",
+			},
+		},
+		{
+			name:     "a Debian package in a suite of a release",
+			fileName: "liblz4-1_1.9.4-1_amd64.deb",
+			sbom:     sbomOf("deb", "1.9.4-1"),
+			distributions: []string{
+				"trixie-security",
+			},
+			want: distro{
+				ID:        "debian",
+				VersionID: "13",
+			},
+		},
+		{
+			name:     "a Debian package in the distributions of two releases",
+			fileName: "liblz4-1_1.9.4-1_amd64.deb",
+			sbom:     sbomOf("deb", "1.9.4-1"),
+			distributions: []string{
+				"trixie",
+				"bullseye",
+				"bookworm",
+			},
+			want: distro{
+				ID:        "debian",
+				VersionID: "11",
+			},
+		},
+		{
+			name:     "a Debian security update in another release's distribution",
+			fileName: "zlib1g_1.2.11.dfsg-2+deb11u2_amd64.deb",
+			sbom:     sbomOf("deb", "1:1.2.11.dfsg-2+deb11u2"),
+			distributions: []string{
+				"bookworm",
+			},
+			want: distro{
+				ID:        "debian",
+				VersionID: "11",
+			},
+		},
+		{
+			name:     "an Ubuntu package in a noble distribution",
+			fileName: "liblz4-1_1.9.4-1build1_amd64.deb",
+			sbom:     sbomOf("deb", "1.9.4-1build1"),
+			distributions: []string{
+				"noble",
+			},
+			want: distro{
+				ID:        "ubuntu",
+				VersionID: "24.04",
+			},
+		},
+		{
+			name:     "a Debian package in unstable",
+			fileName: "liblz4-1_1.9.4-1_amd64.deb",
+			sbom:     sbomOf("deb", "1.9.4-1"),
+			distributions: []string{
+				"sid",
+			},
+			wantUnmatched: true,
+		},
+		{
 			name:     "an Alpine package in a branch folder",
 			fileName: "zlib-1.2.11-r3.apk",
 			sbom:     sbomOf("apk", "1.2.11-r3"),
@@ -258,7 +330,7 @@ func TestOSPackageDistro(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, unmatched := osPackageDistro(tt.sbom, tt.fileName, tt.folders)
+			got, unmatched := osPackageDistro(tt.sbom, tt.fileName, tt.folders, tt.distributions)
 			if (unmatched != "") != tt.wantUnmatched {
 				t.Errorf("unmatched = %q, want it %v", unmatched, tt.wantUnmatched)
 			}

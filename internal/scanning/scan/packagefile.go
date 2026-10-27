@@ -1,12 +1,15 @@
 package scan
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 
 	"relic/internal/artifacts/formats/alpine"
@@ -165,6 +168,76 @@ func releaseDistro(pkgType, version string) (distro, bool) {
 	return distro{}, false
 }
 
+var debianCodenames = map[string]distro{
+	"buster": {
+		ID:        "debian",
+		VersionID: "10",
+	},
+	"bullseye": {
+		ID:        "debian",
+		VersionID: "11",
+	},
+	"bookworm": {
+		ID:        "debian",
+		VersionID: "12",
+	},
+	"trixie": {
+		ID:        "debian",
+		VersionID: "13",
+	},
+	"bionic": {
+		ID:        "ubuntu",
+		VersionID: "18.04",
+	},
+	"focal": {
+		ID:        "ubuntu",
+		VersionID: "20.04",
+	},
+	"jammy": {
+		ID:        "ubuntu",
+		VersionID: "22.04",
+	},
+	"noble": {
+		ID:        "ubuntu",
+		VersionID: "24.04",
+	},
+}
+
+func distributionDistro(pkgType string, distributions []string) (distro, bool) {
+	if pkgType != "deb" {
+		return distro{}, false
+	}
+
+	var releases []distro
+
+	for _, distribution := range distributions {
+		codename, _, _ := strings.Cut(strings.ToLower(distribution), "-")
+		if d, ok := debianCodenames[codename]; ok {
+			releases = append(releases, d)
+		}
+	}
+
+	if len(releases) == 0 {
+		return distro{}, false
+	}
+
+	return slices.MinFunc(releases, func(a, b distro) int {
+		return cmp.Or(
+			strings.Compare(a.ID, b.ID),
+			cmp.Compare(releaseNumber(a.VersionID), releaseNumber(b.VersionID)),
+		)
+	}), true
+}
+
+func releaseNumber(versionID string) float64 {
+	number, err := strconv.ParseFloat(versionID, 64)
+	if err != nil {
+		return 0
+	}
+
+	return number
+}
+
 func pathDistro(pkgType string, folders []string) (distro, bool) {
 	if pkgType != "apk" {
 		return distro{}, false
@@ -222,7 +295,7 @@ func withDistro(sbom []byte, d distro) ([]byte, error) {
 	return json.Marshal(doc)
 }
 
-func osPackageDistro(sbom []byte, fileName string, folders []string) ([]byte, string) {
+func osPackageDistro(sbom []byte, fileName string, folders, distributions []string) ([]byte, string) {
 	pkgType := osPackageType(fileName)
 	if pkgType == "" {
 		return sbom, ""
@@ -238,6 +311,10 @@ func osPackageDistro(sbom []byte, fileName string, folders []string) ([]byte, st
 		if d, ok = releaseDistro(pkgType, v); ok {
 			break
 		}
+	}
+
+	if !ok {
+		d, ok = distributionDistro(pkgType, distributions)
 	}
 
 	if !ok {
