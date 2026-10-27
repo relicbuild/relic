@@ -50,6 +50,10 @@ step "gem push with ~/.gem/credentials from api_key.yaml"
 curl -sf -u "$SCENARIO_USER:$SCENARIO_PASSWORD" "${api}api/v1/api_key.yaml" >"$HOME/.gem/credentials"
 chmod 600 "$HOME/.gem/credentials"
 grep -qF "${api%/}: " "$HOME/.gem/credentials"
+if grep -q ':rubygems_api_key:' "$HOME/.gem/credentials"; then
+  echo "api_key.yaml gave the key for every host" >&2
+  exit 1
+fi
 for v in 1.0.0 1.1.0; do
   gemspec relic_native "$v"
   gem push "relic_native-$v.gem" --host "${api%/}"
@@ -63,6 +67,23 @@ gem search relic_native --remote --clear-sources --source "$authed" | grep -q "r
 gem yank relic_native -v 1.1.0 --host "${api%/}"
 jf rt s "$LOCAL/gems/relic_native-*.gem" | jq -e --arg kept "$LOCAL/gems/relic_native-1.0.0.gem" '[.[].path] == [$kept]' >/dev/null
 jf rt s "$REMOTE/gems/rainbow-*.gem" | jq -e 'length >= 1' >/dev/null
+
+step "gem push with an access token alone as GEM_HOST_API_KEY"
+token=$(curl -sf -u "$SCENARIO_USER:$SCENARIO_PASSWORD" -H 'Content-Type: application/json' \
+  -d '{"scope":"applied-permissions/user","expires_in":3600}' "$SCENARIO_URL/access/api/v1/tokens" | jq -r .access_token)
+[[ -n "$token" && "$token" != null ]]
+gemspec relic_native 1.2.0
+GEM_HOST_API_KEY="$token" gem push relic_native-1.2.0.gem --host "${api%/}"
+jf rt s "$LOCAL/gems/relic_native-1.2.0.gem" | expect_count 1
+
+step "gem install and gem search find a public gem through the remote and the virtual"
+for repo in "$REMOTE" "$VIRTUAL"; do
+  source="${authed%"$VIRTUAL/"}$repo/"
+  gem install rack -v 3.1.8 --clear-sources --source "$source" --no-document
+  gem search '^rack$' --remote --clear-sources --source "$source" | grep -q '^rack ('
+  gem uninstall -x rack -v 3.1.8 >/dev/null
+done
+jf rt s "$REMOTE/gems/rack-3.1.8.gem" | expect_count 1
 
 step "bundler: per-host credentials, Gemfile.lock, frozen install"
 mkdir app && cd app
