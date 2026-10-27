@@ -204,7 +204,7 @@ const listAccessTokens = `-- name: ListAccessTokens :many
 SELECT id, username, scope_kind, refresh_token_hash, expires, created, revoked, description, project, scope_groups, workload_identity, bound_by, sign_in FROM access_tokens
 WHERE ($1::text IS NULL OR username = $1)
   AND ($2::boolean OR NOT revoked)
-ORDER BY created DESC
+ORDER BY created DESC, id DESC
 `
 
 type ListAccessTokensParams struct {

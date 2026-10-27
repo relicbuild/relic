@@ -59,4 +59,4 @@ DELETE FROM web_login_sessions WHERE created < @before;
 SELECT * FROM access_tokens
 WHERE (sqlc.narg('username')::text IS NULL OR username = sqlc.narg('username'))
   AND (@include_revoked::boolean OR NOT revoked)
-ORDER BY created DESC;
+ORDER BY created DESC, id DESC;

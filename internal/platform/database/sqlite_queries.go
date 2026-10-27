@@ -861,7 +861,7 @@ const sqliteListAccessTokens = `-- name: ListAccessTokens :many
 SELECT * FROM access_tokens
 WHERE (@username IS NULL OR username = @username)
   AND (@include_revoked OR NOT revoked)
-ORDER BY created DESC;`
+ORDER BY created DESC, id DESC;`
 
 const sqliteListActiveIgnoreRules = `-- name: ListActiveIgnoreRules :many
 SELECT * FROM scan_ignore_rules WHERE expires_at IS NULL OR expires_at > @now ORDER BY created;`

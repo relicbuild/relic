@@ -60,4 +60,4 @@ DELETE FROM web_login_sessions WHERE created < @before;
 SELECT * FROM access_tokens
 WHERE (@username IS NULL OR username = @username)
   AND (@include_revoked OR NOT revoked)
-ORDER BY created DESC;
+ORDER BY created DESC, id DESC;
