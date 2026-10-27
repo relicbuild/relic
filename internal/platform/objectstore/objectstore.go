@@ -22,6 +22,10 @@ var (
 // TemporaryKeyPrefix marks staging keys.
 const TemporaryKeyPrefix = "tmp/"
 
+// WorkspaceKeyPrefix holds local directories of hard links to stored objects; the sweep removes each one whole once
+// the directory itself is older than the cutoff.
+const WorkspaceKeyPrefix = TemporaryKeyPrefix + "workspaces/"
+
 // Info describes a stored object.
 type Info struct {
 	Size int64
@@ -45,6 +49,9 @@ type Store interface {
 	// List yields the objects under prefix, a directory such as "sha256/" or
 	// TemporaryKeyPrefix, in key order.
 	List(ctx context.Context, prefix string) iter.Seq2[Object, error]
+	// LocalPath returns the absolute path of the file that holds key, and
+	// false when the store keeps its objects off the local filesystem.
+	LocalPath(key string) (string, bool)
 }
 
 // Object is a stored object as a listing returns it.

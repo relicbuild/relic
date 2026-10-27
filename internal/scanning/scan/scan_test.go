@@ -201,6 +201,36 @@ func TestSyftCatalogsPackageManifestsOfExtractedArchives(t *testing.T) {
 	}
 }
 
+func TestSyftSkipsTheUpdateCheck(t *testing.T) {
+	t.Parallel()
+
+	script := filepath.Join(t.TempDir(), "syft")
+	scripttest.Write(t, script, "#!/bin/sh\nenv\n")
+
+	syft := Syft{
+		Exec: Exec{
+			Path: script,
+			Env: []string{
+				"SYFT_PARALLELISM=1",
+			},
+		},
+	}
+
+	out, err := syft.Catalog(t.Context(), "file:/scan/a.jar")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{
+		"SYFT_CHECK_FOR_APP_UPDATE=false",
+		"SYFT_PARALLELISM=1",
+	} {
+		if !strings.Contains(string(out), want+"\n") {
+			t.Errorf("syft environment %q, want %s", out, want)
+		}
+	}
+}
+
 func TestCycloneDX(t *testing.T) {
 	t.Parallel()
 

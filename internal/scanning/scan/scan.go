@@ -418,7 +418,10 @@ func (s Syft) Catalog(ctx context.Context, source string) ([]byte, error) {
 		args = append(args, "--select-catalogers", "+javascript-package-cataloger")
 	}
 
-	return s.run(ctx, args...)
+	e := s.Exec
+	e.Env = append(slices.Clone(s.Env), "SYFT_CHECK_FOR_APP_UPDATE=false")
+
+	return e.run(ctx, args...)
 }
 
 // ErrInvalidDB is an installed vulnerability database that fails Grype's

@@ -24,6 +24,7 @@ import (
 	"relic/internal/artifacts/repository"
 	"relic/internal/platform/database"
 	"relic/internal/platform/database/databasetest"
+	"relic/internal/platform/objectstore"
 	"relic/internal/platform/objectstore/objectstoretest"
 	"relic/internal/platform/scripttest"
 	"relic/internal/platform/telemetry/telemetrytest"
@@ -1015,5 +1016,84 @@ echo '{"artifacts":[{"name":"'$name'","version":"1.0.0","purl":"pkg:npm/'$name'@
 		if err != nil || len(risks) != want {
 			t.Errorf("%s: risks = %+v, %v; want %d", c.FileName, risks, err, want)
 		}
+	}
+}
+
+func TestScanLinksFilesOfALocalStore(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db := databasetest.NewDB(t)
+	log := slog.New(slog.DiscardHandler)
+
+	blobs, err := objectstore.NewFilesystem(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	repos := repository.NewService(db, blobs, log)
+	if err := repos.CreateRepository(
+		ctx,
+		repository.Repository{
+			Name:   "files",
+			Class:  "local",
+			Format: "generic",
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := repos.Deploy(
+		ctx,
+		repository.DeployInput{
+			Repository: "files",
+			Path:       "libs/app-1.0.jar",
+			Body:       strings.NewReader("jar content"),
+			User:       "admin",
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	_, grype, _ := fakeScanners(t)
+	seen := filepath.Join(t.TempDir(), "seen")
+	sources := filepath.Join(t.TempDir(), "sources")
+	syft := filepath.Join(t.TempDir(), "syft")
+	scripttest.Write(t, syft, "#!/bin/sh\nln \"${2#file:}\" "+seen+"\necho \"${2#file:}\" >"+sources+
+		"\necho '{\"artifacts\":[]}'\n")
+	svc := scan.NewService(db, blobs, scan.Syft{
+		Exec: scan.Exec{
+			Path: syft,
+		},
+	}, grype, scan.Limits{}, log)
+
+	claimed, err := svc.Claim(ctx, 10)
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("claim = %v, %v; want the jar", claimed, err)
+	}
+
+	if err := svc.ScanArtifact(ctx, claimed[0].Sha256, claimed[0].FileName); err != nil {
+		t.Fatal(err)
+	}
+
+	stored, _ := blobs.LocalPath(objectstore.Key(claimed[0].Sha256))
+
+	storedInfo, err := os.Stat(stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cataloged, err := os.Stat(seen)
+	if err != nil || !os.SameFile(storedInfo, cataloged) {
+		t.Errorf("syft cataloged %v (%v), want the stored file itself", cataloged, err)
+	}
+
+	workspaces, _ := blobs.LocalPath(objectstore.WorkspaceKeyPrefix)
+	if source, _ := os.ReadFile(sources); !strings.HasPrefix(string(source), workspaces+string(filepath.Separator)) {
+		t.Errorf("syft read %q, want a file in a workspace under %s", source, workspaces)
+	}
+
+	for o, err := range blobs.List(ctx, objectstore.TemporaryKeyPrefix) {
+		t.Errorf("scan left %s (%v) in the store", o.Key, err)
 	}
 }

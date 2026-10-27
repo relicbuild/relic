@@ -112,6 +112,11 @@ func (m *Memory) Delete(_ context.Context, key string) error {
 	return nil
 }
 
+// LocalPath implements blob.Store; memory holds no files.
+func (*Memory) LocalPath(string) (string, bool) {
+	return "", false
+}
+
 // PresignGet implements blob.Store with a fake URL.
 func (m *Memory) PresignGet(_ context.Context, key string, _ time.Duration) (string, error) {
 	return "memory://" + key, nil

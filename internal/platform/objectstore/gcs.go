@@ -142,6 +142,11 @@ func (s *GCSStore) Copy(ctx context.Context, srcKey, dstKey string) error {
 	return nil
 }
 
+// LocalPath implements Store.
+func (*GCSStore) LocalPath(string) (string, bool) {
+	return "", false
+}
+
 // Delete implements Store; a missing key is not an error.
 func (s *GCSStore) Delete(ctx context.Context, key string) error {
 	err := s.object(key).Delete(ctx)

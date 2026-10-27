@@ -355,6 +355,11 @@ func (s *S3Store) multipartCopy(ctx context.Context, source, bucket, object stri
 	return nil
 }
 
+// LocalPath implements Store.
+func (*S3Store) LocalPath(string) (string, bool) {
+	return "", false
+}
+
 // Delete implements Store.
 func (s *S3Store) Delete(ctx context.Context, key string) error {
 	bucket, object := s.locate(key)
