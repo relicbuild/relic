@@ -266,10 +266,26 @@ func TestPermissionsCoverTheProjectsBuildsAndReleases(t *testing.T) {
 			want:   true,
 		},
 		{
+			name:   "an admin promotes",
+			user:   "paula",
+			action: auth.ActionPromote,
+			want:   true,
+		},
+		{
 			name:   "a developer publishes",
 			user:   "dave",
 			action: auth.ActionWrite,
 			want:   true,
+		},
+		{
+			name:   "a developer promotes",
+			user:   "dave",
+			action: auth.ActionPromote,
+		},
+		{
+			name:   "a viewer promotes",
+			user:   "olga",
+			action: auth.ActionPromote,
 		},
 		{
 			name:   "a viewer reads",
