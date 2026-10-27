@@ -4,7 +4,7 @@ package nuget
 
 import (
 	"archive/zip"
-	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"encoding/xml"
@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/url"
 	"os"
 	"regexp"
@@ -20,6 +21,7 @@ import (
 	"strings"
 
 	"relic/internal/artifacts/repository"
+	"relic/internal/platform/memorylimit"
 
 	"golang.org/x/mod/semver"
 )
@@ -54,16 +56,18 @@ func Path(id, version string) string {
 
 // Service implements feeds on top of repo.Service.
 type Service struct {
-	repos *repository.Service
-	log   *slog.Logger
+	repos   *repository.Service
+	nuspecs *nuspecCache
+	log     *slog.Logger
 }
 
 // NewService returns a Service and registers its deploy hook, which sets
 // nuget.id and nuget.version on .nupkg files deployed by any route.
 func NewService(repos *repository.Service, log *slog.Logger) *Service {
 	s := &Service{
-		repos: repos,
-		log:   log,
+		repos:   repos,
+		nuspecs: newNuspecCache(int(memorylimit.Share(nuspecCacheBytes, 32))),
+		log:     log,
 	}
 	repos.RegisterHook(Format, s.index)
 	repos.RegisterMetadata(func(name string) bool {
@@ -103,9 +107,9 @@ type Nuspec struct {
 
 // ReadNuspec reads the .nuspec at the root of a .nupkg (a zip archive).
 func ReadNuspec(r io.ReaderAt, size int64) (Nuspec, []byte, error) {
-	zr, err := zip.NewReader(r, size)
+	zr, err := zipArchive(r, size)
 	if err != nil {
-		return Nuspec{}, nil, fmt.Errorf("%w: not a zip archive", ErrInvalid)
+		return Nuspec{}, nil, err
 	}
 
 	for _, f := range zr.File {
@@ -134,6 +138,19 @@ func ReadNuspec(r io.ReaderAt, size int64) (Nuspec, []byte, error) {
 	}
 
 	return Nuspec{}, nil, fmt.Errorf("%w: no .nuspec", ErrInvalid)
+}
+
+func zipArchive(r io.ReaderAt, size int64) (*zip.Reader, error) {
+	zr, err := zip.NewReader(r, size)
+	if errors.Is(err, zip.ErrFormat) || errors.Is(err, zip.ErrAlgorithm) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return nil, fmt.Errorf("%w: not a zip archive", ErrInvalid)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("read the archive: %w", err)
+	}
+
+	return zr, nil
 }
 
 // Push stores a pushed package (a .nupkg spooled to file) at its layout
@@ -197,21 +214,7 @@ func (s *Service) index(ctx context.Context, r repository.Repository, item repos
 		return err
 	}
 
-	rc, err := s.repos.Open(ctx, item, nil)
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		_ = rc.Close()
-	}()
-
-	body, err := io.ReadAll(io.LimitReader(rc, 512<<20))
-	if err != nil {
-		return err
-	}
-
-	n, _, err := ReadNuspec(bytes.NewReader(body), int64(len(body)))
+	n, _, err := ReadNuspec(s.repos.ReaderAt(ctx, item), item.Size)
 	if err != nil {
 		return err
 	}
@@ -543,22 +546,22 @@ func (s *Service) adopt(
 
 // Nuspec returns a stored package's manifest.
 func (s *Service) Nuspec(ctx context.Context, item repository.Item) ([]byte, Nuspec, error) {
-	rc, err := s.repos.Open(ctx, item, nil)
-	if err != nil {
-		return nil, Nuspec{}, err
+	if cached, ok := s.nuspecs.get(item.Checksums.SHA256); ok {
+		return cached.raw, cached.nuspec, nil
 	}
-	defer func() {
-		_ = rc.Close()
-	}()
 
-	body, err := io.ReadAll(io.LimitReader(rc, 512<<20))
+	n, raw, err := ReadNuspec(s.repos.ReaderAt(ctx, item), item.Size)
 	if err != nil {
 		return nil, Nuspec{}, err
 	}
 
-	n, raw, err := ReadNuspec(bytes.NewReader(body), int64(len(body)))
+	s.nuspecs.add(cachedNuspec{
+		sha256: item.Checksums.SHA256,
+		raw:    raw,
+		nuspec: n,
+	})
 
-	return raw, n, err
+	return raw, n, nil
 }
 
 // Search lists packages whose id contains q, with their versions: those
@@ -588,36 +591,21 @@ func (s *Service) Search(
 			}
 		}
 
-		root, err := s.repos.Stat(ctx, m.Name, "")
-		if errors.Is(err, repository.ErrNotFound) && m.Class == "remote" {
+		if _, err := s.repos.Stat(ctx, m.Name, ""); errors.Is(err, repository.ErrNotFound) && m.Class == "remote" {
 			continue
+		} else if err != nil {
+			return nil, 0, err
 		}
 
+		stored, err := s.storedPackages(ctx, m.Name)
 		if err != nil {
 			return nil, 0, err
 		}
 
-		items, err := s.repos.Subtree(ctx, root)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		for _, it := range items {
-			if it.IsFolder() || !strings.HasSuffix(strings.ToLower(it.Name), ".nupkg") {
-				continue
+		for _, p := range stored {
+			if strings.Contains(strings.ToLower(p.id), q) {
+				addSearchResult(byID, p.id, p.version)
 			}
-
-			props, err := s.repos.Properties(ctx, it)
-			if err != nil || len(props["nuget.id"]) == 0 || len(props["nuget.version"]) == 0 {
-				continue
-			}
-
-			id, v := props["nuget.id"][0], strings.ToLower(props["nuget.version"][0])
-			if !strings.Contains(strings.ToLower(id), q) {
-				continue
-			}
-
-			addSearchResult(byID, id, v)
 		}
 	}
 
@@ -643,6 +631,61 @@ func (s *Service) Search(
 	}
 
 	return out, total, nil
+}
+
+type storedPackage struct {
+	id, version string
+}
+
+func (s *Service) storedPackages(ctx context.Context, repoKey string) ([]storedPackage, error) {
+	ids, err := s.lowestPropertyValues(ctx, repoKey, "nuget.id")
+	if err != nil {
+		return nil, err
+	}
+
+	versions, err := s.lowestPropertyValues(ctx, repoKey, "nuget.version")
+	if err != nil {
+		return nil, err
+	}
+
+	files := slices.SortedFunc(maps.Values(ids), func(a, b repository.PropertyFile) int {
+		return cmp.Or(strings.Compare(a.Item.Parent, b.Item.Parent), strings.Compare(a.Item.Name, b.Item.Name))
+	})
+
+	out := make([]storedPackage, 0, len(files))
+
+	for _, f := range files {
+		version, ok := versions[f.Item.Path()]
+		if !ok || !strings.HasSuffix(strings.ToLower(f.Item.Name), ".nupkg") {
+			continue
+		}
+
+		out = append(out, storedPackage{
+			id:      f.Value,
+			version: strings.ToLower(version.Value),
+		})
+	}
+
+	return out, nil
+}
+
+func (s *Service) lowestPropertyValues(
+	ctx context.Context,
+	repoKey, key string,
+) (map[string]repository.PropertyFile, error) {
+	files, err := s.repos.FilesWithPropertyKey(ctx, repoKey, key)
+	if err != nil {
+		return nil, err
+	}
+
+	byPath := make(map[string]repository.PropertyFile, len(files))
+	for _, f := range files {
+		if lowest, ok := byPath[f.Item.Path()]; !ok || f.Value < lowest.Value {
+			byPath[f.Item.Path()] = f
+		}
+	}
+
+	return byPath, nil
 }
 
 func addSearchResult(byID map[string]*SearchResult, id string, versions ...string) {

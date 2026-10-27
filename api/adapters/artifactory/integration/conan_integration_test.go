@@ -154,7 +154,7 @@ func TestConanRepository(t *testing.T) {
 		method: "GET",
 		path:   ref + "/latest",
 	})
-	if resp.StatusCode != 200 || !strings.Contains(latest, `"revision": "r1"`) ||
+	if resp.StatusCode != 200 || !strings.Contains(latest, `"revision":"r1"`) ||
 		resp.Header.Get("Content-Type") != "application/json" {
 		t.Errorf("latest = %d %s %s", resp.StatusCode, resp.Header.Get("Content-Type"), latest)
 	}
@@ -182,7 +182,7 @@ func TestConanRepository(t *testing.T) {
 		path:   ref + "/latest",
 	}); !strings.Contains(
 		latest,
-		`"revision": "r2"`,
+		`"revision":"r2"`,
 	) {
 		t.Errorf("latest after r2 = %s", latest)
 	}
@@ -207,7 +207,7 @@ func TestConanRepository(t *testing.T) {
 		path:   ref + "/revisions/r1/files",
 	}); !strings.Contains(
 		files,
-		`"conanfile.py": {}`,
+		`"conanfile.py":{}`,
 	) {
 		t.Errorf("files = %s", files)
 	}
@@ -234,7 +234,7 @@ func TestConanRepository(t *testing.T) {
 		path:   ref + "/revisions/r1/packages/pid1/latest",
 	}); !strings.Contains(
 		l,
-		`"revision": "p1"`,
+		`"revision":"p1"`,
 	) {
 		t.Errorf("package latest = %s", l)
 	}
@@ -269,7 +269,7 @@ func TestConanRepository(t *testing.T) {
 		path:   R + "/v2/conans/search?q=zlib*",
 	}); !strings.Contains(
 		found,
-		`"results": []`,
+		`"results":[]`,
 	) {
 		t.Errorf("empty search = %s", found)
 	}
@@ -308,7 +308,7 @@ func TestConanRepository(t *testing.T) {
 		path:   ref + "/latest",
 	}); !strings.Contains(
 		latest,
-		`"revision": "r1"`,
+		`"revision":"r1"`,
 	) {
 		t.Errorf("latest after delete = %s", latest)
 	}

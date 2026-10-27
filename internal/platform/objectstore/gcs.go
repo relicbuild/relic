@@ -22,14 +22,16 @@ const gcsChunkSize = 16 << 20
 type GCSConfig struct {
 	// Endpoint is an emulator's URL; empty uses Google Cloud Storage with
 	// Application Default Credentials (workload identity, a key file).
-	Endpoint        string
-	ArtifactsBucket string
-	TemporaryBucket string
+	Endpoint             string
+	ArtifactsBucket      string
+	TemporaryBucket      string
+	MaxConcurrentUploads int
 }
 
 // GCSStore implements Store on Google Cloud Storage.
 type GCSStore struct {
 	client     *storage.Client
+	uploads    uploadGate
 	blobs, tmp string
 }
 
@@ -51,9 +53,10 @@ func NewGCS(ctx context.Context, cfg GCSConfig) (*GCSStore, error) {
 	}
 
 	return &GCSStore{
-		client: client,
-		blobs:  cfg.ArtifactsBucket,
-		tmp:    cfg.TemporaryBucket,
+		client:  client,
+		uploads: newUploadGate(cfg.MaxConcurrentUploads),
+		blobs:   cfg.ArtifactsBucket,
+		tmp:     cfg.TemporaryBucket,
 	}, nil
 }
 
@@ -74,6 +77,12 @@ func (s *GCSStore) object(key string) *storage.ObjectHandle {
 // Put implements Store. A failed read of r cancels the upload, so the key
 // is left as it was.
 func (s *GCSStore) Put(ctx context.Context, key string, r io.Reader, _ int64) error {
+	release, err := s.uploads.acquire(ctx, key)
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 

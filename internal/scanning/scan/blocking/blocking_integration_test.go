@@ -749,3 +749,135 @@ func TestFileLicenseBlocking(t *testing.T) {
 		t.Errorf("decision = %+v %v", d, err)
 	}
 }
+
+func TestLicenseBlockingReadsEachScannedSBOMOnce(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db := databasetest.NewDB(t)
+	repos := repository.NewService(db, objectstoretest.NewMemory(), slog.New(slog.DiscardHandler))
+
+	if err := repos.CreateRepository(ctx, repository.Repository{
+		Name:   "libs",
+		Class:  "local",
+		Format: "npm",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	it, err := repos.Deploy(ctx, repository.DeployInput{
+		Repository: "libs",
+		Path:       "dep-1.tgz",
+		Body:       strings.NewReader("dep"),
+		User:       "admin",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	if _, err := db.ClaimUnscanned(ctx, database.ClaimUnscannedParams{
+		Now:         start,
+		NamePattern: `^dep-1\.tgz$`,
+		MaxRows:     10,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	finish := func(license string, at time.Time) {
+		t.Helper()
+
+		var gz strings.Builder
+
+		zw := gzip.NewWriter(&gz)
+		_, _ = zw.Write([]byte(`{"artifacts":[{"name":"dep","version":"1","type":"npm","purl":"pkg:npm/dep@1",` +
+			`"licenses":[{"value":"` + license + `","spdxExpression":"` + license + `"}]}]}`))
+		_ = zw.Close()
+
+		if err := db.FinishScanArtifact(ctx, database.FinishScanArtifactParams{
+			Sha256:     it.Checksums.SHA256,
+			Status:     scan.StatusDone,
+			Sbom:       []byte(gz.String()),
+			Components: 1,
+			Now:        at,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	finish("GPL-3.0-only", start)
+
+	pd, _ := json.Marshal(policy.Policy{
+		Name: "no-gpl",
+		Kind: policy.KindLicense,
+		Rules: []policy.Rule{
+			{
+				Name: "ban",
+				BannedLicenses: []string{
+					"GPL-3.0-only",
+				},
+				BlockDownload: true,
+			},
+		},
+	})
+	wd, _ := json.Marshal(policy.Watch{
+		Name:   "w",
+		Active: true,
+		Scopes: []policy.Scope{
+			{
+				Kind: policy.ScopeRepository,
+				Names: []string{
+					"libs",
+				},
+			},
+		},
+		Policies: []string{
+			"no-gpl",
+		},
+	})
+
+	if err := db.UpsertScanPolicy(ctx, database.UpsertScanPolicyParams{
+		Name: "no-gpl",
+		Kind: string(policy.KindLicense),
+		Doc:  pd,
+		Now:  start,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.UpsertScanWatch(ctx, database.UpsertScanWatchParams{
+		Name: "w",
+		Doc:  wd,
+		Now:  start,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	b := blocking.New(db)
+	blocked := func() bool {
+		t.Helper()
+
+		d, err := b.Explain(ctx, "libs", "dep-1.tgz", it.Checksums.SHA256)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return d.Blocked
+	}
+
+	if !blocked() {
+		t.Fatal("a GPL component is allowed, want blocked")
+	}
+
+	finish("MIT", start)
+
+	if !blocked() {
+		t.Error("the same scan read again: allowed, want the components it parsed first")
+	}
+
+	finish("MIT", start.Add(time.Second))
+
+	if blocked() {
+		t.Error("after a new scan finds MIT: blocked, want the new components")
+	}
+}

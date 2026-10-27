@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -92,13 +93,24 @@ func (h *Handler) npmPackageRequest(w http.ResponseWriter, r *http.Request, req 
 			return
 		}
 
-		doc, err := h.npm.Packument(r.Context(), req.repo, name, req.mount.base(r)+"/"+req.repo)
+		form := npmDocumentForm(r.Header.Values("Accept"))
+
+		body, err := h.npm.Document(r.Context(), req.repo, name, req.mount.base(r)+"/"+req.repo, form)
 		if err != nil {
 			h.npmError(w, r, err)
 			return
 		}
 
-		writeJSON(w, http.StatusOK, doc)
+		w.Header().Add("Vary", "Accept")
+
+		if form == npm.FormAbbreviated {
+			w.Header().Set("Content-Type", npm.AbbreviatedMediaType)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+		}
+
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		_, _ = w.Write(body)
 	case tail == "" && r.Method == http.MethodPut:
 		h.npmPublish(w, r, req, name)
 	case strings.HasPrefix(tail, "-rev/") && (r.Method == http.MethodPut || r.Method == http.MethodDelete):
@@ -123,6 +135,39 @@ func (h *Handler) npmPackageRequest(w http.ResponseWriter, r *http.Request, req 
 	}
 }
 
+func npmDocumentForm(accept []string) npm.Form {
+	var abbreviated, full float64
+
+	for _, header := range accept {
+		for mediaRange := range strings.SplitSeq(header, ",") {
+			mediaType, params, err := mime.ParseMediaType(mediaRange)
+			if err != nil {
+				continue
+			}
+
+			quality := 1.0
+			if q, ok := params["q"]; ok {
+				if quality, err = strconv.ParseFloat(q, 64); err != nil {
+					continue
+				}
+			}
+
+			switch mediaType {
+			case npm.AbbreviatedMediaType:
+				abbreviated = max(abbreviated, quality)
+			case "application/json":
+				full = max(full, quality)
+			}
+		}
+	}
+
+	if abbreviated > 0 && abbreviated >= full {
+		return npm.FormAbbreviated
+	}
+
+	return npm.FormFull
+}
+
 func (h *Handler) npmPublish(w http.ResponseWriter, r *http.Request, req npmRequest, name string) {
 	dest, err := h.repos.DeployTarget(r.Context(), req.repo)
 	if err != nil {
@@ -138,7 +183,7 @@ func (h *Handler) npmPublish(w http.ResponseWriter, r *http.Request, req npmRequ
 		return
 	}
 
-	release := reserveBuffer(w, r, maxPublishBytes, 2)
+	release := h.buffers.reserve(w, r, maxPublishBytes, 3)
 	if release == nil {
 		return
 	}
@@ -205,6 +250,12 @@ func (h *Handler) npmUnpublish(w http.ResponseWriter, r *http.Request, req npmRe
 	)
 
 	if r.Method == http.MethodPut {
+		release := h.buffers.reserve(w, r, maxPublishBytes, 2)
+		if release == nil {
+			return
+		}
+		defer release()
+
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxPublishBytes)).Decode(&doc); err != nil ||
 			doc.Name != name || len(doc.Versions) == 0 {
 			httperror.Write(w, r, http.StatusBadRequest, "the packument must name the package and keep a version")
@@ -287,13 +338,13 @@ func (h *Handler) npmDistTags(w http.ResponseWriter, r *http.Request, req npmReq
 			return
 		}
 
-		doc, err := h.npm.Packument(ctx, req.repo, name, req.mount.base(r)+"/"+req.repo)
+		tags, err := h.npm.DistTags(ctx, req.repo, name)
 		if err != nil {
 			h.npmError(w, r, err)
 			return
 		}
 
-		writeJSON(w, http.StatusOK, doc["dist-tags"])
+		writeJSON(w, http.StatusOK, tags)
 	case r.Method == http.MethodPut && tag != "":
 		dest, err := h.repos.DeployTarget(ctx, req.repo)
 		if err != nil {
@@ -611,6 +662,12 @@ func (h *Handler) npmAudit(w http.ResponseWriter, r *http.Request, req npmReques
 		h.npmError(w, r, err)
 		return
 	}
+
+	release := h.buffers.reserve(w, r, npm.MaxAuditBody, 1)
+	if release == nil {
+		return
+	}
+	defer release()
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, npm.MaxAuditBody))
 	if _, tooLarge := errors.AsType[*http.MaxBytesError](err); tooLarge {

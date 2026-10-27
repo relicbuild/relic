@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -53,12 +54,7 @@ func TestSpecsIndexAfter(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			merged, err := SpecsIndexAfter(upstream, local)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			got := gunzipped(t, merged)
+			got := gunzipped(t, specsIndexAfter(t, upstream, local))
 			want := Marshal(specsEntries(append(append([]Spec{}, tc.upstream...), local...)))
 
 			count, _, err := readInt(got[3:])
@@ -74,12 +70,140 @@ func TestSpecsIndexAfter(t *testing.T) {
 		})
 	}
 
-	if same, err := SpecsIndexAfter([]byte("not gzip"), nil); err != nil || string(same) != "not gzip" {
-		t.Errorf("no local specs = %q %v, want the upstream index unchanged", same, err)
+	if same := specsIndexAfter(t, []byte("not gzip"), nil); string(same) != "not gzip" {
+		t.Errorf("no local specs = %q, want the upstream index unchanged", same)
 	}
 
-	if _, err := SpecsIndexAfter([]byte("not gzip"), local); !errors.Is(err, ErrInvalidIndex) {
+	if _, err := SpecsIndexAfter(bytes.NewReader([]byte("not gzip")), local); !errors.Is(err, ErrInvalidIndex) {
 		t.Errorf("an unreadable upstream index = %v, want ErrInvalidIndex", err)
+	}
+}
+
+func TestSpecsIndexAfterReadsTheUpstreamAsItWrites(t *testing.T) {
+	t.Parallel()
+
+	many := make([]Spec, 50000)
+	for i := range many {
+		many[i] = Spec{
+			Name:     "upstream" + strconv.Itoa(i),
+			Version:  "1.0.0",
+			Platform: "ruby",
+		}
+	}
+
+	upstream, err := SpecsIndex(many)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	read := &countingReader{
+		r: bytes.NewReader(upstream),
+	}
+
+	if _, err := SpecsIndexAfter(read, []Spec{
+		{
+			Name:     "relic_local",
+			Version:  "2.0.0",
+			Platform: "ruby",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if read.n >= int64(len(upstream)) {
+		t.Errorf("checking the upstream index read all of its %d bytes before writing", len(upstream))
+	}
+}
+
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+
+	return n, err
+}
+
+func specsIndexAfter(t *testing.T, upstream []byte, specs []Spec) []byte {
+	t.Helper()
+
+	index, err := SpecsIndexAfter(bytes.NewReader(upstream), specs)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	if _, err := index.WriteTo(&out); err != nil {
+		t.Fatal(err)
+	}
+
+	return out.Bytes()
+}
+
+func TestNewlineTerminated(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name, in, want string
+		buffer         int
+	}{
+		{
+			name: "an empty file stays empty",
+			in:   "",
+			want: "",
+		},
+		{
+			name: "a terminated file is unchanged",
+			in:   "a 1.0 x\n",
+			want: "a 1.0 x\n",
+		},
+		{
+			name: "an unterminated file gets a newline",
+			in:   "a 1.0 x",
+			want: "a 1.0 x\n",
+		},
+		{
+			name:   "a newline after a full buffer",
+			in:     "abcd",
+			want:   "abcd\n",
+			buffer: 4,
+		},
+		{
+			name:   "a newline after a partly filled buffer",
+			in:     "abcd",
+			want:   "abcd\n",
+			buffer: 64,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r := &newlineTerminated{
+				r: strings.NewReader(tc.in),
+			}
+
+			var out bytes.Buffer
+
+			buf := make([]byte, max(tc.buffer, 1))
+			if _, err := io.CopyBuffer(struct {
+				io.Writer
+			}{
+				&out,
+			}, struct {
+				io.Reader
+			}{
+				r,
+			}, buf); err != nil {
+				t.Fatal(err)
+			}
+
+			if out.String() != tc.want {
+				t.Errorf("got %q, want %q", out.String(), tc.want)
+			}
+		})
 	}
 }
 

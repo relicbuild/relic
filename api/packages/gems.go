@@ -85,7 +85,15 @@ func (h *Handler) gemsAPI(w http.ResponseWriter, r *http.Request, m Mount) {
 			return
 		}
 
-		writeBody(w, r, "text/plain; charset=utf-8", body)
+		defer func() {
+			_ = body.Close()
+		}()
+
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+
+		if r.Method != http.MethodHead {
+			_, _ = io.Copy(w, body)
+		}
 	case strings.HasPrefix(rest, "info/"):
 		name := strings.TrimPrefix(rest, "info/")
 
@@ -106,21 +114,7 @@ func (h *Handler) gemsAPI(w http.ResponseWriter, r *http.Request, m Mount) {
 			return
 		}
 
-		upstream, ok, err := h.gems.RemoteSpecsIndex(r.Context(), rp, rest)
-		if h.gemsFail(w, r, err) {
-			return
-		}
-
-		body, err := gems.SpecsIndex(selectSpecs(locals, rest))
-		if ok {
-			body, err = gems.SpecsIndexAfter(upstream, selectSpecs(locals, rest))
-		}
-
-		if h.gemsFail(w, r, err) {
-			return
-		}
-
-		writeBody(w, r, "application/octet-stream", body)
+		h.gemsSpecsIndex(w, r, rp, rest, selectSpecs(locals, rest))
 	case strings.HasPrefix(rest, "quick/Marshal.4.8/") && strings.HasSuffix(rest, ".gemspec.rz"):
 		h.gemQuickSpec(w, r, rp, strings.TrimPrefix(rest, "quick/Marshal.4.8/"))
 	case rest == "api/v1/dependencies":
@@ -133,6 +127,47 @@ func (h *Handler) gemsAPI(w http.ResponseWriter, r *http.Request, m Mount) {
 		writeBody(w, r, "application/octet-stream", gems.Dependencies(locals, names))
 	default:
 		http.NotFound(w, r)
+	}
+}
+
+func (h *Handler) gemsSpecsIndex(
+	w http.ResponseWriter,
+	r *http.Request,
+	rp repository.Repository,
+	file string,
+	specs []gems.Spec,
+) {
+	upstream, ok, err := h.gems.RemoteSpecsIndex(r.Context(), rp, file)
+	if h.gemsFail(w, r, err) {
+		return
+	}
+
+	if !ok {
+		body, err := gems.SpecsIndex(specs)
+		if !h.gemsFail(w, r, err) {
+			writeBody(w, r, "application/octet-stream", body)
+		}
+
+		return
+	}
+
+	defer func() {
+		_ = upstream.Close()
+	}()
+
+	index, err := gems.SpecsIndexAfter(upstream, specs)
+	if h.gemsFail(w, r, err) {
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+
+	if r.Method == http.MethodHead {
+		return
+	}
+
+	if _, err := index.WriteTo(w); err != nil {
+		h.log.WarnContext(r.Context(), "specs index cut short", "repo", rp.Name, "file", file, "error", err)
 	}
 }
 
@@ -243,7 +278,7 @@ func (h *Handler) gemPush(w http.ResponseWriter, r *http.Request, rp repository.
 		return
 	}
 
-	release := reserveBuffer(w, r, maxGemBytes, 1)
+	release := h.buffers.reserve(w, r, maxGemBytes, 1)
 	if release == nil {
 		return
 	}

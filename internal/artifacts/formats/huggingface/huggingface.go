@@ -696,18 +696,9 @@ func (s *Service) RemoteInfo(
 		return nil, err
 	}
 
-	rc, err := s.repos.Open(ctx, item, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	defer func() {
-		_ = rc.Close()
-	}()
-
 	var info map[string]any
-	if err := json.NewDecoder(rc).Decode(&info); err != nil {
-		return nil, fmt.Errorf("%w: upstream revision info: %w", repository.ErrUpstream, err)
+	if err := s.decodeUpstreamJSON(ctx, item, &info); err != nil {
+		return nil, fmt.Errorf("upstream revision info: %w", err)
 	}
 
 	return info, nil
@@ -736,18 +727,9 @@ func (s *Service) RemoteTree(ctx context.Context, r repository.Repository, kind 
 		return nil, err
 	}
 
-	rc, err := s.repos.Open(ctx, item, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	defer func() {
-		_ = rc.Close()
-	}()
-
 	var tree []any
-	if err := json.NewDecoder(rc).Decode(&tree); err != nil {
-		return nil, fmt.Errorf("%w: upstream tree: %w", repository.ErrUpstream, err)
+	if err := s.decodeUpstreamJSON(ctx, item, &tree); err != nil {
+		return nil, fmt.Errorf("upstream tree: %w", err)
 	}
 
 	for _, entry := range tree {
@@ -757,6 +739,27 @@ func (s *Service) RemoteTree(ctx context.Context, r repository.Repository, kind 
 	}
 
 	return tree, nil
+}
+
+func (s *Service) decodeUpstreamJSON(ctx context.Context, item repository.Item, v any) error {
+	if item.Size > maxUpstreamAPIBytes {
+		return fmt.Errorf("%w: %d bytes, above %d", repository.ErrUpstream, item.Size, maxUpstreamAPIBytes)
+	}
+
+	rc, err := s.repos.Open(ctx, item, nil)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		_ = rc.Close()
+	}()
+
+	if err := json.NewDecoder(io.LimitReader(rc, maxUpstreamAPIBytes)).Decode(v); err != nil {
+		return fmt.Errorf("%w: %w", repository.ErrUpstream, err)
+	}
+
+	return nil
 }
 
 // IsCommitSHA reports whether rev is a commit SHA rather than a branch or

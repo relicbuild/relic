@@ -20,10 +20,12 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"relic/internal/artifacts/repository"
 	"relic/internal/platform/database"
+	"relic/internal/platform/memorylimit"
 )
 
 // Format is the repository format this package serves.
@@ -47,6 +49,11 @@ type Service struct {
 	log    *slog.Logger
 	client *http.Client
 	now    func() time.Time
+
+	indexes    *boundedCache[packumentIndex]
+	documents  *boundedCache[[]byte]
+	indexReads atomic.Int64
+	renders    atomic.Int64
 }
 
 // NewService returns a Service and registers its deploy hook, which indexes
@@ -57,6 +64,16 @@ func NewService(db *database.DB, repos *repository.Service, log *slog.Logger) *S
 		repos: repos,
 		log:   log,
 		now:   time.Now,
+		indexes: newBoundedCache(
+			"index",
+			memorylimit.Share(packumentIndexCacheBytes, 32),
+			func(x packumentIndex) int64 {
+				return x.bytes()
+			},
+		),
+		documents: newBoundedCache("document", memorylimit.Share(packumentDocumentCacheBytes, 8), func(b []byte) int64 {
+			return int64(cap(b))
+		}),
 		client: &http.Client{
 			Timeout: 60 * time.Second,
 			Transport: &http.Transport{
@@ -185,20 +202,102 @@ func readManifest(r io.Reader) ([]byte, error) {
 // Packument is an npm package document.
 type Packument map[string]any
 
-// Packument returns the document for name in repoKey.
-func (s *Service) Packument(ctx context.Context, repoKey, name, tarballBase string) (Packument, error) {
-	r, err := s.repos.GetRepository(ctx, repoKey)
+type document struct {
+	local  Packument
+	remote *remotePackument
+}
+
+// Document returns the JSON of the document for name in repoKey in form;
+// callers must not modify it.
+func (s *Service) Document(ctx context.Context, repoKey, name, tarballBase string, form Form) ([]byte, error) {
+	d, err := s.document(ctx, repoKey, name, tarballBase)
 	if err != nil {
 		return nil, err
 	}
 
+	if d.remote != nil {
+		return s.remoteDocument(ctx, d.remote, form)
+	}
+
+	if form == FormAbbreviated {
+		return json.Marshal(abbreviate(d.local))
+	}
+
+	return json.Marshal(d.local)
+}
+
+// Packument returns the document for name in repoKey.
+func (s *Service) Packument(ctx context.Context, repoKey, name, tarballBase string) (Packument, error) {
+	d, err := s.document(ctx, repoKey, name, tarballBase)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.packument(ctx, d)
+}
+
+func (s *Service) packument(ctx context.Context, d document) (Packument, error) {
+	if d.remote == nil {
+		return d.local, nil
+	}
+
+	body, err := s.remoteDocument(ctx, d.remote, FormFull)
+	if err != nil {
+		return nil, err
+	}
+
+	var doc Packument
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return nil, fmt.Errorf("%w: invalid packument: %w", repository.ErrUpstream, err)
+	}
+
+	return doc, nil
+}
+
+// DistTags returns the dist-tags of name in repoKey.
+func (s *Service) DistTags(ctx context.Context, repoKey, name string) (map[string]string, error) {
+	d, err := s.document(ctx, repoKey, name, "")
+	if err != nil {
+		return nil, err
+	}
+
+	if d.remote != nil {
+		return nonNilMap(d.remote.tags), nil
+	}
+
+	raw, _ := d.local["dist-tags"].(map[string]any)
+
+	tags := make(map[string]string, len(raw))
+	for tag, v := range raw {
+		if version, ok := v.(string); ok {
+			tags[tag] = version
+		}
+	}
+
+	return tags, nil
+}
+
+func (s *Service) document(ctx context.Context, repoKey, name, tarballBase string) (document, error) {
+	r, err := s.repos.GetRepository(ctx, repoKey)
+	if err != nil {
+		return document{}, err
+	}
+
 	switch r.Class {
 	case repository.ClassRemote:
-		return s.remotePackument(ctx, r, name, tarballBase)
+		p, err := s.remotePackument(ctx, r, name, tarballBase)
+
+		return document{
+			remote: p,
+		}, err
 	case repository.ClassVirtual:
 		return s.virtualPackument(ctx, r, name, tarballBase)
 	default:
-		return s.localPackument(ctx, repoKey, name, tarballBase)
+		doc, err := s.localPackument(ctx, repoKey, name, tarballBase)
+
+		return document{
+			local: doc,
+		}, err
 	}
 }
 
@@ -312,173 +411,49 @@ func (s *Service) localPackument(ctx context.Context, repoKey, name, tarballBase
 	return doc, nil
 }
 
-func (s *Service) remotePackument(
-	ctx context.Context,
-	r repository.Repository,
-	name, tarballBase string,
-) (Packument, error) {
-	cfg := r.Upstream()
-	if cfg.URL == "" {
-		return nil, ErrNotFound
-	}
-
-	upstream := strings.TrimSuffix(cfg.URL, "/")
-
-	doc, err := s.cachedPackument(ctx, r, upstream+"/"+escapeName(name), name)
-	if err != nil {
-		return nil, err
-	}
-
-	versions, _ := doc["versions"].(map[string]any)
-	paths := make(map[string]string, len(versions))
-
-	for ver, v := range versions {
-		m, _ := v.(map[string]any)
-		dist, _ := m["dist"].(map[string]any)
-
-		if attestations, ok := dist["attestations"].(map[string]any); ok {
-			attestations["url"] = tarballBase + "/-/npm/v1/attestations/" + escapeName(name) + "@" + ver
-		}
-
-		tarball, _ := dist["tarball"].(string)
-		if tarball == "" {
-			continue
-		}
-
-		rel, ok := strings.CutPrefix(tarball, upstream+"/")
-		if !ok {
-			u, err := url.Parse(tarball)
-			if err != nil {
-				continue
-			}
-
-			rel = strings.TrimPrefix(u.Path, "/")
-		}
-
-		if !repository.Visible(ctx, r.Name, rel) {
-			delete(versions, ver)
-			continue
-		}
-
-		paths[ver] = rel
-		dist["tarball"] = tarballBase + "/" + rel
-	}
-
-	if cooldown := cfg.Cooldown(); cooldown > 0 {
-		coolDown(doc, s.now().Add(-cooldown))
-	}
-
-	offered := make([]repository.Version, 0, len(versions))
-	for ver := range versions {
-		offered = append(offered, repository.Version{
-			Version: ver,
-			Path:    paths[ver],
-		})
-	}
-
-	refused, err := s.repos.RefusedVersions(ctx, r, "npm", name, offered)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(refused) > 0 {
-		dropVersions(doc, func(version string) bool {
-			return refused[version]
-		})
-	}
-
-	if repository.Restricted(ctx, r.Name) {
-		if len(versions) == 0 {
-			return nil, ErrNotFound
-		}
-
-		dropMissing(doc, versions)
-	}
-
-	return doc, nil
-}
-
 const maxPackumentBytes = 256 << 20
 
 const packumentCacheSuffix = ".npm.json"
-
-func (s *Service) cachedPackument(
-	ctx context.Context,
-	r repository.Repository,
-	upstreamURL, name string,
-) (Packument, error) {
-	item, err := s.repos.ResolveURL(ctx, r, upstreamURL, ".npm/"+name+packumentCacheSuffix)
-	if errors.Is(err, repository.ErrNotFound) {
-		return nil, ErrNotFound
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	rc, err := s.repos.Open(ctx, item, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	defer func() {
-		_ = rc.Close()
-	}()
-
-	var doc Packument
-	if err := json.NewDecoder(io.LimitReader(rc, maxPackumentBytes)).Decode(&doc); err != nil {
-		return nil, fmt.Errorf("%w: invalid packument: %w", repository.ErrUpstream, err)
-	}
-
-	return doc, nil
-}
-
-func dropMissing(doc Packument, versions map[string]any) {
-	for _, key := range []string{
-		"dist-tags",
-		"time",
-	} {
-		m, _ := doc[key].(map[string]any)
-		for k, v := range m {
-			ver, _ := v.(string)
-			if key == "time" {
-				ver = k
-				if k == "created" || k == "modified" {
-					continue
-				}
-			}
-
-			if _, ok := versions[ver]; !ok {
-				delete(m, k)
-			}
-		}
-	}
-}
 
 func (s *Service) virtualPackument(
 	ctx context.Context,
 	r repository.Repository,
 	name, tarballBase string,
-) (Packument, error) {
-	merged := Packument{
-		"_id":  name,
-		"name": name,
-	}
-	versions, tags, times := map[string]any{}, map[string]any{}, map[string]any{}
-	found := false
+) (document, error) {
+	var found []document
 
 	for _, member := range s.repos.Flatten(ctx, r, name) {
-		doc, err := s.Packument(ctx, member.Name, name, tarballBase)
+		d, err := s.document(ctx, member.Name, name, tarballBase)
 		if errors.Is(err, ErrNotFound) || errors.Is(err, repository.ErrRepositoryNotFound) ||
 			errors.Is(err, repository.ErrUpstream) {
 			continue
 		}
 
 		if err != nil {
-			return nil, err
+			return document{}, err
 		}
 
-		found = true
+		found = append(found, d)
+	}
+
+	switch len(found) {
+	case 0:
+		return document{}, ErrNotFound
+	case 1:
+		return found[0], nil
+	}
+
+	merged := Packument{
+		"_id":  name,
+		"name": name,
+	}
+	versions, tags, times := map[string]any{}, map[string]any{}, map[string]any{}
+
+	for _, d := range found {
+		doc, err := s.packument(ctx, d)
+		if err != nil {
+			return document{}, err
+		}
 
 		for k, v := range doc {
 			if _, ok := merged[k]; !ok && k != "versions" && k != "dist-tags" && k != "time" {
@@ -491,13 +466,11 @@ func (s *Service) virtualPackument(
 		mergeMissing(times, doc["time"])
 	}
 
-	if !found {
-		return nil, ErrNotFound
-	}
-
 	merged["versions"], merged["dist-tags"], merged["time"] = versions, tags, times
 
-	return merged, nil
+	return document{
+		local: merged,
+	}, nil
 }
 
 func mergeMissing(dst map[string]any, src any) {
@@ -1108,7 +1081,7 @@ func (s *Service) registryDocument(ctx context.Context, r repository.Repository,
 // remote or virtual repository leaves out versions cooling down,
 // quarantined, known malicious or blocked.
 func (s *Service) Offers(ctx context.Context, repoKey, name, version string) (bool, error) {
-	doc, err := s.Packument(ctx, repoKey, name, "")
+	d, err := s.document(ctx, repoKey, name, "")
 	if errors.Is(err, ErrNotFound) || errors.Is(err, repository.ErrNotFound) {
 		return false, nil
 	}
@@ -1117,7 +1090,11 @@ func (s *Service) Offers(ctx context.Context, repoKey, name, version string) (bo
 		return false, err
 	}
 
-	versions, _ := doc["versions"].(map[string]any)
+	if d.remote != nil {
+		return d.remote.kept[version], nil
+	}
+
+	versions, _ := d.local["versions"].(map[string]any)
 	_, ok := versions[version]
 
 	return ok, nil

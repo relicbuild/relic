@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"relic/internal/scanning/scan"
+
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
 )
@@ -113,6 +115,42 @@ func TestScanArtifactWorkerRecordsTheLastFailedAttempt(t *testing.T) {
 
 			if len(scanner.failed) != tt.wantFailed {
 				t.Errorf("failed scans recorded = %v, want %d", scanner.failed, tt.wantFailed)
+			}
+		})
+	}
+}
+
+func TestScanQueueRunsAsManyJobsAsScannerSlots(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		slots *scan.ScannerSlots
+		want  int
+	}{
+		{
+			name:  "a small budget runs one",
+			slots: scan.NewScannerSlots(256 << 20),
+			want:  1,
+		},
+		{
+			name:  "a large budget runs two",
+			slots: scan.NewScannerSlots(4 << 30),
+			want:  2,
+		},
+		{
+			name: "no budget runs two",
+			want: 2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := scanWorkers(&Scanning{
+				Slots: tt.slots,
+			}); got != tt.want {
+				t.Errorf("scanWorkers = %d, want %d", got, tt.want)
 			}
 		})
 	}

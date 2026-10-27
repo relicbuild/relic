@@ -283,6 +283,73 @@ func TestRepodataHidesTheUpstreamPackagesPermissionsHide(t *testing.T) {
 	}
 }
 
+func TestRepodataServesCallersNoMemberRestrictsFromTheCache(t *testing.T) {
+	t.Parallel()
+
+	f := newRPMFixture(t, localOf("rpm-local", 0), virtualOf("rpm", 0, "rpm-local"))
+	virtual := f.repository(t, "rpm")
+	ctx := repository.WithVisibility(t.Context(), hidingVisibility{
+		repo: "another-repository",
+	})
+
+	f.deploy(t, "rpm-local", "", "first")
+
+	files, err := f.svc.Repodata(ctx, virtual, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := primaryOf(t, files); len(got) != 1 {
+		t.Fatalf("the first build lists %v", got)
+	}
+
+	f.deploy(t, "rpm-local", "", "second")
+
+	files, err = f.svc.Repodata(ctx, virtual, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := primaryOf(t, files); len(got) != 1 || got["first"] == "" {
+		t.Errorf("a second request lists %v, want the cached build", got)
+	}
+}
+
+func TestRepodataHidesARestrictedLocalMembersPackages(t *testing.T) {
+	t.Parallel()
+
+	f := newRPMFixture(t, localOf("rpm-local", 0), virtualOf("rpm", 0, "rpm-local"))
+	virtual := f.repository(t, "rpm")
+
+	f.deploy(t, "rpm-local", "", "shown")
+	f.deploy(t, "rpm-local", "", "hidden")
+
+	files, err := f.svc.Repodata(t.Context(), virtual, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := primaryOf(t, files); len(got) != 2 {
+		t.Fatalf("an unfiltered build lists %v, want both packages", got)
+	}
+
+	ctx := repository.WithVisibility(t.Context(), hidingVisibility{
+		repo:   "rpm-local",
+		hidden: "hidden",
+	})
+
+	for range 2 {
+		files, err := f.svc.Repodata(ctx, virtual, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := primaryOf(t, files); len(got) != 1 || got["shown"] == "" {
+			t.Errorf("a caller who may not see hidden gets %v, want shown only", got)
+		}
+	}
+}
+
 func TestSignAndPublicKeyDuringARotation(t *testing.T) {
 	t.Parallel()
 

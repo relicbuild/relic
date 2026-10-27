@@ -653,6 +653,26 @@ func TestLoad(t *testing.T) {
 			},
 		},
 		{
+			name: "scan memory budget",
+			env: with(map[string]string{
+				"RELIC_SCAN_MEMORY_BUDGET": "768MiB",
+			}),
+			check: func(t *testing.T, c Config) {
+				t.Helper()
+
+				if c.Scan.MemoryBudget != 768<<20 {
+					t.Errorf("Scan.MemoryBudget = %d", c.Scan.MemoryBudget)
+				}
+			},
+		},
+		{
+			name: "invalid scan memory budget",
+			env: with(map[string]string{
+				"RELIC_SCAN_MEMORY_BUDGET": "lots",
+			}),
+			wantErr: "RELIC_SCAN_MEMORY_BUDGET",
+		},
+		{
 			name: "invalid upload limit",
 			env: with(map[string]string{
 				"RELIC_MAX_UPLOAD_SIZE": "10GB",

@@ -150,7 +150,7 @@ func (h *Handler) cargoPublish(w http.ResponseWriter, r *http.Request, rp reposi
 		return
 	}
 
-	release := reserveBuffer(w, r, cargo.MaxPublish, 1)
+	release := h.buffers.reserve(w, r, cargo.MaxPublish, 1)
 	if release == nil {
 		return
 	}

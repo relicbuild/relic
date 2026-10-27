@@ -43,7 +43,7 @@ func TestCargoRegistry(t *testing.T) {
 		method: "GET",
 		path:   api + "/index/config.json",
 	})
-	if !strings.Contains(cfg, `"auth-required": true`) || !strings.Contains(cfg, `/api/cargo/cargo-local/v1/crates"`) {
+	if !strings.Contains(cfg, `"auth-required":true`) || !strings.Contains(cfg, `/api/cargo/cargo-local/v1/crates"`) {
 		t.Errorf("config.json = %s", cfg)
 	}
 
@@ -164,7 +164,7 @@ func TestCargoRegistry(t *testing.T) {
 		path:   api + "/api/v1/crates?q=crate",
 	}); !strings.Contains(
 		found,
-		`"max_version": "0.2.0"`,
+		`"max_version":"0.2.0"`,
 	) {
 		t.Errorf("search = %s", found)
 	}

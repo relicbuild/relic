@@ -408,3 +408,52 @@ func assertLargeFolderTrashed(t *testing.T, s *Service, files []string) {
 		t.Errorf("trash entries = %+v, %v; want the folder", entries, err)
 	}
 }
+
+func TestTrashingALargeFolderKeepsWhatEachFileRecords(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	s, _, db := newTestService(t)
+	files := largeFolder(t, s, "big")
+	marked := files[len(files)/2]
+
+	before, err := s.Stat(ctx, "generic-local", marked)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.SetProperties(ctx, before, Properties{
+		"build": {
+			"42",
+		},
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.DeleteToTrash(ctx, "generic-local", "big", "alice"); err != nil {
+		t.Fatal(err)
+	}
+
+	assertLargeFolderTrashed(t, s, files)
+
+	after, err := s.Stat(ctx, s.TrashRepository(), "generic-local/"+marked)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !after.Created.Equal(before.Created) || after.CreatedBy != before.CreatedBy || after.ModifiedBy != "alice" {
+		t.Errorf("trashed file created %v by %q, modified by %q; want created %v by %q, modified by alice",
+			after.Created, after.CreatedBy, after.ModifiedBy, before.Created, before.CreatedBy)
+	}
+
+	props, err := s.Properties(ctx, after)
+	if err != nil || !slices.Equal(props["build"], []string{
+		"42",
+	}) {
+		t.Errorf("trashed file properties = %v, %v; want build=42", props, err)
+	}
+
+	if n := refcount(t, db, marked); n != 1 {
+		t.Errorf("references to the trashed content = %d, want 1", n)
+	}
+}

@@ -26,6 +26,7 @@ require (
 	github.com/aws/smithy-go v1.28.5
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/crewjam/saml v0.5.1
+	github.com/docker/go-units v0.5.0
 	github.com/exaring/otelpgx v0.13.0
 	github.com/github/go-spdx/v2 v2.7.1
 	github.com/go-jose/go-jose/v4 v4.1.6
@@ -35,6 +36,7 @@ require (
 	github.com/jfrog/build-info-go v1.13.1-0.20260902120316-b325d342b210
 	github.com/klauspost/compress v1.20.3
 	github.com/moby/moby/api v1.56.1
+	github.com/moby/moby/client v0.6.2
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/package-url/packageurl-go v0.1.7
 	github.com/pierrec/lz4/v4 v4.1.33
@@ -134,7 +136,6 @@ require (
 	github.com/dave/dst v0.28.0 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/go-connections v0.8.2 // indirect
-	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/ebitengine/purego v0.11.2 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.40.0 // indirect
@@ -173,7 +174,6 @@ require (
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/go-archive v0.3.3 // indirect
-	github.com/moby/moby/client v0.6.2 // indirect
 	github.com/moby/patternmatcher v0.6.1 // indirect
 	github.com/moby/sys/sequential v0.7.0 // indirect
 	github.com/moby/sys/user v0.4.1 // indirect

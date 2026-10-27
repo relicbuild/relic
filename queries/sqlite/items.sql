@@ -1,6 +1,12 @@
 -- name: GetItem :one
 SELECT * FROM items WHERE repo_key = @repo_key AND path = @path AND name = @name;
 
+-- name: ListItemsAt :many
+-- The paths and names come as parallel JSON arrays, zipped by index.
+SELECT * FROM items
+WHERE repo_key = @repo_key
+  AND (path, name) IN (SELECT p.value, n.value FROM json_each(@paths) AS p JOIN json_each(@names) AS n ON n.key = p.key);
+
 -- name: GetItemForUpdate :one
 SELECT * FROM items WHERE repo_key = @repo_key AND path = @path AND name = @name;
 
@@ -21,6 +27,21 @@ WHERE id = @id;
 -- name: SetItemCreated :exec
 UPDATE items SET created = @created, created_by = @created_by WHERE id = @id;
 
+-- name: InsertMovedFile :one
+INSERT INTO items (id, repo_key, path, name, type, size, sha1, sha256, md5,
+                   created, created_by, modified, modified_by, updated)
+VALUES (@id, @repo_key, @path, @name, 'file', @size, @sha1, @sha256, @md5,
+        @created, @created_by, @now, @username, @now)
+ON CONFLICT (repo_key, path, name) DO NOTHING
+RETURNING id;
+
+-- name: CopyItemProperties :exec
+INSERT INTO item_properties (item_id, key, value)
+SELECT @to_id, p.key, p.value FROM item_properties p WHERE p.item_id = @from_id;
+
+-- name: DeleteItemByID :execrows
+DELETE FROM items WHERE id = @id;
+
 -- name: EnsureFolders :many
 INSERT INTO items (id, repo_key, path, name, type, created, created_by, modified, modified_by, updated)
 SELECT w.value, @repo_key, p.value, n.value, 'folder', @now, @username, @now, @username, @now
@@ -29,10 +50,10 @@ JOIN json_each(@paths) AS p ON p.key = w.key
 JOIN json_each(@names) AS n ON n.key = w.key
 WHERE true
 ON CONFLICT (repo_key, path, name) DO NOTHING;
-SELECT i.path, i.name FROM items i
-JOIN json_each(@paths) AS p ON i.path = p.value
-JOIN json_each(@names) AS n ON n.key = p.key AND i.name = n.value
-WHERE i.repo_key = @repo_key AND i.type = 'file';
+SELECT i.path, i.name FROM json_each(@paths) AS p
+JOIN json_each(@names) AS n ON n.key = p.key
+CROSS JOIN items i
+WHERE i.repo_key = @repo_key AND i.path = p.value AND i.name = n.value AND i.type = 'file';
 
 -- name: ListChildren :many
 SELECT * FROM items WHERE repo_key = @repo_key AND path = @path ORDER BY name;
@@ -85,6 +106,22 @@ ORDER BY path, name;
 
 -- name: ListRepositoryItems :many
 SELECT * FROM items WHERE repo_key = @repo_key ORDER BY path, name;
+
+-- name: ListSubtreePage :many
+-- ListSubtree's items after (@after_path, @after_name), at most @max.
+SELECT * FROM items
+WHERE repo_key = @repo_key
+  AND ((path = @path AND name = @name) OR path = @full_path OR path LIKE @prefix ESCAPE '\')
+  AND (path, name) > (@after_path, @after_name)
+ORDER BY path, name
+LIMIT @max;
+
+-- name: ListRepositoryItemsPage :many
+-- ListRepositoryItems' items after (@after_path, @after_name), at most @max.
+SELECT * FROM items
+WHERE repo_key = @repo_key AND (path, name) > (@after_path, @after_name)
+ORDER BY path, name
+LIMIT @max;
 
 -- name: FindFilesBySha256 :many
 -- Files in a repository with the given content, below prefix (LIKE-escaped

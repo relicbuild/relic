@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"path"
 	"regexp"
@@ -106,6 +105,30 @@ func (s *Service) uploadTimes(ctx context.Context, r repository.Repository, norm
 	return out, nil
 }
 
+func (s *Service) pageUploadTimes(
+	ctx context.Context,
+	r repository.Repository,
+	norm string,
+	page repository.Item,
+) (map[string]time.Time, error) {
+	return s.uploads.Get(
+		ctx,
+		r.Name+"\x00"+norm+"\x00"+page.Checksums.SHA256,
+		func(ctx context.Context) (map[string]time.Time, error) {
+			return s.uploadTimes(ctx, r, norm)
+		},
+	)
+}
+
+func uploadTimesSize(times map[string]time.Time) int64 {
+	var n int64
+	for file := range times {
+		n += int64(len(file) + 64)
+	}
+
+	return n
+}
+
 // versionOf is the version of a distribution file: the field after the
 // project name.
 func versionOf(project, file string) string {
@@ -152,7 +175,7 @@ func (s *Service) checkDistribution(
 	}
 
 	if cooldown := r.Upstream().Cooldown(); cooldown > 0 {
-		times, err := s.uploadTimes(ctx, r, project)
+		times, err := s.distributionUploadTimes(ctx, r, project, page, file)
 		if err != nil {
 			return repository.Checksums{}, err
 		}
@@ -166,20 +189,6 @@ func (s *Service) checkDistribution(
 		return repository.Checksums{}, nil
 	}
 
-	rc, err := s.repos.Open(ctx, *page, nil)
-	if err != nil {
-		return repository.Checksums{}, err
-	}
-
-	defer func() {
-		_ = rc.Close()
-	}()
-
-	body, err := io.ReadAll(io.LimitReader(rc, 32<<20))
-	if err != nil {
-		return repository.Checksums{}, err
-	}
-
 	base, err := url.Parse(registryURL(r, s.repos) + "/simple/" + project + "/")
 	if err != nil {
 		return repository.Checksums{}, fmt.Errorf(
@@ -190,7 +199,12 @@ func (s *Service) checkDistribution(
 		)
 	}
 
-	for _, l := range parseSimple(string(body), base, nil) {
+	links, err := s.parsedPageOf(ctx, r, *page, base)
+	if err != nil {
+		return repository.Checksums{}, err
+	}
+
+	for _, l := range links {
 		if l.File == file && len(l.SHA256) == 64 {
 			return repository.Checksums{
 				SHA256: strings.ToLower(l.SHA256),
@@ -199,6 +213,23 @@ func (s *Service) checkDistribution(
 	}
 
 	return repository.Checksums{}, nil
+}
+
+func (s *Service) distributionUploadTimes(
+	ctx context.Context,
+	r repository.Repository,
+	project string,
+	page *repository.Item,
+	file string,
+) (map[string]time.Time, error) {
+	if page != nil {
+		times, err := s.pageUploadTimes(ctx, r, project, *page)
+		if _, listed := times[file]; err != nil || listed {
+			return times, err
+		}
+	}
+
+	return s.uploadTimes(ctx, r, project)
 }
 
 func (s *Service) cachedProject(

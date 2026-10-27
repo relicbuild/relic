@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"strings"
 
 	"relic/internal/access/auth"
@@ -91,6 +92,7 @@ type Handler struct {
 	tfProviders *terraform.Service
 	blocker     *blocking.Blocker
 	downloads   *usage.ItemDownloads
+	buffers     *bufferPool
 	log         *slog.Logger
 }
 
@@ -119,6 +121,7 @@ func New(d Dependencies) *Handler {
 		tfProviders: d.TerraformProviders,
 		blocker:     d.Blocker,
 		downloads:   d.Downloads,
+		buffers:     newBufferPool(bufferBudget(debug.SetMemoryLimit(-1))),
 		log:         d.Log,
 	}
 }
@@ -211,7 +214,5 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, err error) 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	_ = enc.Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }

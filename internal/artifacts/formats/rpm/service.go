@@ -64,7 +64,7 @@ func NewService(repos *repository.Service, keySvc *signingkey.Service, log *slog
 		log:   log,
 		now:   time.Now,
 	}
-	s.indexes = indexcache.New[Repodata](string(Format), indexcache.DefaultSettings, func() time.Time {
+	s.indexes = indexcache.New[Repodata](string(Format), indexcache.DefaultSettings, Repodata.Size, func() time.Time {
 		return s.now()
 	})
 	repos.RegisterHook(Format, s.indexPackage)
@@ -159,11 +159,11 @@ func ServesRepodata(r repository.Repository, root string) bool {
 // or for a virtual repository its members' packages and remote members'
 // upstream repodata.
 func (s *Service) Repodata(ctx context.Context, r repository.Repository, root string) (Repodata, error) {
-	if r.Class != repository.ClassVirtual || repository.Filtered(ctx) {
+	if r.Class != repository.ClassVirtual || repository.AnyRestricted(ctx, s.members(ctx, r, 0)) {
 		return s.buildRepodata(ctx, r, root)
 	}
 
-	return s.indexes.Get(ctx, r.Name+"\x00"+root, func(ctx context.Context) (Repodata, error) {
+	return s.indexes.Get(repository.Unfiltered(ctx), r.Name+"\x00"+root, func(ctx context.Context) (Repodata, error) {
 		return s.buildRepodata(ctx, r, root)
 	})
 }

@@ -58,7 +58,7 @@ func NewService(db *database.DB, repos *repository.Service, keySvc *signingkey.S
 		log:   log,
 		now:   time.Now,
 	}
-	s.indexes = indexcache.New[*Dist](string(Format), indexcache.DefaultSettings, func() time.Time {
+	s.indexes = indexcache.New[*Dist](string(Format), indexcache.DefaultSettings, (*Dist).Size, func() time.Time {
 		return s.now()
 	})
 	repos.RegisterHook(Format, s.indexPackage)
@@ -127,15 +127,25 @@ type Dist struct {
 	Release                   []byte
 }
 
+// Size is the bytes of d's files.
+func (d *Dist) Size() int64 {
+	n := int64(len(d.Release))
+	for _, body := range d.Files {
+		n += int64(len(body))
+	}
+
+	return n
+}
+
 // Distribution returns dist's indexes for r: its own packages, or for a
 // virtual repository its members' (remote members' upstream indexes,
 // limited to the configured architectures).
 func (s *Service) Distribution(ctx context.Context, r repository.Repository, dist string) (*Dist, error) {
-	if r.Class != repository.ClassVirtual || repository.Filtered(ctx) {
+	if r.Class != repository.ClassVirtual || repository.AnyRestricted(ctx, s.members(ctx, r, 0)) {
 		return s.buildDistribution(ctx, r, dist)
 	}
 
-	return s.indexes.Get(ctx, r.Name+"\x00"+dist, func(ctx context.Context) (*Dist, error) {
+	return s.indexes.Get(repository.Unfiltered(ctx), r.Name+"\x00"+dist, func(ctx context.Context) (*Dist, error) {
 		return s.buildDistribution(ctx, r, dist)
 	})
 }

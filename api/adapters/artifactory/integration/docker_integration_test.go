@@ -321,7 +321,7 @@ func TestDockerRegistry(t *testing.T) {
 	if resp, found := do(t, srv, call{
 		method: "GET",
 		path:   "/v1/search?q=no-such-image",
-	}); resp.StatusCode != 200 || !strings.Contains(found, `"results": []`) {
+	}); resp.StatusCode != 200 || !strings.Contains(found, `"results":[]`) {
 		t.Errorf("docker search without matches = %d %s", resp.StatusCode, found)
 	}
 
@@ -1330,7 +1330,7 @@ func TestDockerTagList(t *testing.T) {
 	if resp, body := do(t, srv, call{
 		method: "GET",
 		path:   "/v2/docker-local/app/tags/list",
-	}); resp.StatusCode != http.StatusOK || !strings.Contains(body, `"tags": []`) {
+	}); resp.StatusCode != http.StatusOK || !strings.Contains(body, `"tags":[]`) {
 		t.Errorf("tags of an image without tags = %d %s, want 200 and none", resp.StatusCode, body)
 	}
 }

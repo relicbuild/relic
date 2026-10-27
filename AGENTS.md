@@ -255,6 +255,7 @@ go tool unfold -changed
 task test:core       # tier 1: integration on both engines, then the core scenarios, the SDK suite and the UI tests on the single binary
 task test:platform   # tier 2: the platform scenarios on the Compose stack (PostgreSQL, SeaweedFS, a separate worker)
 task test:k8s        # one kind cluster: the chart, Kubernetes pulls, restart, upgrade, HA, the restore drill
+task test:perf       # memory under load: one server with a memory limit, a report and heap profiles
 ```
 
 - Every e2e suite is in one Go package: `go test -tags e2e ./test/e2e -run
@@ -278,6 +279,12 @@ task test:k8s        # one kind cluster: the chart, Kubernetes pulls, restart, u
   database (`test/database-packages.sh`). The race detector runs in CI when its
   `race` input is set, and with `task test:race`; `task test:all` runs it, then
   tiers 1 and 2.
+- `task test:perf` runs one server in a container with a memory limit
+  (`-- -memory 1g`, `-- -phases 'npm pypi'`) through uploads, downloads, a
+  1 GiB file and the largest npm, PyPI, Maven and Debian documents. It fails
+  when the server runs out of memory or requests fail, and keeps a report and
+  heap profiles under `$TMPDIR/relic-perf`. Run it before and after a change
+  that can move memory; it needs the internet and is not part of CI.
 - CI runs only on demand, to save GitHub Actions minutes: run it once on the
   branch before merging, after the same checks and tiers 1 and 2 pass
   locally (`gh workflow run ci --ref <branch>`, `-f k8s=true`

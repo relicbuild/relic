@@ -40,6 +40,16 @@ type UpstreamMetadata struct {
 // Repodata is a generated repodata folder: its files by name.
 type Repodata map[string][]byte
 
+// Size is the bytes of rd's files.
+func (rd Repodata) Size() int64 {
+	var n int64
+	for _, body := range rd {
+		n += int64(len(body))
+	}
+
+	return n
+}
+
 type metadataKind struct {
 	name       string
 	root       string

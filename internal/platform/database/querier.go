@@ -37,6 +37,7 @@ type Querier interface {
 	ClearInternalGroupMembers(ctx context.Context, groupName string) error
 	ClearSsoGroupMembers(ctx context.Context, groupName string) error
 	ClearUserGroups(ctx context.Context, username string) error
+	CopyItemProperties(ctx context.Context, arg CopyItemPropertiesParams) error
 	CountAdmins(ctx context.Context) (int64, error)
 	CountAuditEvents(ctx context.Context, arg CountAuditEventsParams) (int64, error)
 	CountCVEs(ctx context.Context, arg CountCVEsParams) (int64, error)
@@ -77,6 +78,7 @@ type Querier interface {
 	DeleteIdentityProvider(ctx context.Context, name string) (int64, error)
 	DeleteIgnoreRule(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteIssues(ctx context.Context, sha256 string) error
+	DeleteItemByID(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteItemProperties(ctx context.Context, itemID uuid.UUID) error
 	DeleteItemPropertyKeys(ctx context.Context, arg DeleteItemPropertyKeysParams) error
 	DeleteKeyPair(ctx context.Context, name string) (int64, error)
@@ -161,6 +163,8 @@ type Querier interface {
 	GetRepository(ctx context.Context, key string) (Repository, error)
 	GetScanArtifact(ctx context.Context, sha256 string) (ScanArtifact, error)
 	GetScanPolicy(ctx context.Context, name string) (ScanPolicy, error)
+	GetScanSbom(ctx context.Context, sha256 string) (GetScanSbomRow, error)
+	GetScanStatus(ctx context.Context, sha256 string) (GetScanStatusRow, error)
 	GetScanWatch(ctx context.Context, name string) (ScanWatch, error)
 	GetSigningKeys(ctx context.Context) ([]SigningKey, error)
 	GetSsoUser(ctx context.Context, id uuid.UUID) (User, error)
@@ -195,6 +199,7 @@ type Querier interface {
 	InsertIssue(ctx context.Context, arg InsertIssueParams) error
 	// A concurrent insert of the same name wins; callers read it back.
 	InsertKeyPair(ctx context.Context, arg InsertKeyPairParams) error
+	InsertMovedFile(ctx context.Context, arg InsertMovedFileParams) (uuid.UUID, error)
 	InsertOperationalRisk(ctx context.Context, arg InsertOperationalRiskParams) error
 	InsertPermission(ctx context.Context, arg InsertPermissionParams) error
 	InsertReachability(ctx context.Context, arg InsertReachabilityParams) error
@@ -247,6 +252,7 @@ type Querier interface {
 	ListIdentityProviders(ctx context.Context) ([]IdentityProvider, error)
 	ListIgnoreRules(ctx context.Context) ([]ScanIgnoreRule, error)
 	ListIssues(ctx context.Context, sha256 string) ([]ScanIssue, error)
+	ListItemsAt(ctx context.Context, arg ListItemsAtParams) ([]Item, error)
 	ListItemsWithProperty(ctx context.Context, arg ListItemsWithPropertyParams) ([]ListItemsWithPropertyRow, error)
 	ListKeyPairs(ctx context.Context) ([]KeyPair, error)
 	ListLdapGroupMappings(ctx context.Context) ([]LdapGroupMapping, error)
@@ -282,6 +288,8 @@ type Querier interface {
 	// When each downloaded file of a repository was last downloaded.
 	ListRepositoryDownloads(ctx context.Context, repoKey string) ([]ListRepositoryDownloadsRow, error)
 	ListRepositoryItems(ctx context.Context, repoKey string) ([]Item, error)
+	// ListRepositoryItems' items after (@after_path, @after_name), at most @max.
+	ListRepositoryItemsPage(ctx context.Context, arg ListRepositoryItemsPageParams) ([]Item, error)
 	ListRepositoryProjects(ctx context.Context) ([]ListRepositoryProjectsRow, error)
 	ListRepositoryUsage(ctx context.Context, arg ListRepositoryUsageParams) ([]UsageDaily, error)
 	ListRiskUncheckedScans(ctx context.Context, arg ListRiskUncheckedScansParams) ([]ListRiskUncheckedScansRow, error)
@@ -294,6 +302,8 @@ type Querier interface {
 	ListStaleFilesInFolders(ctx context.Context, arg ListStaleFilesInFoldersParams) ([]ListStaleFilesInFoldersRow, error)
 	ListStaleScans(ctx context.Context, arg ListStaleScansParams) ([]string, error)
 	ListSubtree(ctx context.Context, arg ListSubtreeParams) ([]Item, error)
+	// ListSubtree's items after (@after_path, @after_name), at most @max.
+	ListSubtreePage(ctx context.Context, arg ListSubtreePageParams) ([]Item, error)
 	ListTombstones(ctx context.Context, repoKey string) ([]ReplicationTombstone, error)
 	ListTrashEntries(ctx context.Context, arg ListTrashEntriesParams) ([]ListTrashEntriesRow, error)
 	ListTrashPropertyValues(ctx context.Context, arg ListTrashPropertyValuesParams) ([]string, error)
@@ -395,6 +405,9 @@ type Querier interface {
 	UpsertLdapGroupMapping(ctx context.Context, arg UpsertLdapGroupMappingParams) error
 	UpsertLdapServer(ctx context.Context, arg UpsertLdapServerParams) error
 	UpsertMaliciousPackage(ctx context.Context, arg UpsertMaliciousPackageParams) error
+	// The arrays are read in parallel; each of @versions is a JSON array of
+	// versions and each of @ranges the ranges' JSON. A key appears once.
+	UpsertMaliciousPackages(ctx context.Context, arg UpsertMaliciousPackagesParams) error
 	UpsertNpmVersion(ctx context.Context, arg UpsertNpmVersionParams) error
 	UpsertProject(ctx context.Context, arg UpsertProjectParams) error
 	UpsertPromotionGate(ctx context.Context, arg UpsertPromotionGateParams) error

@@ -31,6 +31,16 @@ const (
 // ScanQueue runs scanner jobs apart from light jobs, with its own limit.
 const ScanQueue = "scan"
 
+const defaultScanWorkers = 2
+
+func scanWorkers(sc *Scanning) int {
+	if sc.Slots == nil {
+		return defaultScanWorkers
+	}
+
+	return sc.Slots.Count()
+}
+
 func uniqueActive() river.UniqueOpts {
 	return river.UniqueOpts{
 		ByArgs: true,
@@ -391,6 +401,9 @@ func (w *rematchWorker) Work(ctx context.Context, job *river.Job[RematchArgs]) e
 	return replaceInvalidDB(ctx, w.scans.Rematch(ctx, job.Args.SHA256))
 }
 
+// Timeout implements river.Worker.
+func (w *rematchWorker) Timeout(*river.Job[RematchArgs]) time.Duration { return 30 * time.Minute }
+
 type graphScanWorker struct {
 	river.WorkerDefaults[GraphScanArgs]
 	scans *scan.Service
@@ -405,10 +418,15 @@ func (w *graphScanWorker) Work(ctx context.Context, job *river.Job[GraphScanArgs
 	return replaceInvalidDB(ctx, w.scans.RunGraph(ctx, job.Args.ID, job.Attempt >= job.MaxAttempts))
 }
 
+// Timeout implements river.Worker.
+func (w *graphScanWorker) Timeout(*river.Job[GraphScanArgs]) time.Duration { return 30 * time.Minute }
+
 // Scanning configures the scan jobs; nil disables them.
 type Scanning struct {
 	Service *scan.Service
-	Grype   scan.Grype
+	// Slots bound the scanner subprocesses; nil leaves them unbounded.
+	Slots *scan.ScannerSlots
+	Grype scan.Grype
 	// Imports holds vulnerability databases uploaded for the worker.
 	Imports *scan.DatabaseImports
 	// Malicious reads the malicious-package feeds; nil with them off.
@@ -461,6 +479,7 @@ func addScanWorkers(workers *river.Workers, db *database.DB, sc *Scanning, log *
 
 	river.AddWorker(workers, &maliciousWorker{
 		feed:  sc.Malicious,
+		slots: sc.Slots,
 		scans: sc.Service,
 		log:   log,
 	})
@@ -614,6 +633,7 @@ func (MaliciousArgs) InsertOpts() river.InsertOpts {
 type maliciousWorker struct {
 	river.WorkerDefaults[MaliciousArgs]
 	feed  *malicious.Refresher
+	slots *scan.ScannerSlots
 	scans *scan.Service
 	log   *slog.Logger
 }
@@ -624,7 +644,11 @@ func (w *maliciousWorker) Work(ctx context.Context, job *river.Job[MaliciousArgs
 	var feedErr error
 
 	if job.Args.Refresh && w.feed != nil {
-		_, feedErr = w.feed.Refresh(ctx)
+		feedErr = w.slots.WithoutDatabaseChanges(ctx, func(ctx context.Context) error {
+			_, err := w.feed.Refresh(ctx)
+
+			return err
+		})
 	}
 
 	n, err := w.scans.CheckMalicious(ctx)

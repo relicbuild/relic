@@ -54,3 +54,23 @@ func TestHandler_writeError(t *testing.T) {
 		})
 	}
 }
+
+func TestWriteJSON(t *testing.T) {
+	t.Parallel()
+
+	rec := httptest.NewRecorder()
+	writeJSON(rec, http.StatusCreated, map[string]any{
+		"name": "left-pad",
+		"versions": map[string]string{
+			"1.0.0": "a",
+		},
+	})
+
+	if rec.Code != http.StatusCreated || rec.Header().Get("Content-Type") != "application/json" {
+		t.Errorf("status = %d, content type = %q", rec.Code, rec.Header().Get("Content-Type"))
+	}
+
+	if want := `{"name":"left-pad","versions":{"1.0.0":"a"}}` + "\n"; rec.Body.String() != want {
+		t.Errorf("body = %q, want compact %q", rec.Body.String(), want)
+	}
+}

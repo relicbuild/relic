@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"testing"
 
@@ -176,11 +177,20 @@ func TestV2Entries(t *testing.T) {
 		)
 	}
 
+	if _, err := repos.Deploy(ctx, repository.DeployInput{
+		Repository: "nuget-local",
+		Path:       "uploads/unread.nupkg",
+		Body:       bytes.NewReader(nupkgOf(t, "Unread", "1.0.0")),
+		User:       "admin",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	blobs.Inject(objectstoretest.Fault{
 		Op: objectstoretest.OpGet,
 	})
 
-	if entries, err := svc.V2Entries(ctx, local, "Demo"); err == nil {
+	if entries, err := svc.V2Entries(ctx, local, "Unread"); err == nil {
 		t.Errorf("V2Entries with unreadable package metadata = %+v, nil; want the error", entries)
 	}
 }
@@ -299,5 +309,58 @@ func TestSearchThroughARemote(t *testing.T) {
 					results, total, err, tc.want, tc.versions, tc.wantTotal)
 			}
 		})
+	}
+}
+
+func TestSearchLocalPackages(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	repos, svc, _, local := newNuGet(t)
+
+	for path, body := range map[string][]byte{
+		"demo/1.0.0/demo.1.0.0.nupkg":           nupkgOf(t, "Demo", "1.0.0"),
+		"demo/2.0.0-Beta/demo.2.0.0-beta.nupkg": nupkgOf(t, "Demo", "2.0.0-Beta"),
+		"demo.tools/1.0/demo.tools.1.0.nupkg":   nupkgOf(t, "Demo.Tools", "1.0"),
+		"other/1.0.0/other.1.0.0.nupkg":         nupkgOf(t, "Other", "1.0.0"),
+		"demo/readme.txt":                       []byte("not a package"),
+	} {
+		if _, err := repos.Deploy(ctx, repository.DeployInput{
+			Repository: local.Name,
+			Path:       path,
+			Body:       bytes.NewReader(body),
+			User:       "admin",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	found, total, err := svc.Search(ctx, local, "DEMO", 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []nuget.SearchResult{
+		{
+			ID: "Demo",
+			Versions: []string{
+				"1.0.0",
+				"2.0.0-beta",
+			},
+		},
+		{
+			ID: "Demo.Tools",
+			Versions: []string{
+				"1.0.0",
+			},
+		},
+	}
+	if total != 2 || !reflect.DeepEqual(found, want) {
+		t.Errorf("Search(DEMO) = %+v, %d; want %+v, 2", found, total, want)
+	}
+
+	if found, total, err := svc.Search(ctx, local, "", 1, 1); err != nil || total != 3 || len(found) != 1 ||
+		found[0].ID != "Demo.Tools" {
+		t.Errorf("Search page 2 of 1 = %+v, %d, %v; want Demo.Tools of 3", found, total, err)
 	}
 }

@@ -53,6 +53,7 @@ type Service struct {
 	events        events.Publisher
 	projectQuota  func(context.Context, string) (int64, error)
 	storageOwners []StorageOwner
+	repositories  repositoryCache
 
 	upstreamChecksMu sync.Mutex
 	upstreamChecks   map[Format]UpstreamCheck
@@ -276,11 +277,11 @@ func (s *Service) Deploy(ctx context.Context, in DeployInput) (item Item, err er
 		return Item{}, err
 	}
 
-	span.SetAttributes(telemetry.AttrFormat.String(r.Format), telemetry.AttrClass.String(r.Class))
+	span.SetAttributes(telemetry.AttrFormat.String(string(r.Format)), telemetry.AttrClass.String(string(r.Class)))
 
 	defer func() {
 		if err == nil && !in.cache {
-			telemetry.ArtifactUploaded(in.Repository, r.Format, r.Class, item.Size, false)
+			telemetry.ArtifactUploaded(in.Repository, string(r.Format), string(r.Class), item.Size, false)
 			s.publishDeployed(ctx, in, item)
 		}
 	}()
@@ -370,11 +371,11 @@ func (s *Service) DeployByChecksum(ctx context.Context, in DeployInput) (item It
 		return Item{}, err
 	}
 
-	span.SetAttributes(telemetry.AttrFormat.String(r.Format), telemetry.AttrClass.String(r.Class))
+	span.SetAttributes(telemetry.AttrFormat.String(string(r.Format)), telemetry.AttrClass.String(string(r.Class)))
 
 	defer func() {
 		if err == nil && !in.cache {
-			telemetry.ArtifactUploaded(in.Repository, r.Format, r.Class, item.Size, true)
+			telemetry.ArtifactUploaded(in.Repository, string(r.Format), string(r.Class), item.Size, true)
 			s.publishDeployed(ctx, in, item)
 		}
 	}()
@@ -415,17 +416,13 @@ func (s *Service) DeployByChecksum(ctx context.Context, in DeployInput) (item It
 	return s.commitFile(ctx, in, b, "")
 }
 
-func (s *Service) checkDeployTarget(ctx context.Context, in *DeployInput) (database.Repository, error) {
-	r, err := s.db.GetRepository(ctx, in.Repository)
+func (s *Service) checkDeployTarget(ctx context.Context, in *DeployInput) (Repository, error) {
+	r, err := s.GetRepository(ctx, in.Repository)
 	if err != nil {
-		if errors.Is(database.NotFound(err), database.ErrNotFound) {
-			return r, ErrRepositoryNotFound
-		}
-
-		return r, fmt.Errorf("get repository %s: %w", in.Repository, err)
+		return r, err
 	}
 
-	if r.Class != string(ClassLocal) && (r.Class != string(ClassRemote) || !in.cache) {
+	if r.Class != ClassLocal && (r.Class != ClassRemote || !in.cache) {
 		return r, ErrNotLocal
 	}
 
@@ -977,13 +974,9 @@ func (s *Service) CreateFolder(ctx context.Context, repoKey, path, user string) 
 
 // Stat returns the item at path.
 func (s *Service) Stat(ctx context.Context, repoKey, path string) (Item, error) {
-	r, err := s.db.GetRepository(ctx, repoKey)
+	r, err := s.GetRepository(ctx, repoKey)
 	if err != nil {
-		if errors.Is(database.NotFound(err), database.ErrNotFound) {
-			return Item{}, ErrRepositoryNotFound
-		}
-
-		return Item{}, fmt.Errorf("get repository %s: %w", repoKey, err)
+		return Item{}, err
 	}
 
 	p, err := CleanPath(path)
@@ -992,15 +985,7 @@ func (s *Service) Stat(ctx context.Context, repoKey, path string) (Item, error) 
 	}
 
 	if p == "" {
-		return Item{
-			Repository: repoKey,
-			Parent:     RootPath,
-			Name:       RootPath,
-			Type:       TypeFolder,
-			Created:    r.Created,
-			Modified:   r.Updated,
-			Updated:    r.Updated,
-		}, nil
+		return rootItem(repoKey, r), nil
 	}
 
 	parent, name := SplitPath(p)
@@ -1018,23 +1003,96 @@ func (s *Service) Stat(ctx context.Context, repoKey, path string) (Item, error) 
 		return Item{}, fmt.Errorf("stat %s/%s: %w", repoKey, p, err)
 	}
 
+	return storedItem(row, r), nil
+}
+
+// StatPaths returns the items at paths, keyed by the path as given; a path
+// nothing is stored at is left out.
+func (s *Service) StatPaths(ctx context.Context, repoKey string, paths []string) (map[string]Item, error) {
+	r, err := s.GetRepository(ctx, repoKey)
+	if err != nil {
+		return nil, err
+	}
+
+	found := make(map[string]Item, len(paths))
+	given := make(map[string][]string, len(paths))
+
+	var parents, names []string
+
+	for _, requested := range paths {
+		p, err := CleanPath(requested)
+		if err != nil {
+			return nil, err
+		}
+
+		if p == "" {
+			found[requested] = rootItem(repoKey, r)
+
+			continue
+		}
+
+		if _, seen := given[p]; !seen {
+			parent, name := SplitPath(p)
+			parents = append(parents, parent)
+			names = append(names, name)
+		}
+
+		given[p] = append(given[p], requested)
+	}
+
+	if len(parents) == 0 {
+		return found, nil
+	}
+
+	rows, err := s.db.ListItemsAt(ctx, database.ListItemsAtParams{
+		RepoKey: repoKey,
+		Paths:   parents,
+		Names:   names,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("stat %d paths in %s: %w", len(parents), repoKey, err)
+	}
+
+	for _, row := range rows {
+		it := storedItem(row, r)
+		for _, requested := range given[JoinPath(row.Path, row.Name)] {
+			found[requested] = it
+		}
+	}
+
+	return found, nil
+}
+
+func rootItem(repoKey string, r Repository) Item {
+	return Item{
+		Repository: repoKey,
+		Parent:     RootPath,
+		Name:       RootPath,
+		Type:       TypeFolder,
+		Created:    r.Created,
+		Modified:   r.Updated,
+		Updated:    r.Updated,
+	}
+}
+
+func storedItem(row database.Item, r Repository) Item {
 	it := domainItem(row)
 
-	it.format, it.class, it.source = r.Format, r.Class, "local"
-	if r.Class == string(ClassRemote) {
+	it.format, it.class, it.source = string(r.Format), string(r.Class), "local"
+	if r.Class == ClassRemote {
 		it.source = "cache"
 	}
 
-	return it, nil
+	return it
 }
 
 // RecordDownload counts a full download of item for telemetry (the
 // relic_artifact_downloads_total series).
 func (s *Service) RecordDownload(ctx context.Context, item Item) {
 	if item.format == "" {
-		if r, err := s.db.GetRepository(ctx, item.Repository); err == nil {
-			item.format, item.class, item.source = r.Format, r.Class, "local"
-			if r.Class == string(ClassRemote) {
+		if r, err := s.GetRepository(ctx, item.Repository); err == nil {
+			item.format, item.class, item.source = string(r.Format), string(r.Class), "local"
+			if r.Class == ClassRemote {
 				item.source = "cache"
 			}
 		}

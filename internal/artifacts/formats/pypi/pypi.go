@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"relic/internal/artifacts/formats/indexcache"
 	"relic/internal/artifacts/repository"
 )
 
@@ -118,11 +119,22 @@ func sameVersion(a, b string) bool {
 	return strings.EqualFold(escaped.Replace(a), escaped.Replace(b))
 }
 
+var parsedPageSettings = indexcache.Settings{
+	Fresh:   time.Hour,
+	Stale:   24 * time.Hour,
+	Entries: 4096,
+	Bytes:   128 << 20,
+	Builds:  8,
+	Timeout: 2 * time.Minute,
+}
+
 // Service implements the index on top of repo.Service.
 type Service struct {
-	repos *repository.Service
-	log   *slog.Logger
-	now   func() time.Time
+	repos   *repository.Service
+	log     *slog.Logger
+	now     func() time.Time
+	pages   *indexcache.Cache[[]Link]
+	uploads *indexcache.Cache[map[string]time.Time]
 }
 
 // NewService returns a Service.
@@ -136,6 +148,17 @@ func NewService(repos *repository.Service, log *slog.Logger) *Service {
 		log:   log,
 		now:   time.Now,
 	}
+	s.pages = indexcache.New[[]Link](string(Format), parsedPageSettings, linksSize, func() time.Time {
+		return s.now()
+	})
+	s.uploads = indexcache.New[map[string]time.Time](
+		string(Format),
+		parsedPageSettings,
+		uploadTimesSize,
+		func() time.Time {
+			return s.now()
+		},
+	)
 	repos.SetUpstreamCheck(Format, s.checkDistribution)
 	repos.RegisterHook(Format, s.indexDistribution)
 
@@ -411,31 +434,20 @@ func (s *Service) remoteLinks(ctx context.Context, r repository.Repository, norm
 		return nil, err
 	}
 
-	rc, err := s.repos.Open(ctx, page, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	defer func() {
-		_ = rc.Close()
-	}()
-
-	body, err := io.ReadAll(io.LimitReader(rc, 32<<20))
-	if err != nil {
-		return nil, err
-	}
-
 	base, err := url.Parse(registryURL(r, s.repos) + "/simple/" + norm + "/")
 	if err != nil {
 		return nil, fmt.Errorf("%w: index URL of %s: %w", repository.ErrInvalidRepository, r.Name, err)
 	}
 
-	files, _ := url.Parse(filesURL(r))
+	parsed, err := s.parsedPageOf(ctx, r, page, base)
+	if err != nil {
+		return nil, err
+	}
 
-	links := parseSimple(string(body), base, files)
+	links := slices.Clone(parsed)
 
 	if cooldown := r.Upstream().Cooldown(); cooldown > 0 {
-		times, err := s.uploadTimes(ctx, r, norm)
+		times, err := s.pageUploadTimes(ctx, r, norm, page)
 		if err != nil {
 			return nil, err
 		}
@@ -487,6 +499,51 @@ func (s *Service) remoteLinks(ctx context.Context, r repository.Repository, norm
 	}
 
 	return visible, nil
+}
+
+// Callers must not modify the links parsedPageOf returns.
+func (s *Service) parsedPageOf(
+	ctx context.Context,
+	r repository.Repository,
+	page repository.Item,
+	base *url.URL,
+) ([]Link, error) {
+	files, _ := url.Parse(filesURL(r))
+
+	return s.pages.Get(
+		ctx,
+		page.Checksums.SHA256+"\x00"+base.String()+"\x00"+filesURL(r),
+		func(ctx context.Context) ([]Link, error) {
+			return s.parsedPage(ctx, page, base, files)
+		},
+	)
+}
+
+func (s *Service) parsedPage(ctx context.Context, page repository.Item, base, files *url.URL) ([]Link, error) {
+	rc, err := s.repos.Open(ctx, page, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		_ = rc.Close()
+	}()
+
+	body, err := io.ReadAll(io.LimitReader(rc, 32<<20))
+	if err != nil {
+		return nil, err
+	}
+
+	return parseSimple(string(body), base, files), nil
+}
+
+func linksSize(links []Link) int64 {
+	var n int64
+	for _, l := range links {
+		n += int64(len(l.File) + len(l.Href) + len(l.SHA256) + len(l.RequiresPython) + 64)
+	}
+
+	return n
 }
 
 func registryURL(r repository.Repository, repos *repository.Service) string {

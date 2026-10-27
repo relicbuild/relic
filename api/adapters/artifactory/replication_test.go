@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -114,6 +116,71 @@ func TestReplicationTargetStat(t *testing.T) {
 					tt.wantFound,
 					tt.wantErr,
 				)
+			}
+		})
+	}
+}
+
+func TestTargetFiles(t *testing.T) {
+	t.Parallel()
+
+	const listing = `{
+  "uri": "https://peer.example/artifactory/api/storage/libs",
+  "created": "2026-10-26T12:00:00.000Z",
+  "files": [
+    {"uri": "/a", "size": 0, "folder": true, "extra": {"nested": [1, 2]}},
+    {"uri": "/a/b.jar", "size": 3, "folder": false},
+    {"uri": "/c.pom", "size": 4}
+  ],
+  "after": [1, {"x": "y"}]
+}`
+
+	for _, tc := range []struct {
+		name    string
+		body    string
+		limit   int64
+		want    []string
+		wantErr bool
+	}{
+		{
+			name:  "files without folders",
+			body:  listing,
+			limit: 1 << 20,
+			want: []string{
+				"a/b.jar",
+				"c.pom",
+			},
+		},
+		{
+			name:  "an empty listing",
+			body:  `{"files": []}`,
+			limit: 1 << 20,
+		},
+		{
+			name:    "a listing above the limit",
+			body:    listing,
+			limit:   int64(len(listing) - 1),
+			wantErr: true,
+		},
+		{
+			name:    "not a listing",
+			body:    `[]`,
+			limit:   1 << 20,
+			wantErr: true,
+		},
+		{
+			name:    "a truncated listing",
+			body:    `{"files": [{"uri": "/a"}`,
+			limit:   1 << 20,
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := targetFiles(strings.NewReader(tc.body), tc.limit)
+			if (err != nil) != tc.wantErr || !slices.Equal(got, tc.want) {
+				t.Errorf("targetFiles = %q, %v; want %q, error %v", got, err, tc.want, tc.wantErr)
 			}
 		})
 	}

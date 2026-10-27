@@ -186,19 +186,21 @@ func (h *Handler) fileList(w http.ResponseWriter, r *http.Request, item reposito
 	deep := queryValue(q, "deep") == "1"
 	listFolders := queryValue(q, "listFolders") == "1"
 
-	var (
-		items []repository.Item
-		err   error
-	)
-	if deep {
-		items, err = h.repos.Subtree(r.Context(), item)
-	} else {
-		items, err = h.repos.Children(r.Context(), item)
-	}
+	items := h.repos.SubtreeItems(r.Context(), item)
+	if !deep {
+		children, err := h.repos.Children(r.Context(), item)
+		if err != nil {
+			h.writeError(w, r, err)
+			return
+		}
 
-	if err != nil {
-		h.writeError(w, r, err)
-		return
+		items = func(yield func(repository.Item, error) bool) {
+			for _, it := range children {
+				if !yield(it, nil) {
+					return
+				}
+			}
+		}
 	}
 
 	prefix := ""
@@ -208,38 +210,55 @@ func (h *Handler) fileList(w http.ResponseWriter, r *http.Request, item reposito
 
 	shown := h.shown(r, item)
 
-	resp := fileListResponse{
-		URI:     baseURL(r) + "/api/storage/" + escapePath(shown.Repository+storagePath(shown)),
-		Created: formatTime(time.Now()),
-		Files:   []fileListFile{},
+	list, err := newFileListWriter(
+		w,
+		baseURL(r)+"/api/storage/"+escapePath(shown.Repository+storagePath(shown)),
+		formatTime(time.Now()),
+	)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
 	}
 
-	for _, it := range items {
-		if it.Path() == item.Path() || (it.IsFolder() && !listFolders) {
+	for it, err := range items {
+		if err == nil && (it.Path() == item.Path() || (it.IsFolder() && !listFolders)) {
 			continue
 		}
 
-		servable, err := h.packages.CanServe(r, it)
+		servable := false
+		if err == nil {
+			servable, err = h.packages.CanServe(r, it)
+		}
+
+		if err == nil && servable {
+			err = list.add(fileListFile{
+				URI:          "/" + strings.TrimPrefix(it.Path(), prefix),
+				Size:         it.Size,
+				LastModified: formatTime(it.Modified),
+				Folder:       it.IsFolder(),
+				SHA1:         it.Checksums.SHA1,
+				SHA2:         it.Checksums.SHA256,
+			})
+		}
+
 		if err != nil {
-			h.writeError(w, r, err)
+			h.abortFileList(w, r, list, err)
 			return
 		}
-
-		if !servable {
-			continue
-		}
-
-		resp.Files = append(resp.Files, fileListFile{
-			URI:          "/" + strings.TrimPrefix(it.Path(), prefix),
-			Size:         it.Size,
-			LastModified: formatTime(it.Modified),
-			Folder:       it.IsFolder(),
-			SHA1:         it.Checksums.SHA1,
-			SHA2:         it.Checksums.SHA256,
-		})
 	}
 
-	wire.WriteJSON(w, http.StatusOK, resp)
+	if err := list.close(); err != nil {
+		h.abortFileList(w, r, list, err)
+	}
+}
+
+func (h *Handler) abortFileList(w http.ResponseWriter, r *http.Request, list *fileListWriter, err error) {
+	if !list.started {
+		h.writeError(w, r, err)
+		return
+	}
+
+	panic(http.ErrAbortHandler)
 }
 
 func (h *Handler) storageSetProperties(w http.ResponseWriter, r *http.Request) {

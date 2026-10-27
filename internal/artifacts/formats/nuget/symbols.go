@@ -230,27 +230,9 @@ func (s *Service) Symbol(
 }
 
 func (s *Service) symbolFile(ctx context.Context, item repository.Item, key string) ([]byte, error) {
-	rc, err := s.repos.Open(ctx, item, nil)
+	zr, err := zipArchive(s.repos.ReaderAt(ctx, item), item.Size)
 	if err != nil {
-		return nil, err
-	}
-
-	defer func() {
-		_ = rc.Close()
-	}()
-
-	body, err := io.ReadAll(io.LimitReader(rc, maxSymbolPackageBytes+1))
-	if err != nil {
-		return nil, err
-	}
-
-	if len(body) > maxSymbolPackageBytes {
-		return nil, fmt.Errorf("%w: symbol package %s too large to serve", ErrInvalid, item.Path())
-	}
-
-	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %w", ErrInvalid, item.Path(), err)
+		return nil, fmt.Errorf("%s: %w", item.Path(), err)
 	}
 
 	for _, f := range zr.File {

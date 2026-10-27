@@ -149,6 +149,10 @@ DELETE FROM group_members WHERE group_name = @group_name AND source = 'sso';`
 const sqliteClearUserGroups = `-- name: ClearUserGroups :exec
 DELETE FROM group_members WHERE username = @username;`
 
+const sqliteCopyItemProperties = `-- name: CopyItemProperties :exec
+INSERT INTO item_properties (item_id, key, value)
+SELECT @to_id, p.key, p.value FROM item_properties p WHERE p.item_id = @from_id;`
+
 const sqliteCountAdmins = `-- name: CountAdmins :one
 SELECT count(*) FROM users WHERE admin;`
 
@@ -329,6 +333,9 @@ DELETE FROM scan_ignore_rules WHERE id = @id;`
 const sqliteDeleteIssues = `-- name: DeleteIssues :exec
 DELETE FROM scan_issues WHERE sha256 = @sha256;`
 
+const sqliteDeleteItemByID = `-- name: DeleteItemByID :execrows
+DELETE FROM items WHERE id = @id;`
+
 const sqliteDeleteItemProperties = `-- name: DeleteItemProperties :exec
 DELETE FROM item_properties WHERE item_id = @item_id;`
 
@@ -435,10 +442,10 @@ JOIN json_each(@paths) AS p ON p.key = w.key
 JOIN json_each(@names) AS n ON n.key = w.key
 WHERE true
 ON CONFLICT (repo_key, path, name) DO NOTHING;
-SELECT i.path, i.name FROM items i
-JOIN json_each(@paths) AS p ON i.path = p.value
-JOIN json_each(@names) AS n ON n.key = p.key AND i.name = n.value
-WHERE i.repo_key = @repo_key AND i.type = 'file';`
+SELECT i.path, i.name FROM json_each(@paths) AS p
+JOIN json_each(@names) AS n ON n.key = p.key
+CROSS JOIN items i
+WHERE i.repo_key = @repo_key AND i.path = p.value AND i.name = n.value AND i.type = 'file';`
 
 const sqliteFindBuildNames = `-- name: FindBuildNames :many
 SELECT DISTINCT name FROM builds
@@ -625,6 +632,12 @@ SELECT * FROM scan_artifacts WHERE sha256 = @sha256;`
 const sqliteGetScanPolicy = `-- name: GetScanPolicy :one
 SELECT * FROM scan_policies WHERE name = @name;`
 
+const sqliteGetScanSbom = `-- name: GetScanSbom :one
+SELECT sbom, updated FROM scan_artifacts WHERE sha256 = @sha256;`
+
+const sqliteGetScanStatus = `-- name: GetScanStatus :one
+SELECT sha256, status, updated FROM scan_artifacts WHERE sha256 = @sha256;`
+
 const sqliteGetScanWatch = `-- name: GetScanWatch :one
 SELECT * FROM scan_watches WHERE name = @name;`
 
@@ -773,6 +786,14 @@ const sqliteInsertKeyPair = `-- name: InsertKeyPair :exec
 INSERT INTO key_pairs (name, kind, private_key, public_key)
 VALUES (@name, @kind, @private_key, @public_key)
 ON CONFLICT (name) DO NOTHING;`
+
+const sqliteInsertMovedFile = `-- name: InsertMovedFile :one
+INSERT INTO items (id, repo_key, path, name, type, size, sha1, sha256, md5,
+                   created, created_by, modified, modified_by, updated)
+VALUES (@id, @repo_key, @path, @name, 'file', @size, @sha1, @sha256, @md5,
+        @created, @created_by, @now, @username, @now)
+ON CONFLICT (repo_key, path, name) DO NOTHING
+RETURNING id;`
 
 const sqliteInsertOperationalRisk = `-- name: InsertOperationalRisk :exec
 INSERT INTO scan_operational_risks (sha256, purl, kind, severity, package_name, package_version, product, cycle,
@@ -1015,6 +1036,12 @@ SELECT * FROM scan_issues WHERE sha256 = @sha256
 ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
          analyzer, file, line, rule;`
 
+const sqliteListItemsAt = `-- name: ListItemsAt :many
+-- The paths and names come as parallel JSON arrays, zipped by index.
+SELECT * FROM items
+WHERE repo_key = @repo_key
+  AND (path, name) IN (SELECT p.value, n.value FROM json_each(@paths) AS p JOIN json_each(@names) AS n ON n.key = p.key);`
+
 const sqliteListItemsWithProperty = `-- name: ListItemsWithProperty :many
 SELECT i.*, p.value AS property_value FROM items i
 JOIN item_properties p ON p.item_id = i.id
@@ -1167,6 +1194,13 @@ WHERE i.repo_key = @repo_key;`
 const sqliteListRepositoryItems = `-- name: ListRepositoryItems :many
 SELECT * FROM items WHERE repo_key = @repo_key ORDER BY path, name;`
 
+const sqliteListRepositoryItemsPage = `-- name: ListRepositoryItemsPage :many
+-- ListRepositoryItems' items after (@after_path, @after_name), at most @max.
+SELECT * FROM items
+WHERE repo_key = @repo_key AND (path, name) > (@after_path, @after_name)
+ORDER BY path, name
+LIMIT @max;`
+
 const sqliteListRepositoryProjects = `-- name: ListRepositoryProjects :many
 SELECT key, project FROM repositories WHERE project <> '' ORDER BY key;`
 
@@ -1227,6 +1261,15 @@ SELECT * FROM items
 WHERE repo_key = @repo_key
   AND ((path = @path AND name = @name) OR path = @full_path OR path LIKE @prefix ESCAPE '\')
 ORDER BY path, name;`
+
+const sqliteListSubtreePage = `-- name: ListSubtreePage :many
+-- ListSubtree's items after (@after_path, @after_name), at most @max.
+SELECT * FROM items
+WHERE repo_key = @repo_key
+  AND ((path = @path AND name = @name) OR path = @full_path OR path LIKE @prefix ESCAPE '\')
+  AND (path, name) > (@after_path, @after_name)
+ORDER BY path, name
+LIMIT @max;`
 
 const sqliteListTombstones = `-- name: ListTombstones :many
 SELECT * FROM replication_tombstones WHERE repo_key = @repo_key ORDER BY path;`
@@ -1697,6 +1740,24 @@ ON CONFLICT (ecosystem, name, id) DO UPDATE
 SET all_versions = excluded.all_versions, versions = excluded.versions, ranges = excluded.ranges,
     summary = excluded.summary, modified = excluded.modified;`
 
+const sqliteUpsertMaliciousPackages = `-- name: UpsertMaliciousPackages :exec
+-- The arrays come as JSON arrays, read in parallel by index; each of
+-- @versions is a JSON array of versions and each of @ranges the ranges' JSON.
+INSERT INTO malicious_packages (id, ecosystem, name, all_versions, versions, ranges, summary, modified)
+SELECT i.value, e.value, n.value, a.value, v.value, r.value, s.value, m.value
+FROM json_each(@ids) AS i
+JOIN json_each(@ecosystems) AS e ON e.key = i.key
+JOIN json_each(@names) AS n ON n.key = i.key
+JOIN json_each(@all_versions) AS a ON a.key = i.key
+JOIN json_each(@versions) AS v ON v.key = i.key
+JOIN json_each(@ranges) AS r ON r.key = i.key
+JOIN json_each(@summaries) AS s ON s.key = i.key
+JOIN json_each(@modified) AS m ON m.key = i.key
+WHERE true
+ON CONFLICT (ecosystem, name, id) DO UPDATE
+SET all_versions = excluded.all_versions, versions = excluded.versions, ranges = excluded.ranges,
+    summary = excluded.summary, modified = excluded.modified;`
+
 const sqliteUpsertNpmVersion = `-- name: UpsertNpmVersion :exec
 INSERT INTO npm_versions (item_id, repo_key, name, version, manifest, integrity)
 VALUES (@item_id, @repo_key, @name, @version, CAST(@manifest AS TEXT), @integrity)
@@ -2082,6 +2143,12 @@ func (q *sqliteQueries) ClearSsoGroupMembers(ctx context.Context, arg string) er
 
 func (q *sqliteQueries) ClearUserGroups(ctx context.Context, arg string) error {
 	_, err := q.db.ExecContext(ctx, sqliteClearUserGroups, sql.Named("username", arg))
+
+	return err
+}
+
+func (q *sqliteQueries) CopyItemProperties(ctx context.Context, arg CopyItemPropertiesParams) error {
+	_, err := q.db.ExecContext(ctx, sqliteCopyItemProperties, sql.Named("to_id", arg.ToID.String()), sql.Named("from_id", arg.FromID.String()))
 
 	return err
 }
@@ -2567,6 +2634,15 @@ func (q *sqliteQueries) DeleteIssues(ctx context.Context, arg string) error {
 	_, err := q.db.ExecContext(ctx, sqliteDeleteIssues, sql.Named("sha256", arg))
 
 	return err
+}
+
+func (q *sqliteQueries) DeleteItemByID(ctx context.Context, arg uuid.UUID) (int64, error) {
+	res, err := q.db.ExecContext(ctx, sqliteDeleteItemByID, sql.Named("id", arg.String()))
+	if err != nil {
+		return 0, err
+	}
+
+	return res.RowsAffected()
 }
 
 func (q *sqliteQueries) DeleteItemProperties(ctx context.Context, arg uuid.UUID) error {
@@ -3952,6 +4028,52 @@ func (q *sqliteQueries) GetScanPolicy(ctx context.Context, arg string) (ScanPoli
 	return i, err
 }
 
+func (q *sqliteQueries) GetScanSbom(ctx context.Context, arg string) (GetScanSbomRow, error) {
+	var i GetScanSbomRow
+
+	rows, err := q.query(ctx, "GetScanSbom", []string{"sbom", "updated"}, sqliteGetScanSbom, sql.Named("sha256", arg))
+	if err != nil {
+		return i, err
+	}
+
+	defer rows.Close()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return i, err
+		}
+
+		return i, sql.ErrNoRows
+	}
+
+	err = rows.Scan(&i.Sbom, sqliteTimeScanner{&i.Updated})
+
+	return i, err
+}
+
+func (q *sqliteQueries) GetScanStatus(ctx context.Context, arg string) (GetScanStatusRow, error) {
+	var i GetScanStatusRow
+
+	rows, err := q.query(ctx, "GetScanStatus", []string{"sha256", "status", "updated"}, sqliteGetScanStatus, sql.Named("sha256", arg))
+	if err != nil {
+		return i, err
+	}
+
+	defer rows.Close()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return i, err
+		}
+
+		return i, sql.ErrNoRows
+	}
+
+	err = rows.Scan(&i.Sha256, &i.Status, sqliteTimeScanner{&i.Updated})
+
+	return i, err
+}
+
 func (q *sqliteQueries) GetScanWatch(ctx context.Context, arg string) (ScanWatch, error) {
 	var i ScanWatch
 
@@ -4373,6 +4495,29 @@ func (q *sqliteQueries) InsertKeyPair(ctx context.Context, arg InsertKeyPairPara
 	_, err := q.db.ExecContext(ctx, sqliteInsertKeyPair, sql.Named("name", arg.Name), sql.Named("kind", arg.Kind), sql.Named("private_key", arg.PrivateKey), sql.Named("public_key", arg.PublicKey))
 
 	return err
+}
+
+func (q *sqliteQueries) InsertMovedFile(ctx context.Context, arg InsertMovedFileParams) (uuid.UUID, error) {
+	var i uuid.UUID
+
+	rows, err := q.query(ctx, "InsertMovedFile", nil, sqliteInsertMovedFile, sql.Named("id", arg.ID.String()), sql.Named("repo_key", arg.RepoKey), sql.Named("path", arg.Path), sql.Named("name", arg.Name), sql.Named("size", arg.Size), sql.Named("sha1", arg.Sha1), sql.Named("sha256", arg.Sha256), sql.Named("md5", arg.Md5), sql.Named("created", sqliteTime(arg.Created)), sql.Named("created_by", arg.CreatedBy), sql.Named("now", sqliteTime(arg.Now)), sql.Named("username", arg.Username))
+	if err != nil {
+		return i, err
+	}
+
+	defer rows.Close()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return i, err
+		}
+
+		return i, sql.ErrNoRows
+	}
+
+	err = rows.Scan(sqliteUUIDScanner{&i})
+
+	return i, err
 }
 
 func (q *sqliteQueries) InsertOperationalRisk(ctx context.Context, arg InsertOperationalRiskParams) error {
@@ -5446,6 +5591,36 @@ func (q *sqliteQueries) ListIssues(ctx context.Context, arg string) ([]ScanIssue
 	return items, nil
 }
 
+func (q *sqliteQueries) ListItemsAt(ctx context.Context, arg ListItemsAtParams) ([]Item, error) {
+	rows, err := q.query(ctx, "ListItemsAt", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated"}, sqliteListItemsAt, sql.Named("repo_key", arg.RepoKey), sql.Named("paths", sqliteJSON(arg.Paths)), sql.Named("names", sqliteJSON(arg.Names)))
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	items := []Item{}
+
+	for rows.Next() {
+		var i Item
+		if err := rows.Scan(sqliteUUIDScanner{&i.ID}, &i.RepoKey, &i.Path, &i.Name, &i.Type, &i.Size, &i.Sha1, &i.Sha256, &i.Md5, sqliteTimeScanner{&i.Created}, &i.CreatedBy, sqliteTimeScanner{&i.Modified}, &i.ModifiedBy, sqliteTimeScanner{&i.Updated}); err != nil {
+			return nil, err
+		}
+
+		items = append(items, i)
+	}
+
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
+
 func (q *sqliteQueries) ListItemsWithProperty(ctx context.Context, arg ListItemsWithPropertyParams) ([]ListItemsWithPropertyRow, error) {
 	rows, err := q.query(ctx, "ListItemsWithProperty", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated", "propertyvalue"}, sqliteListItemsWithProperty, sql.Named("repo_key", arg.RepoKey), sql.Named("key", arg.Key))
 	if err != nil {
@@ -6226,6 +6401,36 @@ func (q *sqliteQueries) ListRepositoryItems(ctx context.Context, arg string) ([]
 	return items, nil
 }
 
+func (q *sqliteQueries) ListRepositoryItemsPage(ctx context.Context, arg ListRepositoryItemsPageParams) ([]Item, error) {
+	rows, err := q.query(ctx, "ListRepositoryItemsPage", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated"}, sqliteListRepositoryItemsPage, sql.Named("repo_key", arg.RepoKey), sql.Named("after_path", arg.AfterPath), sql.Named("after_name", arg.AfterName), sql.Named("max", arg.Max))
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	items := []Item{}
+
+	for rows.Next() {
+		var i Item
+		if err := rows.Scan(sqliteUUIDScanner{&i.ID}, &i.RepoKey, &i.Path, &i.Name, &i.Type, &i.Size, &i.Sha1, &i.Sha256, &i.Md5, sqliteTimeScanner{&i.Created}, &i.CreatedBy, sqliteTimeScanner{&i.Modified}, &i.ModifiedBy, sqliteTimeScanner{&i.Updated}); err != nil {
+			return nil, err
+		}
+
+		items = append(items, i)
+	}
+
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
+
 func (q *sqliteQueries) ListRepositoryProjects(ctx context.Context) ([]ListRepositoryProjectsRow, error) {
 	rows, err := q.query(ctx, "ListRepositoryProjects", []string{"key", "project"}, sqliteListRepositoryProjects)
 	if err != nil {
@@ -6498,6 +6703,36 @@ func (q *sqliteQueries) ListStaleScans(ctx context.Context, arg ListStaleScansPa
 
 func (q *sqliteQueries) ListSubtree(ctx context.Context, arg ListSubtreeParams) ([]Item, error) {
 	rows, err := q.query(ctx, "ListSubtree", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated"}, sqliteListSubtree, sql.Named("repo_key", arg.RepoKey), sql.Named("path", arg.Path), sql.Named("name", arg.Name), sql.Named("full_path", arg.FullPath), sql.Named("prefix", arg.Prefix))
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	items := []Item{}
+
+	for rows.Next() {
+		var i Item
+		if err := rows.Scan(sqliteUUIDScanner{&i.ID}, &i.RepoKey, &i.Path, &i.Name, &i.Type, &i.Size, &i.Sha1, &i.Sha256, &i.Md5, sqliteTimeScanner{&i.Created}, &i.CreatedBy, sqliteTimeScanner{&i.Modified}, &i.ModifiedBy, sqliteTimeScanner{&i.Updated}); err != nil {
+			return nil, err
+		}
+
+		items = append(items, i)
+	}
+
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
+
+func (q *sqliteQueries) ListSubtreePage(ctx context.Context, arg ListSubtreePageParams) ([]Item, error) {
+	rows, err := q.query(ctx, "ListSubtreePage", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated"}, sqliteListSubtreePage, sql.Named("repo_key", arg.RepoKey), sql.Named("path", arg.Path), sql.Named("name", arg.Name), sql.Named("full_path", arg.FullPath), sql.Named("prefix", arg.Prefix), sql.Named("after_path", arg.AfterPath), sql.Named("after_name", arg.AfterName), sql.Named("max", arg.Max))
 	if err != nil {
 		return nil, err
 	}
@@ -7622,6 +7857,12 @@ func (q *sqliteQueries) UpsertLdapServer(ctx context.Context, arg UpsertLdapServ
 
 func (q *sqliteQueries) UpsertMaliciousPackage(ctx context.Context, arg UpsertMaliciousPackageParams) error {
 	_, err := q.db.ExecContext(ctx, sqliteUpsertMaliciousPackage, sql.Named("id", arg.ID), sql.Named("ecosystem", arg.Ecosystem), sql.Named("name", arg.Name), sql.Named("all_versions", arg.AllVersions), sql.Named("versions", sqliteJSON(arg.Versions)), sql.Named("ranges", arg.Ranges), sql.Named("summary", arg.Summary), sql.Named("modified", sqliteTime(arg.Modified)))
+
+	return err
+}
+
+func (q *sqliteQueries) UpsertMaliciousPackages(ctx context.Context, arg UpsertMaliciousPackagesParams) error {
+	_, err := q.db.ExecContext(ctx, sqliteUpsertMaliciousPackages, sql.Named("ids", sqliteJSON(arg.Ids)), sql.Named("ecosystems", sqliteJSON(arg.Ecosystems)), sql.Named("names", sqliteJSON(arg.Names)), sql.Named("all_versions", sqliteJSON(arg.AllVersions)), sql.Named("versions", sqliteJSON(arg.Versions)), sql.Named("ranges", sqliteJSON(arg.Ranges)), sql.Named("summaries", sqliteJSON(arg.Summaries)), sql.Named("modified", sqliteTimes(arg.Modified)))
 
 	return err
 }

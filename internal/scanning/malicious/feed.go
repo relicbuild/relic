@@ -2,6 +2,7 @@ package malicious
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -190,18 +191,19 @@ func (r *Refresher) readBatches(
 ) error {
 	batch := make([]advisory, 0, size)
 
+	var entry bytes.Buffer
+
 	for _, f := range zr.File {
 		name := path.Base(f.Name)
 		if !strings.HasPrefix(name, "MAL-") || !strings.HasSuffix(name, ".json") || f.UncompressedSize64 > 1<<20 {
 			continue
 		}
 
-		b, err := readEntry(f)
-		if err != nil {
+		if err := readEntry(f, &entry); err != nil {
 			return err
 		}
 
-		pkgs, id, withdrawn, err := parse(b, eco)
+		pkgs, id, withdrawn, err := parse(entry.Bytes(), eco)
 		if err != nil {
 			r.log.WarnContext(ctx, "malicious packages: unreadable record", "file", name, "error", err)
 
@@ -232,51 +234,130 @@ func (r *Refresher) readBatches(
 
 func (r *Refresher) store(ctx context.Context, batch []advisory) error {
 	return r.db.WithTx(ctx, func(q database.Querier) error {
+		var rows packageRows
+
 		for _, a := range batch {
-			if a.withdrawn {
-				if err := q.DeleteMaliciousAdvisory(ctx, a.id); err != nil {
-					return err
+			if !a.withdrawn {
+				for _, p := range a.packages {
+					if err := rows.add(p); err != nil {
+						return err
+					}
 				}
 
 				continue
 			}
 
-			for _, p := range a.packages {
-				ranges, err := json.Marshal(p.Ranges)
-				if err != nil {
-					return err
-				}
+			if err := rows.upsert(ctx, q); err != nil {
+				return err
+			}
 
-				if err := q.UpsertMaliciousPackage(ctx, database.UpsertMaliciousPackageParams{
-					ID:          p.ID,
-					Ecosystem:   p.Ecosystem,
-					Name:        p.Name,
-					AllVersions: p.AllVersions,
-					Versions:    nonNil(p.Versions),
-					Ranges:      ranges,
-					Summary:     p.Summary,
-					Modified:    p.Modified,
-				}); err != nil {
-					return fmt.Errorf("store %s: %w", p.ID, err)
-				}
+			if err := q.DeleteMaliciousAdvisory(ctx, a.id); err != nil {
+				return err
 			}
 		}
 
-		return nil
+		return rows.upsert(ctx, q)
 	})
 }
 
-func readEntry(f *zip.File) ([]byte, error) {
+// SQLite joins the statement's parallel arrays without an index, so its cost
+// grows with the square of the rows in one statement.
+const packagesPerStatement = 8
+
+type packageKey struct {
+	ecosystem, name, id string
+}
+
+type packageRows struct {
+	params database.UpsertMaliciousPackagesParams
+	index  map[packageKey]int
+}
+
+func (rows *packageRows) add(p Package) error {
+	ranges, err := json.Marshal(p.Ranges)
+	if err != nil {
+		return err
+	}
+
+	versions, err := json.Marshal(nonNil(p.Versions))
+	if err != nil {
+		return err
+	}
+
+	key := packageKey{
+		ecosystem: p.Ecosystem,
+		name:      p.Name,
+		id:        p.ID,
+	}
+	if i, ok := rows.index[key]; ok {
+		rows.params.AllVersions[i] = p.AllVersions
+		rows.params.Versions[i] = string(versions)
+		rows.params.Ranges[i] = string(ranges)
+		rows.params.Summaries[i] = p.Summary
+		rows.params.Modified[i] = p.Modified
+
+		return nil
+	}
+
+	if rows.index == nil {
+		rows.index = map[packageKey]int{}
+	}
+
+	rows.index[key] = len(rows.params.Ids)
+	rows.params.Ids = append(rows.params.Ids, p.ID)
+	rows.params.Ecosystems = append(rows.params.Ecosystems, p.Ecosystem)
+	rows.params.Names = append(rows.params.Names, p.Name)
+	rows.params.AllVersions = append(rows.params.AllVersions, p.AllVersions)
+	rows.params.Versions = append(rows.params.Versions, string(versions))
+	rows.params.Ranges = append(rows.params.Ranges, string(ranges))
+	rows.params.Summaries = append(rows.params.Summaries, p.Summary)
+	rows.params.Modified = append(rows.params.Modified, p.Modified)
+
+	return nil
+}
+
+func (rows *packageRows) upsert(ctx context.Context, q database.Querier) error {
+	if len(rows.params.Ids) == 0 {
+		return nil
+	}
+
+	all := rows.params
+	for start := 0; start < len(all.Ids); start += packagesPerStatement {
+		end := min(start+packagesPerStatement, len(all.Ids))
+
+		if err := q.UpsertMaliciousPackages(ctx, database.UpsertMaliciousPackagesParams{
+			Ids:         all.Ids[start:end],
+			Ecosystems:  all.Ecosystems[start:end],
+			Names:       all.Names[start:end],
+			AllVersions: all.AllVersions[start:end],
+			Versions:    all.Versions[start:end],
+			Ranges:      all.Ranges[start:end],
+			Summaries:   all.Summaries[start:end],
+			Modified:    all.Modified[start:end],
+		}); err != nil {
+			return fmt.Errorf("store %d malicious packages: %w", end-start, err)
+		}
+	}
+
+	*rows = packageRows{}
+
+	return nil
+}
+
+func readEntry(f *zip.File, entry *bytes.Buffer) error {
 	rc, err := f.Open()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	defer func() {
 		_ = rc.Close()
 	}()
 
-	return io.ReadAll(io.LimitReader(rc, 1<<20))
+	entry.Reset()
+	_, err = entry.ReadFrom(io.LimitReader(rc, 1<<20))
+
+	return err
 }
 
 func nonNil(s []string) []string {

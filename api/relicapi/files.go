@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 
 	"connectrpc.com/connect/v2"
 
@@ -132,7 +134,7 @@ func (d Dependencies) download(w http.ResponseWriter, r *http.Request, key, p st
 		content = body
 	}
 
-	http.ServeContent(w, r, item.Name, item.Modified, content)
+	serveFile(w, r, item.Name, item.Modified, content)
 }
 
 func (d Dependencies) upload(w http.ResponseWriter, r *http.Request, key, p string) {
@@ -267,4 +269,33 @@ func writeHTTPError(w http.ResponseWriter, ce *connect.Error) {
 func writeMethodNotAllowed(w http.ResponseWriter, allow string) {
 	w.Header().Set("Allow", allow)
 	writeRESTError(w, http.StatusMethodNotAllowed, connect.NewError(connect.CodeUnimplemented, "method not allowed"))
+}
+
+var copyBuffers = sync.Pool{
+	New: func() any {
+		return new([256 << 10]byte)
+	},
+}
+
+type pooledCopyWriter struct {
+	http.ResponseWriter
+}
+
+func (w pooledCopyWriter) ReadFrom(r io.Reader) (int64, error) {
+	buf, _ := copyBuffers.Get().(*[256 << 10]byte)
+	defer copyBuffers.Put(buf)
+
+	return io.CopyBuffer(struct {
+		io.Writer
+	}{
+		w.ResponseWriter,
+	}, r, buf[:])
+}
+
+func (w pooledCopyWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func serveFile(w http.ResponseWriter, r *http.Request, name string, modified time.Time, content io.ReadSeeker) {
+	http.ServeContent(pooledCopyWriter{
+		ResponseWriter: w,
+	}, r, name, modified, content)
 }

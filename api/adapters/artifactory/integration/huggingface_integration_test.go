@@ -44,7 +44,7 @@ func TestHuggingFaceRepository(t *testing.T) {
 			path:   EP + "/api/validate-yaml",
 			body:   `{"content":"---\n---","repoType":"model"}`,
 		},
-	); !strings.Contains(body, `"errors": []`) {
+	); !strings.Contains(body, `"errors":[]`) {
 		t.Errorf("validate-yaml = %s", body)
 	}
 
@@ -65,7 +65,7 @@ func TestHuggingFaceRepository(t *testing.T) {
 			body:   `{"name":"demo","organization":"org","private":false}`,
 		},
 	)
-	if resp.StatusCode != 200 || !strings.Contains(body, `"url": "http://`) ||
+	if resp.StatusCode != 200 || !strings.Contains(body, `"url":"http://`) ||
 		!strings.Contains(body, `/artifactory/api/huggingfaceml/hf/org/demo"`) {
 		t.Errorf("create model repo = %d %s", resp.StatusCode, body)
 	}
@@ -73,7 +73,7 @@ func TestHuggingFaceRepository(t *testing.T) {
 	if resp, body := do(t, srv, call{
 		method: "GET",
 		path:   EP + "/api/models/org/demo/revision/main",
-	}); resp.StatusCode != 200 || !strings.Contains(body, `"rfilename": ".gitattributes"`) {
+	}); resp.StatusCode != 200 || !strings.Contains(body, `"rfilename":".gitattributes"`) {
 		t.Errorf("a created repo = %d %s, want its first commit, with .gitattributes", resp.StatusCode, body)
 	}
 
@@ -95,8 +95,8 @@ func TestHuggingFaceRepository(t *testing.T) {
 			path:   "/huggingface/hf/api/whoami-v2",
 			want:   200,
 			contains: []string{
-				`"name": "admin"`,
-				`"role": "write"`,
+				`"name":"admin"`,
+				`"role":"write"`,
 			},
 		},
 		{
@@ -104,8 +104,8 @@ func TestHuggingFaceRepository(t *testing.T) {
 			path:   EP + "/api/models/org/demo/refs",
 			want:   200,
 			contains: []string{
-				`"name": "main"`,
-				`"ref": "refs/heads/main"`,
+				`"name":"main"`,
+				`"ref":"refs/heads/main"`,
 			},
 		},
 		{
@@ -113,8 +113,8 @@ func TestHuggingFaceRepository(t *testing.T) {
 			path:   EP + "/api/models/org/demo/commits/main",
 			want:   200,
 			contains: []string{
-				`"id": "`,
-				`"date": "`,
+				`"id":"`,
+				`"date":"`,
 			},
 		},
 		{
@@ -123,7 +123,7 @@ func TestHuggingFaceRepository(t *testing.T) {
 			body:   "paths=.gitattributes&paths=missing.txt&expand=false",
 			want:   200,
 			contains: []string{
-				`"path": ".gitattributes"`,
+				`"path":".gitattributes"`,
 			},
 		},
 		{
@@ -219,8 +219,8 @@ func TestHuggingFaceRepository(t *testing.T) {
 			int64(len(big)),
 		) + `}]}`,
 	})
-	if !strings.Contains(pre, `"uploadMode": "regular"`) || !strings.Contains(pre, `"uploadMode": "lfs"`) ||
-		!strings.Contains(pre, `"shouldIgnore": false`) {
+	if !strings.Contains(pre, `"uploadMode":"regular"`) || !strings.Contains(pre, `"uploadMode":"lfs"`) ||
+		!strings.Contains(pre, `"shouldIgnore":false`) {
 		t.Fatalf("preupload = %s", pre)
 	}
 
@@ -330,8 +330,8 @@ func TestHuggingFaceRepository(t *testing.T) {
 		method: "GET",
 		path:   EP + "/api/models/org/demo/revision/main",
 	})
-	if !strings.Contains(info, `"sha": "`+cr.CommitOid+`"`) || !strings.Contains(info, `"rfilename": "sub/tok.txt"`) ||
-		!strings.Contains(info, `"rfilename": "weights.bin"`) {
+	if !strings.Contains(info, `"sha":"`+cr.CommitOid+`"`) || !strings.Contains(info, `"rfilename":"sub/tok.txt"`) ||
+		!strings.Contains(info, `"rfilename":"weights.bin"`) {
 		t.Fatalf("revision = %s", info)
 	}
 
@@ -404,7 +404,7 @@ func TestHuggingFaceRepository(t *testing.T) {
 			method: "GET",
 			path:   EP + "/api/models/org/demo/tree/" + cr.CommitOid + "?recursive=true",
 		},
-	); !strings.Contains(tree, `"path": "sub/tok.txt"`) {
+	); !strings.Contains(tree, `"path":"sub/tok.txt"`) {
 		t.Errorf("tree by commit = %s", tree)
 	}
 
@@ -415,7 +415,7 @@ func TestHuggingFaceRepository(t *testing.T) {
 			method: "GET",
 			path:   EP + "/api/models/org/demo/revision/" + cr.CommitOid,
 		},
-	); !strings.Contains(info, `"sha": "`+cr.CommitOid+`"`) {
+	); !strings.Contains(info, `"sha":"`+cr.CommitOid+`"`) {
 		t.Errorf("revision by commit = %s", info)
 	}
 
@@ -507,7 +507,7 @@ func TestHuggingFaceRepository(t *testing.T) {
 	if resp, tree := do(t, srv, call{
 		method: "GET",
 		path:   REP + "/api/models/org/up/tree/main?recursive=true",
-	}); resp.StatusCode != 200 || !strings.Contains(tree, `"path": "config.json"`) ||
+	}); resp.StatusCode != 200 || !strings.Contains(tree, `"path":"config.json"`) ||
 		strings.Contains(tree, "xetHash") {
 		t.Errorf("remote tree = %d %s", resp.StatusCode, tree)
 	}
@@ -554,7 +554,7 @@ func TestHuggingFaceRepoInfoWithoutRevision(t *testing.T) {
 			method: "GET",
 			path:   EP + "/api/datasets/" + id,
 		})
-		if resp.StatusCode != http.StatusOK || !strings.Contains(body, `"rfilename": "data.json"`) {
+		if resp.StatusCode != http.StatusOK || !strings.Contains(body, `"rfilename":"data.json"`) {
 			t.Errorf("info of %s = %d %s", id, resp.StatusCode, body)
 		}
 	}

@@ -10,10 +10,13 @@ import (
 	"uuid"
 
 	"relic/internal/platform/database"
+	"relic/internal/platform/telemetry"
 )
 
 // FlushInterval is how often counts are written.
 const FlushInterval = 5 * time.Second
+
+const maxPendingItems = 100_000
 
 type pending struct {
 	count int64
@@ -27,8 +30,9 @@ type ItemDownloads struct {
 	log *slog.Logger
 	now func() time.Time
 
-	mu      sync.Mutex
-	pending map[uuid.UUID]pending
+	mu         sync.Mutex
+	pending    map[uuid.UUID]pending
+	maxPending int
 	// usage also counts each download by repository and user.
 	usage func(repository, user string)
 }
@@ -39,10 +43,11 @@ func (r *ItemDownloads) SetUsage(fn func(repository, user string)) { r.usage = f
 // NewItemDownloads returns an ItemDownloads writing to db.
 func NewItemDownloads(db *database.DB, log *slog.Logger) *ItemDownloads {
 	return &ItemDownloads{
-		db:      db,
-		log:     log,
-		now:     time.Now,
-		pending: map[uuid.UUID]pending{},
+		db:         db,
+		log:        log,
+		now:        time.Now,
+		pending:    map[uuid.UUID]pending{},
+		maxPending: maxPendingItems,
 	}
 }
 
@@ -60,7 +65,11 @@ func (r *ItemDownloads) Download(item uuid.UUID, repository, user string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	p := r.pending[item]
+	p, ok := r.pending[item]
+	if !ok && len(r.pending) >= r.maxPending {
+		telemetry.ItemDownloadsDropped(1)
+		return
+	}
 
 	p.count++
 	if !now.Before(p.last) {
@@ -94,23 +103,37 @@ func (r *ItemDownloads) Flush(ctx context.Context) error {
 	}
 
 	if err := r.db.RecordDownloads(ctx, params); err != nil {
-		r.mu.Lock()
-		for id, p := range batch {
-			q := r.pending[id]
-
-			q.count += p.count
-			if !p.last.Before(q.last) {
-				q.last, q.by = p.last, p.by
-			}
-
-			r.pending[id] = q
-		}
-		r.mu.Unlock()
-
+		r.keep(batch)
 		return err
 	}
 
 	return nil
+}
+
+func (r *ItemDownloads) keep(batch map[uuid.UUID]pending) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var dropped int64
+
+	for id, p := range batch {
+		q, ok := r.pending[id]
+		if !ok && len(r.pending) >= r.maxPending {
+			dropped += p.count
+			continue
+		}
+
+		q.count += p.count
+		if !p.last.Before(q.last) {
+			q.last, q.by = p.last, p.by
+		}
+
+		r.pending[id] = q
+	}
+
+	if dropped > 0 {
+		telemetry.ItemDownloadsDropped(dropped)
+	}
 }
 
 // Run flushes every FlushInterval until ctx ends, then flushes once more.

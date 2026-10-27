@@ -28,6 +28,7 @@ func TestRecordersBoundTheirLabels(t *testing.T) {
 	ArtifactUploaded(junk, junk, junk, 1, true)
 	ArtifactDownloaded(ctx, junk, junk, junk, junk, 1)
 	RemoteCache(junk, junk, junk)
+	CacheLookup(junk, true)
 	_, end := StartObjectStorage(ctx, junk, junk)
 	end(junk)
 	ObjectStorageBytes(junk, 1)
@@ -45,6 +46,8 @@ func TestRecordersBoundTheirLabels(t *testing.T) {
 	TLSCertificateServed(junk, time.Now())
 	TLSCertificateIssued(err)
 	XetUploaded(junk, 1, nil)
+	PackumentCacheLookup(junk, junk)
+	PackumentCacheSize(junk, 1)
 	SetInventory(Inventory{
 		Repositories: map[[2]string]int64{
 			{

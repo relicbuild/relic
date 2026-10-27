@@ -88,6 +88,8 @@ func (s *Service) SealStoredPasswords(ctx context.Context) error {
 		return fmt.Errorf("list repositories: %w", err)
 	}
 
+	defer s.repositories.invalidate()
+
 	for _, row := range rows {
 		var c Config
 		if err := json.Unmarshal(row.Config, &c); err != nil {

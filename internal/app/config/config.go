@@ -173,6 +173,10 @@ type Scan struct {
 	// SecretValidationProviders (RELIC_SECRET_VALIDATION_PROVIDERS, comma
 	// separated) narrows the providers asked; empty asks all of them.
 	SecretValidationProviders []string
+	// MemoryBudget is the memory the scanner subprocesses share, in bytes
+	// (RELIC_SCAN_MEMORY_BUDGET, a number of bytes or with KiB, MiB, GiB or
+	// TiB); 0, the default, sizes it from the container's memory limit.
+	MemoryBudget int64
 }
 
 // ObjectStorage locates the object store: an S3-compatible service
@@ -417,6 +421,15 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 
 		cfg.MaxUploadSize = n
+	}
+
+	if v := getenv("RELIC_SCAN_MEMORY_BUDGET"); v != "" {
+		n, err := parseSize(v)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("RELIC_SCAN_MEMORY_BUDGET %q must be a size such as 512MiB: %w", v, err))
+		}
+
+		cfg.Scan.MemoryBudget = n
 	}
 
 	cfg.MaxConnections = 8192

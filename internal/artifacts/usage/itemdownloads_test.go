@@ -37,3 +37,33 @@ func TestRecorderAggregates(t *testing.T) {
 		t.Errorf("nil Flush = %v", err)
 	}
 }
+
+func TestRecorderKeepsAtMostMaxPendingItems(t *testing.T) {
+	t.Parallel()
+
+	r := NewItemDownloads(nil, nil)
+	r.maxPending = 2
+
+	a, b, c := uuid.NewV7(), uuid.NewV7(), uuid.NewV7()
+	r.Download(a, "libs", "alice")
+	r.Download(b, "libs", "alice")
+	r.Download(c, "libs", "alice")
+	r.Download(a, "libs", "bob")
+
+	if len(r.pending) != 2 || r.pending[a].count != 2 || r.pending[b].count != 1 {
+		t.Errorf("pending = %+v; want a twice and b once", r.pending)
+	}
+
+	r.keep(map[uuid.UUID]pending{
+		a: {
+			count: 1,
+		},
+		c: {
+			count: 1,
+		},
+	})
+
+	if len(r.pending) != 2 || r.pending[a].count != 3 {
+		t.Errorf("pending after a failed flush = %+v; want a three times and b once", r.pending)
+	}
+}

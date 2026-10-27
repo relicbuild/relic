@@ -165,7 +165,7 @@ func (s *Service) ScanArtifact(ctx context.Context, sha256Hex, fileName string) 
 		telemetry.End(span, err)
 	}()
 
-	claimed, err := s.db.GetScanArtifact(ctx, sha256Hex)
+	claimed, err := s.db.GetScanStatus(ctx, sha256Hex)
 	if err != nil {
 		return fmt.Errorf("load scan %s: %w", sha256Hex, database.NotFound(err))
 	}
@@ -205,6 +205,10 @@ func (s *Service) ScanArtifact(ctx context.Context, sha256Hex, fileName string) 
 	name := filepath.Base(fileName)
 	if name == "." || name == "/" || name == "" {
 		name = "artifact"
+	}
+
+	if IsModelFile(name) {
+		return s.scanModel(ctx, sha256Hex, since, filepath.Join(dir, "in", name))
 	}
 
 	var source, reason, file string
@@ -328,7 +332,7 @@ func (s *Service) ScanArtifact(ctx context.Context, sha256Hex, fileName string) 
 
 // FailArtifact records a queued scan whose job gave up as failed, with failure as the reason.
 func (s *Service) FailArtifact(ctx context.Context, sha256Hex string, failure error) error {
-	a, err := s.db.GetScanArtifact(ctx, sha256Hex)
+	a, err := s.db.GetScanStatus(ctx, sha256Hex)
 	if errors.Is(database.NotFound(err), database.ErrNotFound) {
 		return nil
 	}
@@ -359,10 +363,41 @@ func (s *Service) withOSDistro(ctx context.Context, sha256Hex, fileName string, 
 	return sbom, unmatched, nil
 }
 
+func (s *Service) scanModel(ctx context.Context, sha256Hex string, since time.Time, file string) error {
+	if err := s.download(ctx, sha256Hex, file); err != nil {
+		return err
+	}
+
+	modelAnalyzers := slices.DeleteFunc(slices.Clone(s.analyzers), func(a Analyzer) bool {
+		return a.Name() != AnalyzerModel
+	})
+
+	issues, failed := s.analyzeWith(ctx, modelAnalyzers, "file:"+file)
+
+	status := StatusDone
+	if failed != "" {
+		status = StatusPartial
+	}
+
+	if err := s.finish(ctx, sha256Hex, since, status, failed, nil, nil); err != nil {
+		return err
+	}
+
+	return s.saveIssues(ctx, sha256Hex, issues)
+}
+
 func (s *Service) analyze(ctx context.Context, source string) (issues []Issue, failed string) {
+	return s.analyzeWith(ctx, s.analyzers, source)
+}
+
+func (s *Service) analyzeWith(
+	ctx context.Context,
+	analyzers []Analyzer,
+	source string,
+) (issues []Issue, failed string) {
 	var failures []string
 
-	for _, a := range s.analyzers {
+	for _, a := range analyzers {
 		var found []Issue
 
 		err := telemetry.ScanStage(ctx, a.Name(), func(ctx context.Context) error {

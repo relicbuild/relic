@@ -64,7 +64,7 @@ func TestTelemetryUpstreamAndCache(t *testing.T) {
 	var up, miss, fromUpstream float64
 
 	queries := delta(t, "relic_db_query_duration_seconds", map[string]string{
-		"query": "GetRepository",
+		"query": "GetItem",
 	}, func() {
 		up = delta(t, "relic_upstream_requests_total", generic(map[string]string{
 			"code": "2xx",
@@ -86,7 +86,7 @@ func TestTelemetryUpstreamAndCache(t *testing.T) {
 	})
 	if up < 1 || miss < 1 || fromUpstream < 1 || queries < 1 {
 		t.Errorf(
-			"first download: upstream requests %v, cache misses %v, downloads from upstream %v, GetRepository queries %v",
+			"first download: upstream requests %v, cache misses %v, downloads from upstream %v, GetItem queries %v",
 			up,
 			miss,
 			fromUpstream,

@@ -1,6 +1,6 @@
-// Package indexcache keeps the generated indexes of virtual repositories
-// (Debian distributions, RPM repodata): each index is built by one build at
-// a time, and an expired copy is served while it is rebuilt.
+// Package indexcache keeps the indexes format services generate: each index
+// is built by one build at a time, and an expired copy is served while it is
+// rebuilt.
 package indexcache
 
 import (
@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"relic/internal/platform/memorylimit"
 	"relic/internal/platform/telemetry"
 )
 
@@ -20,6 +21,9 @@ type Settings struct {
 	Stale time.Duration
 	// Entries is the most indexes kept; the least recently used goes first.
 	Entries int
+	// Bytes is the most bytes the kept indexes take, as the cache's size
+	// function counts them; the least recently used go first.
+	Bytes int64
 	// Builds is the most builds that run at once.
 	Builds int
 	// Timeout bounds one build.
@@ -31,6 +35,7 @@ var DefaultSettings = Settings{
 	Fresh:   30 * time.Second,
 	Stale:   10 * time.Minute,
 	Entries: 64,
+	Bytes:   256 << 20,
 	Builds:  2,
 	Timeout: 10 * time.Minute,
 }
@@ -39,16 +44,19 @@ var DefaultSettings = Settings{
 type Cache[V any] struct {
 	format   string
 	settings Settings
+	size     func(V) int64
 	now      func() time.Time
 	builds   chan struct{}
 
 	mu      sync.Mutex
 	entries map[string]*entry[V]
+	bytes   int64
 	running sync.WaitGroup
 }
 
 type entry[V any] struct {
 	value  V
+	size   int64
 	built  time.Time
 	used   time.Time
 	ready  bool
@@ -61,11 +69,15 @@ type flight[V any] struct {
 	err   error
 }
 
-// New returns a Cache for format's indexes; now is the clock.
-func New[V any](format string, settings Settings, now func() time.Time) *Cache[V] {
+// New returns a Cache for format's indexes; size counts an index's bytes and
+// now is the clock.
+func New[V any](format string, settings Settings, size func(V) int64, now func() time.Time) *Cache[V] {
+	settings.Bytes = memorylimit.Share(settings.Bytes, 16)
+
 	return &Cache[V]{
 		format:   format,
 		settings: settings,
+		size:     size,
 		now:      now,
 		builds:   make(chan struct{}, max(settings.Builds, 1)),
 		entries:  map[string]*entry[V]{},
@@ -154,12 +166,14 @@ func (c *Cache[V]) start(ctx context.Context, key string, e *entry[V], build fun
 
 		switch {
 		case f.err == nil:
-			e.value, e.built, e.ready = f.value, c.now(), true
+			size := c.size(f.value)
+			c.resize(size - e.size)
+			e.value, e.size, e.built, e.ready = f.value, size, c.now(), true
 		case !e.ready:
-			delete(c.entries, key)
+			c.remove(key)
 		}
 
-		c.evict()
+		c.evict(key)
 		close(f.done)
 	}()
 }
@@ -183,12 +197,12 @@ func (c *Cache[V]) build(ctx context.Context, build func(context.Context) (V, er
 	return build(ctx)
 }
 
-func (c *Cache[V]) evict() {
-	for len(c.entries) > c.settings.Entries {
+func (c *Cache[V]) evict(newest string) {
+	for len(c.entries) > c.settings.Entries || c.bytes > c.settings.Bytes {
 		oldest := ""
 
 		for key, e := range c.entries {
-			if e.flight != nil {
+			if e.flight != nil || key == newest {
 				continue
 			}
 
@@ -201,6 +215,16 @@ func (c *Cache[V]) evict() {
 			return
 		}
 
-		delete(c.entries, oldest)
+		c.remove(oldest)
 	}
+}
+
+func (c *Cache[V]) remove(key string) {
+	c.resize(-c.entries[key].size)
+	delete(c.entries, key)
+}
+
+func (c *Cache[V]) resize(delta int64) {
+	c.bytes += delta
+	telemetry.IndexCacheResized(c.format, delta)
 }
