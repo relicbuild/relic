@@ -43,7 +43,8 @@ test.use({ viewport: { width: phoneWidth, height: 800 } })
 // layoutFaultsAt lists what does not fit a phone screen: anything beyond the
 // right edge without a horizontally scrolling container of its own (a table
 // may scroll inside its container; the page, its panels and tab bars may
-// not), and empty space between a page card's text and the rest of the card.
+// not), a navbar title that does not show in full, and empty space between a
+// page card's text and the rest of the card.
 async function layoutFaultsAt(page: Page, path: string) {
   await page.goto(path)
   await page.waitForLoadState('networkidle')
@@ -72,6 +73,11 @@ async function layoutFaultsAt(page: Page, path: string) {
       }
       if (!scroller) {
         found.push(`cut off at ${Math.round(box.right)} px: ${describe(control)}`)
+      }
+    }
+    for (const title of document.body.querySelectorAll('h1[data-slot="title"]')) {
+      if (title.scrollWidth > title.clientWidth + 1 || title.scrollHeight > title.clientHeight + 1) {
+        found.push(`title not shown in full: ${describe(title)}`)
       }
     }
     for (const wrapper of document.body.querySelectorAll('[data-slot="container"] > [data-slot="wrapper"]')) {
