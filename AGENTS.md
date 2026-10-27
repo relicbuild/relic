@@ -331,7 +331,8 @@ compatibility matrix and the route inventory.
 
 Versions come from the release tag, never from a file. `helm/relic/Chart.yaml`
 stays at `0.0.0`; pushing a `v*` tag runs `.github/workflows/release.yml`,
-which stamps the binaries, the images, the embedded UI and the chart it
+which stamps the binaries, the images, the embedded UI, the Cloudflare
+deployment (`deploy/cloudflare/bundle.sh`, a release asset) and the chart it
 publishes to `oci://ghcr.io/relicbuild/charts/relic`. A tag with a `-` suffix
 is a pre-release: no `latest` image, and not GitHub's latest release.
 

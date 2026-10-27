@@ -8,6 +8,7 @@ before:
     - sh -c "find internal/app/ui/dist -mindepth 1 ! -name .gitkeep -delete && cp -r web/.output/public/. internal/app/ui/dist/"
     - sh -c "mkdir -p bin && cd web && node scripts/third-party-notices.ts > ../bin/web-notices.txt"
     - go run ./tools/thirdpartynotices -output bin/THIRD_PARTY_NOTICES -platforms linux/amd64,linux/arm64,darwin/amd64,darwin/arm64,windows/amd64 -include bin/web-notices.txt ./cmd/relic
+    - sh deploy/cloudflare/bundle.sh {{ .Tag }} bin
 
 builds:
   - id: relic
@@ -50,6 +51,8 @@ archives:
 
 checksum:
   name_template: "{{ .ProjectName }}_{{ .Tag }}_checksums.txt"
+  extra_files:
+    - glob: ./bin/relic-cloudflare_*.tar.gz
 
 sboms:
   - artifacts: archive
@@ -69,3 +72,5 @@ changelog:
 
 release:
   prerelease: auto
+  extra_files:
+    - glob: ./bin/relic-cloudflare_*.tar.gz
