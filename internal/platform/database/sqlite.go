@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"relic/internal/platform/localdisk"
@@ -29,6 +30,8 @@ type sqliteEngine struct {
 	writer     *sql.DB
 	traced     sqliteDBTX
 	full       *fullDisk
+	reads      *sqliteStatements
+	writes     *sqliteStatements
 	unregister func()
 }
 
@@ -87,10 +90,15 @@ func openSQLite(ctx context.Context, path string, mustExist bool, full *fullDisk
 		},
 	)
 
+	reads := newSQLiteStatements(reader)
+	writes := newSQLiteStatements(writer)
+
 	e := &sqliteEngine{
 		path:   path,
 		reader: reader,
 		writer: writer,
+		reads:  reads,
+		writes: writes,
 		traced: sqliteConnections{
 			read: tracedSQLite{
 				db:       reader,
@@ -117,7 +125,18 @@ func openSQLite(ctx context.Context, path string, mustExist bool, full *fullDisk
 		return nil, nil, fmt.Errorf("ping database: %w", err)
 	}
 
-	return e, newSQLiteQuerier(e.traced), nil
+	return e, newSQLiteQuerier(sqliteConnections{
+		read: tracedSQLite{
+			db:       reads,
+			acquired: readAcquired,
+			full:     full,
+		},
+		write: tracedSQLite{
+			db:       writes,
+			acquired: writeAcquired,
+			full:     full,
+		},
+	}), nil
 }
 
 // createOwnerOnly creates an empty file only its owner may read, which SQLite
@@ -175,6 +194,8 @@ func sqliteDSN(path string, pragmas ...string) string {
 
 func (e *sqliteEngine) close() {
 	e.unregister()
+	e.reads.close()
+	e.writes.close()
 	_ = e.reader.Close()
 	_ = e.writer.Close()
 }
@@ -199,8 +220,14 @@ func (e *sqliteEngine) withTx(ctx context.Context, fn func(q Querier) error) (er
 		}
 	}()
 
+	var missed sync.Map
+
 	if err := fn(newSQLiteQuerier(tracedSQLite{
-		db:   tx,
+		db: sqliteTxStatements{
+			tx:         tx,
+			statements: e.writes,
+			missed:     &missed,
+		},
 		full: e.full,
 	})); err != nil {
 		return err
@@ -209,6 +236,8 @@ func (e *sqliteEngine) withTx(ctx context.Context, fn func(q Querier) error) (er
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit: %w", e.full.mark(err))
 	}
+
+	e.writes.prepare(ctx, &missed)
 
 	return nil
 }
