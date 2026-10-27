@@ -48,6 +48,10 @@ docker pull "$reg/$VIRTUAL/native/app:1.0"
 [[ "$(docker inspect --format '{{.Id}}' "$image:1.0")" == "$(docker inspect --format '{{.Id}}' "$reg/$VIRTUAL/native/app:1.0")" ]]
 docker pull "$image@${pushed#*@}"
 
+step "docker search finds the pushed image"
+docker search "$reg/$LOCAL/native" --format '{{.Name}}' | tee search.txt
+grep -q "$LOCAL/native/app" search.txt
+
 step "Docker Hub through the remote, via the virtual"
 docker pull "$reg/$VIRTUAL/busybox:1.38"
 docker run --rm "$reg/$VIRTUAL/busybox:1.38" echo hello-through-relic | grep -q hello-through-relic
