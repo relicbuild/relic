@@ -85,3 +85,29 @@ rm -rf "$NUGET_PACKAGES" obj bin
 dotnet restore --locked-mode
 test -f "$NUGET_PACKAGES/relic.native/1.1.0/relic.native.1.1.0.nupkg"
 cd ..
+
+step "dotnet package search through the virtual finds upstream packages"
+dotnet package search Newtonsoft.Json --take 20 --format json >search.json
+jq -e '[.searchResult[].packages[].id] | index("Newtonsoft.Json") != null' search.json >/dev/null || {
+  cat search.json >&2
+  exit 1
+}
+
+step "a symbol package: dotnet nuget push sends the .snupkg beside the package; restore gets the package, the symbol server the PDB"
+dotnet pack lib -c Release -p:PackageVersion=1.3.0 --include-symbols -p:SymbolPackageFormat=snupkg -o out >/dev/null
+test -f out/Relic.Native.1.3.0.snupkg
+dotnet nuget push out/Relic.Native.1.3.0.nupkg --source relic --api-key "$SCENARIO_USER:$SCENARIO_PASSWORD"
+jf rt s "$LOCAL/Relic.Native.1.3.0.nupkg" | expect_count 1
+jf rt s "$LOCAL/Relic.Native.1.3.0.snupkg" | expect_count 1
+mkdir symapp && cd symapp
+dotnet new console -o . >/dev/null
+cp ../nuget.config .
+dotnet add package Relic.Native --version 1.3.0 --no-restore
+dotnet restore --no-http-cache
+dotnet build -c Release --no-restore >/dev/null
+cd ..
+key=$(jf rt s "$LOCAL/Relic.Native.1.3.0.snupkg" | jq -r '.[0].props["nuget.symbol.key"][0]')
+[[ "$key" == relic.native.pdb/* ]]
+curl -sf -u "$SCENARIO_USER:$SCENARIO_PASSWORD" -o served.pdb "$SCENARIO_TLS_URL/nuget/$VIRTUAL/symbols/$key/relic.native.pdb"
+unzip -p out/Relic.Native.1.3.0.snupkg 'lib/*/Relic.Native.pdb' >packed.pdb
+cmp served.pdb packed.pdb
