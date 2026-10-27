@@ -21,8 +21,6 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riversqlite"
 	"github.com/riverqueue/river/rivermigrate"
-	"modernc.org/sqlite"
-	sqlite3 "modernc.org/sqlite/lib"
 )
 
 type sqliteEngine struct {
@@ -30,6 +28,7 @@ type sqliteEngine struct {
 	reader     *sql.DB
 	writer     *sql.DB
 	traced     sqliteDBTX
+	full       *fullDisk
 	unregister func()
 }
 
@@ -38,7 +37,7 @@ const sqliteReadConnections = 8
 
 const sqliteBusyTimeout = 10 * time.Second
 
-func openSQLite(ctx context.Context, path string, mustExist bool) (*sqliteEngine, Querier, error) {
+func openSQLite(ctx context.Context, path string, mustExist bool, full *fullDisk) (*sqliteEngine, Querier, error) {
 	if !filepath.IsAbs(path) {
 		return nil, nil, fmt.Errorf("sqlite database path %q must be absolute (sqlite:///path/to/relic.db)", path)
 	}
@@ -96,12 +95,15 @@ func openSQLite(ctx context.Context, path string, mustExist bool) (*sqliteEngine
 			read: tracedSQLite{
 				db:       reader,
 				acquired: readAcquired,
+				full:     full,
 			},
 			write: tracedSQLite{
 				db:       writer,
 				acquired: writeAcquired,
+				full:     full,
 			},
 		},
+		full: full,
 		unregister: func() {
 			unregisterReader()
 			unregisterWriter()
@@ -198,13 +200,14 @@ func (e *sqliteEngine) withTx(ctx context.Context, fn func(q Querier) error) (er
 	}()
 
 	if err := fn(newSQLiteQuerier(tracedSQLite{
-		db: tx,
+		db:   tx,
+		full: e.full,
 	})); err != nil {
 		return err
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit: %w", markDiskFull(err))
+		return fmt.Errorf("commit: %w", e.full.mark(err))
 	}
 
 	return nil
@@ -285,17 +288,10 @@ func readOnlyStatement(query string) bool {
 	}
 }
 
-func markDiskFull(err error) error {
-	if liteErr, ok := errors.AsType[*sqlite.Error](err); ok && liteErr.Code()&0xff == sqlite3.SQLITE_FULL {
-		return fmt.Errorf("%w: %w", localdisk.ErrFull, err)
-	}
-
-	return err
-}
-
 type tracedSQLite struct {
 	db       sqliteDBTX
 	acquired func()
+	full     *fullDisk
 }
 
 func (t tracedSQLite) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
@@ -306,7 +302,7 @@ func (t tracedSQLite) ExecContext(ctx context.Context, query string, args ...any
 	}
 
 	res, err := t.db.ExecContext(ctx, query, args...)
-	err = markDiskFull(err)
+	err = t.full.mark(err)
 	end(err)
 
 	return res, err
@@ -320,7 +316,7 @@ func (t tracedSQLite) QueryContext(ctx context.Context, query string, args ...an
 	}
 
 	rows, err := t.db.QueryContext(ctx, query, args...)
-	err = markDiskFull(err)
+	err = t.full.mark(err)
 	end(err)
 
 	return rows, err

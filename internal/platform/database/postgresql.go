@@ -26,9 +26,10 @@ type postgresEngine struct {
 	unregister    func()
 	advisoryLocks *advisoryLocks
 	localLocks    *localLocks
+	full          *fullDisk
 }
 
-func openPostgreSQL(ctx context.Context, url string, opts Options) (*postgresEngine, error) {
+func openPostgreSQL(ctx context.Context, url string, opts Options, full *fullDisk) (*postgresEngine, error) {
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		return nil, fmt.Errorf("parse database url: %w", err)
@@ -60,13 +61,17 @@ func openPostgreSQL(ctx context.Context, url string, opts Options) (*postgresEng
 	}
 
 	return &postgresEngine{
-		pool:       pool,
-		queries:    New(pool),
+		pool: pool,
+		queries: New(fullMarkingPostgreSQL{
+			db:   pool,
+			full: full,
+		}),
 		unregister: telemetry.RegisterPool(pool),
 		advisoryLocks: &advisoryLocks{
 			config: cfg.ConnConfig.Copy(),
 		},
 		localLocks: newLocalLocks(),
+		full:       full,
 	}, nil
 }
 
@@ -92,12 +97,15 @@ func (e *postgresEngine) withTx(ctx context.Context, fn func(q Querier) error) (
 		}
 	}()
 
-	if err := fn(e.queries.WithTx(tx)); err != nil {
+	if err := fn(New(fullMarkingPostgreSQL{
+		db:   tx,
+		full: e.full,
+	})); err != nil {
 		return err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit: %w", err)
+		return fmt.Errorf("commit: %w", e.full.mark(err))
 	}
 
 	return nil
@@ -105,7 +113,10 @@ func (e *postgresEngine) withTx(ctx context.Context, fn func(q Querier) error) (
 
 func (e *postgresEngine) query(ctx context.Context, sql string, args ...any) (Rows, error) {
 	//nolint:sqlclosecheck // returned to the caller, which closes them
-	return e.pool.Query(ctx, sql, args...)
+	return fullMarkingPostgreSQL{
+		db:   e.pool,
+		full: e.full,
+	}.Query(ctx, sql, args...)
 }
 
 func (e *postgresEngine) migrateTo(ctx context.Context, version int64) ([]Migration, error) {

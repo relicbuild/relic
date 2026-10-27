@@ -32,6 +32,7 @@ var ErrNotFound = errors.New("not found")
 type DB struct {
 	Querier
 	engine engine
+	full   *fullDisk
 }
 
 type engine interface {
@@ -64,8 +65,10 @@ type Options struct {
 
 // OpenWith is Open with options.
 func OpenWith(ctx context.Context, url string, opts Options) (*DB, error) {
+	full := &fullDisk{}
+
 	if path, ok := strings.CutPrefix(url, "sqlite://"); ok {
-		e, q, err := openSQLite(ctx, path, opts.MustExist)
+		e, q, err := openSQLite(ctx, path, opts.MustExist, full)
 		if err != nil {
 			return nil, err
 		}
@@ -73,10 +76,11 @@ func OpenWith(ctx context.Context, url string, opts Options) (*DB, error) {
 		return &DB{
 			Querier: q,
 			engine:  e,
+			full:    full,
 		}, nil
 	}
 
-	e, err := openPostgreSQL(ctx, url, opts)
+	e, err := openPostgreSQL(ctx, url, opts, full)
 	if err != nil {
 		return nil, err
 	}
@@ -84,6 +88,7 @@ func OpenWith(ctx context.Context, url string, opts Options) (*DB, error) {
 	return &DB{
 		Querier: e.queries,
 		engine:  e,
+		full:    full,
 	}, nil
 }
 
