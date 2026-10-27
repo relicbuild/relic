@@ -11,7 +11,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func testMachineSetup(t *testing.T, answers string) (*machineSetup, *[]string, *bytes.Buffer) {
@@ -54,8 +56,18 @@ func testMachineSetup(t *testing.T, answers string) (*machineSetup, *[]string, *
 		lookPath: func(name string) (string, error) {
 			return "/usr/bin/" + name, nil
 		},
-		in:  bufio.NewReader(strings.NewReader(answers)),
-		out: out,
+		homeOf: func(string) string {
+			return ""
+		},
+		portInUse: func(context.Context, string) bool {
+			return false
+		},
+		ready: func(context.Context, string, string) error {
+			return nil
+		},
+		readyTimeout: time.Second,
+		in:           bufio.NewReader(strings.NewReader(answers)),
+		out:          out,
 	}, &ran, out
 }
 
@@ -1027,5 +1039,231 @@ func TestMachineSetupWritesThroughASymlinkedShellFile(t *testing.T) {
 
 	if got := readFile(t, target); !strings.Contains(got, "Completion for relic") {
 		t.Errorf("the link's target holds %q", got)
+	}
+}
+
+func TestMachineSetupRefusesAPortInUse(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name    string
+		goos    string
+		system  bool
+		address string
+	}{
+		{
+			name:    "user service, the server's port",
+			goos:    "linux",
+			address: "127.0.0.1:8090",
+		},
+		{
+			name:    "user service, the metrics port",
+			goos:    "linux",
+			address: "127.0.0.1:8091",
+		},
+		{
+			name:    "system service, the server's port",
+			goos:    "linux",
+			system:  true,
+			address: "127.0.0.1:8090",
+		},
+		{
+			name:    "launch agent, the server's port",
+			goos:    "darwin",
+			address: "127.0.0.1:8090",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			m, ran, _ := testMachineSetup(t, "")
+			if tc.goos == "darwin" {
+				m, ran, _ = testLaunchAgent(t, "", "")
+			}
+
+			m.yes, m.system = true, tc.system
+
+			if tc.system {
+				m.euid = 0
+			}
+
+			m.portInUse = func(_ context.Context, address string) bool {
+				return address == tc.address
+			}
+
+			err := m.runSetup(t.Context())
+			if err == nil || !strings.Contains(err.Error(), tc.address+" is in use") {
+				t.Fatalf("setup with %s in use = %v, want a refusal naming it", tc.address, err)
+			}
+
+			if entries, _ := os.ReadDir(m.home); len(entries) > 0 || len(*ran) > 0 {
+				t.Errorf("setup went ahead: wrote %v, ran %v", entries, *ran)
+			}
+		})
+	}
+}
+
+func TestMachineSetupKeepsItsOwnServiceOnItsPorts(t *testing.T) {
+	t.Parallel()
+
+	m, _, _ := testMachineSetup(t, "")
+	m.yes = true
+
+	if err := m.runSetup(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	m.portInUse = func(context.Context, string) bool {
+		return true
+	}
+
+	if err := m.runSetup(t.Context()); err != nil {
+		t.Errorf("setup again beside its own running service = %v", err)
+	}
+}
+
+func TestMachineSetupRefusesASystemServiceBesideAUserOne(t *testing.T) {
+	t.Parallel()
+
+	m, ran, _ := testMachineSetup(t, "")
+	m.yes, m.system, m.euid = true, true, 0
+	m.getenv = func(name string) string {
+		if name == "SUDO_USER" {
+			return "dev"
+		}
+
+		return ""
+	}
+
+	userHome := t.TempDir()
+	m.homeOf = func(name string) string {
+		if name == "dev" {
+			return userHome
+		}
+
+		return ""
+	}
+
+	unit := filepath.Join(userHome, ".config", "systemd", "user", "relic.service")
+	if err := os.MkdirAll(filepath.Dir(unit), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(unit, []byte("[Unit]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := m.runSetup(t.Context())
+	if err == nil || !strings.Contains(err.Error(), unit) {
+		t.Fatalf("system setup beside dev's user service = %v, want a refusal naming %s", err, unit)
+	}
+
+	if len(*ran) > 0 {
+		t.Errorf("setup went ahead: ran %v", *ran)
+	}
+}
+
+func TestMachineSetupWaitsUntilTheServerIsReady(t *testing.T) {
+	t.Parallel()
+
+	m, _, out := testMachineSetup(t, "")
+	m.yes = true
+
+	var attempts atomic.Int32
+
+	m.ready = func(_ context.Context, url, _ string) error {
+		if url != "https://127.0.0.1:8090" {
+			return fmt.Errorf("probed %s", url)
+		}
+
+		if attempts.Add(1) < 2 {
+			return errors.New("connection refused")
+		}
+
+		return nil
+	}
+
+	if err := m.runSetup(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	if attempts.Load() != 2 {
+		t.Errorf("readiness probed %d times, want 2", attempts.Load())
+	}
+
+	if !strings.Contains(out.String(), "Done.") {
+		t.Errorf("output:\n%s", out)
+	}
+}
+
+func TestMachineSetupFailsWhenTheServerIsNotReady(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name   string
+		goos   string
+		system bool
+		logs   string
+	}{
+		{
+			name: "user service",
+			goos: "linux",
+			logs: "journalctl --user -u relic",
+		},
+		{
+			name:   "system service",
+			goos:   "linux",
+			system: true,
+			logs:   "journalctl -u relic",
+		},
+		{
+			name: "launch agent",
+			goos: "darwin",
+			logs: "tail -f ",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			m, _, out := testMachineSetup(t, "")
+			if tc.goos == "darwin" {
+				m, _, out = testLaunchAgent(t, "", "")
+			}
+
+			m.yes, m.system = true, tc.system
+			m.readyTimeout = 50 * time.Millisecond
+
+			if tc.system {
+				m.euid = 0
+				m.executable = filepath.Join(t.TempDir(), "relic")
+				//nolint:gosec // G306: an executable
+				if err := os.WriteFile(m.executable, []byte("binary"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			m.ready = func(context.Context, string, string) error {
+				return errors.New("503 Service Unavailable: database unavailable")
+			}
+
+			err := m.runSetup(t.Context())
+			if err == nil {
+				t.Fatal("setup reported success while the server is not ready")
+			}
+
+			for _, want := range []string{
+				"https://127.0.0.1:8090/readyz",
+				"database unavailable",
+				tc.logs,
+			} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error lacks %q: %v", want, err)
+				}
+			}
+
+			if strings.Contains(out.String(), "Done.") {
+				t.Errorf("output says Done:\n%s", out)
+			}
+		})
 	}
 }

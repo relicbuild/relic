@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -11,12 +12,14 @@ import (
 	"io"
 	"io/fs"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -25,27 +28,31 @@ import (
 )
 
 type machineSetup struct {
-	home       string
-	root       string
-	goos       string
-	shell      string
-	listen     string
-	listenSet  bool
-	system     bool
-	yes        bool
-	configPath string
-	username   string
-	euid       int
-	executable string
-	getenv     func(string) string
-	completion func(shell string) (string, error)
-	run        func(ctx context.Context, name string, args ...string) error
-	query      func(ctx context.Context, name string, args ...string) (string, error)
-	proc       string
-	hasUser    func(name string) bool
-	lookPath   func(name string) (string, error)
-	in         *bufio.Reader
-	out        io.Writer
+	home         string
+	root         string
+	goos         string
+	shell        string
+	listen       string
+	listenSet    bool
+	system       bool
+	yes          bool
+	configPath   string
+	username     string
+	euid         int
+	executable   string
+	getenv       func(string) string
+	completion   func(shell string) (string, error)
+	run          func(ctx context.Context, name string, args ...string) error
+	query        func(ctx context.Context, name string, args ...string) (string, error)
+	proc         string
+	hasUser      func(name string) bool
+	lookPath     func(name string) (string, error)
+	homeOf       func(username string) string
+	portInUse    func(ctx context.Context, address string) bool
+	ready        func(ctx context.Context, url, certificateAuthority string) error
+	readyTimeout time.Duration
+	in           *bufio.Reader
+	out          io.Writer
 }
 
 type machineAction struct {
@@ -62,6 +69,13 @@ type machineAction struct {
 }
 
 const settleTimeout = 10 * time.Second
+
+const (
+	readyTimeout      = time.Minute
+	readyPollInterval = 500 * time.Millisecond
+)
+
+const setupMetricsListenAddress = "127.0.0.1:8091"
 
 func (m *machineSetup) runSetup(ctx context.Context) error {
 	if _, err := m.serviceManager(); err != nil {
@@ -96,6 +110,10 @@ func (m *machineSetup) runSetup(ctx context.Context) error {
 		return err
 	}
 
+	if err := m.refusePortsInUse(ctx); err != nil {
+		return err
+	}
+
 	actions, err := m.plan(ctx)
 	if err != nil {
 		return err
@@ -124,14 +142,22 @@ func (m *machineSetup) runSetup(ctx context.Context) error {
 		}
 	}
 
+	if err := m.waitReady(ctx); err != nil {
+		return err
+	}
+
 	m.printNext()
 
 	return nil
 }
 
 func (m *machineSetup) refuseAnotherScope() error {
-	if m.system || m.goos != "linux" {
+	if m.goos != "linux" {
 		return nil
+	}
+
+	if m.system {
+		return m.refuseUserService()
 	}
 
 	svc, err := m.serviceManagerAt(true)
@@ -145,6 +171,105 @@ func (m *machineSetup) refuseAnotherScope() error {
 			"sudo relic server uninstall --system",
 		svc.definition(),
 	)
+}
+
+func (m *machineSetup) refuseUserService() error {
+	owner := m.getenv("SUDO_USER")
+	if owner == "" || owner == "root" {
+		return nil
+	}
+
+	home := m.homeOf(owner)
+	if home == "" {
+		return nil
+	}
+
+	unit := filepath.Join(home, ".config", "systemd", "user", "relic.service")
+	if !exists(unit) {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"setup: the user service %s already runs a Relic server for %s on this machine, and a system service "+
+			"would collide with it on the same ports; remove it first with relic server uninstall, as %s",
+		unit,
+		owner,
+		owner,
+	)
+}
+
+func (m *machineSetup) refusePortsInUse(ctx context.Context) error {
+	svc, err := m.serviceManager()
+	if err != nil {
+		return fmt.Errorf("setup: %w", err)
+	}
+
+	if exists(svc.definition()) {
+		return nil
+	}
+
+	settings := m.settingsValues()
+
+	listen := m.listen
+	if !m.listenSet {
+		listen = cmp.Or(settings["RELIC_HTTP_LISTEN_ADDRESS"], m.listen)
+	}
+
+	metrics := cmp.Or(settings["RELIC_METRICS_LISTEN_ADDRESS"], setupMetricsListenAddress)
+
+	for _, address := range []string{
+		listen,
+		metrics,
+	} {
+		if address == "off" || !m.portInUse(ctx, address) {
+			continue
+		}
+
+		return fmt.Errorf(
+			"setup: %s is in use: another program, or a Relic server relic server setup did not install, "+
+				"listens there; stop it first, or choose a free address (--listen for the server, "+
+				"RELIC_METRICS_LISTEN_ADDRESS in %s for metrics)",
+			address,
+			m.tilde(svc.settingsPath()),
+		)
+	}
+
+	return nil
+}
+
+func (m *machineSetup) waitReady(ctx context.Context) error {
+	svc, err := m.serviceManager()
+	if err != nil {
+		return fmt.Errorf("setup: %w", err)
+	}
+
+	url, ok := loopbackURL(m.listenSetting())
+	if !ok {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, m.readyTimeout)
+	defer cancel()
+
+	for {
+		err := m.ready(ctx, url, m.localSettings().certificateAuthority(m.settingsValues()))
+		if err == nil {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf(
+				"setup: the service was started, but %s/readyz did not answer within %s: %w; "+
+					"read its logs with %s",
+				url,
+				m.readyTimeout,
+				err,
+				svc.logsCommand(),
+			)
+		case <-time.After(readyPollInterval):
+		}
+	}
 }
 
 func (m *machineSetup) findCommands(actions []machineAction) error {
@@ -318,7 +443,7 @@ func (m *machineSetup) settings(what, path, data, tlsDirectory string, mode fs.F
 		},
 		{
 			"RELIC_METRICS_LISTEN_ADDRESS",
-			"127.0.0.1:8091",
+			setupMetricsListenAddress,
 		},
 		{
 			"RELIC_DATABASE_URL",
@@ -574,19 +699,16 @@ func (m *machineSetup) printNext() {
 }
 
 func (m *machineSetup) listenSetting() string {
-	path := filepath.Join(m.configDir(), "server.env")
-	if m.system {
-		path = filepath.Join(m.root, systemSettings)
+	return cmp.Or(m.settingsValues()["RELIC_HTTP_LISTEN_ADDRESS"], m.listen)
+}
+
+func (m *machineSetup) settingsValues() map[string]string {
+	b, err := os.ReadFile(m.localSettings().path) //nolint:gosec // the settings file relic server setup wrote
+	if err != nil {
+		return map[string]string{}
 	}
 
-	b, err := os.ReadFile(path) //nolint:gosec // the settings file relic server setup wrote
-	if err == nil {
-		if v := keyValues(string(b), "=")["RELIC_HTTP_LISTEN_ADDRESS"]; v != "" {
-			return v
-		}
-	}
-
-	return m.listen
+	return keyValues(string(b), "=")
 }
 
 func (m *machineSetup) tilde(p string) string {
@@ -670,7 +792,77 @@ func newMachineSetup(cmd *cobra.Command, g *globals, home, root string) (*machin
 			return err == nil
 		},
 		lookPath: exec.LookPath,
-		in:       bufio.NewReader(cmd.InOrStdin()),
-		out:      out,
+		homeOf: func(username string) string {
+			u, err := user.Lookup(username)
+			if err != nil {
+				return ""
+			}
+
+			return u.HomeDir
+		},
+		portInUse:    portInUse,
+		ready:        serverReady,
+		readyTimeout: readyTimeout,
+		in:           bufio.NewReader(cmd.InOrStdin()),
+		out:          out,
 	}, nil
+}
+
+func portInUse(ctx context.Context, address string) bool {
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", address)
+	if err != nil {
+		return errors.Is(err, syscall.EADDRINUSE)
+	}
+
+	_ = listener.Close()
+
+	loopback, ok := loopbackAddress(address)
+	if !ok {
+		return false
+	}
+
+	conn, err := (&net.Dialer{
+		Timeout: time.Second,
+	}).DialContext(ctx, "tcp", loopback)
+	if err != nil {
+		return false
+	}
+
+	_ = conn.Close()
+
+	return true
+}
+
+func serverReady(ctx context.Context, url, certificateAuthority string) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	transport := http.DefaultTransport
+	if certificateAuthority != "" {
+		transport = trustingTransport(certificateAuthority)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url+"/readyz", nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := (&http.Client{
+		Transport: transport,
+	}).Do(req)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+
+		return fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+
+	return nil
 }
