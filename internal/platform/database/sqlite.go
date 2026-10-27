@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	_ "relic/internal/platform/database/sqlitefunctions"
 	"relic/internal/platform/localdisk"
 	"relic/internal/platform/telemetry"
 	"relic/migrations"

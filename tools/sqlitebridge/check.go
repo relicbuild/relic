@@ -15,7 +15,7 @@ import (
 	"github.com/pressly/goose/v3"
 	_ "modernc.org/sqlite"
 
-	_ "relic/internal/platform/database"
+	_ "relic/internal/platform/database/sqlitefunctions"
 )
 
 func prepareAll(root string) error {
