@@ -40,10 +40,11 @@ const pages = [
 
 test.use({ viewport: { width: phoneWidth, height: 800 } })
 
-// overflowAt lists what lies beyond the right edge of the viewport without a
-// horizontally scrolling container of its own (a table or a tab list may
-// scroll inside its container; the page and its panels may not).
-async function overflowAt(page: Page, path: string) {
+// layoutFaultsAt lists what does not fit a phone screen: anything beyond the
+// right edge without a horizontally scrolling container of its own (a table
+// or a tab list may scroll inside its container; the page and its panels may
+// not), and empty space between a page card's text and the rest of the card.
+async function layoutFaultsAt(page: Page, path: string) {
   await page.goto(path)
   await page.waitForLoadState('networkidle')
   return await page.evaluate(() => {
@@ -73,13 +74,20 @@ async function overflowAt(page: Page, path: string) {
         found.push(`cut off at ${Math.round(box.right)} px: ${describe(control)}`)
       }
     }
+    for (const wrapper of document.body.querySelectorAll('[data-slot="container"] > [data-slot="wrapper"]')) {
+      const contentBottom = Math.max(...[...wrapper.querySelectorAll('*')].filter(element => element.childElementCount === 0).map(element => element.getBoundingClientRect().bottom))
+      const gap = wrapper.getBoundingClientRect().bottom - contentBottom
+      if (gap > 1) {
+        found.push(`${Math.round(gap)} px of empty space under a page card's text: ${describe(wrapper)}`)
+      }
+    }
     return found
   })
 }
 
 for (const path of pages) {
   test(`${path} fits a phone screen`, async ({ page }) => {
-    expect(await overflowAt(page, path)).toEqual([])
+    expect(await layoutFaultsAt(page, path)).toEqual([])
   })
 }
 
@@ -100,11 +108,26 @@ test('a repository, a build run and a release fit a phone screen', async ({ page
       `/releases/${release}`,
       `/releases/${release}/1.0`
     ]) {
-      expect(await overflowAt(page, path), path).toEqual([])
+      expect(await layoutFaultsAt(page, path), path).toEqual([])
     }
   } finally {
     await api(request, 'ReleaseService/DeleteRelease', { name: release, version: '1.0' })
     await api(request, 'RepositoryService/DeleteRepository', { name: repository })
+  }
+})
+
+test('Set me up with a list of tokens fits a phone screen', async ({ page, request }) => {
+  const description = unique('ui-phone-token')
+  for (let i = 0; i < 8; i++) {
+    await api(request, 'SecurityService/CreateToken', { description, expiresInSeconds: 3600 })
+  }
+  try {
+    expect(await layoutFaultsAt(page, '/client-setup')).toEqual([])
+  } finally {
+    const { tokens } = await api(request, 'SecurityService/ListTokens')
+    for (const token of tokens.filter((token: { description: string }) => token.description === description)) {
+      await api(request, 'SecurityService/RevokeToken', { id: token.id })
+    }
   }
 })
 
