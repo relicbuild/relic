@@ -127,6 +127,7 @@ const columns: TableColumn<JobKindView>[] = [
             :title="checks[c.name]?.title ?? c.name"
             :description="c.ok ? `Answered in ${c.latencyMs} ms` : c.error"
             variant="subtle"
+            :ui="{ description: 'break-words' }"
           >
             <UBadge
               :color="c.ok ? 'success' : 'error'"
@@ -184,6 +185,7 @@ const columns: TableColumn<JobKindView>[] = [
               icon="i-lucide-database-zap"
               :title="`The latest database import failed${data.scanner.importFailed ? ` ${formatDate(data.scanner.importFailed)}` : ''}`"
               :description="data.scanner.importError"
+              :ui="{ description: 'break-words' }"
             />
             <UFileUpload
               v-if="administers"
@@ -243,7 +245,7 @@ const columns: TableColumn<JobKindView>[] = [
         </p>
 
         <div class="mt-6 grid shrink-0 gap-6 2xl:grid-cols-2">
-          <div>
+          <div class="min-w-0">
             <h2 class="text-sm font-semibold text-highlighted">
               Workers
             </h2>
@@ -269,7 +271,7 @@ const columns: TableColumn<JobKindView>[] = [
               </template>
             </UTable>
           </div>
-          <div>
+          <div class="min-w-0">
             <h2 class="text-sm font-semibold text-highlighted">
               Queues
             </h2>

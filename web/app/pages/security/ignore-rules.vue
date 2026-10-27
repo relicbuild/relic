@@ -161,6 +161,8 @@ const columns: TableColumn<IgnoreRule>[] = [
               color="neutral"
               variant="outline"
               label="Import VEX"
+              aria-label="Import VEX"
+              :ui="iconOnlyOnPhones"
               :loading="importing"
               @click="open()"
             />
@@ -172,12 +174,16 @@ const columns: TableColumn<IgnoreRule>[] = [
               color="neutral"
               variant="outline"
               label="Export VEX"
+              aria-label="Export VEX"
+              :ui="iconOnlyOnPhones"
             />
           </UDropdownMenu>
           <UButton
             v-if="administers"
             icon="i-lucide-plus"
             label="New ignore rule"
+            aria-label="New ignore rule"
+            :ui="iconOnlyOnPhones"
             @click="create()"
           />
         </template>
