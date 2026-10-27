@@ -409,8 +409,10 @@ DELETE FROM scan_watches WHERE name = @name;`
 
 const sqliteDeleteSubtree = `-- name: DeleteSubtree :many
 DELETE FROM items
-WHERE repo_key = @repo_key
-  AND ((path = @path AND name = @name) OR path = @full_path OR path LIKE @prefix ESCAPE '\')
+WHERE ((repo_key = @repo_key AND path = @path AND name = @name)
+    OR (repo_key = @repo_key AND path = @full_path)
+    OR (repo_key = @repo_key AND path >= @full_path || '/' AND path < @full_path || '0'
+        AND +path LIKE @prefix ESCAPE '\'))
 RETURNING sha256;`
 
 const sqliteDeleteTombstone = `-- name: DeleteTombstone :exec
@@ -1264,16 +1266,28 @@ LIMIT @max_rows;`
 
 const sqliteListSubtree = `-- name: ListSubtree :many
 SELECT * FROM items
-WHERE repo_key = @repo_key
-  AND ((path = @path AND name = @name) OR path = @full_path OR path LIKE @prefix ESCAPE '\')
+WHERE ((repo_key = @repo_key AND path = @path AND name = @name)
+    OR (repo_key = @repo_key AND path = @full_path)
+    OR (repo_key = @repo_key AND path >= @full_path || '/' AND path < @full_path || '0'
+        AND +path LIKE @prefix ESCAPE '\'))
 ORDER BY path, name;`
 
 const sqliteListSubtreePage = `-- name: ListSubtreePage :many
--- ListSubtree's items after (@after_path, @after_name), at most @max.
+-- ListSubtree's items after (@after_path, @after_name), at most @max. Each
+-- part reads one range of the index in order from the cursor, so a page
+-- reads about @max rows; the unary + keeps the other terms from bounding it.
+SELECT * FROM items
+WHERE repo_key = @repo_key AND path = @path AND name = @name AND (+path, name) > (@after_path, @after_name)
+UNION ALL
+SELECT * FROM items
+WHERE repo_key = @repo_key AND path = @full_path AND name >= iif(@after_path = @full_path, @after_name, '')
+  AND (+path, name) > (@after_path, @after_name)
+UNION ALL
 SELECT * FROM items
 WHERE repo_key = @repo_key
-  AND ((path = @path AND name = @name) OR path = @full_path OR path LIKE @prefix ESCAPE '\')
-  AND (path, name) > (@after_path, @after_name)
+  AND (path, name) >= (max(@full_path || '/', @after_path), iif(@after_path >= @full_path || '/', @after_name, ''))
+  AND path < @full_path || '0'
+  AND +path LIKE @prefix ESCAPE '\' AND (+path, name) > (@after_path, @after_name)
 ORDER BY path, name
 LIMIT @max;`
 
@@ -6768,7 +6782,7 @@ func (q *sqliteQueries) ListSubtree(ctx context.Context, arg ListSubtreeParams) 
 }
 
 func (q *sqliteQueries) ListSubtreePage(ctx context.Context, arg ListSubtreePageParams) ([]Item, error) {
-	rows, err := q.query(ctx, "ListSubtreePage", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated"}, sqliteListSubtreePage, sql.Named("repo_key", arg.RepoKey), sql.Named("path", arg.Path), sql.Named("name", arg.Name), sql.Named("full_path", arg.FullPath), sql.Named("prefix", arg.Prefix), sql.Named("after_path", arg.AfterPath), sql.Named("after_name", arg.AfterName), sql.Named("max", arg.Max))
+	rows, err := q.query(ctx, "ListSubtreePage", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated"}, sqliteListSubtreePage, sql.Named("repo_key", arg.RepoKey), sql.Named("path", arg.Path), sql.Named("name", arg.Name), sql.Named("after_path", arg.AfterPath), sql.Named("after_name", arg.AfterName), sql.Named("full_path", arg.FullPath), sql.Named("prefix", arg.Prefix), sql.Named("max", arg.Max))
 	if err != nil {
 		return nil, err
 	}
