@@ -45,10 +45,10 @@ describe('clientSetupSnippets for dnf', () => {
     clientSetupSnippets(create(RepositorySchema, { name: 'r', format: Format.RPM, ...settings }), endpoints, 'alice', '<token>')
       .find(s => s.title === 'dnf')?.code ?? ''
 
-  it('checks the signature of a local repository with its key', () => {
+  it('checks the signature of a local repository with the keys Relic serves', () => {
     const code = dnf({ class: RepositoryClass.LOCAL })
-    expect(code).toContain('curl -u alice:<token> -o /etc/pki/rpm-gpg/RPM-GPG-KEY-relic-r http://relic.test/api/pypi/r/simple/repodata/repomd.xml.key')
-    expect(code).toContain('repo_gpgcheck=1\ngpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-relic-r')
+    expect(code).toContain('repo_gpgcheck=1\ngpgkey=http://relic.test/api/pypi/r/simple/repodata/repomd.xml.key')
+    expect(code).not.toContain('file://')
   })
 
   it('leaves the signature of a remote to its upstream', () => {
