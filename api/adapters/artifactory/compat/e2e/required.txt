@@ -71,3 +71,4 @@ gradle
 native-rpm
 native-ai-agents
 native-package-setup
+native-huggingface
