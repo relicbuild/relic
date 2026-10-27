@@ -138,6 +138,7 @@ RUN cd /tmp/maven-seed \
 
 ENV MAVEN_ARGS=-Dmaven.repo.local.tail=/opt/m2-seed MAVEN_OPTS=-Dmaven.repo.local.tail=/opt/m2-seed
 RUN apt-get update && apt-get install -y --no-install-recommends rpm && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends git-lfs && rm -rf /var/lib/apt/lists/*
 ENV JF=/usr/local/bin/jf CI=true JFROG_CLI_REPORT_USAGE=false NODE_USE_SYSTEM_CA=1 \
     DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1

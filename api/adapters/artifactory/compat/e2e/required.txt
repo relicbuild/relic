@@ -72,3 +72,4 @@ native-rpm
 native-ai-agents
 native-package-setup
 native-huggingface
+native-git-lfs
