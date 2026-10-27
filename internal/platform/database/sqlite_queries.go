@@ -409,8 +409,10 @@ DELETE FROM scan_watches WHERE name = @name;`
 
 const sqliteDeleteSubtree = `-- name: DeleteSubtree :many
 DELETE FROM items
-WHERE repo_key = @repo_key
-  AND ((path = @path AND name = @name) OR path = @full_path OR path LIKE @prefix ESCAPE '\')
+WHERE ((repo_key = @repo_key AND path = @path AND name = @name)
+    OR (repo_key = @repo_key AND path = @full_path)
+    OR (repo_key = @repo_key AND path >= @full_path || '/' AND path < @full_path || '0'
+        AND +path LIKE @prefix ESCAPE '\'))
 RETURNING sha256;`
 
 const sqliteDeleteTombstone = `-- name: DeleteTombstone :exec
@@ -859,7 +861,7 @@ const sqliteListAccessTokens = `-- name: ListAccessTokens :many
 SELECT * FROM access_tokens
 WHERE (@username IS NULL OR username = @username)
   AND (@include_revoked OR NOT revoked)
-ORDER BY created DESC;`
+ORDER BY created DESC, id DESC;`
 
 const sqliteListActiveIgnoreRules = `-- name: ListActiveIgnoreRules :many
 SELECT * FROM scan_ignore_rules WHERE expires_at IS NULL OR expires_at > @now ORDER BY created;`
@@ -947,6 +949,12 @@ SELECT * FROM cleanup_policies ORDER BY name;`
 
 const sqliteListContentFolders = `-- name: ListContentFolders :many
 SELECT DISTINCT path FROM items WHERE sha256 = @sha256 AND type = 'file' ORDER BY path LIMIT 20;`
+
+const sqliteListContentPropertyValues = `-- name: ListContentPropertyValues :many
+SELECT DISTINCT p.value FROM items i
+JOIN item_properties p ON p.item_id = i.id
+WHERE i.sha256 = @sha256 AND i.type = 'file' AND p.key = @key
+ORDER BY p.value LIMIT 20;`
 
 const sqliteListEndOfLifeCycles = `-- name: ListEndOfLifeCycles :many
 -- The release cycles of the products these package URLs (without a version)
@@ -1258,16 +1266,28 @@ LIMIT @max_rows;`
 
 const sqliteListSubtree = `-- name: ListSubtree :many
 SELECT * FROM items
-WHERE repo_key = @repo_key
-  AND ((path = @path AND name = @name) OR path = @full_path OR path LIKE @prefix ESCAPE '\')
+WHERE ((repo_key = @repo_key AND path = @path AND name = @name)
+    OR (repo_key = @repo_key AND path = @full_path)
+    OR (repo_key = @repo_key AND path >= @full_path || '/' AND path < @full_path || '0'
+        AND +path LIKE @prefix ESCAPE '\'))
 ORDER BY path, name;`
 
 const sqliteListSubtreePage = `-- name: ListSubtreePage :many
--- ListSubtree's items after (@after_path, @after_name), at most @max.
+-- ListSubtree's items after (@after_path, @after_name), at most @max. Each
+-- part reads one range of the index in order from the cursor, so a page
+-- reads about @max rows; the unary + keeps the other terms from bounding it.
+SELECT * FROM items
+WHERE repo_key = @repo_key AND path = @path AND name = @name AND (+path, name) > (@after_path, @after_name)
+UNION ALL
+SELECT * FROM items
+WHERE repo_key = @repo_key AND path = @full_path AND name >= iif(@after_path = @full_path, @after_name, '')
+  AND (+path, name) > (@after_path, @after_name)
+UNION ALL
 SELECT * FROM items
 WHERE repo_key = @repo_key
-  AND ((path = @path AND name = @name) OR path = @full_path OR path LIKE @prefix ESCAPE '\')
-  AND (path, name) > (@after_path, @after_name)
+  AND (path, name) >= (max(@full_path || '/', @after_path), iif(@after_path >= @full_path || '/', @after_name, ''))
+  AND path < @full_path || '0'
+  AND +path LIKE @prefix ESCAPE '\' AND (+path, name) > (@after_path, @after_name)
 ORDER BY path, name
 LIMIT @max;`
 
@@ -1676,6 +1696,14 @@ const sqliteSsoGroupMembers = `-- name: SsoGroupMembers :many
 SELECT u.id, u.username FROM group_members m JOIN users u ON u.username = m.username
 WHERE m.group_name = @group_name AND m.source = 'sso'
 ORDER BY u.username;`
+
+const sqliteSummarizeFilesNamed = `-- name: SummarizeFilesNamed :one
+-- The files of a repository whose name matches pattern (a LIKE pattern): how
+-- many, their bytes and their latest change.
+SELECT count(*) AS files, coalesce(sum(size), 0) AS bytes,
+       coalesce(max(updated), '1970-01-01 00:00:00.000000+00:00') AS last_updated
+FROM items
+WHERE repo_key = @repo_key AND type = 'file' AND name LIKE @pattern ESCAPE '\';`
 
 const sqliteTakeSsoRequest = `-- name: TakeSsoRequest :one
 -- Deletes the request so its state can be used once.
@@ -5141,6 +5169,36 @@ func (q *sqliteQueries) ListContentFolders(ctx context.Context, arg *string) ([]
 	return items, nil
 }
 
+func (q *sqliteQueries) ListContentPropertyValues(ctx context.Context, arg ListContentPropertyValuesParams) ([]string, error) {
+	rows, err := q.query(ctx, "ListContentPropertyValues", nil, sqliteListContentPropertyValues, sql.Named("sha256", arg.Sha256), sql.Named("key", arg.Key))
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	items := []string{}
+
+	for rows.Next() {
+		var i string
+		if err := rows.Scan(&i); err != nil {
+			return nil, err
+		}
+
+		items = append(items, i)
+	}
+
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
+
 func (q *sqliteQueries) ListEndOfLifeCycles(ctx context.Context, arg []string) ([]ListEndOfLifeCyclesRow, error) {
 	rows, err := q.query(ctx, "ListEndOfLifeCycles", []string{"purl", "product", "label", "cycle", "eolfrom", "iseol", "ismaintained", "latest"}, sqliteListEndOfLifeCycles, sql.Named("purls", sqliteJSON(arg)))
 	if err != nil {
@@ -6732,7 +6790,7 @@ func (q *sqliteQueries) ListSubtree(ctx context.Context, arg ListSubtreeParams) 
 }
 
 func (q *sqliteQueries) ListSubtreePage(ctx context.Context, arg ListSubtreePageParams) ([]Item, error) {
-	rows, err := q.query(ctx, "ListSubtreePage", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated"}, sqliteListSubtreePage, sql.Named("repo_key", arg.RepoKey), sql.Named("path", arg.Path), sql.Named("name", arg.Name), sql.Named("full_path", arg.FullPath), sql.Named("prefix", arg.Prefix), sql.Named("after_path", arg.AfterPath), sql.Named("after_name", arg.AfterName), sql.Named("max", arg.Max))
+	rows, err := q.query(ctx, "ListSubtreePage", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated"}, sqliteListSubtreePage, sql.Named("repo_key", arg.RepoKey), sql.Named("path", arg.Path), sql.Named("name", arg.Name), sql.Named("after_path", arg.AfterPath), sql.Named("after_name", arg.AfterName), sql.Named("full_path", arg.FullPath), sql.Named("prefix", arg.Prefix), sql.Named("max", arg.Max))
 	if err != nil {
 		return nil, err
 	}
@@ -7735,6 +7793,29 @@ func (q *sqliteQueries) SsoGroupMembers(ctx context.Context, arg string) ([]SsoG
 	}
 
 	return items, nil
+}
+
+func (q *sqliteQueries) SummarizeFilesNamed(ctx context.Context, arg SummarizeFilesNamedParams) (SummarizeFilesNamedRow, error) {
+	var i SummarizeFilesNamedRow
+
+	rows, err := q.query(ctx, "SummarizeFilesNamed", []string{"files", "bytes", "lastupdated"}, sqliteSummarizeFilesNamed, sql.Named("repo_key", arg.RepoKey), sql.Named("pattern", arg.Pattern))
+	if err != nil {
+		return i, err
+	}
+
+	defer rows.Close()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return i, err
+		}
+
+		return i, sql.ErrNoRows
+	}
+
+	err = rows.Scan(&i.Files, &i.Bytes, sqliteTimeScanner{&i.LastUpdated})
+
+	return i, err
 }
 
 func (q *sqliteQueries) TakeSsoRequest(ctx context.Context, arg string) (SsoRequest, error) {

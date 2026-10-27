@@ -90,7 +90,7 @@ async function openPromote() {
         <p class="text-sm text-muted">
           {{ data.release.status }} · created by {{ data.release.createdBy }} {{ formatDate(data.release.created) }}
         </p>
-        <UTabs :items="tabs" variant="link" :ui="scrollingTabs">
+        <UTabs :items="tabs" variant="link" :ui="detailTabs">
           <template #artifacts>
             <UTable
               :data="data.release.artifacts"

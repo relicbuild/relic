@@ -133,7 +133,7 @@ async function revoke(t: AccessToken) {
             :data="tokens ?? []"
             :columns="tokenColumns"
             :loading="tokensStatus === 'pending'"
-            :ui="denseTable"
+            :ui="cardTable"
           >
             <template #description-cell="{ row }">
               <span class="text-highlighted">{{ row.original.description || row.original.id }}</span>

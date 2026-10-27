@@ -67,8 +67,10 @@ ORDER BY path, name;
 
 -- name: DeleteSubtree :many
 DELETE FROM items
-WHERE repo_key = @repo_key
-  AND ((path = @path AND name = @name) OR path = @full_path OR path LIKE @prefix ESCAPE '\')
+WHERE ((repo_key = @repo_key AND path = @path AND name = @name)
+    OR (repo_key = @repo_key AND path = @full_path)
+    OR (repo_key = @repo_key AND path >= @full_path || '/' AND path < @full_path || '0'
+        AND +path LIKE @prefix ESCAPE '\'))
 RETURNING sha256;
 
 -- name: DeleteEmptyFolder :execrows
@@ -100,19 +102,39 @@ ON CONFLICT DO NOTHING;
 
 -- name: ListSubtree :many
 SELECT * FROM items
-WHERE repo_key = @repo_key
-  AND ((path = @path AND name = @name) OR path = @full_path OR path LIKE @prefix ESCAPE '\')
+WHERE ((repo_key = @repo_key AND path = @path AND name = @name)
+    OR (repo_key = @repo_key AND path = @full_path)
+    OR (repo_key = @repo_key AND path >= @full_path || '/' AND path < @full_path || '0'
+        AND +path LIKE @prefix ESCAPE '\'))
 ORDER BY path, name;
+
+-- name: SummarizeFilesNamed :one
+-- The files of a repository whose name matches pattern (a LIKE pattern): how
+-- many, their bytes and their latest change.
+SELECT count(*) AS files, coalesce(sum(size), 0) AS bytes,
+       coalesce(max(updated), '1970-01-01 00:00:00.000000+00:00') AS last_updated
+FROM items
+WHERE repo_key = @repo_key AND type = 'file' AND name LIKE @pattern ESCAPE '\';
 
 -- name: ListRepositoryItems :many
 SELECT * FROM items WHERE repo_key = @repo_key ORDER BY path, name;
 
 -- name: ListSubtreePage :many
--- ListSubtree's items after (@after_path, @after_name), at most @max.
+-- ListSubtree's items after (@after_path, @after_name), at most @max. Each
+-- part reads one range of the index in order from the cursor, so a page
+-- reads about @max rows; the unary + keeps the other terms from bounding it.
+SELECT * FROM items
+WHERE repo_key = @repo_key AND path = @path AND name = @name AND (+path, name) > (@after_path, @after_name)
+UNION ALL
+SELECT * FROM items
+WHERE repo_key = @repo_key AND path = @full_path AND name >= iif(@after_path = @full_path, @after_name, '')
+  AND (+path, name) > (@after_path, @after_name)
+UNION ALL
 SELECT * FROM items
 WHERE repo_key = @repo_key
-  AND ((path = @path AND name = @name) OR path = @full_path OR path LIKE @prefix ESCAPE '\')
-  AND (path, name) > (@after_path, @after_name)
+  AND (path, name) >= (max(@full_path || '/', @after_path), iif(@after_path >= @full_path || '/', @after_name, ''))
+  AND path < @full_path || '0'
+  AND +path LIKE @prefix ESCAPE '\' AND (+path, name) > (@after_path, @after_name)
 ORDER BY path, name
 LIMIT @max;
 

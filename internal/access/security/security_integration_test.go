@@ -800,6 +800,82 @@ func TestPutUserRefusesShortPasswords(t *testing.T) {
 	}
 }
 
+func TestPutUserRefusesInvalidEmails(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		email   string
+		wantErr error
+	}{
+		{
+			name:    "no at sign",
+			email:   "not-an-email",
+			wantErr: security.ErrInvalid,
+		},
+		{
+			name:    "a display name",
+			email:   "Alice <alice@example.com>",
+			wantErr: security.ErrInvalid,
+		},
+		{
+			name:    "two addresses",
+			email:   "alice@example.com, bob@example.com",
+			wantErr: security.ErrInvalid,
+		},
+		{
+			name:    "surrounding spaces",
+			email:   " alice@example.com",
+			wantErr: security.ErrInvalid,
+		},
+		{
+			name:    "no domain",
+			email:   "alice@",
+			wantErr: security.ErrInvalid,
+		},
+		{
+			name:  "an address",
+			email: "alice@example.com",
+		},
+		{
+			name: "none",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			s := security.NewService(databasetest.NewDB(t), slog.New(slog.DiscardHandler))
+
+			_, err := s.PutUser(ctx, security.User{
+				Name:     "new",
+				Email:    tt.email,
+				Password: "New-pass-12345",
+			})
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("PutUser of a new user = %v, want %v", err, tt.wantErr)
+			}
+
+			if _, err := s.PutUser(ctx, security.User{
+				Name:     "existing",
+				Email:    "existing@example.com",
+				Password: "Existing-pass-1",
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = s.PutUser(ctx, security.User{
+				Name:  "existing",
+				Email: tt.email,
+			})
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("PutUser of an existing user = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestChangePassword(t *testing.T) {
 	t.Parallel()
 

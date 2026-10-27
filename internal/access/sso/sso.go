@@ -450,6 +450,13 @@ func (s *Service) provision(ctx context.Context, p Provider, id identity) (strin
 		)
 	}
 
+	if id.email != "" && !security.ValidEmail(id.email) {
+		s.log.WarnContext(ctx, "identity provider's email ignored: not a single address", "provider", p.Name,
+			"user", id.username)
+
+		id.email = ""
+	}
+
 	user, err := s.db.GetUserByUsername(ctx, id.username)
 	existed := err == nil
 

@@ -1,4 +1,6 @@
-package database
+// Package sqlitefunctions registers the SQL functions Relic's SQLite queries use
+// with the modernc.org/sqlite driver.
+package sqlitefunctions
 
 import (
 	"database/sql/driver"

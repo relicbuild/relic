@@ -76,6 +76,14 @@ func directoryUser(u database.User) DirectoryUser {
 	}
 }
 
+func checkEmail(email string) error {
+	if email != "" && !security.ValidEmail(email) {
+		return fmt.Errorf("%w: email %q is not a single address", ErrInvalidValue, email)
+	}
+
+	return nil
+}
+
 func notFound(what, id string) error {
 	return fmt.Errorf("%w: %s %s", ErrEntryNotFound, what, id)
 }
@@ -140,6 +148,10 @@ func (d *Directory) CreateUser(ctx context.Context, u DirectoryUser) (DirectoryU
 		return DirectoryUser{}, fmt.Errorf("%w: userName %q is not a valid Relic username", ErrInvalidValue, u.UserName)
 	}
 
+	if err := checkEmail(u.Email); err != nil {
+		return DirectoryUser{}, err
+	}
+
 	if _, err := d.db.GetUserByUsername(ctx, u.UserName); err == nil {
 		return DirectoryUser{}, fmt.Errorf("%w: user %s", ErrConflict, u.UserName)
 	} else if !errors.Is(database.NotFound(err), database.ErrNotFound) {
@@ -187,6 +199,10 @@ func (d *Directory) UpdateUser(ctx context.Context, u DirectoryUser) (DirectoryU
 	}
 
 	if u.Email != current.Email {
+		if err := checkEmail(u.Email); err != nil {
+			return DirectoryUser{}, err
+		}
+
 		if err := d.db.SetUserEmail(ctx, database.SetUserEmailParams{
 			Username: current.Username,
 			Email:    u.Email,
@@ -212,6 +228,10 @@ func (d *Directory) PatchUser(ctx context.Context, before, after DirectoryUser) 
 	}
 
 	if after.Email != before.Email {
+		if err := checkEmail(after.Email); err != nil {
+			return DirectoryUser{}, err
+		}
+
 		if err := d.db.SetUserEmail(ctx, database.SetUserEmailParams{
 			Username: before.UserName,
 			Email:    after.Email,

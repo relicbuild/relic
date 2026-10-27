@@ -11,8 +11,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
+	_ "relic/internal/platform/database/sqlitefunctions"
 	"relic/internal/platform/localdisk"
 	"relic/internal/platform/telemetry"
 	"relic/migrations"
@@ -21,8 +23,6 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riversqlite"
 	"github.com/riverqueue/river/rivermigrate"
-	"modernc.org/sqlite"
-	sqlite3 "modernc.org/sqlite/lib"
 )
 
 type sqliteEngine struct {
@@ -30,6 +30,9 @@ type sqliteEngine struct {
 	reader     *sql.DB
 	writer     *sql.DB
 	traced     sqliteDBTX
+	full       *fullDisk
+	reads      *sqliteStatements
+	writes     *sqliteStatements
 	unregister func()
 }
 
@@ -38,7 +41,7 @@ const sqliteReadConnections = 8
 
 const sqliteBusyTimeout = 10 * time.Second
 
-func openSQLite(ctx context.Context, path string, mustExist bool) (*sqliteEngine, Querier, error) {
+func openSQLite(ctx context.Context, path string, mustExist bool, full *fullDisk) (*sqliteEngine, Querier, error) {
 	if !filepath.IsAbs(path) {
 		return nil, nil, fmt.Errorf("sqlite database path %q must be absolute (sqlite:///path/to/relic.db)", path)
 	}
@@ -88,20 +91,28 @@ func openSQLite(ctx context.Context, path string, mustExist bool) (*sqliteEngine
 		},
 	)
 
+	reads := newSQLiteStatements(reader)
+	writes := newSQLiteStatements(writer)
+
 	e := &sqliteEngine{
 		path:   path,
 		reader: reader,
 		writer: writer,
+		reads:  reads,
+		writes: writes,
 		traced: sqliteConnections{
 			read: tracedSQLite{
 				db:       reader,
 				acquired: readAcquired,
+				full:     full,
 			},
 			write: tracedSQLite{
 				db:       writer,
 				acquired: writeAcquired,
+				full:     full,
 			},
 		},
+		full: full,
 		unregister: func() {
 			unregisterReader()
 			unregisterWriter()
@@ -115,7 +126,18 @@ func openSQLite(ctx context.Context, path string, mustExist bool) (*sqliteEngine
 		return nil, nil, fmt.Errorf("ping database: %w", err)
 	}
 
-	return e, newSQLiteQuerier(e.traced), nil
+	return e, newSQLiteQuerier(sqliteConnections{
+		read: tracedSQLite{
+			db:       reads,
+			acquired: readAcquired,
+			full:     full,
+		},
+		write: tracedSQLite{
+			db:       writes,
+			acquired: writeAcquired,
+			full:     full,
+		},
+	}), nil
 }
 
 // createOwnerOnly creates an empty file only its owner may read, which SQLite
@@ -173,6 +195,8 @@ func sqliteDSN(path string, pragmas ...string) string {
 
 func (e *sqliteEngine) close() {
 	e.unregister()
+	e.reads.close()
+	e.writes.close()
 	_ = e.reader.Close()
 	_ = e.writer.Close()
 }
@@ -197,15 +221,24 @@ func (e *sqliteEngine) withTx(ctx context.Context, fn func(q Querier) error) (er
 		}
 	}()
 
+	var missed sync.Map
+
 	if err := fn(newSQLiteQuerier(tracedSQLite{
-		db: tx,
+		db: sqliteTxStatements{
+			tx:         tx,
+			statements: e.writes,
+			missed:     &missed,
+		},
+		full: e.full,
 	})); err != nil {
 		return err
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit: %w", markDiskFull(err))
+		return fmt.Errorf("commit: %w", e.full.mark(err))
 	}
+
+	e.writes.prepare(ctx, &missed)
 
 	return nil
 }
@@ -285,17 +318,10 @@ func readOnlyStatement(query string) bool {
 	}
 }
 
-func markDiskFull(err error) error {
-	if liteErr, ok := errors.AsType[*sqlite.Error](err); ok && liteErr.Code()&0xff == sqlite3.SQLITE_FULL {
-		return fmt.Errorf("%w: %w", localdisk.ErrFull, err)
-	}
-
-	return err
-}
-
 type tracedSQLite struct {
 	db       sqliteDBTX
 	acquired func()
+	full     *fullDisk
 }
 
 func (t tracedSQLite) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
@@ -306,7 +332,7 @@ func (t tracedSQLite) ExecContext(ctx context.Context, query string, args ...any
 	}
 
 	res, err := t.db.ExecContext(ctx, query, args...)
-	err = markDiskFull(err)
+	err = t.full.mark(err)
 	end(err)
 
 	return res, err
@@ -320,7 +346,7 @@ func (t tracedSQLite) QueryContext(ctx context.Context, query string, args ...an
 	}
 
 	rows, err := t.db.QueryContext(ctx, query, args...)
-	err = markDiskFull(err)
+	err = t.full.mark(err)
 	end(err)
 
 	return rows, err

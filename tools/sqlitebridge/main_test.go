@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"golang.org/x/tools/go/packages"
 )
 
 func TestSQLiteBridgeUpToDate(t *testing.T) {
@@ -26,6 +28,29 @@ func TestSQLiteBridgeUpToDate(t *testing.T) {
 	if !bytes.Equal(got, want) {
 		t.Error(outFile + " is stale: run go run ./tools/sqlitebridge")
 	}
+}
+
+func TestBuildsWithoutTheDatabasePackage(t *testing.T) {
+	t.Parallel()
+
+	pkgs, err := packages.Load(&packages.Config{
+		Mode: packages.NeedName | packages.NeedImports | packages.NeedDeps,
+		Dir:  ".",
+	}, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	packages.Visit(pkgs, func(p *packages.Package) bool {
+		if p.PkgPath == databasePkg {
+			t.Errorf(
+				"sqlitebridge imports %s, so it cannot build while sqlite_queries.go lacks a new query",
+				databasePkg,
+			)
+		}
+
+		return true
+	}, nil)
 }
 
 func TestSQLiteQueriesPrepare(t *testing.T) {

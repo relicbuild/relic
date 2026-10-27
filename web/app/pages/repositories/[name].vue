@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ContextMenuItem, TreeItem } from '@nuxt/ui'
+import { breakpointsTailwind, useBreakpoints } from '@vueuse/core'
 import type { Item } from '~/gen/relic/v1/artifact_pb'
 import { RepositoryClass } from '~/gen/relic/v1/repository_pb'
 import { ArtifactUploadModal, ConfirmModal } from '#components'
@@ -100,12 +101,19 @@ const { data: found, status: searchStatus, error: searchError } = useAsyncData(
 )
 const searching = computed(() => query.value.trim().length >= 2)
 
+const isMobile = useBreakpoints(breakpointsTailwind).smaller('lg')
+const detailsOpen = ref(false)
+
 function openFound(it: Item) {
   search.value = ''
   router.replace({ query: { ...route.query, path: it.path } })
+  if (isMobile.value && !it.folder) {
+    detailsOpen.value = true
+  }
 }
 
 async function onDeleted(path: string) {
+  detailsOpen.value = false
   const parent = path.split('/').slice(0, -1).join('/')
   const node = parent ? findFolderNode(roots.value ?? undefined, parent) : undefined
   if (node) {
@@ -163,7 +171,16 @@ const selectedNode = computed(() => (selected.value ? findFolderNode(roots.value
 
 function onSelect(node: Node) {
   router.replace({ query: { ...route.query, path: node.path } })
+  if (isMobile.value && !node.folder) {
+    detailsOpen.value = true
+  }
 }
+
+watch(selectedNode, (node) => {
+  if (isMobile.value && node && !node.folder) {
+    detailsOpen.value = true
+  }
+}, { immediate: true })
 
 defineShortcuts({ r: () => reloadFolder() })
 
@@ -272,6 +289,9 @@ function openNode(path: string, folder: boolean) {
     expanded.value.push(path)
   }
   router.replace({ query: { ...route.query, path } })
+  if (isMobile.value && !folder) {
+    detailsOpen.value = true
+  }
 }
 
 const fileUrl = (path: string) => window.location.origin + filePath('files', repo.value, path)
@@ -371,6 +391,14 @@ const breadcrumb = computed(() => {
           />
         </template>
         <template #right>
+          <UButton
+            v-if="isMobile"
+            icon="i-lucide-panel-right-open"
+            color="neutral"
+            variant="ghost"
+            :aria-label="selected ? `Show the details of ${nameOf(selected)}` : `Show the details of ${repo}`"
+            @click="detailsOpen = true"
+          />
           <UTooltip text="Refresh the tree">
             <UButton
               icon="i-lucide-refresh-cw"
@@ -469,7 +497,46 @@ const breadcrumb = computed(() => {
     </template>
   </UDashboardPanel>
 
-  <UDashboardPanel id="repository-item">
+  <USlideover
+    v-if="isMobile"
+    v-model:open="detailsOpen"
+    :title="nameOf(selected)"
+    :description="selected ? `${repo}/${selected}` : undefined"
+  >
+    <template #body>
+      <ArtifactDetailPanel
+        :key="detailKey"
+        :repo="repo"
+        :path="selected"
+        @deleted="onDeleted"
+      />
+    </template>
+    <template #footer>
+      <div class="flex w-full gap-2">
+        <UButton
+          v-if="canUpload"
+          icon="i-lucide-upload"
+          color="neutral"
+          variant="outline"
+          label="Upload"
+          class="flex-1 justify-center"
+          @click="openUpload()"
+        />
+        <UButton
+          icon="i-lucide-folder-sync"
+          color="neutral"
+          variant="outline"
+          label="Refresh"
+          :aria-label="refreshLabel"
+          :loading="refreshing"
+          class="flex-1 justify-center"
+          @click="reloadFolder()"
+        />
+      </div>
+    </template>
+  </USlideover>
+
+  <UDashboardPanel v-else id="repository-item">
     <template #header>
       <UDashboardNavbar>
         <template #left>

@@ -8,6 +8,12 @@ export const denseTable = {
   td: 'border-r border-muted last:border-r-0'
 }
 
+// cardTable is the UTable ui for a table in a card: denseTable's bordered cells, as tall as its rows.
+export const cardTable = {
+  th: denseTable.th,
+  td: denseTable.td
+}
+
 // paginate returns one page of rows.
 export function paginate<T>(rows: T[], page: number, pageSize: number): T[] {
   return rows.slice((page - 1) * pageSize, page * pageSize)

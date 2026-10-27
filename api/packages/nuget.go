@@ -84,6 +84,14 @@ func (h *Handler) nugetIndex(w http.ResponseWriter, base string) {
 			},
 			{
 				base + "/query",
+				"SearchQueryService/3.0.0-beta",
+			},
+			{
+				base + "/query",
+				"SearchQueryService/3.0.0-rc",
+			},
+			{
+				base + "/query",
 				"SearchQueryService/3.5.0",
 			},
 			{

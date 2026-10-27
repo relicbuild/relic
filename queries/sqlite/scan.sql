@@ -27,6 +27,12 @@ DELETE FROM scan_artifacts WHERE status = 'failed' AND reason LIKE 'match:%';
 -- name: ListContentFolders :many
 SELECT DISTINCT path FROM items WHERE sha256 = @sha256 AND type = 'file' ORDER BY path LIMIT 20;
 
+-- name: ListContentPropertyValues :many
+SELECT DISTINCT p.value FROM items i
+JOIN item_properties p ON p.item_id = i.id
+WHERE i.sha256 = @sha256 AND i.type = 'file' AND p.key = @key
+ORDER BY p.value LIMIT 20;
+
 -- name: GetScanArtifact :one
 SELECT * FROM scan_artifacts WHERE sha256 = @sha256;
 

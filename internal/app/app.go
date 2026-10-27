@@ -74,6 +74,7 @@ import (
 	"relic/internal/platform/events"
 	"relic/internal/platform/httperror"
 	"relic/internal/platform/httpserver"
+	"relic/internal/platform/localdisk"
 	"relic/internal/platform/objectstore"
 	"relic/internal/platform/sealing"
 	"relic/internal/platform/servertls"
@@ -1190,11 +1191,11 @@ func storageCheck(blobs blobHeader) func(context.Context) error {
 	}
 }
 
-func healthChecks(db interface{ Ping(context.Context) error }, blobs blobHeader) []relicapi.HealthCheck {
+func healthChecks(db interface{ Ready(context.Context) error }, blobs blobHeader) []relicapi.HealthCheck {
 	return []relicapi.HealthCheck{
 		{
 			Name:  "database",
-			Check: db.Ping,
+			Check: db.Ready,
 		},
 		{
 			Name:  "object storage",
@@ -1235,7 +1236,7 @@ func routes(checks []relicapi.HealthCheck) *httpserver.Router {
 
 		for _, c := range checks {
 			if err := c.Check(ctx); err != nil {
-				http.Error(w, c.Name+" unavailable", http.StatusServiceUnavailable)
+				http.Error(w, unreadyReason(c.Name, err), http.StatusServiceUnavailable)
 				return
 			}
 		}
@@ -1247,6 +1248,14 @@ func routes(checks []relicapi.HealthCheck) *httpserver.Router {
 	rt.Handle("/", auth.Public, uiHeaders(apiNotFound(ui.Handler("/"))))
 
 	return rt
+}
+
+func unreadyReason(check string, err error) string {
+	if errors.Is(err, localdisk.ErrFull) {
+		return check + " is full"
+	}
+
+	return check + " unavailable"
 }
 
 func scannersInstalled(cfg config.Scan) (syftPath, grypePath string, err error) {

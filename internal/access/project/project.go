@@ -32,8 +32,8 @@ type Role string
 
 // Roles.
 const (
-	// RoleAdmin works in the project's repositories, and manages its members
-	// and repositories.
+	// RoleAdmin works in the project's repositories, promotes its releases,
+	// and manages its members and repositories.
 	RoleAdmin Role = "admin"
 	// RoleDeveloper reads, deploys, annotates and deletes in the project's
 	// repositories.
@@ -58,6 +58,12 @@ var roleActions = map[Role][]auth.Action{
 	RoleViewer: {
 		auth.ActionRead,
 	},
+}
+
+var deliveryRoleActions = map[Role][]auth.Action{
+	RoleAdmin:     append(slices.Clone(roleActions[RoleAdmin]), auth.ActionPromote),
+	RoleDeveloper: roleActions[RoleDeveloper],
+	RoleViewer:    roleActions[RoleViewer],
 }
 
 var keyPattern = regexp.MustCompile(`^[a-z][a-z0-9]{1,31}$`)
@@ -518,7 +524,7 @@ func (s *Service) Quota(ctx context.Context, key string) (int64, error) {
 }
 
 // Permissions are the projects' roles as permissions on their repositories,
-// one per project, named "project <key>".
+// builds and releases, one per project, named "project <key>".
 func (s *Service) Permissions(ctx context.Context) ([]auth.Permission, error) {
 	if s.repositoryProjects == nil {
 		return nil, nil
@@ -552,11 +558,11 @@ func (s *Service) Permissions(ctx context.Context) ([]auth.Permission, error) {
 
 		if names := byProject[p.Key]; len(names) > 0 {
 			slices.Sort(names)
-			perm.Repository = memberSection(p.Members, names)
+			perm.Repository = memberSection(p.Members, names, roleActions)
 		}
 
 		if s.storageRepositories != nil {
-			stored := memberSection(p.Members, s.storageRepositories(p.Key))
+			stored := memberSection(p.Members, s.storageRepositories(p.Key), deliveryRoleActions)
 			perm.Build, perm.Release = stored, stored
 		}
 
@@ -568,7 +574,7 @@ func (s *Service) Permissions(ctx context.Context) ([]auth.Permission, error) {
 	return out, nil
 }
 
-func memberSection(members []Member, repositories []string) *auth.Section {
+func memberSection(members []Member, repositories []string, actions map[Role][]auth.Action) *auth.Section {
 	sec := &auth.Section{
 		Selector: auth.Selector{
 			Repositories: repositories,
@@ -579,9 +585,9 @@ func memberSection(members []Member, repositories []string) *auth.Section {
 
 	for _, m := range members {
 		if m.Group {
-			sec.Groups[m.Name] = roleActions[m.Role]
+			sec.Groups[m.Name] = actions[m.Role]
 		} else {
-			sec.Users[m.Name] = roleActions[m.Role]
+			sec.Users[m.Name] = actions[m.Role]
 		}
 	}
 

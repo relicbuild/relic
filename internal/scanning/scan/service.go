@@ -20,6 +20,7 @@ import (
 	"time"
 	"uuid"
 
+	"relic/internal/artifacts/formats/debian"
 	"relic/internal/platform/database"
 	"relic/internal/platform/events"
 	"relic/internal/platform/objectstore"
@@ -367,7 +368,17 @@ func (s *Service) withOSDistro(ctx context.Context, sha256Hex, fileName string, 
 		return nil, "", fmt.Errorf("folders of %s: %w", sha256Hex, err)
 	}
 
-	sbom, unmatched := osPackageDistro(sbom, fileName, folders)
+	var distributions []string
+	if osPackageType(fileName) == "deb" {
+		if distributions, err = s.db.ListContentPropertyValues(ctx, database.ListContentPropertyValuesParams{
+			Sha256: &sha256Hex,
+			Key:    debian.PropDistribution,
+		}); err != nil {
+			return nil, "", fmt.Errorf("distributions of %s: %w", sha256Hex, err)
+		}
+	}
+
+	sbom, unmatched := osPackageDistro(sbom, fileName, folders, distributions)
 
 	return sbom, unmatched, nil
 }

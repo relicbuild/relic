@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	"relic/internal/app/ui"
 	"relic/internal/artifacts/repository"
 	"relic/internal/platform/database"
+	"relic/internal/platform/localdisk"
 	"relic/internal/platform/objectstore"
 )
 
@@ -228,7 +230,7 @@ func TestRoutes(t *testing.T) {
 			http.StatusOK,
 		},
 	}
-	h := routes(healthChecks(fakePinger{}, fakeBlobs{}))
+	h := routes(healthChecks(readyDatabase{}, fakeBlobs{}))
 
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
@@ -244,9 +246,9 @@ func TestRoutes(t *testing.T) {
 	}
 }
 
-type fakePinger struct{}
+type readyDatabase struct{}
 
-func (fakePinger) Ping(context.Context) error { return nil }
+func (readyDatabase) Ready(context.Context) error { return nil }
 
 type fakeBlobs struct {
 	err error
@@ -256,36 +258,51 @@ func (f fakeBlobs) Head(context.Context, string) (objectstore.Info, error) {
 	return objectstore.Info{}, f.err
 }
 
-type failingPinger struct{}
+type unreachableDatabase struct{}
 
-func (failingPinger) Ping(context.Context) error { return errors.New("down") }
+func (unreachableDatabase) Ready(context.Context) error { return errors.New("down") }
+
+type fullDatabase struct{}
+
+func (fullDatabase) Ready(context.Context) error {
+	return fmt.Errorf("refused a write: %w", localdisk.ErrFull)
+}
 
 func TestReadyz(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name  string
-		db    interface{ Ping(context.Context) error }
-		blobs fakeBlobs
-		want  int
+		name   string
+		db     interface{ Ready(context.Context) error }
+		blobs  fakeBlobs
+		want   int
+		reason string
 	}{
 		{
 			name: "ready (probe key absent)",
-			db:   fakePinger{},
+			db:   readyDatabase{},
 			blobs: fakeBlobs{
 				err: objectstore.ErrNotFound,
 			},
 			want: http.StatusOK,
 		},
 		{
-			name:  "database down",
-			db:    failingPinger{},
-			blobs: fakeBlobs{},
-			want:  http.StatusServiceUnavailable,
+			name:   "database down",
+			db:     unreachableDatabase{},
+			blobs:  fakeBlobs{},
+			want:   http.StatusServiceUnavailable,
+			reason: "database unavailable",
+		},
+		{
+			name:   "database full",
+			db:     fullDatabase{},
+			blobs:  fakeBlobs{},
+			want:   http.StatusServiceUnavailable,
+			reason: "database is full",
 		},
 		{
 			name: "storage down",
-			db:   fakePinger{},
+			db:   readyDatabase{},
 			blobs: fakeBlobs{
 				err: errors.New("connection refused"),
 			},
@@ -304,6 +321,10 @@ func TestReadyz(t *testing.T) {
 			if rec.Code != tt.want {
 				t.Errorf("status = %d, want %d", rec.Code, tt.want)
 			}
+
+			if !strings.Contains(rec.Body.String(), tt.reason) {
+				t.Errorf("body = %q, want %q", rec.Body.String(), tt.reason)
+			}
 		})
 	}
 }
@@ -311,7 +332,7 @@ func TestReadyz(t *testing.T) {
 func TestRouteAccess(t *testing.T) {
 	t.Parallel()
 
-	rt := routes(healthChecks(fakePinger{}, fakeBlobs{}))
+	rt := routes(healthChecks(readyDatabase{}, fakeBlobs{}))
 	public := map[string]bool{
 		"GET /healthz": true,
 		"GET /readyz":  true,

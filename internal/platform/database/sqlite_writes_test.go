@@ -258,6 +258,10 @@ func TestSQLiteWritesToAFullDiskAreErrFull(t *testing.T) {
 	if !errors.Is(err, localdisk.ErrFull) {
 		t.Errorf("writing past the database's last page = %v, want localdisk.ErrFull", err)
 	}
+
+	if err := db.Ready(t.Context()); !errors.Is(err, localdisk.ErrFull) {
+		t.Errorf("Ready after a write refused for lack of space = %v, want localdisk.ErrFull", err)
+	}
 }
 
 func maliciousPackage(id string) database.UpsertMaliciousPackageParams {

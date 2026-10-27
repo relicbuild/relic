@@ -4,12 +4,17 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
+	"github.com/ProtonMail/go-crypto/openpgp/armor"
+	"github.com/ProtonMail/go-crypto/openpgp/packet"
 )
 
 func TestSetupCommands(t *testing.T) {
@@ -407,4 +412,230 @@ func readToken(t *testing.T, config string) string {
 	t.Fatal("no token in the config")
 
 	return ""
+}
+
+func TestDnfClientSetUpBeforeARotationTrustsTheNewKey(t *testing.T) {
+	t.Parallel()
+
+	srv := testServer(t)
+	dir := t.TempDir()
+	config := filepath.Join(dir, "config.yaml")
+	root := filepath.Join(dir, "root")
+
+	if _, err := relic(
+		t,
+		config,
+		"password\n",
+		"auth",
+		"login",
+		srv.URL,
+		"--user",
+		"admin",
+		"--password-stdin",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	apply := func(spec string) {
+		t.Helper()
+
+		if _, err := relic(t, config, `apiVersion: relic.build/v1
+kind: Repository
+metadata: {name: rpm-rotating}
+spec: {class: local, format: rpm, `+spec+`}
+`, "apply", "-f", "-"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	apply("signingKey: rpm-old")
+
+	if _, err := relic(
+		t,
+		config,
+		"",
+		"package",
+		"setup",
+		"dnf",
+		"rpm-rotating",
+		"--write",
+		"--root",
+		root,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	client := newDnfClient(t, root, filepath.Join(root, "etc/yum.repos.d/relic-rpm-rotating.repo"))
+
+	if signer := client.refresh(); !strings.Contains(signer, "(rpm-old)") {
+		t.Fatalf("repomd.xml.asc before the rotation signed by %q, want rpm-old", signer)
+	}
+
+	apply("signingKey: rpm-old, secondarySigningKey: rpm-new")
+
+	if signer := client.refresh(); !strings.Contains(signer, "(rpm-old)") {
+		t.Errorf("repomd.xml.asc with rpm-new as secondary key signed by %q, want rpm-old", signer)
+	}
+
+	if keys := client.servedKeys(); len(keys) != 2 {
+		t.Errorf("the gpgkey dnf reads holds %d keys during the rotation, want the old and the new", len(keys))
+	}
+
+	apply("signingKey: rpm-new, secondarySigningKey: rpm-old")
+
+	if signatures := client.signatures(); len(signatures) != 1 {
+		t.Errorf("repomd.xml.asc holds %d signatures, want one, as dnf parses no more", len(signatures))
+	}
+
+	if signer := client.refresh(); !strings.Contains(signer, "(rpm-new)") {
+		t.Errorf("repomd.xml.asc after the switch signed by %q, want rpm-new", signer)
+	}
+}
+
+type dnfClient struct {
+	t        *testing.T
+	root     string
+	settings map[string]string
+	keyring  openpgp.EntityList
+}
+
+func newDnfClient(t *testing.T, root, repoFile string) *dnfClient {
+	t.Helper()
+
+	b, err := os.ReadFile(repoFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	settings := map[string]string{}
+
+	for line := range strings.Lines(string(b)) {
+		if key, value, ok := strings.Cut(strings.TrimSpace(line), "="); ok {
+			settings[key] = value
+		}
+	}
+
+	return &dnfClient{
+		t:        t,
+		root:     root,
+		settings: settings,
+	}
+}
+
+func (c *dnfClient) fetch(rawURL string) []byte {
+	c.t.Helper()
+
+	if path, ok := strings.CutPrefix(rawURL, "file://"); ok {
+		b, err := os.ReadFile(filepath.Join(c.root, path))
+		if err != nil {
+			c.t.Fatal(err)
+		}
+
+		return b
+	}
+
+	req, err := http.NewRequestWithContext(c.t.Context(), http.MethodGet, rawURL, nil)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+
+	req.SetBasicAuth(c.settings["username"], c.settings["password"])
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	b, err := io.ReadAll(resp.Body)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		c.t.Fatalf("GET %s = %d %v", rawURL, resp.StatusCode, err)
+	}
+
+	return b
+}
+
+func (c *dnfClient) servedKeys() openpgp.EntityList {
+	c.t.Helper()
+
+	var keys openpgp.EntityList
+
+	for gpgkey := range strings.FieldsSeq(c.settings["gpgkey"]) {
+		ring, err := openpgp.ReadArmoredKeyRing(bytes.NewReader(c.fetch(gpgkey)))
+		if err != nil {
+			c.t.Fatalf("gpgkey %s: %v", gpgkey, err)
+		}
+
+		keys = append(keys, ring...)
+	}
+
+	return keys
+}
+
+func (c *dnfClient) signatures() []*packet.Signature {
+	c.t.Helper()
+
+	block, err := armor.Decode(bytes.NewReader(c.fetch(c.settings["baseurl"] + "/repodata/repomd.xml.asc")))
+	if err != nil {
+		c.t.Fatal(err)
+	}
+
+	var signatures []*packet.Signature
+
+	packets := packet.NewReader(block.Body)
+
+	for {
+		p, err := packets.Next()
+		if errors.Is(err, io.EOF) {
+			return signatures
+		}
+
+		if err != nil {
+			c.t.Fatal(err)
+		}
+
+		if signature, ok := p.(*packet.Signature); ok {
+			signatures = append(signatures, signature)
+		}
+	}
+}
+
+func (c *dnfClient) verify() (string, error) {
+	repoMD := c.fetch(c.settings["baseurl"] + "/repodata/repomd.xml")
+	signature := c.fetch(c.settings["baseurl"] + "/repodata/repomd.xml.asc")
+
+	signer, err := openpgp.CheckArmoredDetachedSignature(
+		c.keyring,
+		bytes.NewReader(repoMD),
+		bytes.NewReader(signature),
+		nil,
+	)
+	if err != nil {
+		return "", err
+	}
+
+	for name := range signer.Identities {
+		return name, nil
+	}
+
+	return "", nil
+}
+
+func (c *dnfClient) refresh() string {
+	c.t.Helper()
+
+	if signer, err := c.verify(); err == nil {
+		return signer
+	}
+
+	c.keyring = append(c.keyring, c.servedKeys()...)
+
+	signer, err := c.verify()
+	if err != nil {
+		c.t.Fatalf("repomd.xml.asc does not verify with the keys gpgkey names: %v", err)
+	}
+
+	return signer
 }

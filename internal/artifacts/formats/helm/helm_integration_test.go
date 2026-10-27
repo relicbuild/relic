@@ -6,6 +6,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -249,5 +250,64 @@ func TestBuildIndexHidesARestrictedMembersCharts(t *testing.T) {
 		}) {
 			t.Errorf("a caller who may not see hidden gets %v, want remote-chart and shown", got)
 		}
+	}
+}
+
+func TestBuildIndexListsChartsOnlyWhenAMemberChanges(t *testing.T) {
+	t.Parallel()
+
+	f := newHelmFixture(t)
+	f.deploy(t, "first")
+	f.deploy(t, "second")
+
+	var lists atomic.Int64
+
+	listCharts := f.svc.listCharts
+	f.svc.listCharts = func(ctx context.Context, repoKey string) ([]repository.Item, error) {
+		lists.Add(1)
+
+		return listCharts(ctx, repoKey)
+	}
+
+	built := f.index(t, nil)
+	if got := chartNames(built); !slices.Equal(got, []string{
+		"first",
+		"remote-chart",
+		"second",
+	}) {
+		t.Fatalf("the first build lists %v", got)
+	}
+
+	listed := lists.Load()
+
+	f.advance(time.Minute)
+
+	if again := f.index(t, nil); again.Generated != built.Generated {
+		t.Errorf("a second request was generated at %s, want the cached build of %s", again.Generated, built.Generated)
+	}
+
+	if got := lists.Load(); got != listed {
+		t.Errorf("a request for an unchanged index listed the charts %d more times", got-listed)
+	}
+
+	if err := f.repos.Delete(t.Context(), "helm-local", "first-1.0.0.tgz"); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := chartNames(f.index(t, nil)); !slices.Equal(got, []string{
+		"remote-chart",
+		"second",
+	}) {
+		t.Errorf("after a delete the index lists %v, want the deleted chart gone", got)
+	}
+
+	f.deploy(t, "third")
+
+	if got := chartNames(f.index(t, nil)); !slices.Equal(got, []string{
+		"remote-chart",
+		"second",
+		"third",
+	}) {
+		t.Errorf("after a deploy the index lists %v, want the new chart too", got)
 	}
 }

@@ -70,3 +70,7 @@ mvnw
 gradle
 native-rpm
 native-ai-agents
+native-package-setup
+native-huggingface
+native-git-lfs
+native-dnf-key-rotation

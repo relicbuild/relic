@@ -764,7 +764,7 @@ var setupClients = map[string]setupClient{
 		formats: []relicv1.Format{
 			relicv1.Format_FORMAT_RPM,
 		},
-		short:  "a dnf and yum repository file with its credentials, and the repository's signing key (run as root)",
+		short:  "a dnf and yum repository file with its credentials, reading the repository's signing keys from Relic (run as root)",
 		system: true,
 		flags: map[string]string{
 			"folder": "the folder whose repodata to use, in a repository with a metadataDepth (el9, f44)",
@@ -775,34 +775,22 @@ var setupClients = map[string]setupClient{
 				return nil, err
 			}
 
-			var steps []setupStep
-
 			signature := "repo_gpgcheck=0\n"
-
 			if len(e.signingKeys) > 0 {
-				keyring, err := armoredKeyring(e.signingKeys)
-				if err != nil {
-					return nil, fmt.Errorf("dnf: %w", err)
-				}
-
-				keyFile := "etc/pki/rpm-gpg/RPM-GPG-KEY-relic-" + e.repo
-				steps = append(steps, setupStep{
-					file:    keyFile,
-					mode:    0o644,
-					content: keyring,
-				})
-				signature = "repo_gpgcheck=1\ngpgkey=file:///" + keyFile + "\n"
+				signature = "repo_gpgcheck=1\ngpgkey=" + strings.TrimSuffix(baseURL, "/") + "/repodata/repomd.xml.key\n"
 			}
 
-			return append(steps, setupStep{
-				file: "etc/yum.repos.d/relic-" + e.repo + ".repo",
-				mode: 0o600,
-				content: "[relic-" + e.repo + "]\nname=Relic " + e.repo + "\nbaseurl=" + baseURL + "\nusername=" + e.user +
-					"\npassword=" + e.token + "\nenabled=1\ngpgcheck=0\n" + signature + optionalLine(
-					"sslcacert=",
-					e.authorityFile,
-				),
-			}), nil
+			return []setupStep{
+				{
+					file: "etc/yum.repos.d/relic-" + e.repo + ".repo",
+					mode: 0o600,
+					content: "[relic-" + e.repo + "]\nname=Relic " + e.repo + "\nbaseurl=" + baseURL + "\nusername=" + e.user +
+						"\npassword=" + e.token + "\nenabled=1\ngpgcheck=0\n" + signature + optionalLine(
+						"sslcacert=",
+						e.authorityFile,
+					),
+				},
+			}, nil
 		},
 		notes: func(e setupEnv) string {
 			if e.class != relicv1.RepositoryClass_REPOSITORY_CLASS_REMOTE {

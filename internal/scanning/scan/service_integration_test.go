@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -1096,4 +1097,188 @@ func TestScanLinksFilesOfALocalStore(t *testing.T) {
 	for o, err := range blobs.List(ctx, objectstore.TemporaryKeyPrefix) {
 		t.Errorf("scan left %s (%v) in the store", o.Key, err)
 	}
+}
+
+func TestScanMatchesADebianPackageByItsDistributionsRelease(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db := databasetest.NewDB(t)
+	blobs := objectstoretest.NewMemory()
+	log := slog.New(slog.DiscardHandler)
+
+	repos := repository.NewService(db, blobs, log)
+	for _, name := range []string{
+		"debian-local",
+		"debian-loose",
+	} {
+		if err := repos.CreateRepository(
+			ctx,
+			repository.Repository{
+				Name:   name,
+				Class:  "local",
+				Format: "debian",
+			},
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	deploy := func(repo, version string, props repository.Properties) {
+		t.Helper()
+
+		if _, err := repos.Deploy(
+			ctx,
+			repository.DeployInput{
+				Repository: repo,
+				Path:       "pool/main/l/lz4/liblz4-1_" + version + "_amd64.deb",
+				Body:       bytes.NewReader(liblz4Deb(t, version)),
+				Props:      props,
+				User:       "admin",
+			},
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	deploy("debian-local", "1.9.4-1", repository.Properties{
+		"deb.distribution": {
+			"bookworm",
+		},
+		"deb.component": {
+			"main",
+		},
+		"deb.architecture": {
+			"amd64",
+		},
+	})
+	deploy("debian-loose", "1.9.4-2", nil)
+
+	report, err := filepath.Abs("testdata/grype.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	scripttest.Write(t, filepath.Join(dir, "syft"), "#!/bin/sh\necho '{\"artifacts\":[{\"name\":\"liblz4-1\","+
+		"\"version\":\"1.9.4-1\",\"type\":\"deb\",\"purl\":\"pkg:deb/debian/liblz4-1@1.9.4-1?arch=amd64\"}],"+
+		"\"schema\":{\"version\":\"16.1.10\"}}'\n")
+	scripttest.Write(
+		t,
+		filepath.Join(dir, "grype"),
+		"#!/bin/sh\nfor arg; do case $arg in sbom:*) sbom=${arg#sbom:};; esac; done\n"+
+			"if grep -q '\"distro\":{\"id\":\"debian\",\"versionID\":\"12\"}' \"$sbom\"; then cat "+report+
+			"; else echo '{\"matches\":[]}'; fi\n",
+	)
+
+	svc := scan.NewService(db, blobs, scan.Syft{
+		Exec: scan.Exec{
+			Path: filepath.Join(dir, "syft"),
+		},
+	}, scan.Grype{
+		Exec: scan.Exec{
+			Path: filepath.Join(dir, "grype"),
+		},
+		DatabaseDir: dir,
+	}, scan.Limits{}, log)
+
+	claimed, err := svc.Claim(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	names := map[string]string{}
+	for _, c := range claimed {
+		names[c.FileName] = c.Sha256
+
+		if err := svc.ScanArtifact(ctx, c.Sha256, c.FileName); err != nil {
+			t.Fatalf("%s: %v", c.FileName, err)
+		}
+	}
+
+	published := names["liblz4-1_1.9.4-1_amd64.deb"]
+	if findings, err := db.ListFindings(ctx, published); err != nil || len(findings) == 0 {
+		t.Errorf("findings of a package in bookworm = %d %v, want grype to match it as Debian 12", len(findings), err)
+	}
+
+	loose := names["liblz4-1_1.9.4-2_amd64.deb"]
+	if findings, _ := db.ListFindings(ctx, loose); len(findings) != 0 {
+		t.Errorf("findings of a package in no distribution = %d, want none", len(findings))
+	}
+
+	if a, err := db.GetScanArtifact(ctx, loose); err != nil || !strings.Contains(a.Reason, "no distribution release") {
+		t.Errorf(
+			"reason of a package in no distribution = %q %v, want why its OS vulnerabilities were not matched",
+			a.Reason,
+			err,
+		)
+	}
+}
+
+func liblz4Deb(t *testing.T, version string) []byte {
+	t.Helper()
+
+	control := "Package: liblz4-1\nSource: lz4\nVersion: " + version + "\nArchitecture: amd64\n" +
+		"Maintainer: Debian Med Packaging Team <debian-med-packaging@lists.alioth.debian.org>\n" +
+		"Installed-Size: 166\nDepends: libc6 (>= 2.14)\nMulti-Arch: same\nSection: libs\nPriority: optional\n" +
+		"Homepage: https://github.com/lz4/lz4\nDescription: Fast LZ compression algorithm library - runtime\n"
+
+	var controlTar bytes.Buffer
+
+	xw, err := xz.NewWriter(&controlTar)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tw := tar.NewWriter(xw)
+	_ = tw.WriteHeader(&tar.Header{
+		Name:     "./control",
+		Mode:     0o644,
+		Size:     int64(len(control)),
+		Typeflag: tar.TypeReg,
+	})
+	_, _ = io.WriteString(tw, control)
+	_ = tw.Close()
+	_ = xw.Close()
+
+	var deb bytes.Buffer
+	deb.WriteString("!<arch>\n")
+
+	for _, member := range []struct {
+		name string
+		body []byte
+	}{
+		{
+			name: "debian-binary",
+			body: []byte("2.0\n"),
+		},
+		{
+			name: "control.tar.xz",
+			body: controlTar.Bytes(),
+		},
+		{
+			name: "data.tar.gz",
+			body: []byte(tgz(t, map[string]string{
+				"./usr/lib/x86_64-linux-gnu/liblz4.so.1.9.4": "\x7fELF",
+			})),
+		},
+	} {
+		_, _ = fmt.Fprintf(
+			&deb,
+			"%-16s%-12s%-6s%-6s%-8s%-10d`\n",
+			member.name,
+			"0",
+			"0",
+			"0",
+			"100644",
+			len(member.body),
+		)
+		deb.Write(member.body)
+
+		if len(member.body)%2 == 1 {
+			deb.WriteByte('\n')
+		}
+	}
+
+	return deb.Bytes()
 }

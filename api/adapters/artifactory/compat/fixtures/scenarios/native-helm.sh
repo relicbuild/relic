@@ -7,13 +7,15 @@ if [[ -z "${SCENARIO_TLS_URL:-}" || -z "${SCENARIO_USER:-}" ]] || ! command -v h
 fi
 LOCAL=relic-scenario-nhelm-local
 REMOTE=relic-scenario-nhelm-jetstack
+GHPAGES=relic-scenario-nhelm-ghpages
 OCI=relic-scenario-nhelm-oci
 VIRTUAL=relic-scenario-nhelm
-ALL=("$VIRTUAL" "$LOCAL" "$REMOTE" "$OCI")
+ALL=("$VIRTUAL" "$LOCAL" "$REMOTE" "$GHPAGES" "$OCI")
 for r in "${ALL[@]}"; do delete_repo "$r"; done
 cat >repos.json <<JSON
 [{"key":"$LOCAL","rclass":"local","packageType":"helm"},
  {"key":"$REMOTE","rclass":"remote","packageType":"helm","url":"https://charts.jetstack.io"},
+ {"key":"$GHPAGES","rclass":"remote","packageType":"helm","url":"https://kubernetes-sigs.github.io/metrics-server"},
  {"key":"$OCI","rclass":"local","packageType":"helm"},
  {"key":"$VIRTUAL","rclass":"virtual","packageType":"helm","repositories":"$LOCAL,$REMOTE","defaultDeploymentRepo":"$LOCAL"}]
 JSON
@@ -48,6 +50,18 @@ helm pull relic/cert-manager --version v1.16.2 -d pulled && test -f pulled/cert-
 helm show chart relic/web | grep -q "^version: 1.1.0"
 helm template demo relic/web --version 1.0.0 | grep -q "kind: Deployment"
 jf rt s "$REMOTE/charts/cert-manager-v1.16.2.tgz" | expect_count 1
+
+step "a remote whose index lists charts on another host: helm pulls them through Relic, which caches them"
+helm repo add ghpages "$SCENARIO_TLS_URL/helm/$GHPAGES" --username "$SCENARIO_USER" --password "$SCENARIO_PASSWORD"
+helm repo update ghpages
+curl -sf -u "$SCENARIO_USER:$SCENARIO_PASSWORD" -o ghpages-index.yaml "$SCENARIO_TLS_URL/helm/$GHPAGES/index.yaml"
+grep -q 'metrics-server-3.12.2.tgz' ghpages-index.yaml
+if grep -Eq '^\s*- https?://github\.com/.*\.tgz' ghpages-index.yaml; then
+  echo "the served index still sends helm to github.com" >&2
+  exit 1
+fi
+helm pull ghpages/metrics-server --version 3.12.2 -d pulled && test -f pulled/metrics-server-3.12.2.tgz
+jf rt s "$GHPAGES/_upstream/github.com/*/metrics-server-3.12.2.tgz" | expect_count 1
 
 step "helm dependency update resolves dependencies from Relic"
 helm create app >/dev/null

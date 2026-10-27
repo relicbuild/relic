@@ -27,7 +27,9 @@ export default defineNuxtConfig({
       relicAPIPrefixes.map(prefix => [prefix, { target: backend + prefix, changeOrigin: true }])
     ),
     prerender: {
-      ignore: ['/openapi.json', '/sitemap.md', '/raw/', '/.well-known/']
+      // '/' would write index.html too, at the same time as Nuxt's SPA shell
+      // '/index.html', and the two writes interleave into one broken file.
+      ignore: ['/openapi.json', '/sitemap.md', '/raw/', '/.well-known/', route => route === '/']
     }
   },
 

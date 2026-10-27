@@ -44,15 +44,15 @@ describe('detail page tabs', () => {
       },
       labels: ['Artifacts', 'Dependencies', 'Details']
     }
-  ])('scrolls the $name tabs instead of truncating their labels', async ({ mount, labels }) => {
+  ])('shows the $name tabs as icons on a phone and keeps their labels for screen readers', async ({ mount, labels }) => {
     const page = await mount()
 
-    const list = page.find('[data-slot="list"]')
-    expect(list.classes()).toContain('overflow-x-auto')
-    const triggers = list.findAll('[data-slot="trigger"]')
+    const triggers = page.find('[data-slot="list"]').findAll('[data-slot="trigger"]')
     expect(triggers.map(trigger => trigger.find('[data-slot="label"]').text())).toEqual(labels)
     for (const trigger of triggers) {
       expect(trigger.classes()).toContain('shrink-0')
+      expect(trigger.find('[data-slot="leadingIcon"]').exists()).toBe(true)
+      expect(trigger.find('[data-slot="label"]').classes()).toEqual(expect.arrayContaining(['sr-only', 'sm:not-sr-only']))
     }
   })
 })
