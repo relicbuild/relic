@@ -1148,3 +1148,30 @@ func (q *Queries) SetItemCreated(ctx context.Context, arg SetItemCreatedParams) 
 	_, err := q.db.Exec(ctx, setItemCreated, arg.Created, arg.CreatedBy, arg.ID)
 	return err
 }
+
+const summarizeFilesNamed = `-- name: SummarizeFilesNamed :one
+SELECT count(*) AS files, coalesce(sum(size), 0)::bigint AS bytes,
+       coalesce(max(updated), 'epoch')::timestamptz AS last_updated
+FROM items
+WHERE repo_key = $1 AND type = 'file' AND name LIKE $2::text ESCAPE '\'
+`
+
+type SummarizeFilesNamedParams struct {
+	RepoKey string
+	Pattern string
+}
+
+type SummarizeFilesNamedRow struct {
+	Files       int64
+	Bytes       int64
+	LastUpdated time.Time
+}
+
+// The files of a repository whose name matches pattern (a LIKE pattern): how
+// many, their bytes and their latest change.
+func (q *Queries) SummarizeFilesNamed(ctx context.Context, arg SummarizeFilesNamedParams) (SummarizeFilesNamedRow, error) {
+	row := q.db.QueryRow(ctx, summarizeFilesNamed, arg.RepoKey, arg.Pattern)
+	var i SummarizeFilesNamedRow
+	err := row.Scan(&i.Files, &i.Bytes, &i.LastUpdated)
+	return i, err
+}

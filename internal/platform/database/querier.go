@@ -391,6 +391,9 @@ type Querier interface {
 	SnapshotRepositoryUsage(ctx context.Context, day string) error
 	// The members an identity provider manages, with their user IDs.
 	SsoGroupMembers(ctx context.Context, groupName string) ([]SsoGroupMembersRow, error)
+	// The files of a repository whose name matches pattern (a LIKE pattern): how
+	// many, their bytes and their latest change.
+	SummarizeFilesNamed(ctx context.Context, arg SummarizeFilesNamedParams) (SummarizeFilesNamedRow, error)
 	// Deletes the request so its state can be used once.
 	TakeSsoRequest(ctx context.Context, state string) (SsoRequest, error)
 	UnverifyEvidenceForKey(ctx context.Context, kid string) error

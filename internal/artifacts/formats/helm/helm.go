@@ -54,10 +54,11 @@ var indexSettings = indexcache.Settings{
 
 // Service implements chart repositories on top of repo.Service.
 type Service struct {
-	repos   *repository.Service
-	log     *slog.Logger
-	now     func() time.Time
-	indexes *indexcache.Cache[[]byte]
+	repos      *repository.Service
+	log        *slog.Logger
+	now        func() time.Time
+	indexes    *indexcache.Cache[[]byte]
+	listCharts func(ctx context.Context, repoKey string) ([]repository.Item, error)
 
 	mu          sync.Mutex
 	metas       map[string]map[string]any
@@ -74,6 +75,7 @@ func NewService(repos *repository.Service, log *slog.Logger) *Service {
 		metas:       map[string]map[string]any{},
 		foreignURLs: map[string]map[string]string{},
 	}
+	s.listCharts = s.localCharts
 	s.indexes = indexcache.New[[]byte](string(Format), indexSettings, func(body []byte) int64 {
 		return int64(len(body))
 	}, func() time.Time {
@@ -259,7 +261,7 @@ func (s *Service) BuildIndex(ctx context.Context, r repository.Repository) ([]by
 type memberIndex struct {
 	repo     repository.Repository
 	upstream *repository.Item
-	charts   []repository.Item
+	charts   repository.FileSummary
 	err      error
 }
 
@@ -283,7 +285,7 @@ func (s *Service) sources(ctx context.Context, members []repository.Repository) 
 				return nil, err
 			}
 		} else {
-			charts, err := s.localCharts(ctx, m.Name)
+			charts, err := s.repos.SummarizeFilesEndingIn(ctx, m.Name, ".tgz")
 			if err != nil {
 				return nil, err
 			}
@@ -310,15 +312,13 @@ func indexKey(sources []memberIndex) string {
 			_, _ = fmt.Fprintf(digest, "upstream\x00%s\x00", source.upstream.Checksums.SHA256)
 		}
 
-		for _, chart := range source.charts {
-			_, _ = fmt.Fprintf(
-				digest,
-				"%s\x00%s\x00%d\x00",
-				chart.Path(),
-				chart.Checksums.SHA256,
-				chart.Created.UnixNano(),
-			)
-		}
+		_, _ = fmt.Fprintf(
+			digest,
+			"%d\x00%d\x00%d\x00",
+			source.charts.Files,
+			source.charts.Bytes,
+			source.charts.LastUpdated.UnixNano(),
+		)
 
 		_, _ = io.WriteString(digest, "\x01")
 	}
@@ -357,7 +357,7 @@ func (s *Service) buildIndex(
 		case source.upstream != nil:
 			entries, _, err = s.remoteEntries(ctx, source.repo, *source.upstream)
 		default:
-			entries = s.localEntries(ctx, source.repo.Name, source.charts)
+			entries, err = s.chartEntries(ctx, source.repo.Name)
 		}
 
 		if errors.Is(err, repository.ErrUpstream) {
@@ -415,6 +415,15 @@ func (s *Service) localCharts(ctx context.Context, repoKey string) ([]repository
 	return slices.DeleteFunc(items, func(it repository.Item) bool {
 		return it.IsFolder() || !strings.HasSuffix(it.Name, ".tgz")
 	}), nil
+}
+
+func (s *Service) chartEntries(ctx context.Context, repoKey string) ([]map[string]any, error) {
+	charts, err := s.listCharts(ctx, repoKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.localEntries(ctx, repoKey, charts), nil
 }
 
 func (s *Service) localEntries(ctx context.Context, repoKey string, charts []repository.Item) []map[string]any {

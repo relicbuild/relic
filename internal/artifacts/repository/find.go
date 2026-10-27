@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"relic/internal/platform/database"
 )
@@ -133,6 +134,36 @@ func (s *Service) FilesWithContent(ctx context.Context, sums Checksums) ([]Item,
 	}
 
 	return itemsFromRows(rows), nil
+}
+
+// FileSummary describes a set of files: how many, their bytes and their latest change.
+type FileSummary struct {
+	Files       int64
+	Bytes       int64
+	LastUpdated time.Time
+}
+
+// SummarizeFilesEndingIn returns the summary of repoKey's files whose names
+// end in suffix, which a deploy, overwrite or delete of one of them changes.
+func (s *Service) SummarizeFilesEndingIn(ctx context.Context, repoKey, suffix string) (FileSummary, error) {
+	esc := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(suffix)
+
+	row, err := s.db.SummarizeFilesNamed(
+		ctx,
+		database.SummarizeFilesNamedParams{
+			RepoKey: repoKey,
+			Pattern: "%" + esc,
+		},
+	)
+	if err != nil {
+		return FileSummary{}, fmt.Errorf("summarize the %s files of %s: %w", suffix, repoKey, err)
+	}
+
+	return FileSummary{
+		Files:       row.Files,
+		Bytes:       row.Bytes,
+		LastUpdated: row.LastUpdated,
+	}, nil
 }
 
 // SearchNames returns up to limit items of repoKey whose name contains

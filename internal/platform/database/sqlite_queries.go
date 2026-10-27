@@ -1697,6 +1697,14 @@ SELECT u.id, u.username FROM group_members m JOIN users u ON u.username = m.user
 WHERE m.group_name = @group_name AND m.source = 'sso'
 ORDER BY u.username;`
 
+const sqliteSummarizeFilesNamed = `-- name: SummarizeFilesNamed :one
+-- The files of a repository whose name matches pattern (a LIKE pattern): how
+-- many, their bytes and their latest change.
+SELECT count(*) AS files, coalesce(sum(size), 0) AS bytes,
+       coalesce(max(updated), '1970-01-01 00:00:00.000000+00:00') AS last_updated
+FROM items
+WHERE repo_key = @repo_key AND type = 'file' AND name LIKE @pattern ESCAPE '\';`
+
 const sqliteTakeSsoRequest = `-- name: TakeSsoRequest :one
 -- Deletes the request so its state can be used once.
 DELETE FROM sso_requests WHERE state = @state RETURNING *;`
@@ -7785,6 +7793,29 @@ func (q *sqliteQueries) SsoGroupMembers(ctx context.Context, arg string) ([]SsoG
 	}
 
 	return items, nil
+}
+
+func (q *sqliteQueries) SummarizeFilesNamed(ctx context.Context, arg SummarizeFilesNamedParams) (SummarizeFilesNamedRow, error) {
+	var i SummarizeFilesNamedRow
+
+	rows, err := q.query(ctx, "SummarizeFilesNamed", []string{"files", "bytes", "lastupdated"}, sqliteSummarizeFilesNamed, sql.Named("repo_key", arg.RepoKey), sql.Named("pattern", arg.Pattern))
+	if err != nil {
+		return i, err
+	}
+
+	defer rows.Close()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return i, err
+		}
+
+		return i, sql.ErrNoRows
+	}
+
+	err = rows.Scan(&i.Files, &i.Bytes, sqliteTimeScanner{&i.LastUpdated})
+
+	return i, err
 }
 
 func (q *sqliteQueries) TakeSsoRequest(ctx context.Context, arg string) (SsoRequest, error) {

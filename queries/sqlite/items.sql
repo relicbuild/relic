@@ -108,6 +108,14 @@ WHERE ((repo_key = @repo_key AND path = @path AND name = @name)
         AND +path LIKE @prefix ESCAPE '\'))
 ORDER BY path, name;
 
+-- name: SummarizeFilesNamed :one
+-- The files of a repository whose name matches pattern (a LIKE pattern): how
+-- many, their bytes and their latest change.
+SELECT count(*) AS files, coalesce(sum(size), 0) AS bytes,
+       coalesce(max(updated), '1970-01-01 00:00:00.000000+00:00') AS last_updated
+FROM items
+WHERE repo_key = @repo_key AND type = 'file' AND name LIKE @pattern ESCAPE '\';
+
 -- name: ListRepositoryItems :many
 SELECT * FROM items WHERE repo_key = @repo_key ORDER BY path, name;
 
