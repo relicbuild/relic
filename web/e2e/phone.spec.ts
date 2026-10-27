@@ -42,7 +42,7 @@ test.use({ viewport: { width: phoneWidth, height: 800 } })
 
 // layoutFaultsAt lists what does not fit a phone screen: anything beyond the
 // right edge without a horizontally scrolling container of its own (a table
-// or a tab list may scroll inside its container; the page and its panels may
+// may scroll inside its container; the page, its panels and tab bars may
 // not), and empty space between a page card's text and the rest of the card.
 async function layoutFaultsAt(page: Page, path: string) {
   await page.goto(path)
@@ -51,7 +51,7 @@ async function layoutFaultsAt(page: Page, path: string) {
     const width = window.innerWidth
     const describe = (element: Element) => `${element.tagName.toLowerCase()} "${(element.textContent ?? '').trim().slice(0, 40)}" ${element.className.toString().slice(0, 60)}`
     const scrollsSideways = (element: Element) => ['auto', 'scroll'].includes(getComputedStyle(element).overflowX) && element.scrollWidth > element.clientWidth + 1
-    const ownScroller = (element: Element) => element.querySelector(':scope > table') !== null || element.getAttribute('role') === 'tablist'
+    const ownScroller = (element: Element) => element.querySelector(':scope > table') !== null
     const found: string[] = []
     if (document.documentElement.scrollWidth > width) {
       found.push(`the page scrolls sideways: ${document.documentElement.scrollWidth} px wide`)

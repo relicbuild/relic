@@ -55,7 +55,7 @@ const tabs = computed<TabsItem[]>(() => [
         v-else-if="build"
         :items="tabs"
         variant="link"
-        :ui="scrollingTabs"
+        :ui="detailTabs"
       >
         <template #artifacts>
           <UTable :data="artifacts" :columns="[{ accessorKey: 'name', header: 'Name' }, { accessorKey: 'type', header: 'Type' }, { accessorKey: 'path', header: 'Path' }, { accessorKey: 'module', header: 'Module' }]" />
