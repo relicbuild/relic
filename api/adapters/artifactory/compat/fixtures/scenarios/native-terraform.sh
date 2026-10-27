@@ -103,6 +103,27 @@ terraform apply -auto-approve -input=false -no-color >apply.txt
 grep -q 'greeting = "hello relic"' apply.txt
 cd ..
 
+step "a public module through the virtual's remote of registry.terraform.io"
+mkdir public && cd public
+cat >main.tf <<TF
+module "label" {
+  source    = "$host/${VIRTUAL}__cloudposse/label/null"
+  version   = "0.25.0"
+  namespace = "relic"
+  name      = "scenario"
+}
+output "id" { value = module.label.id }
+TF
+terraform init -input=false -no-color
+terraform apply -auto-approve -input=false -no-color >apply.txt
+grep -q 'id = "relic-scenario"' apply.txt
+cd ..
+cached=0
+for r in "$HASHI" "$TOFU"; do
+  cached=$((cached + $(jf rt s "$r/cloudposse/label/null/0.25.0.zip" | jq length)))
+done
+[[ $cached -ge 1 ]]
+
 step "OpenTofu init and apply with providers from registry.opentofu.org through the mirror"
 mkdir tofu && cd tofu
 cat >main.tf <<'TF'
