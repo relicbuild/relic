@@ -41,12 +41,15 @@ rm -f /etc/apt/trusted.gpg.d/relic-scenario.asc
 step "apt-get through the virtual (merged index, dependencies from the remote)"
 key=$(jf rt curl -sf "/api/security/keypair/public/repositories/$VIRTUAL")
 base="${SCENARIO_URL/:\/\//://$SCENARIO_USER:$SCENARIO_PASSWORD@}/artifactory"
-docker run --rm --network host -e KEY="$key" -e REPO="$base/$VIRTUAL" debian:trixie-slim sh -ec '
+# trixie-slim has no CA certificates; an https server is checked against the client's.
+docker run --rm -i --network host -e KEY="$key" -e REPO="$base/$VIRTUAL" debian:trixie-slim sh -ec '
+  cat >/etc/apt/ca-certificates.crt
+  echo "Acquire::https::CAInfo \"/etc/apt/ca-certificates.crt\";" >/etc/apt/apt.conf.d/99ca
   rm -f /etc/apt/sources.list.d/* /etc/apt/sources.list
   mkdir -p /etc/apt/keyrings && printf "%s\n" "$KEY" >/etc/apt/keyrings/relic.asc
   echo "deb [signed-by=/etc/apt/keyrings/relic.asc] $REPO trixie main" >/etc/apt/sources.list.d/relic.list
   apt-get update
   apt-get install -y --no-install-recommends jq
-  jq --version'
+  jq --version' </etc/ssl/certs/ca-certificates.crt
 
 for r in "$VIRTUAL" "$LOCAL" "$REMOTE"; do delete_repo "$r"; done
