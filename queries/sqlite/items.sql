@@ -3,9 +3,11 @@ SELECT * FROM items WHERE repo_key = @repo_key AND path = @path AND name = @name
 
 -- name: ListItemsAt :many
 -- The paths and names come as parallel JSON arrays, zipped by index.
+WITH given_paths AS MATERIALIZED (SELECT key, value FROM json_each(@paths)),
+     given_names AS MATERIALIZED (SELECT key, value FROM json_each(@names))
 SELECT * FROM items
 WHERE repo_key = @repo_key
-  AND (path, name) IN (SELECT p.value, n.value FROM json_each(@paths) AS p JOIN json_each(@names) AS n ON n.key = p.key);
+  AND (path, name) IN (SELECT p.value, n.value FROM given_paths AS p JOIN given_names AS n ON n.key = p.key);
 
 -- name: GetItemForUpdate :one
 SELECT * FROM items WHERE repo_key = @repo_key AND path = @path AND name = @name;
@@ -43,15 +45,20 @@ SELECT @to_id, p.key, p.value FROM item_properties p WHERE p.item_id = @from_id;
 DELETE FROM items WHERE id = @id;
 
 -- name: EnsureFolders :many
+WITH given_ids AS MATERIALIZED (SELECT key, value FROM json_each(@ids)),
+     given_paths AS MATERIALIZED (SELECT key, value FROM json_each(@paths)),
+     given_names AS MATERIALIZED (SELECT key, value FROM json_each(@names))
 INSERT INTO items (id, repo_key, path, name, type, created, created_by, modified, modified_by, updated)
 SELECT w.value, @repo_key, p.value, n.value, 'folder', @now, @username, @now, @username, @now
-FROM json_each(@ids) AS w
-JOIN json_each(@paths) AS p ON p.key = w.key
-JOIN json_each(@names) AS n ON n.key = w.key
+FROM given_ids AS w
+JOIN given_paths AS p ON p.key = w.key
+JOIN given_names AS n ON n.key = w.key
 WHERE true
 ON CONFLICT (repo_key, path, name) DO NOTHING;
-SELECT i.path, i.name FROM json_each(@paths) AS p
-JOIN json_each(@names) AS n ON n.key = p.key
+WITH given_paths AS MATERIALIZED (SELECT key, value FROM json_each(@paths)),
+     given_names AS MATERIALIZED (SELECT key, value FROM json_each(@names))
+SELECT i.path, i.name FROM given_paths AS p
+JOIN given_names AS n ON n.key = p.key
 CROSS JOIN items i
 WHERE i.repo_key = @repo_key AND i.path = p.value AND i.name = n.value AND i.type = 'file';
 
@@ -93,10 +100,12 @@ DELETE FROM item_properties WHERE item_id = @item_id AND key IN (SELECT value FR
 -- name: AddItemProperties :exec
 -- The keys and values come as parallel JSON arrays. WHERE true lets SQLite
 -- parse the ON CONFLICT clause after a join.
+WITH given_keys AS MATERIALIZED (SELECT key, value FROM json_each(@keys)),
+     given_values AS MATERIALIZED (SELECT key, value FROM json_each(@vals))
 INSERT INTO item_properties (item_id, key, value)
 SELECT @item_id, k.value, v.value
-FROM json_each(@keys) AS k
-JOIN json_each(@vals) AS v ON v.key = k.key
+FROM given_keys AS k
+JOIN given_values AS v ON v.key = k.key
 WHERE true
 ON CONFLICT DO NOTHING;
 

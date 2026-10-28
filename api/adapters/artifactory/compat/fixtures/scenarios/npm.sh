@@ -20,8 +20,8 @@ registry="$SCENARIO_URL/artifactory/api/npm/$VIRTUAL/"
 auth=$(printf '%s:%s' "$SCENARIO_USER" "$SCENARIO_PASSWORD" | base64 -w0)
 cat >"$WORK/.npmrc" <<NPMRC
 registry=$registry
-${registry#http:}:_auth=$auth
-${registry#http:}:always-auth=true
+${registry#*:}:_auth=$auth
+${registry#*:}:always-auth=true
 NPMRC
 export npm_config_userconfig="$WORK/.npmrc" npm_config_cache="$WORK/npm-cache" npm_config_update_notifier=false npm_config_fund=false
 
@@ -67,7 +67,7 @@ jf npm publish --build-name "$BUILD-npm" --build-number 1
 jf rt bp "$BUILD-npm" 1
 jf rt curl -s "/api/build/$BUILD-npm/1" | jq -e '.buildInfo.modules[0].dependencies | length >= 1' >/dev/null
 jf rt curl -s "/api/build/$BUILD-npm/1" | jq -e '.buildInfo.modules[0].artifacts | length == 1' >/dev/null
-[[ "$(npm view relic-scenario-jf version --registry "$registry" --userconfig /dev/null "--${registry#http:}:_auth=$auth")" == "2.0.0" ]]
+[[ "$(npm view relic-scenario-jf version --registry "$registry" --userconfig /dev/null "--${registry#*:}:_auth=$auth")" == "2.0.0" ]]
 jf rt curl -s "/api/storage/$LOCAL/relic-scenario-jf/-/relic-scenario-jf-2.0.0.tgz?properties" | jq -e '.properties["npm.name"][0] == "relic-scenario-jf"' >/dev/null
 jf rt bdi "$BUILD-npm" --max-days 0 >/dev/null 2>&1 || true
 

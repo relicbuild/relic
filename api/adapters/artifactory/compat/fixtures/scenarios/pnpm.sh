@@ -20,7 +20,7 @@ jf rt bdi "$B" --max-builds 0 >/dev/null 2>&1 || true
 
 registry="$SCENARIO_URL/artifactory/api/npm/$VIRTUAL/"
 auth=$(printf '%s:%s' "$SCENARIO_USER" "$SCENARIO_PASSWORD" | base64 -w0)
-printf 'registry=%s\n%s:_auth=%s\n' "$registry" "${registry#http:}" "$auth" >.npmrc
+printf 'registry=%s\n%s:_auth=%s\n' "$registry" "${registry#*:}" "$auth" >.npmrc
 export npm_config_store_dir="$WORK/pnpm-store"
 
 step "pnpm install with build info"

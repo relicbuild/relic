@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -329,5 +330,61 @@ func TestRPMRepositories(t *testing.T) {
 		path:   "/artifactory/rpm-virtual/Packages/u/upstream-tool-2.0-1.noarch.rpm",
 	}); resp.StatusCode != http.StatusOK || body != string(upstreamRPM) {
 		t.Errorf("upstream package through the virtual = %d, %d bytes", resp.StatusCode, len(body))
+	}
+}
+
+func TestRPMKeyIsServedWithoutBuildingRepodata(t *testing.T) {
+	t.Parallel()
+
+	srv := server(t)
+
+	var upstreamRequests atomic.Int64
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		upstreamRequests.Add(1)
+		http.NotFound(w, nil)
+	}))
+	t.Cleanup(upstream.Close)
+
+	for _, repo := range []struct {
+		key  string
+		body string
+	}{
+		{
+			key:  "rpm-key-local",
+			body: `{"rclass":"local","packageType":"rpm"}`,
+		},
+		{
+			key:  "rpm-key-remote",
+			body: `{"rclass":"remote","packageType":"rpm","url":"` + upstream.URL + `"}`,
+		},
+		{
+			key:  "rpm-key-virtual",
+			body: `{"rclass":"virtual","packageType":"rpm","repositories":["rpm-key-local","rpm-key-remote"]}`,
+		},
+	} {
+		if resp, body := do(t, srv, call{
+			method: http.MethodPut,
+			path:   "/artifactory/api/repositories/" + repo.key,
+			body:   repo.body,
+		}); resp.StatusCode != http.StatusOK {
+			t.Fatalf("create %s = %d %s", repo.key, resp.StatusCode, body)
+		}
+	}
+
+	resp, key := do(t, srv, call{
+		method: http.MethodGet,
+		path:   "/artifactory/rpm-key-virtual/repodata/repomd.xml.key",
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("repomd.xml.key = %d %s", resp.StatusCode, key)
+	}
+
+	if _, err := openpgp.ReadArmoredKeyRing(strings.NewReader(key)); err != nil {
+		t.Errorf("repomd.xml.key: %v", err)
+	}
+
+	if n := upstreamRequests.Load(); n != 0 {
+		t.Errorf("serving the key sent %d requests upstream, want 0", n)
 	}
 }
