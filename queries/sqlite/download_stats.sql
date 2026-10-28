@@ -1,13 +1,17 @@
 -- name: RecordDownloads :exec
+-- Parallel JSON arrays, zipped by index (equal lengths).
+WITH given_item_ids AS MATERIALIZED (SELECT key, value FROM json_each(@item_ids)),
+     given_counts AS MATERIALIZED (SELECT key, value FROM json_each(@counts)),
+     given_lasts AS MATERIALIZED (SELECT key, value FROM json_each(@lasts)),
+     given_bys AS MATERIALIZED (SELECT key, value FROM json_each(@bys))
 INSERT INTO download_stats (item_id, downloads, last_downloaded, last_downloaded_by)
 SELECT u.item_id, u.downloads, u.last_downloaded, u.last_downloaded_by
 FROM (
-    -- Parallel JSON arrays, zipped by index (equal lengths).
     SELECT id.value AS item_id, c.value AS downloads, l.value AS last_downloaded, b.value AS last_downloaded_by
-    FROM json_each(@item_ids) AS id
-    JOIN json_each(@counts) AS c ON c.key = id.key
-    JOIN json_each(@lasts) AS l ON l.key = id.key
-    JOIN json_each(@bys) AS b ON b.key = id.key
+    FROM given_item_ids AS id
+    JOIN given_counts AS c ON c.key = id.key
+    JOIN given_lasts AS l ON l.key = id.key
+    JOIN given_bys AS b ON b.key = id.key
 ) u
 JOIN items i ON i.id = u.item_id
 -- WHERE true lets SQLite parse the ON CONFLICT clause after a join.

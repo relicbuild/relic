@@ -19,21 +19,29 @@ SELECT id FROM cves ORDER BY id;
 
 -- name: SetCVEEPSS :exec
 -- The arrays come as JSON arrays, read in parallel by index.
+WITH given_ids AS MATERIALIZED (SELECT key, value FROM json_each(@ids)),
+     given_scores AS MATERIALIZED (SELECT key, value FROM json_each(@scores)),
+     given_percentiles AS MATERIALIZED (SELECT key, value FROM json_each(@percentiles))
 UPDATE cves SET epss = v.score, epss_percentile = v.percentile, epss_date = date(@score_date)
 FROM (SELECT i.value AS id, s.value AS score, p.value AS percentile
-      FROM json_each(@ids) AS i
-      JOIN json_each(@scores) AS s ON s.key = i.key
-      JOIN json_each(@percentiles) AS p ON p.key = i.key) AS v
+      FROM given_ids AS i
+      JOIN given_scores AS s ON s.key = i.key
+      JOIN given_percentiles AS p ON p.key = i.key) AS v
 WHERE cves.id = v.id;
 
 -- name: SetCVEKEV :exec
-WITH entries AS (
+WITH given_ids AS MATERIALIZED (SELECT key, value FROM json_each(@ids)),
+given_added AS MATERIALIZED (SELECT key, value FROM json_each(@added)),
+given_due AS MATERIALIZED (SELECT key, value FROM json_each(@due)),
+given_ransomware AS MATERIALIZED (SELECT key, value FROM json_each(@ransomware)),
+given_actions AS MATERIALIZED (SELECT key, value FROM json_each(@actions)),
+entries AS (
     SELECT i.value AS id, date(a.value) AS added, date(d.value) AS due, r.value AS ransomware, x.value AS action
-    FROM json_each(@ids) AS i
-    JOIN json_each(@added) AS a ON a.key = i.key
-    JOIN json_each(@due) AS d ON d.key = i.key
-    JOIN json_each(@ransomware) AS r ON r.key = i.key
-    JOIN json_each(@actions) AS x ON x.key = i.key
+    FROM given_ids AS i
+    JOIN given_added AS a ON a.key = i.key
+    JOIN given_due AS d ON d.key = i.key
+    JOIN given_ransomware AS r ON r.key = i.key
+    JOIN given_actions AS x ON x.key = i.key
 )
 UPDATE cves SET
     kev_added = (SELECT e.added FROM entries e WHERE e.id = cves.id),

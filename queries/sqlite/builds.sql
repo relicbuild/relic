@@ -4,28 +4,42 @@ VALUES (@id, @project, @name, @number, @started, @started_ms, CAST(@info AS TEXT
 
 -- name: InsertBuildArtifacts :exec
 -- The columns come as parallel JSON arrays, zipped by index.
+WITH given_module_ids AS MATERIALIZED (SELECT key, value FROM json_each(@module_ids)),
+     given_names AS MATERIALIZED (SELECT key, value FROM json_each(@names)),
+     given_types AS MATERIALIZED (SELECT key, value FROM json_each(@types)),
+     given_paths AS MATERIALIZED (SELECT key, value FROM json_each(@paths)),
+     given_sha1s AS MATERIALIZED (SELECT key, value FROM json_each(@sha1s)),
+     given_sha256s AS MATERIALIZED (SELECT key, value FROM json_each(@sha256s)),
+     given_md5s AS MATERIALIZED (SELECT key, value FROM json_each(@md5s))
 INSERT INTO build_artifacts (build_id, module_id, name, type, path, sha1, sha256, md5)
 SELECT @build_id, m.value, n.value, t.value, p.value, s1.value, s256.value, m5.value
-FROM json_each(@module_ids) AS m
-JOIN json_each(@names) AS n ON n.key = m.key
-JOIN json_each(@types) AS t ON t.key = m.key
-JOIN json_each(@paths) AS p ON p.key = m.key
-JOIN json_each(@sha1s) AS s1 ON s1.key = m.key
-JOIN json_each(@sha256s) AS s256 ON s256.key = m.key
-JOIN json_each(@md5s) AS m5 ON m5.key = m.key
+FROM given_module_ids AS m
+JOIN given_names AS n ON n.key = m.key
+JOIN given_types AS t ON t.key = m.key
+JOIN given_paths AS p ON p.key = m.key
+JOIN given_sha1s AS s1 ON s1.key = m.key
+JOIN given_sha256s AS s256 ON s256.key = m.key
+JOIN given_md5s AS m5 ON m5.key = m.key
 ORDER BY m.key;
 
 -- name: InsertBuildDependencies :exec
 -- The columns come as parallel JSON arrays, zipped by index.
+WITH given_module_ids AS MATERIALIZED (SELECT key, value FROM json_each(@module_ids)),
+     given_dep_ids AS MATERIALIZED (SELECT key, value FROM json_each(@dep_ids)),
+     given_types AS MATERIALIZED (SELECT key, value FROM json_each(@types)),
+     given_scopes AS MATERIALIZED (SELECT key, value FROM json_each(@scopes)),
+     given_sha1s AS MATERIALIZED (SELECT key, value FROM json_each(@sha1s)),
+     given_sha256s AS MATERIALIZED (SELECT key, value FROM json_each(@sha256s)),
+     given_md5s AS MATERIALIZED (SELECT key, value FROM json_each(@md5s))
 INSERT INTO build_dependencies (build_id, module_id, dep_id, type, scopes, sha1, sha256, md5)
 SELECT @build_id, m.value, d.value, t.value, sc.value, s1.value, s256.value, m5.value
-FROM json_each(@module_ids) AS m
-JOIN json_each(@dep_ids) AS d ON d.key = m.key
-JOIN json_each(@types) AS t ON t.key = m.key
-JOIN json_each(@scopes) AS sc ON sc.key = m.key
-JOIN json_each(@sha1s) AS s1 ON s1.key = m.key
-JOIN json_each(@sha256s) AS s256 ON s256.key = m.key
-JOIN json_each(@md5s) AS m5 ON m5.key = m.key
+FROM given_module_ids AS m
+JOIN given_dep_ids AS d ON d.key = m.key
+JOIN given_types AS t ON t.key = m.key
+JOIN given_scopes AS sc ON sc.key = m.key
+JOIN given_sha1s AS s1 ON s1.key = m.key
+JOIN given_sha256s AS s256 ON s256.key = m.key
+JOIN given_md5s AS m5 ON m5.key = m.key
 ORDER BY m.key;
 
 -- name: FindBuildNames :many

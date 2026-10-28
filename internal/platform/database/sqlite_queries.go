@@ -35,10 +35,12 @@ SELECT @group_name, value FROM json_each(@usernames) WHERE true ON CONFLICT DO N
 const sqliteAddItemProperties = `-- name: AddItemProperties :exec
 -- The keys and values come as parallel JSON arrays. WHERE true lets SQLite
 -- parse the ON CONFLICT clause after a join.
+WITH given_keys AS MATERIALIZED (SELECT key, value FROM json_each(@keys)),
+     given_values AS MATERIALIZED (SELECT key, value FROM json_each(@vals))
 INSERT INTO item_properties (item_id, key, value)
 SELECT @item_id, k.value, v.value
-FROM json_each(@keys) AS k
-JOIN json_each(@vals) AS v ON v.key = k.key
+FROM given_keys AS k
+JOIN given_values AS v ON v.key = k.key
 WHERE true
 ON CONFLICT DO NOTHING;`
 
@@ -437,15 +439,20 @@ const sqliteDeleteWorkloadIdentity = `-- name: DeleteWorkloadIdentity :execrows
 DELETE FROM workload_identities WHERE name = @name;`
 
 const sqliteEnsureFolders = `-- name: EnsureFolders :many
+WITH given_ids AS MATERIALIZED (SELECT key, value FROM json_each(@ids)),
+     given_paths AS MATERIALIZED (SELECT key, value FROM json_each(@paths)),
+     given_names AS MATERIALIZED (SELECT key, value FROM json_each(@names))
 INSERT INTO items (id, repo_key, path, name, type, created, created_by, modified, modified_by, updated)
 SELECT w.value, @repo_key, p.value, n.value, 'folder', @now, @username, @now, @username, @now
-FROM json_each(@ids) AS w
-JOIN json_each(@paths) AS p ON p.key = w.key
-JOIN json_each(@names) AS n ON n.key = w.key
+FROM given_ids AS w
+JOIN given_paths AS p ON p.key = w.key
+JOIN given_names AS n ON n.key = w.key
 WHERE true
 ON CONFLICT (repo_key, path, name) DO NOTHING;
-SELECT i.path, i.name FROM json_each(@paths) AS p
-JOIN json_each(@names) AS n ON n.key = p.key
+WITH given_paths AS MATERIALIZED (SELECT key, value FROM json_each(@paths)),
+     given_names AS MATERIALIZED (SELECT key, value FROM json_each(@names))
+SELECT i.path, i.name FROM given_paths AS p
+JOIN given_names AS n ON n.key = p.key
 CROSS JOIN items i
 WHERE i.repo_key = @repo_key AND i.path = p.value AND i.name = n.value AND i.type = 'file';`
 
@@ -714,28 +721,42 @@ VALUES (@id, @project, @name, @number, @started, @started_ms, CAST(@info AS TEXT
 
 const sqliteInsertBuildArtifacts = `-- name: InsertBuildArtifacts :exec
 -- The columns come as parallel JSON arrays, zipped by index.
+WITH given_module_ids AS MATERIALIZED (SELECT key, value FROM json_each(@module_ids)),
+     given_names AS MATERIALIZED (SELECT key, value FROM json_each(@names)),
+     given_types AS MATERIALIZED (SELECT key, value FROM json_each(@types)),
+     given_paths AS MATERIALIZED (SELECT key, value FROM json_each(@paths)),
+     given_sha1s AS MATERIALIZED (SELECT key, value FROM json_each(@sha1s)),
+     given_sha256s AS MATERIALIZED (SELECT key, value FROM json_each(@sha256s)),
+     given_md5s AS MATERIALIZED (SELECT key, value FROM json_each(@md5s))
 INSERT INTO build_artifacts (build_id, module_id, name, type, path, sha1, sha256, md5)
 SELECT @build_id, m.value, n.value, t.value, p.value, s1.value, s256.value, m5.value
-FROM json_each(@module_ids) AS m
-JOIN json_each(@names) AS n ON n.key = m.key
-JOIN json_each(@types) AS t ON t.key = m.key
-JOIN json_each(@paths) AS p ON p.key = m.key
-JOIN json_each(@sha1s) AS s1 ON s1.key = m.key
-JOIN json_each(@sha256s) AS s256 ON s256.key = m.key
-JOIN json_each(@md5s) AS m5 ON m5.key = m.key
+FROM given_module_ids AS m
+JOIN given_names AS n ON n.key = m.key
+JOIN given_types AS t ON t.key = m.key
+JOIN given_paths AS p ON p.key = m.key
+JOIN given_sha1s AS s1 ON s1.key = m.key
+JOIN given_sha256s AS s256 ON s256.key = m.key
+JOIN given_md5s AS m5 ON m5.key = m.key
 ORDER BY m.key;`
 
 const sqliteInsertBuildDependencies = `-- name: InsertBuildDependencies :exec
 -- The columns come as parallel JSON arrays, zipped by index.
+WITH given_module_ids AS MATERIALIZED (SELECT key, value FROM json_each(@module_ids)),
+     given_dep_ids AS MATERIALIZED (SELECT key, value FROM json_each(@dep_ids)),
+     given_types AS MATERIALIZED (SELECT key, value FROM json_each(@types)),
+     given_scopes AS MATERIALIZED (SELECT key, value FROM json_each(@scopes)),
+     given_sha1s AS MATERIALIZED (SELECT key, value FROM json_each(@sha1s)),
+     given_sha256s AS MATERIALIZED (SELECT key, value FROM json_each(@sha256s)),
+     given_md5s AS MATERIALIZED (SELECT key, value FROM json_each(@md5s))
 INSERT INTO build_dependencies (build_id, module_id, dep_id, type, scopes, sha1, sha256, md5)
 SELECT @build_id, m.value, d.value, t.value, sc.value, s1.value, s256.value, m5.value
-FROM json_each(@module_ids) AS m
-JOIN json_each(@dep_ids) AS d ON d.key = m.key
-JOIN json_each(@types) AS t ON t.key = m.key
-JOIN json_each(@scopes) AS sc ON sc.key = m.key
-JOIN json_each(@sha1s) AS s1 ON s1.key = m.key
-JOIN json_each(@sha256s) AS s256 ON s256.key = m.key
-JOIN json_each(@md5s) AS m5 ON m5.key = m.key
+FROM given_module_ids AS m
+JOIN given_dep_ids AS d ON d.key = m.key
+JOIN given_types AS t ON t.key = m.key
+JOIN given_scopes AS sc ON sc.key = m.key
+JOIN given_sha1s AS s1 ON s1.key = m.key
+JOIN given_sha256s AS s256 ON s256.key = m.key
+JOIN given_md5s AS m5 ON m5.key = m.key
 ORDER BY m.key;`
 
 const sqliteInsertBuildPromotion = `-- name: InsertBuildPromotion :exec
@@ -1046,9 +1067,11 @@ ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' T
 
 const sqliteListItemsAt = `-- name: ListItemsAt :many
 -- The paths and names come as parallel JSON arrays, zipped by index.
+WITH given_paths AS MATERIALIZED (SELECT key, value FROM json_each(@paths)),
+     given_names AS MATERIALIZED (SELECT key, value FROM json_each(@names))
 SELECT * FROM items
 WHERE repo_key = @repo_key
-  AND (path, name) IN (SELECT p.value, n.value FROM json_each(@paths) AS p JOIN json_each(@names) AS n ON n.key = p.key);`
+  AND (path, name) IN (SELECT p.value, n.value FROM given_paths AS p JOIN given_names AS n ON n.key = p.key);`
 
 const sqliteListItemsWithProperty = `-- name: ListItemsWithProperty :many
 SELECT i.*, p.value AS property_value FROM items i
@@ -1450,15 +1473,19 @@ UPDATE cleanup_policies SET last_run = @last_run, last_moved = @last_moved, last
 WHERE name = @name;`
 
 const sqliteRecordDownloads = `-- name: RecordDownloads :exec
+-- Parallel JSON arrays, zipped by index (equal lengths).
+WITH given_item_ids AS MATERIALIZED (SELECT key, value FROM json_each(@item_ids)),
+     given_counts AS MATERIALIZED (SELECT key, value FROM json_each(@counts)),
+     given_lasts AS MATERIALIZED (SELECT key, value FROM json_each(@lasts)),
+     given_bys AS MATERIALIZED (SELECT key, value FROM json_each(@bys))
 INSERT INTO download_stats (item_id, downloads, last_downloaded, last_downloaded_by)
 SELECT u.item_id, u.downloads, u.last_downloaded, u.last_downloaded_by
 FROM (
-    -- Parallel JSON arrays, zipped by index (equal lengths).
     SELECT id.value AS item_id, c.value AS downloads, l.value AS last_downloaded, b.value AS last_downloaded_by
-    FROM json_each(@item_ids) AS id
-    JOIN json_each(@counts) AS c ON c.key = id.key
-    JOIN json_each(@lasts) AS l ON l.key = id.key
-    JOIN json_each(@bys) AS b ON b.key = id.key
+    FROM given_item_ids AS id
+    JOIN given_counts AS c ON c.key = id.key
+    JOIN given_lasts AS l ON l.key = id.key
+    JOIN given_bys AS b ON b.key = id.key
 ) u
 JOIN items i ON i.id = u.item_id
 -- WHERE true lets SQLite parse the ON CONFLICT clause after a join.
@@ -1621,21 +1648,29 @@ LIMIT @max;`
 
 const sqliteSetCVEEPSS = `-- name: SetCVEEPSS :exec
 -- The arrays come as JSON arrays, read in parallel by index.
+WITH given_ids AS MATERIALIZED (SELECT key, value FROM json_each(@ids)),
+     given_scores AS MATERIALIZED (SELECT key, value FROM json_each(@scores)),
+     given_percentiles AS MATERIALIZED (SELECT key, value FROM json_each(@percentiles))
 UPDATE cves SET epss = v.score, epss_percentile = v.percentile, epss_date = date(@score_date)
 FROM (SELECT i.value AS id, s.value AS score, p.value AS percentile
-      FROM json_each(@ids) AS i
-      JOIN json_each(@scores) AS s ON s.key = i.key
-      JOIN json_each(@percentiles) AS p ON p.key = i.key) AS v
+      FROM given_ids AS i
+      JOIN given_scores AS s ON s.key = i.key
+      JOIN given_percentiles AS p ON p.key = i.key) AS v
 WHERE cves.id = v.id;`
 
 const sqliteSetCVEKEV = `-- name: SetCVEKEV :exec
-WITH entries AS (
+WITH given_ids AS MATERIALIZED (SELECT key, value FROM json_each(@ids)),
+given_added AS MATERIALIZED (SELECT key, value FROM json_each(@added)),
+given_due AS MATERIALIZED (SELECT key, value FROM json_each(@due)),
+given_ransomware AS MATERIALIZED (SELECT key, value FROM json_each(@ransomware)),
+given_actions AS MATERIALIZED (SELECT key, value FROM json_each(@actions)),
+entries AS (
     SELECT i.value AS id, date(a.value) AS added, date(d.value) AS due, r.value AS ransomware, x.value AS action
-    FROM json_each(@ids) AS i
-    JOIN json_each(@added) AS a ON a.key = i.key
-    JOIN json_each(@due) AS d ON d.key = i.key
-    JOIN json_each(@ransomware) AS r ON r.key = i.key
-    JOIN json_each(@actions) AS x ON x.key = i.key
+    FROM given_ids AS i
+    JOIN given_added AS a ON a.key = i.key
+    JOIN given_due AS d ON d.key = i.key
+    JOIN given_ransomware AS r ON r.key = i.key
+    JOIN given_actions AS x ON x.key = i.key
 )
 UPDATE cves SET
     kev_added = (SELECT e.added FROM entries e WHERE e.id = cves.id),
@@ -1771,16 +1806,24 @@ SET all_versions = excluded.all_versions, versions = excluded.versions, ranges =
 const sqliteUpsertMaliciousPackages = `-- name: UpsertMaliciousPackages :exec
 -- The arrays come as JSON arrays, read in parallel by index; each of
 -- @versions is a JSON array of versions and each of @ranges the ranges' JSON.
+WITH given_ids AS MATERIALIZED (SELECT key, value FROM json_each(@ids)),
+     given_ecosystems AS MATERIALIZED (SELECT key, value FROM json_each(@ecosystems)),
+     given_names AS MATERIALIZED (SELECT key, value FROM json_each(@names)),
+     given_all_versions AS MATERIALIZED (SELECT key, value FROM json_each(@all_versions)),
+     given_versions AS MATERIALIZED (SELECT key, value FROM json_each(@versions)),
+     given_ranges AS MATERIALIZED (SELECT key, value FROM json_each(@ranges)),
+     given_summaries AS MATERIALIZED (SELECT key, value FROM json_each(@summaries)),
+     given_modified AS MATERIALIZED (SELECT key, value FROM json_each(@modified))
 INSERT INTO malicious_packages (id, ecosystem, name, all_versions, versions, ranges, summary, modified)
 SELECT i.value, e.value, n.value, a.value, v.value, r.value, s.value, m.value
-FROM json_each(@ids) AS i
-JOIN json_each(@ecosystems) AS e ON e.key = i.key
-JOIN json_each(@names) AS n ON n.key = i.key
-JOIN json_each(@all_versions) AS a ON a.key = i.key
-JOIN json_each(@versions) AS v ON v.key = i.key
-JOIN json_each(@ranges) AS r ON r.key = i.key
-JOIN json_each(@summaries) AS s ON s.key = i.key
-JOIN json_each(@modified) AS m ON m.key = i.key
+FROM given_ids AS i
+JOIN given_ecosystems AS e ON e.key = i.key
+JOIN given_names AS n ON n.key = i.key
+JOIN given_all_versions AS a ON a.key = i.key
+JOIN given_versions AS v ON v.key = i.key
+JOIN given_ranges AS r ON r.key = i.key
+JOIN given_summaries AS s ON s.key = i.key
+JOIN given_modified AS m ON m.key = i.key
 WHERE true
 ON CONFLICT (ecosystem, name, id) DO UPDATE
 SET all_versions = excluded.all_versions, versions = excluded.versions, ranges = excluded.ranges,
@@ -1854,7 +1897,7 @@ func (q *sqliteQueries) AddGroupMembers(ctx context.Context, arg AddGroupMembers
 }
 
 func (q *sqliteQueries) AddItemProperties(ctx context.Context, arg AddItemPropertiesParams) error {
-	_, err := q.db.ExecContext(ctx, sqliteAddItemProperties, sql.Named("item_id", arg.ItemID.String()), sql.Named("keys", sqliteJSON(arg.Keys)), sql.Named("vals", sqliteJSON(arg.Vals)))
+	_, err := q.db.ExecContext(ctx, sqliteAddItemProperties, sql.Named("keys", sqliteJSON(arg.Keys)), sql.Named("vals", sqliteJSON(arg.Vals)), sql.Named("item_id", arg.ItemID.String()))
 
 	return err
 }
@@ -2962,7 +3005,7 @@ func (q *sqliteQueries) DeleteWorkloadIdentity(ctx context.Context, arg string) 
 }
 
 func (q *sqliteQueries) EnsureFolders(ctx context.Context, arg EnsureFoldersParams) ([]EnsureFoldersRow, error) {
-	rows, err := q.query(ctx, "EnsureFolders", []string{"path", "name"}, sqliteEnsureFolders, sql.Named("repo_key", arg.RepoKey), sql.Named("now", sqliteTime(arg.Now)), sql.Named("username", arg.Username), sql.Named("ids", sqliteJSON(arg.Ids)), sql.Named("paths", sqliteJSON(arg.Paths)), sql.Named("names", sqliteJSON(arg.Names)))
+	rows, err := q.query(ctx, "EnsureFolders", []string{"path", "name"}, sqliteEnsureFolders, sql.Named("ids", sqliteJSON(arg.Ids)), sql.Named("paths", sqliteJSON(arg.Paths)), sql.Named("names", sqliteJSON(arg.Names)), sql.Named("repo_key", arg.RepoKey), sql.Named("now", sqliteTime(arg.Now)), sql.Named("username", arg.Username))
 	if err != nil {
 		return nil, err
 	}
@@ -4431,13 +4474,13 @@ func (q *sqliteQueries) InsertBuild(ctx context.Context, arg InsertBuildParams) 
 }
 
 func (q *sqliteQueries) InsertBuildArtifacts(ctx context.Context, arg InsertBuildArtifactsParams) error {
-	_, err := q.db.ExecContext(ctx, sqliteInsertBuildArtifacts, sql.Named("build_id", arg.BuildID.String()), sql.Named("module_ids", sqliteJSON(arg.ModuleIds)), sql.Named("names", sqliteJSON(arg.Names)), sql.Named("types", sqliteJSON(arg.Types)), sql.Named("paths", sqliteJSON(arg.Paths)), sql.Named("sha1s", sqliteJSON(arg.Sha1s)), sql.Named("sha256s", sqliteJSON(arg.Sha256s)), sql.Named("md5s", sqliteJSON(arg.Md5s)))
+	_, err := q.db.ExecContext(ctx, sqliteInsertBuildArtifacts, sql.Named("module_ids", sqliteJSON(arg.ModuleIds)), sql.Named("names", sqliteJSON(arg.Names)), sql.Named("types", sqliteJSON(arg.Types)), sql.Named("paths", sqliteJSON(arg.Paths)), sql.Named("sha1s", sqliteJSON(arg.Sha1s)), sql.Named("sha256s", sqliteJSON(arg.Sha256s)), sql.Named("md5s", sqliteJSON(arg.Md5s)), sql.Named("build_id", arg.BuildID.String()))
 
 	return err
 }
 
 func (q *sqliteQueries) InsertBuildDependencies(ctx context.Context, arg InsertBuildDependenciesParams) error {
-	_, err := q.db.ExecContext(ctx, sqliteInsertBuildDependencies, sql.Named("build_id", arg.BuildID.String()), sql.Named("module_ids", sqliteJSON(arg.ModuleIds)), sql.Named("dep_ids", sqliteJSON(arg.DepIds)), sql.Named("types", sqliteJSON(arg.Types)), sql.Named("scopes", sqliteJSON(arg.Scopes)), sql.Named("sha1s", sqliteJSON(arg.Sha1s)), sql.Named("sha256s", sqliteJSON(arg.Sha256s)), sql.Named("md5s", sqliteJSON(arg.Md5s)))
+	_, err := q.db.ExecContext(ctx, sqliteInsertBuildDependencies, sql.Named("module_ids", sqliteJSON(arg.ModuleIds)), sql.Named("dep_ids", sqliteJSON(arg.DepIds)), sql.Named("types", sqliteJSON(arg.Types)), sql.Named("scopes", sqliteJSON(arg.Scopes)), sql.Named("sha1s", sqliteJSON(arg.Sha1s)), sql.Named("sha256s", sqliteJSON(arg.Sha256s)), sql.Named("md5s", sqliteJSON(arg.Md5s)), sql.Named("build_id", arg.BuildID.String()))
 
 	return err
 }
@@ -5650,7 +5693,7 @@ func (q *sqliteQueries) ListIssues(ctx context.Context, arg string) ([]ScanIssue
 }
 
 func (q *sqliteQueries) ListItemsAt(ctx context.Context, arg ListItemsAtParams) ([]Item, error) {
-	rows, err := q.query(ctx, "ListItemsAt", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated"}, sqliteListItemsAt, sql.Named("repo_key", arg.RepoKey), sql.Named("paths", sqliteJSON(arg.Paths)), sql.Named("names", sqliteJSON(arg.Names)))
+	rows, err := q.query(ctx, "ListItemsAt", []string{"id", "repokey", "path", "name", "type", "size", "sha1", "sha256", "md5", "created", "createdby", "modified", "modifiedby", "updated"}, sqliteListItemsAt, sql.Named("paths", sqliteJSON(arg.Paths)), sql.Named("names", sqliteJSON(arg.Names)), sql.Named("repo_key", arg.RepoKey))
 	if err != nil {
 		return nil, err
 	}
@@ -7652,7 +7695,7 @@ func (q *sqliteQueries) SearchNpmVersions(ctx context.Context, arg SearchNpmVers
 }
 
 func (q *sqliteQueries) SetCVEEPSS(ctx context.Context, arg SetCVEEPSSParams) error {
-	_, err := q.db.ExecContext(ctx, sqliteSetCVEEPSS, sql.Named("score_date", sqliteNullTime(arg.ScoreDate)), sql.Named("ids", sqliteJSON(arg.Ids)), sql.Named("scores", sqliteJSON(arg.Scores)), sql.Named("percentiles", sqliteJSON(arg.Percentiles)))
+	_, err := q.db.ExecContext(ctx, sqliteSetCVEEPSS, sql.Named("ids", sqliteJSON(arg.Ids)), sql.Named("scores", sqliteJSON(arg.Scores)), sql.Named("percentiles", sqliteJSON(arg.Percentiles)), sql.Named("score_date", sqliteNullTime(arg.ScoreDate)))
 
 	return err
 }

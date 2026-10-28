@@ -2,9 +2,14 @@ package database
 
 import (
 	"database/sql"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSQLiteEnsureFoldersLooksUpEachFolderByKey(t *testing.T) {
@@ -125,4 +130,67 @@ func queryPlan(t *testing.T, db *DB, query string, args ...any) []string {
 	}
 
 	return plan
+}
+
+func TestSQLiteListItemsAtTakesTimeInProportionToItsPaths(t *testing.T) {
+	t.Parallel()
+
+	db := newSQLiteTestDB(t)
+	stored := seedSQLiteItem(t, db)
+
+	const count = 20_000
+
+	paths := make([]string, 0, count)
+	names := make([]string, 0, count)
+
+	for i := range count - 1 {
+		paths = append(paths, "org/app")
+		names = append(names, fmt.Sprintf("missing-%d.jar", i))
+	}
+
+	paths = append(paths, stored.Path)
+	names = append(names, stored.Name)
+
+	start := time.Now()
+
+	items, err := db.ListItemsAt(t.Context(), ListItemsAtParams{
+		RepoKey: stored.RepoKey,
+		Paths:   paths,
+		Names:   names,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(items) != 1 || items[0].Name != stored.Name {
+		t.Errorf("ListItemsAt = %d items, want %s", len(items), stored.Name)
+	}
+
+	if elapsed := time.Since(start); elapsed > listItemsAtDeadline {
+		t.Errorf("ListItemsAt of %d paths took %s", count, elapsed)
+	}
+}
+
+// A JSON array joined to another by key is read once per row of the other:
+// zipping two arrays of n elements reads n² rows.
+func TestSQLiteQueriesNeverJoinJSONArraysDirectly(t *testing.T) {
+	t.Parallel()
+
+	files, err := filepath.Glob(filepath.Join("..", "..", "..", "queries", "sqlite", "*.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	joined := regexp.MustCompile(`JOIN json_each\([^)]*\) AS \w+ ON`)
+
+	for _, file := range files {
+		text, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for _, join := range joined.FindAllString(string(text), -1) {
+			t.Errorf("%s: %s; materialize each array in a CTE and join those", filepath.Base(file), join)
+		}
+	}
 }
