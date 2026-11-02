@@ -18,11 +18,13 @@ import (
 	"testing"
 
 	"relic/internal/access/auth"
+	"relic/internal/app/config"
 	"relic/internal/app/ui"
 	"relic/internal/artifacts/repository"
 	"relic/internal/platform/database"
 	"relic/internal/platform/localdisk"
 	"relic/internal/platform/objectstore"
+	"relic/internal/scanning/scan"
 )
 
 func TestRunRejectsUnknownCommands(t *testing.T) {
@@ -599,5 +601,26 @@ func TestTrustedRootsRefusesAFileWithoutCertificates(t *testing.T) {
 	if _, err := trustedRoots("RELIC_UPSTREAM_CA_CERTIFICATE_FILE", file); err == nil ||
 		!strings.Contains(err.Error(), "RELIC_UPSTREAM_CA_CERTIFICATE_FILE") {
 		t.Errorf("trustedRoots = %v, want an error naming the setting", err)
+	}
+}
+
+func TestPackageLookupsCarryEveryConfiguredURL(t *testing.T) {
+	t.Parallel()
+
+	got := packageLookups(config.Scan{
+		MavenURL:   "https://mirror.example.com/maven",
+		PyPIURL:    "https://mirror.example.com/pypi",
+		NPMURL:     "https://mirror.example.com/npm",
+		GoProxyURL: "https://mirror.example.com/go",
+	})
+	want := scan.PackageLookups{
+		MavenURL:   "https://mirror.example.com/maven",
+		PyPIURL:    "https://mirror.example.com/pypi",
+		NPMURL:     "https://mirror.example.com/npm",
+		GoProxyURL: "https://mirror.example.com/go",
+	}
+
+	if got != want {
+		t.Errorf("packageLookups = %+v, want %+v", got, want)
 	}
 }

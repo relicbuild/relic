@@ -149,6 +149,14 @@ type Scan struct {
 	// a mirror of it, or "off" to download none.
 	VulnerabilityDatabaseURL string
 	VulnerabilityDatabaseOff bool
+	// MavenURL (RELIC_SCAN_MAVEN_URL), PyPIURL (RELIC_SCAN_PYPI_URL), NPMURL
+	// (RELIC_SCAN_NPM_URL) and GoProxyURL (RELIC_SCAN_GO_PROXY_URL) are the
+	// registries or mirrors Syft reads licenses and parent POMs from. Unset or
+	// "off" keeps each off: they send package names to it.
+	MavenURL   string
+	PyPIURL    string
+	NPMURL     string
+	GoProxyURL string
 	// IndexerDir holds relic-indexer builds named relic-indexer-<os>-<arch>
 	// (RELIC_INDEXER_DIR), served to scanning clients.
 	IndexerDir string
@@ -261,6 +269,10 @@ func Load(getenv func(string) string) (Config, error) {
 			VulnerabilityDatabaseDir: env("RELIC_SCAN_VULNERABILITY_DATABASE_DIR", "/var/lib/relic/grype"),
 			VulnerabilityDatabaseURL: vulnerabilityDatabaseURL(getenv),
 			VulnerabilityDatabaseOff: getenv("RELIC_SCAN_VULNERABILITY_DATABASE_URL") == "off",
+			MavenURL:                 feed(getenv, "RELIC_SCAN_MAVEN_URL", ""),
+			PyPIURL:                  feed(getenv, "RELIC_SCAN_PYPI_URL", ""),
+			NPMURL:                   feed(getenv, "RELIC_SCAN_NPM_URL", ""),
+			GoProxyURL:               feed(getenv, "RELIC_SCAN_GO_PROXY_URL", ""),
 			IndexerDir:               env("RELIC_INDEXER_DIR", defaultIndexerDir()),
 			EPSSFeedURL: feed(
 				getenv,
@@ -330,6 +342,32 @@ func Load(getenv func(string) string) (Config, error) {
 		if u, err := url.Parse(f.url); f.url != "" &&
 			(err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "") {
 			errs = append(errs, fmt.Errorf("%s %q must be an http or https URL, or off", f.key, f.url))
+		}
+	}
+
+	for _, lookup := range []struct {
+		key string
+		url string
+	}{
+		{
+			"RELIC_SCAN_MAVEN_URL",
+			cfg.Scan.MavenURL,
+		},
+		{
+			"RELIC_SCAN_PYPI_URL",
+			cfg.Scan.PyPIURL,
+		},
+		{
+			"RELIC_SCAN_NPM_URL",
+			cfg.Scan.NPMURL,
+		},
+		{
+			"RELIC_SCAN_GO_PROXY_URL",
+			cfg.Scan.GoProxyURL,
+		},
+	} {
+		if lookup.url != "" && !isLookupURL(lookup.url) {
+			errs = append(errs, fmt.Errorf("%s must be one http or https URL without credentials, or off", lookup.key))
 		}
 	}
 
@@ -684,6 +722,15 @@ func feed(getenv func(string) string, key, def string) string {
 	default:
 		return v
 	}
+}
+
+func isLookupURL(lookupURL string) bool {
+	u, err := url.Parse(lookupURL)
+	if err != nil || strings.Contains(lookupURL, ",") {
+		return false
+	}
+
+	return (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && u.User == nil
 }
 
 func vulnerabilityDatabaseURL(getenv func(string) string) string {
