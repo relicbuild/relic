@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"relic/internal/app/config"
 )
 
 const (
@@ -186,6 +188,38 @@ func userServicePath(home, executable string) string {
 	return strings.Join(path, ":")
 }
 
+func (s *systemd) indexerBuildActions() ([]machineAction, error) {
+	m := s.m
+	source := config.InstalledIndexerDir(m.executable)
+
+	builds, err := os.ReadDir(source)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("setup: read the relic-indexer builds: %w", err)
+	}
+
+	actions := make([]machineAction, 0, len(builds))
+
+	for _, build := range builds {
+		b, err := os.ReadFile(filepath.Join(source, build.Name())) //nolint:gosec // G304: beside this binary
+		if err != nil {
+			return nil, fmt.Errorf("setup: read the relic-indexer builds: %w", err)
+		}
+
+		actions = append(actions, m.file(
+			"relic-indexer build",
+			filepath.Join(m.root, config.InstalledIndexerDir(systemBinary), build.Name()),
+			b,
+			0o755,
+		))
+	}
+
+	return actions, nil
+}
+
 func (s *systemd) systemInstallActions(ctx context.Context) ([]machineAction, error) {
 	m := s.m
 
@@ -237,6 +271,13 @@ func (s *systemd) systemInstallActions(ctx context.Context) ([]machineAction, er
 
 		binary = m.file("relic binary", filepath.Join(m.root, systemBinary), b, 0o755)
 		actions = append(actions, binary)
+
+		indexerBuilds, err := s.indexerBuildActions()
+		if err != nil {
+			return nil, err
+		}
+
+		actions = append(actions, indexerBuilds...)
 	}
 
 	env, err := m.settings("server settings, with secrets", s.settingsPath(), systemDataDir, systemTLSDir, 0o640)
@@ -422,6 +463,7 @@ func (s *systemd) uninstallActions(context.Context) (remove, keep []machineActio
 
 	remove = append(remove, existing(
 		removal("relic binary", filepath.Join(m.root, systemBinary)),
+		removal("relic-indexer builds", filepath.Join(m.root, config.InstalledIndexerDir(systemBinary))),
 		removal("bash completion for every user", filepath.Join(m.root, systemCompletion)),
 	)...)
 

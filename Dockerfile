@@ -82,6 +82,7 @@ COPY --from=dirs --chown=nonroot:nonroot /out/etc/relic /etc/relic
 COPY --from=indexer /out/ /usr/local/share/relic/indexer/
 COPY --from=notices /out/licenses/ /usr/share/licenses/relic/
 ENV RELIC_TLS_DIRECTORY=/etc/relic/tls
+ENV RELIC_INDEXER_DIR=/usr/local/share/relic/indexer
 EXPOSE 8090
 ENTRYPOINT ["/relic"]
 CMD ["server", "start"]
