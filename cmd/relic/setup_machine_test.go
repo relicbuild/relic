@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"relic/internal/app/config"
 )
 
 func testMachineSetup(t *testing.T, answers string) (*machineSetup, *[]string, *bytes.Buffer) {
@@ -397,10 +399,22 @@ func TestMachineSetupSystemService(t *testing.T) {
 		m, ran, _ := testMachineSetup(t, "")
 		m.yes, m.system, m.euid = true, true, 0
 
-		m.executable = filepath.Join(t.TempDir(), "relic")
-		//nolint:gosec // G306: an executable
-		if err := os.WriteFile(m.executable, []byte("binary"), 0o755); err != nil {
-			t.Fatal(err)
+		m.executable = filepath.Join(t.TempDir(), "bin", "relic")
+		installedIndexerBuild := filepath.Join(config.InstalledIndexerDir(m.executable), "relic-indexer-linux-amd64")
+
+		for path, content := range map[string]string{
+			m.executable:          "binary",
+			installedIndexerBuild: "indexer",
+		} {
+			//nolint:gosec // G301: a directory of executables
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			//nolint:gosec // G306: an executable
+			if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+				t.Fatal(err)
+			}
 		}
 
 		if err := m.runSetup(t.Context()); err != nil {
@@ -409,6 +423,19 @@ func TestMachineSetupSystemService(t *testing.T) {
 
 		if got := readFile(t, filepath.Join(m.root, systemBinary)); got != "binary" {
 			t.Errorf("binary = %q", got)
+		}
+
+		systemIndexerBuild := filepath.Join(
+			m.root,
+			config.InstalledIndexerDir(systemBinary),
+			"relic-indexer-linux-amd64",
+		)
+		if got := readFile(t, systemIndexerBuild); got != "indexer" {
+			t.Errorf("indexer build = %q", got)
+		}
+
+		if fi, err := os.Stat(systemIndexerBuild); err != nil || fi.Mode().Perm() != 0o755 {
+			t.Errorf("indexer build stat = %v, %v", fi, err)
 		}
 
 		unit := readFile(t, filepath.Join(m.root, systemUnit))

@@ -7,7 +7,7 @@ before:
     - sh -c "cd web && pnpm install --frozen-lockfile && NUXT_PUBLIC_RELIC_VERSION={{ .Tag }} pnpm generate"
     - sh -c "find internal/app/ui/dist -mindepth 1 ! -name .gitkeep -delete && cp -r web/.output/public/. internal/app/ui/dist/"
     - sh -c "mkdir -p bin && cd web && node scripts/third-party-notices.ts > ../bin/web-notices.txt"
-    - go run ./tools/thirdpartynotices -output bin/THIRD_PARTY_NOTICES -platforms linux/amd64,linux/arm64,darwin/amd64,darwin/arm64,windows/amd64 -include bin/web-notices.txt ./cmd/relic
+    - go run ./tools/thirdpartynotices -output bin/THIRD_PARTY_NOTICES -platforms linux/amd64,linux/arm64,darwin/amd64,darwin/arm64,windows/amd64 -include bin/web-notices.txt ./cmd/relic ./api/adapters/artifactory/relic-indexer
     - sh deploy/cloudflare/bundle.sh {{ .Tag }} bin
 
 builds:
@@ -20,6 +20,26 @@ builds:
       - -trimpath
     ldflags:
       - -s -w -X main.version={{ .Tag }} -X main.revision={{ .FullCommit }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+  - id: relic-indexer
+    dir: api/adapters/artifactory/relic-indexer
+    main: .
+    binary: relic-indexer
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
     goos:
       - linux
       - darwin
@@ -48,6 +68,12 @@ archives:
       - README.md
       - src: bin/THIRD_PARTY_NOTICES
         strip_parent: true
+  - id: relic-indexer
+    ids:
+      - relic-indexer
+    name_template: "relic-indexer-{{ .Os }}-{{ .Arch }}"
+    formats:
+      - binary
 
 checksum:
   name_template: "{{ .ProjectName }}_{{ .Tag }}_checksums.txt"
@@ -56,6 +82,12 @@ checksum:
 
 sboms:
   - artifacts: archive
+  - id: relic-indexer
+    artifacts: binary
+    ids:
+      - relic-indexer
+    documents:
+      - "relic-indexer-{{ .Os }}-{{ .Arch }}.sbom.json"
 
 signs:
   - cmd: cosign

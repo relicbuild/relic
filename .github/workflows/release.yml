@@ -48,6 +48,7 @@ jobs:
         run: |
           tar -xzf "dist/relic_${VERSION}_linux_amd64.tar.gz" -C "$RUNNER_TEMP"
           test "$("$RUNNER_TEMP/relic_${VERSION}_linux_amd64/relic" --version)" = "relic version $VERSION"
+          test "$(dist/relic-indexer_linux_amd64_v1/relic-indexer version | cut -d' ' -f1-3)" = "relic indexer-app version"
 
   image:
     runs-on: ubuntu-latest

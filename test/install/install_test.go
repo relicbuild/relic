@@ -51,10 +51,27 @@ func archive(t *testing.T, name, version string) []byte {
 	return b.Bytes()
 }
 
-func releaseServer(t *testing.T, latest string, corrupt, prereleaseOnly bool) *httptest.Server {
+type fakeRelease struct {
+	latest         string
+	corrupt        bool
+	corruptIndexer bool
+	prereleaseOnly bool
+	withoutIndexer bool
+}
+
+func indexerBuildNames() []string {
+	return []string{
+		"relic-indexer-" + runtime.GOOS + "-" + runtime.GOARCH,
+		"relic-indexer-linux-arm64",
+		"relic-indexer-windows-amd64.exe",
+	}
+}
+
+func (release fakeRelease) server(t *testing.T) *httptest.Server {
 	t.Helper()
 
 	files := map[string][]byte{}
+	latest, corrupt, prereleaseOnly := release.latest, release.corrupt, release.prereleaseOnly
 
 	for _, version := range []string{
 		"v1.0.0",
@@ -74,7 +91,23 @@ func releaseServer(t *testing.T, latest string, corrupt, prereleaseOnly bool) *h
 
 		dir := "/releases/download/" + version + "/"
 		files[dir+name+".tar.gz"] = tgz
-		files[dir+"relic_"+version+"_checksums.txt"] = fmt.Appendf(nil, "%x  %s.tar.gz\n", sum, name)
+		sums := fmt.Appendf(nil, "%x  %s.tar.gz\n", sum, name)
+
+		if !release.withoutIndexer {
+			for _, build := range indexerBuildNames() {
+				body := []byte("indexer " + build)
+				buildSum := sha256.Sum256(body)
+
+				if release.corruptIndexer {
+					buildSum[0] ^= 0xff
+				}
+
+				files[dir+build] = body
+				sums = fmt.Appendf(sums, "%x  %s\n", buildSum, build)
+			}
+		}
+
+		files[dir+"relic_"+version+"_checksums.txt"] = sums
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -139,6 +172,7 @@ func pathWithoutChecksumTools(t *testing.T) string {
 		"gzip",
 		"mkdir",
 		"install",
+		"dirname",
 	} {
 		found, err := exec.LookPath(tool)
 		if err != nil {
@@ -160,20 +194,86 @@ func TestInstallScript(t *testing.T) {
 		t.Skip("install.sh is for Linux and macOS")
 	}
 
+	hostBuild := indexerBuildNames()[0]
+	noPlatforms := ""
+	otherPlatforms := "linux/arm64 windows/amd64"
+	notAPlatform := "linux"
+
 	tests := []struct {
-		name           string
-		version        string
-		corrupt        bool
-		noChecksumTool bool
-		prereleaseOnly bool
-		noReleases     bool
-		readOnlyDir    bool
-		want           string
-		failure        string
+		name               string
+		version            string
+		corrupt            bool
+		corruptIndexer     bool
+		withoutIndexer     bool
+		noChecksumTool     bool
+		prereleaseOnly     bool
+		noReleases         bool
+		readOnlyDir        bool
+		readOnlyIndexerDir bool
+		customIndexerDir   bool
+		indexerPlatforms   *string
+		wantIndexerBuilds  []string
+		wantOutput         string
+		want               string
+		failure            string
 	}{
 		{
 			name: "latest release",
 			want: "relic version v1.2.3",
+			wantIndexerBuilds: []string{
+				hostBuild,
+			},
+		},
+		{
+			name:             "indexer builds of other platforms",
+			indexerPlatforms: &otherPlatforms,
+			want:             "relic version v1.2.3",
+			wantIndexerBuilds: []string{
+				"relic-indexer-linux-arm64",
+				"relic-indexer-windows-amd64.exe",
+			},
+		},
+		{
+			name:              "no indexer builds on request",
+			indexerPlatforms:  &noPlatforms,
+			want:              "relic version v1.2.3",
+			wantIndexerBuilds: []string{},
+		},
+		{
+			name:             "indexer builds in another directory",
+			customIndexerDir: true,
+			want:             "relic version v1.2.3",
+			wantIndexerBuilds: []string{
+				hostBuild,
+			},
+		},
+		{
+			name:              "a release without indexer builds",
+			withoutIndexer:    true,
+			want:              "relic version v1.2.3",
+			wantOutput:        "has no " + hostBuild,
+			wantIndexerBuilds: []string{},
+		},
+		{
+			name:             "requested indexer build not in the release",
+			withoutIndexer:   true,
+			indexerPlatforms: &otherPlatforms,
+			failure:          "has no entry for relic-indexer-linux-arm64",
+		},
+		{
+			name:           "indexer checksum mismatch",
+			corruptIndexer: true,
+			failure:        "checksum mismatch for " + hostBuild,
+		},
+		{
+			name:             "indexer platform without an architecture",
+			indexerPlatforms: &notAPlatform,
+			failure:          "os/arch",
+		},
+		{
+			name:               "an indexer directory relic cannot write to",
+			readOnlyIndexerDir: true,
+			failure:            "RELIC_INDEXER_DIR",
 		},
 		{
 			name:           "prerelease fallback",
@@ -231,8 +331,26 @@ func TestInstallScript(t *testing.T) {
 				latest = ""
 			}
 
-			srv := releaseServer(t, latest, tt.corrupt, tt.prereleaseOnly)
-			dir := filepath.Join(t.TempDir(), "bin")
+			srv := fakeRelease{
+				latest:         latest,
+				corrupt:        tt.corrupt,
+				corruptIndexer: tt.corruptIndexer,
+				prereleaseOnly: tt.prereleaseOnly,
+				withoutIndexer: tt.withoutIndexer,
+			}.server(t)
+			prefix := t.TempDir()
+			dir := filepath.Join(prefix, "bin")
+			indexerDir := filepath.Join(prefix, "share", "relic", "indexer")
+
+			if tt.readOnlyIndexerDir {
+				if os.Geteuid() == 0 {
+					t.Skip("root writes into a read-only directory")
+				}
+
+				if err := os.Mkdir(filepath.Join(prefix, "share"), 0o500); err != nil {
+					t.Fatal(err)
+				}
+			}
 
 			if tt.readOnlyDir {
 				if os.Geteuid() == 0 {
@@ -253,6 +371,15 @@ func TestInstallScript(t *testing.T) {
 				"RELIC_VERSION="+tt.version,
 			)
 
+			if tt.customIndexerDir {
+				indexerDir = filepath.Join(prefix, "elsewhere")
+				cmd.Env = append(cmd.Env, "RELIC_INDEXER_DIR="+indexerDir)
+			}
+
+			if tt.indexerPlatforms != nil {
+				cmd.Env = append(cmd.Env, "RELIC_INDEXER_PLATFORMS="+*tt.indexerPlatforms)
+			}
+
 			if tt.noChecksumTool {
 				cmd.Env = append(cmd.Env, "PATH="+pathWithoutChecksumTools(t))
 			}
@@ -264,7 +391,7 @@ func TestInstallScript(t *testing.T) {
 					t.Fatalf("install succeeded or failed for another reason than %q: %v\n%s", tt.failure, err, out)
 				}
 
-				if tt.readOnlyDir && strings.Contains(string(out), "Downloading") {
+				if (tt.readOnlyDir || tt.readOnlyIndexerDir) && strings.Contains(string(out), "Downloading") {
 					t.Errorf("install downloaded before it checked %s:\n%s", dir, out)
 				}
 
@@ -282,6 +409,40 @@ func TestInstallScript(t *testing.T) {
 			got, err := exec.CommandContext(t.Context(), filepath.Join(dir, "relic")).Output()
 			if err != nil || strings.TrimSpace(string(got)) != tt.want {
 				t.Fatalf("installed relic = %q, %v; want %q", got, err, tt.want)
+			}
+
+			if !strings.Contains(string(out), tt.wantOutput) {
+				t.Errorf("output lacks %q:\n%s", tt.wantOutput, out)
+			}
+
+			if tt.wantIndexerBuilds == nil {
+				return
+			}
+
+			installed, err := filepath.Glob(filepath.Join(indexerDir, "*"))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if len(installed) != len(tt.wantIndexerBuilds) {
+				t.Fatalf("indexer builds = %v, want %v", installed, tt.wantIndexerBuilds)
+			}
+
+			for _, build := range tt.wantIndexerBuilds {
+				path := filepath.Join(indexerDir, build)
+
+				body, err := os.ReadFile(path) //nolint:gosec // a file of this test's temporary directory
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				if string(body) != "indexer "+build {
+					t.Errorf("%s = %q", build, body)
+				}
+
+				if fi, err := os.Stat(path); err != nil || fi.Mode().Perm() != 0o755 {
+					t.Errorf("%s stat = %v, %v", build, fi, err)
+				}
 			}
 		})
 	}

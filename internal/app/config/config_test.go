@@ -3,6 +3,8 @@ package config
 import (
 	"crypto/tls"
 	"maps"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +29,87 @@ func with(overrides map[string]string) map[string]string {
 	}
 
 	return env
+}
+
+func TestInstalledIndexerDir(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		executable string
+		want       string
+	}{
+		{
+			name:       "system binary",
+			executable: "/usr/local/bin/relic",
+			want:       "/usr/local/share/relic/indexer",
+		},
+		{
+			name:       "user binary",
+			executable: "/home/dev/.local/bin/relic",
+			want:       "/home/dev/.local/share/relic/indexer",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := InstalledIndexerDir(tt.executable); got != tt.want {
+				t.Errorf("InstalledIndexerDir(%q) = %q, want %q", tt.executable, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadIndexerDir(t *testing.T) {
+	t.Parallel()
+
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	executable, err = filepath.EvalSymlinks(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{
+			name: "beside the running binary by default",
+			env:  with(nil),
+			want: InstalledIndexerDir(executable),
+		},
+		{
+			name: "RELIC_INDEXER_DIR wins",
+			env: with(map[string]string{
+				"RELIC_INDEXER_DIR": "/srv/indexer",
+			}),
+			want: "/srv/indexer",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c, err := Load(func(key string) string {
+				return tt.env[key]
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if c.Scan.IndexerDir != tt.want {
+				t.Errorf("IndexerDir = %q, want %q", c.Scan.IndexerDir, tt.want)
+			}
+		})
+	}
 }
 
 func TestLoad(t *testing.T) {

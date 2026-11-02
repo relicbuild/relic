@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"relic/internal/app/config"
 )
 
 func installedUserService(t *testing.T) *machineSetup {
@@ -230,6 +232,21 @@ func TestUninstallSystem(t *testing.T) {
 
 	writeCertificateAuthority(t, filepath.Join(m.root, systemTLSDir))
 
+	systemIndexerDir := filepath.Join(m.root, config.InstalledIndexerDir(systemBinary))
+	//nolint:gosec // G301: a directory of executables
+	if err := os.MkdirAll(systemIndexerDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	//nolint:gosec // G306: an executable
+	if err := os.WriteFile(
+		filepath.Join(systemIndexerDir, "relic-indexer-linux-amd64"),
+		[]byte("indexer"),
+		0o755,
+	); err != nil {
+		t.Fatal(err)
+	}
+
 	m.euid = 1000
 	if err := m.runUninstall(t.Context(), false); err == nil || !strings.Contains(err.Error(), "sudo") {
 		t.Fatalf("err = %v", err)
@@ -249,6 +266,7 @@ func TestUninstallSystem(t *testing.T) {
 		systemUnit,
 		systemBinary,
 		systemCompletion,
+		config.InstalledIndexerDir(systemBinary),
 	} {
 		if exists(filepath.Join(m.root, p)) {
 			t.Errorf("%s is still there", p)

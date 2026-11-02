@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -260,7 +261,7 @@ func Load(getenv func(string) string) (Config, error) {
 			VulnerabilityDatabaseDir: env("RELIC_SCAN_VULNERABILITY_DATABASE_DIR", "/var/lib/relic/grype"),
 			VulnerabilityDatabaseURL: vulnerabilityDatabaseURL(getenv),
 			VulnerabilityDatabaseOff: getenv("RELIC_SCAN_VULNERABILITY_DATABASE_URL") == "off",
-			IndexerDir:               env("RELIC_INDEXER_DIR", "/usr/local/share/relic/indexer"),
+			IndexerDir:               env("RELIC_INDEXER_DIR", defaultIndexerDir()),
 			EPSSFeedURL: feed(
 				getenv,
 				"RELIC_CVE_EPSS_URL",
@@ -558,6 +559,24 @@ func isHostname(name string) bool {
 	}
 
 	return true
+}
+
+// InstalledIndexerDir is the directory install.sh writes relic-indexer builds to, for a relic binary at executable.
+func InstalledIndexerDir(executable string) string {
+	return filepath.Join(filepath.Dir(filepath.Dir(executable)), "share", "relic", "indexer")
+}
+
+func defaultIndexerDir() string {
+	executable, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+
+	if resolved, err := filepath.EvalSymlinks(executable); err == nil {
+		executable = resolved
+	}
+
+	return InstalledIndexerDir(executable)
 }
 
 func defaultTLSDirectory(getenv func(string) string) string {
