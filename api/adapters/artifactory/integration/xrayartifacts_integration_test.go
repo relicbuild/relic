@@ -19,6 +19,7 @@ import (
 func TestXrayArtifactAPIs(t *testing.T) {
 	t.Parallel()
 	srv, db := serverDB(t)
+	reportGraphScanWorker(t, db)
 	do(
 		t,
 		srv,

@@ -157,15 +157,44 @@ func (s stack) up(ctx context.Context) error {
 		}
 	}
 
-	_, err := s.compose(ctx, append([]string{
+	if _, err := s.compose(ctx, append([]string{
 		"up",
 		"-d",
 		"--wait",
 		"--no-build",
 		"--remove-orphans",
-	}, s.services()...)...)
+	}, s.services()...)...); err != nil {
+		return err
+	}
 
-	return err
+	if s.tier == "core" {
+		return nil
+	}
+
+	return s.waitForWorker(ctx)
+}
+
+// waitForWorker returns once the separate worker runs, because scans are refused until a worker has reported.
+func (s stack) waitForWorker(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	for {
+		logs, err := s.compose(ctx, "logs", "relic-worker")
+		if err != nil {
+			return err
+		}
+
+		if bytes.Contains(logs, []byte("relic server worker started")) {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("wait for relic-worker: %w", ctx.Err())
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
 }
 
 // down removes the stack: its containers, networks and volumes.

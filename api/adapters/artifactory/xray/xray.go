@@ -35,6 +35,8 @@ const Version = xraymap.XrayVersion
 
 const maxGraphBytes = 32 << 20
 
+const scanWorkerMissing = "Relic Scan is off: no worker with Syft and Grype reported lately"
+
 // Handler serves the scan API.
 type Handler struct {
 	// IndexerDir holds relic-indexer-<os>-<arch>[.exe] builds.
@@ -43,15 +45,16 @@ type Handler struct {
 	// only admins may scan builds.
 	Permissions func(context.Context) (auth.Permissions, error)
 
-	aql       itemquery.Querier
-	results   *scan.Results
-	builds    *buildinfo.Service
-	scans     *scan.Service
-	enqueue   func(ctx context.Context, id uuid.UUID) error
-	admin     *policy.Admin
-	repos     *repository.Service
-	decisions *policy.Decisions
-	log       *slog.Logger
+	aql         itemquery.Querier
+	results     *scan.Results
+	builds      *buildinfo.Service
+	scans       *scan.Service
+	enqueue     func(ctx context.Context, id uuid.UUID) error
+	scanWorkers func(ctx context.Context) (bool, error)
+	admin       *policy.Admin
+	repos       *repository.Service
+	decisions   *policy.Decisions
+	log         *slog.Logger
 }
 
 // New returns a Handler.
@@ -62,16 +65,18 @@ func New(
 	scans *scan.Service,
 	admin *policy.Admin,
 	enqueue func(context.Context, uuid.UUID) error,
+	scanWorkers func(context.Context) (bool, error),
 	log *slog.Logger,
 ) *Handler {
 	return &Handler{
-		aql:     q,
-		results: results,
-		builds:  builds,
-		scans:   scans,
-		admin:   admin,
-		enqueue: enqueue,
-		log:     log,
+		aql:         q,
+		results:     results,
+		builds:      builds,
+		scans:       scans,
+		admin:       admin,
+		enqueue:     enqueue,
+		scanWorkers: scanWorkers,
+		log:         log,
 	}
 }
 
@@ -256,6 +261,10 @@ func (h *Handler) postGraph(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if !h.requireScanWorker(w, r) {
+		return
+	}
+
 	repoPath, _, _ := strings.Cut(first(q["repo_path"]), "/")
 	req := graphRequest{
 		Root:      root.ComponentID,
@@ -368,6 +377,10 @@ func (h *Handler) getGraph(w http.ResponseWriter, r *http.Request) {
 
 	switch g.Status {
 	case scan.StatusQueued:
+		if !h.requireScanWorker(w, r) {
+			return
+		}
+
 		wire.WriteJSON(w, http.StatusAccepted, map[string]string{
 			"scan_id": id.String(),
 			"status":  "in_progress",
@@ -749,6 +762,23 @@ func nonNil(s []string) []string {
 	}
 
 	return s
+}
+
+func (h *Handler) requireScanWorker(w http.ResponseWriter, r *http.Request) bool {
+	running, err := h.scanWorkers(r.Context())
+	if err != nil {
+		h.internal(w, r, err)
+		return false
+	}
+
+	if !running {
+		h.log.WarnContext(r.Context(), "xray: refused a scan call: no worker runs Relic Scan", "path", r.URL.Path)
+		writeError(w, http.StatusFailedDependency, scanWorkerMissing)
+
+		return false
+	}
+
+	return true
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
