@@ -231,6 +231,117 @@ func TestSyftSkipsTheUpdateCheck(t *testing.T) {
 	}
 }
 
+type packageLookupCase struct {
+	name    string
+	lookups PackageLookups
+	present []string
+	absent  []string
+}
+
+func TestSyftPackageLookups(t *testing.T) {
+	t.Parallel()
+
+	script := filepath.Join(t.TempDir(), "syft")
+	scripttest.Write(t, script, "#!/bin/sh\nenv\n")
+
+	for _, lookupCase := range []packageLookupCase{
+		{
+			name: "off without a URL",
+			absent: []string{
+				"SYFT_JAVA_USE_NETWORK",
+				"SYFT_JAVA_MAVEN_URL",
+				"SYFT_PYTHON_SEARCH_REMOTE_LICENSES",
+				"SYFT_JAVASCRIPT_SEARCH_REMOTE_LICENSES",
+				"SYFT_GOLANG_SEARCH_REMOTE_LICENSES",
+				"SYFT_GOLANG_PROXY",
+			},
+		},
+		{
+			name: "maven",
+			lookups: PackageLookups{
+				MavenURL: "https://mirror.example.com/maven/",
+			},
+			present: []string{
+				"SYFT_JAVA_USE_NETWORK=true",
+				"SYFT_JAVA_MAVEN_URL=https://mirror.example.com/maven",
+				"SYFT_JAVA_MAX_PARENT_RECURSIVE_DEPTH=0",
+			},
+			absent: []string{
+				"SYFT_PYTHON_SEARCH_REMOTE_LICENSES",
+				"SYFT_JAVASCRIPT_SEARCH_REMOTE_LICENSES",
+				"SYFT_GOLANG_SEARCH_REMOTE_LICENSES",
+			},
+		},
+		{
+			name: "pypi",
+			lookups: PackageLookups{
+				PyPIURL: "https://mirror.example.com/pypi/",
+			},
+			present: []string{
+				"SYFT_PYTHON_SEARCH_REMOTE_LICENSES=true",
+				"SYFT_PYTHON_PYPI_BASE_URL=https://mirror.example.com/pypi",
+			},
+			absent: []string{
+				"SYFT_JAVA_USE_NETWORK",
+			},
+		},
+		{
+			name: "npm",
+			lookups: PackageLookups{
+				NPMURL: "https://mirror.example.com/npm/",
+			},
+			present: []string{
+				"SYFT_JAVASCRIPT_SEARCH_REMOTE_LICENSES=true",
+				"SYFT_JAVASCRIPT_NPM_BASE_URL=https://mirror.example.com/npm",
+			},
+			absent: []string{
+				"SYFT_JAVA_USE_NETWORK",
+			},
+		},
+		{
+			name: "go",
+			lookups: PackageLookups{
+				GoProxyURL: "https://mirror.example.com/go/",
+			},
+			present: []string{
+				"SYFT_GOLANG_SEARCH_REMOTE_LICENSES=true",
+				"SYFT_GOLANG_PROXY=https://mirror.example.com/go",
+			},
+			absent: []string{
+				"SYFT_JAVA_USE_NETWORK",
+			},
+		},
+	} {
+		t.Run(lookupCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			syft := Syft{
+				Exec: Exec{
+					Path: script,
+				},
+				Lookups: lookupCase.lookups,
+			}
+
+			out, err := syft.Catalog(t.Context(), "file:/scan/a.jar")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			for _, want := range lookupCase.present {
+				if !strings.Contains(string(out), want+"\n") {
+					t.Errorf("syft environment %q, want %s", out, want)
+				}
+			}
+
+			for _, unwanted := range lookupCase.absent {
+				if strings.Contains(string(out), unwanted+"=") {
+					t.Errorf("syft environment %q, want no %s", out, unwanted)
+				}
+			}
+		})
+	}
+}
+
 func TestCycloneDX(t *testing.T) {
 	t.Parallel()
 

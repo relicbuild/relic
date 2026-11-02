@@ -1278,6 +1278,15 @@ func scannerMemory(getenv func(string) string, container int64) int64 {
 	return scanMemoryBudget(cfg.Scan.MemoryBudget, container)
 }
 
+func packageLookups(cfg config.Scan) scan.PackageLookups {
+	return scan.PackageLookups{
+		MavenURL:   cfg.MavenURL,
+		PyPIURL:    cfg.PyPIURL,
+		NPMURL:     cfg.NPMURL,
+		GoProxyURL: cfg.GoProxyURL,
+	}
+}
+
 func scanning(db *database.DB, blobs objectstore.Store, cfg config.Scan, log *slog.Logger) *backgroundjobs.Scanning {
 	syftPath, grypePath, err := scannersInstalled(cfg)
 	if err != nil {
@@ -1303,6 +1312,7 @@ func scanning(db *database.DB, blobs objectstore.Store, cfg config.Scan, log *sl
 			Path:  syftPath,
 			Slots: slots,
 		},
+		Lookups: packageLookups(cfg),
 	}
 	feeds := cvecatalog.Feeds{
 		EPSS:    cfg.EPSSFeedURL,

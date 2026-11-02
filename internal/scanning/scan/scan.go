@@ -397,9 +397,58 @@ func (e Exec) output(ctx context.Context, databaseChange bool, args ...string) (
 	return spool, nil
 }
 
+// PackageLookups are the registries Syft asks for the licenses and parent POMs
+// a package does not carry; a lookup without a URL stays off.
+type PackageLookups struct {
+	MavenURL   string
+	PyPIURL    string
+	NPMURL     string
+	GoProxyURL string
+}
+
+func (l PackageLookups) syftEnv() []string {
+	var env []string
+
+	if l.MavenURL != "" {
+		env = append(
+			env,
+			"SYFT_JAVA_USE_NETWORK=true",
+			"SYFT_JAVA_MAVEN_URL="+strings.TrimRight(l.MavenURL, "/"),
+			"SYFT_JAVA_MAX_PARENT_RECURSIVE_DEPTH=0",
+		)
+	}
+
+	if l.PyPIURL != "" {
+		env = append(
+			env,
+			"SYFT_PYTHON_SEARCH_REMOTE_LICENSES=true",
+			"SYFT_PYTHON_PYPI_BASE_URL="+strings.TrimRight(l.PyPIURL, "/"),
+		)
+	}
+
+	if l.NPMURL != "" {
+		env = append(
+			env,
+			"SYFT_JAVASCRIPT_SEARCH_REMOTE_LICENSES=true",
+			"SYFT_JAVASCRIPT_NPM_BASE_URL="+strings.TrimRight(l.NPMURL, "/"),
+		)
+	}
+
+	if l.GoProxyURL != "" {
+		env = append(
+			env,
+			"SYFT_GOLANG_SEARCH_REMOTE_LICENSES=true",
+			"SYFT_GOLANG_PROXY="+strings.TrimRight(l.GoProxyURL, "/"),
+		)
+	}
+
+	return env
+}
+
 // Syft is the subprocess Cataloger.
 type Syft struct {
 	Exec
+	Lookups PackageLookups
 }
 
 // Catalog implements Cataloger.
@@ -420,6 +469,7 @@ func (s Syft) Catalog(ctx context.Context, source string) ([]byte, error) {
 
 	e := s.Exec
 	e.Env = append(slices.Clone(s.Env), "SYFT_CHECK_FOR_APP_UPDATE=false")
+	e.Env = append(e.Env, s.Lookups.syftEnv()...)
 
 	return e.run(ctx, args...)
 }

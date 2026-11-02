@@ -306,6 +306,64 @@ func TestLoad(t *testing.T) {
 			},
 		},
 		{
+			name: "package lookups: off unless set",
+			env:  with(map[string]string{}),
+			check: func(t *testing.T, c Config) {
+				t.Helper()
+
+				if c.Scan.MavenURL != "" || c.Scan.PyPIURL != "" || c.Scan.NPMURL != "" || c.Scan.GoProxyURL != "" {
+					t.Errorf("scan = %+v", c.Scan)
+				}
+			},
+		},
+		{
+			name: "package lookups: each URL, or off",
+			env: with(map[string]string{
+				"RELIC_SCAN_MAVEN_URL":    "https://mirror.example.com/maven",
+				"RELIC_SCAN_PYPI_URL":     "https://mirror.example.com/pypi",
+				"RELIC_SCAN_NPM_URL":      "off",
+				"RELIC_SCAN_GO_PROXY_URL": "https://mirror.example.com/go",
+			}),
+			check: func(t *testing.T, c Config) {
+				t.Helper()
+
+				if c.Scan.MavenURL != "https://mirror.example.com/maven" ||
+					c.Scan.PyPIURL != "https://mirror.example.com/pypi" ||
+					c.Scan.NPMURL != "" ||
+					c.Scan.GoProxyURL != "https://mirror.example.com/go" {
+					t.Errorf("scan = %+v", c.Scan)
+				}
+			},
+		},
+		{
+			name: "package lookups: not a URL",
+			env: with(map[string]string{
+				"RELIC_SCAN_MAVEN_URL": "ftp://mirror.example.com/maven",
+			}),
+			wantErr: "RELIC_SCAN_MAVEN_URL",
+		},
+		{
+			name: "package lookups: no credentials in a URL",
+			env: with(map[string]string{
+				"RELIC_SCAN_NPM_URL": "https://reader@mirror.example.com/npm",
+			}),
+			wantErr: "RELIC_SCAN_NPM_URL must be one http or https URL without credentials",
+		},
+		{
+			name: "package lookups: one proxy, never direct",
+			env: with(map[string]string{
+				"RELIC_SCAN_GO_PROXY_URL": "https://mirror.example.com/go,direct",
+			}),
+			wantErr: "RELIC_SCAN_GO_PROXY_URL",
+		},
+		{
+			name: "package lookups: pypi needs a URL too",
+			env: with(map[string]string{
+				"RELIC_SCAN_PYPI_URL": "mirror.example.com",
+			}),
+			wantErr: "RELIC_SCAN_PYPI_URL",
+		},
+		{
 			name: "secret validation: off by default",
 			env:  with(map[string]string{}),
 			check: func(t *testing.T, c Config) {
@@ -843,5 +901,24 @@ func TestLoad(t *testing.T) {
 
 			tt.check(t, cfg)
 		})
+	}
+}
+
+func TestLoadKeepsLookupCredentialsOutOfErrors(t *testing.T) {
+	t.Parallel()
+
+	environment := with(map[string]string{
+		"RELIC_SCAN_MAVEN_URL": "https://lookup-token@mirror.example.com/maven",
+	})
+
+	_, err := Load(func(key string) string {
+		return environment[key]
+	})
+	if err == nil {
+		t.Fatal("Load accepted a URL with credentials")
+	}
+
+	if strings.Contains(err.Error(), "lookup-token") {
+		t.Errorf("Load error %q holds the credentials", err)
 	}
 }
