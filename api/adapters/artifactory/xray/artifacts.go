@@ -287,7 +287,7 @@ func (h *Handler) scanArtifact(w http.ResponseWriter, r *http.Request) {
 	repoKey, p, _ := strings.Cut(strings.TrimPrefix(req.Path, "/"), "/")
 
 	item, ok := h.readable(w, r, repoKey, p)
-	if !ok {
+	if !ok || !h.requireScanWorker(w, r) {
 		return
 	}
 
@@ -368,6 +368,11 @@ func (h *Handler) artifactStatus(w http.ResponseWriter, r *http.Request) {
 	st, err := h.statusOf(r.Context(), contents)
 	if err != nil {
 		h.internalError(w, r, err)
+		return
+	}
+
+	unfinished := st.Overall.Status == statusPending || st.Overall.Status == statusScanning
+	if unfinished && !h.requireScanWorker(w, r) {
 		return
 	}
 

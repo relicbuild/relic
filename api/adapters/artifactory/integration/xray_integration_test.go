@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"relic/api/adapters/artifactory/access"
@@ -18,6 +20,7 @@ import (
 	"relic/internal/access/auth"
 	"relic/internal/app"
 	"relic/internal/app/backgroundjobs"
+	"relic/internal/platform/database"
 	"relic/internal/platform/database/databasetest"
 	"relic/internal/platform/objectstore/objectstoretest"
 	"relic/internal/scanning/scan"
@@ -43,7 +46,71 @@ func (q syncQueue) Insert(
 	return &rivertype.JobInsertResult{}, q.scans.RunGraph(ctx, a.ID, true)
 }
 
+type queueIgnoringJobs struct {
+	inserted *atomic.Int64
+}
+
+func (q queueIgnoringJobs) Insert(
+	context.Context,
+	river.JobArgs,
+	*river.InsertOpts,
+) (*rivertype.JobInsertResult, error) {
+	q.inserted.Add(1)
+
+	return &rivertype.JobInsertResult{}, nil
+}
+
+func execStatement(t *testing.T, db *database.DB, statement string) {
+	t.Helper()
+
+	rows, err := db.Query(t.Context(), statement)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows.Close()
+
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func reportGraphScanWorker(t *testing.T, db *database.DB) {
+	t.Helper()
+
+	statement := `INSERT INTO river_queue (name, updated_at) VALUES ('scan_graph', now())`
+	if db.SQLite() {
+		statement = `INSERT INTO river_queue (name, updated_at) VALUES ('scan_graph', datetime('now', 'subsec'))`
+	}
+
+	execStatement(t, db, statement)
+}
+
+func stopGraphScanWorker(t *testing.T, db *database.DB) {
+	t.Helper()
+
+	statement := `UPDATE river_queue SET updated_at = now() - interval '1 hour' WHERE name = 'scan_graph'`
+	if db.SQLite() {
+		statement = `UPDATE river_queue SET updated_at = datetime('now', '-1 hour', 'subsec') WHERE name = 'scan_graph'`
+	}
+
+	execStatement(t, db, statement)
+}
+
 func xrayServer(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	srv, db := xrayServerWithQueue(t, func(scans *scan.Service) app.Queue {
+		return syncQueue{
+			scans: scans,
+		}
+	})
+	reportGraphScanWorker(t, db)
+
+	return srv
+}
+
+func xrayServerWithQueue(t *testing.T, newQueue func(*scan.Service) app.Queue) (*httptest.Server, *database.DB) {
 	t.Helper()
 	db := databasetest.NewDB(t)
 
@@ -77,32 +144,223 @@ func xrayServer(t *testing.T) *httptest.Server {
 		},
 	}, scan.Limits{}, log)
 
-	graphQueue := `INSERT INTO river_queue (name, updated_at) VALUES ('scan_graph', now())`
-	if db.SQLite() {
-		graphQueue = `INSERT INTO river_queue (name, updated_at) VALUES ('scan_graph', datetime('now', 'subsec'))`
-	}
-
-	rows, err := db.Query(t.Context(), graphQueue)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	rows.Close()
-
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-
 	srv := httptest.NewServer(
-		app.NewHandler(db, blobs, tokens, syncQueue{
-			scans: svc,
-		}, app.Options{
+		app.NewHandler(db, blobs, tokens, newQueue(svc), app.Options{
 			IndexerDir: indexerDir(t),
 		}, log),
 	)
 	t.Cleanup(srv.Close)
 
-	return srv
+	return srv, db
+}
+
+func TestXrayScanCallsFailWithoutAScanWorker(t *testing.T) {
+	t.Parallel()
+
+	inserted := &atomic.Int64{}
+	srv, db := xrayServerWithQueue(t, func(*scan.Service) app.Queue {
+		return queueIgnoringJobs{
+			inserted: inserted,
+		}
+	})
+	graph := `{"component_id":"root","nodes":[{"component_id":"npm://lodash:4.17.15"}]}`
+	buildScan := `{"build_name":"app","build_number":"7"}`
+	unscannedStatus := `{"repo":"images","path":"lib/2.0/manifest.json"}`
+
+	for _, deployment := range []call{
+		{
+			method: "PUT",
+			path:   "/artifactory/api/build",
+			body: `{"version":"1.0.1","name":"app","number":"7","started":"2026-09-23T10:00:00.000+0000",` +
+				`"modules":[{"type":"npm","id":"app:1.0.0","dependencies":[{"id":"lodash:4.17.15"}]}]}`,
+		},
+		{
+			method: "PUT",
+			path:   "/artifactory/api/repositories/images",
+			body:   `{"rclass":"local","packageType":"generic"}`,
+		},
+		{
+			method: "PUT",
+			path:   "/artifactory/images/lib/2.0/manifest.json",
+			body:   `{"schemaVersion":2}`,
+		},
+		{
+			method: "PUT",
+			path:   "/artifactory/images/docs/readme.txt",
+			body:   "not scannable",
+		},
+	} {
+		if resp, body := do(t, srv, deployment); resp.StatusCode >= 300 {
+			t.Fatalf("%s %s = %d %s", deployment.method, deployment.path, resp.StatusCode, body)
+		}
+	}
+
+	checks := []struct {
+		name     string
+		request  call
+		wantCode int
+	}{
+		{
+			name: "posting a graph",
+			request: call{
+				method: "POST",
+				path:   "/xray/api/v1/scan/graph?scan_type=binary",
+				body:   graph,
+			},
+			wantCode: http.StatusFailedDependency,
+		},
+		{
+			name: "scanning a build",
+			request: call{
+				method: "POST",
+				path:   "/xray/api/v2/ci/build",
+				body:   buildScan,
+			},
+			wantCode: http.StatusFailedDependency,
+		},
+		{
+			name: "asking to scan an artifact",
+			request: call{
+				method: "POST",
+				path:   "/xray/api/v1/scanArtifact",
+				body:   `{"componentID":"docker://lib:2.0","path":"images/lib/2.0/manifest.json"}`,
+			},
+			wantCode: http.StatusFailedDependency,
+		},
+		{
+			name: "the status of an artifact no scan will reach",
+			request: call{
+				method: "POST",
+				path:   "/xray/api/v1/artifact/status",
+				body:   unscannedStatus,
+			},
+			wantCode: http.StatusFailedDependency,
+		},
+		{
+			name: "the status of an artifact that is never scanned",
+			request: call{
+				method: "POST",
+				path:   "/xray/api/v1/artifact/status",
+				body:   `{"repo":"images","path":"docs/readme.txt"}`,
+			},
+			wantCode: http.StatusOK,
+		},
+		{
+			name: "a build that does not exist",
+			request: call{
+				method: "POST",
+				path:   "/xray/api/v2/ci/build",
+				body:   `{"build_name":"app","build_number":"8"}`,
+			},
+			wantCode: http.StatusNotFound,
+		},
+		{
+			name: "the summary of stored results",
+			request: call{
+				method: "POST",
+				path:   "/xray/api/v1/summary/artifact",
+				body:   `{"paths":["default/images/lib/2.0/manifest.json"]}`,
+			},
+			wantCode: http.StatusOK,
+		},
+		{
+			name: "the reported version",
+			request: call{
+				method: "GET",
+				path:   "/xray/api/v1/system/version",
+			},
+			wantCode: http.StatusOK,
+		},
+		{
+			name: "the indexer download",
+			request: call{
+				method: "GET",
+				path:   "/xray/api/v1/indexer-resources/download/linux/amd64",
+			},
+			wantCode: http.StatusOK,
+		},
+	}
+
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			resp, body := do(t, srv, check.request)
+			if resp.StatusCode != check.wantCode {
+				t.Fatalf("= %d %s, want %d", resp.StatusCode, body, check.wantCode)
+			}
+
+			if check.wantCode == http.StatusFailedDependency && !strings.Contains(body, "Relic Scan is off") {
+				t.Errorf("body = %s", body)
+			}
+		})
+	}
+
+	if got := inserted.Load(); got != 0 {
+		t.Fatalf("queued %d jobs that no worker would take", got)
+	}
+
+	reportGraphScanWorker(t, db)
+
+	resp, body := do(t, srv, call{
+		method: "POST",
+		path:   "/xray/api/v1/scan/graph?scan_type=binary",
+		body:   graph,
+	})
+
+	var started struct {
+		ScanID string `json:"scan_id"`
+	}
+	if resp.StatusCode != http.StatusCreated || json.Unmarshal([]byte(body), &started) != nil {
+		t.Fatalf("post graph with a worker = %d %s", resp.StatusCode, body)
+	}
+
+	if resp, body := do(t, srv, call{
+		method: "POST",
+		path:   "/xray/api/v2/ci/build",
+		body:   buildScan,
+	}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("build scan with a worker = %d %s", resp.StatusCode, body)
+	}
+
+	pollGraph := call{
+		method: "GET",
+		path:   "/xray/api/v1/scan/graph/" + started.ScanID,
+	}
+	pollBuild := call{
+		method: "POST",
+		path:   "/xray/api/v2/ci/build/scanResult",
+		body:   buildScan,
+	}
+	pollStatus := call{
+		method: "POST",
+		path:   "/xray/api/v1/artifact/status",
+		body:   unscannedStatus,
+	}
+
+	for _, poll := range []call{
+		pollGraph,
+		pollBuild,
+	} {
+		if resp, body := do(t, srv, poll); resp.StatusCode != http.StatusAccepted {
+			t.Errorf("%s with a worker = %d %s, want 202", poll.path, resp.StatusCode, body)
+		}
+	}
+
+	if resp, body := do(t, srv, pollStatus); resp.StatusCode != http.StatusOK {
+		t.Errorf("status with a worker = %d %s, want 200", resp.StatusCode, body)
+	}
+
+	stopGraphScanWorker(t, db)
+
+	for _, poll := range []call{
+		pollGraph,
+		pollBuild,
+		pollStatus,
+	} {
+		resp, body := do(t, srv, poll)
+		if resp.StatusCode != http.StatusFailedDependency || !strings.Contains(body, "Relic Scan is off") {
+			t.Errorf("%s after the worker stopped = %d %s, want 424", poll.path, resp.StatusCode, body)
+		}
+	}
 }
 
 func TestXrayGraphScan(t *testing.T) {

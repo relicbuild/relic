@@ -1074,6 +1074,7 @@ func newRouter(
 	authn.SetExternal(ldapSvc)
 	ah.Register(rt)
 
+	status := systemstatus.NewService(db)
 	scans := scan.NewResults(db)
 	graphScans := scan.NewService(db, blobs, nil, nil, scan.Limits{}, log)
 	xh := scanapi.New(
@@ -1083,6 +1084,7 @@ func newRouter(
 		graphScans,
 		scanAdmin,
 		enqueueGraphScan(queue),
+		queueWorkers(status, backgroundjobs.GraphQueue),
 		log,
 	)
 	xh.IndexerDir = opts.IndexerDir
@@ -1092,7 +1094,6 @@ func newRouter(
 	xh.Register(rt)
 	scim.New(sso.NewDirectory(db, sec), log).Register(rt)
 
-	status := systemstatus.NewService(db)
 	version, revision := relicVersion()
 	api := relicapi.Handler(relicapi.Dependencies{ // each method enforces its own access
 		Version:                          version,

@@ -84,6 +84,10 @@ func (h *Handler) triggerBuild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.requireScanWorker(w, r) {
+		return
+	}
+
 	bi := run.Document
 	root := "build://" + req.BuildName + ":" + req.BuildNumber
 	g := graphRequest{
@@ -207,6 +211,10 @@ func (h *Handler) buildScanResult(w http.ResponseWriter, r *http.Request) {
 
 	switch g.Status {
 	case scan.StatusQueued:
+		if !h.requireScanWorker(w, r) {
+			return
+		}
+
 		wire.WriteJSON(w, http.StatusAccepted, map[string]string{
 			"status": "in_progress",
 		})

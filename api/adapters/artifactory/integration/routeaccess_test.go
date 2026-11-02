@@ -19,7 +19,7 @@ func TestRouteAccess(t *testing.T) {
 	rt := httpserver.NewRouter()
 	artifactory.New(nil, nil, nil, nil, nil, slog.New(slog.DiscardHandler)).Register(rt)
 	access.New(nil, nil, slog.New(slog.DiscardHandler)).Register(rt)
-	xray.New(nil, nil, nil, nil, nil, nil, slog.New(slog.DiscardHandler)).Register(rt)
+	xray.New(nil, nil, nil, nil, nil, nil, nil, slog.New(slog.DiscardHandler)).Register(rt)
 	lifecycleapi.New(nil, nil, slog.New(slog.DiscardHandler)).Register(rt)
 	evidenceapi.New(nil, nil, nil, nil, slog.New(slog.DiscardHandler)).Register(rt)
 
