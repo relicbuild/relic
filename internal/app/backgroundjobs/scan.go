@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 	"time"
 	"uuid"
 
@@ -213,6 +214,30 @@ func replaceInvalidDB(ctx context.Context, err error) error {
 	return river.JobSnooze(dbWait)
 }
 
+var (
+	errDatabaseOff            = errors.New("no vulnerability database: downloads are off and none was imported")
+	errDatabaseDownloadFailed = errors.New("no vulnerability database: its download failed")
+)
+
+type databaseAvailability struct {
+	hasDB          func() bool
+	downloadsOff   bool
+	downloadFailed *atomic.Bool
+}
+
+func (a databaseAvailability) missingDatabase() error {
+	switch {
+	case a.hasDB():
+		return nil
+	case a.downloadsOff:
+		return errDatabaseOff
+	case a.downloadFailed.Load():
+		return errDatabaseDownloadFailed
+	default:
+		return nil
+	}
+}
+
 type artifactScanner interface {
 	ScanArtifact(ctx context.Context, sha256Hex, fileName string) error
 	FailArtifact(ctx context.Context, sha256Hex string, failure error) error
@@ -220,12 +245,19 @@ type artifactScanner interface {
 
 type scanArtifactWorker struct {
 	river.WorkerDefaults[ScanArtifactArgs]
-	scans artifactScanner
-	hasDB func() bool
+	scans                 artifactScanner
+	vulnerabilityDatabase databaseAvailability
+	log                   *slog.Logger
 }
 
 func (w *scanArtifactWorker) Work(ctx context.Context, job *river.Job[ScanArtifactArgs]) error {
-	if err := waitForDB(w.hasDB); err != nil {
+	if failure := w.vulnerabilityDatabase.missingDatabase(); failure != nil {
+		w.log.WarnContext(ctx, "artifact scan failed", "sha256", job.Args.SHA256, "error", failure)
+
+		return w.scans.FailArtifact(ctx, job.Args.SHA256, fmt.Errorf("match: %w", failure))
+	}
+
+	if err := waitForDB(w.vulnerabilityDatabase.hasDB); err != nil {
 		return err
 	}
 
@@ -248,10 +280,11 @@ func (w *scanArtifactWorker) Timeout(*river.Job[ScanArtifactArgs]) time.Duration
 
 type scanDBWorker struct {
 	river.WorkerDefaults[ScanDBArgs]
-	grype scan.Grype
-	goDB  *scan.GoVulnerabilityDatabase
-	db    *database.DB
-	log   *slog.Logger
+	grype          scan.Grype
+	goDB           *scan.GoVulnerabilityDatabase
+	db             *database.DB
+	downloadFailed *atomic.Bool
+	log            *slog.Logger
 }
 
 func (w *scanDBWorker) Work(ctx context.Context, job *river.Job[ScanDBArgs]) error {
@@ -272,18 +305,30 @@ func (w *scanDBWorker) Work(ctx context.Context, job *river.Job[ScanDBArgs]) err
 	}
 
 	if err != nil {
+		w.recordDownloadFailure(job)
+
 		return errors.Join(goErr, err)
 	}
 
 	if err := w.grype.UpdateDB(ctx); err != nil {
+		w.recordDownloadFailure(job)
+
 		return errors.Join(goErr, fmt.Errorf("update vulnerability database: %w", err))
 	}
+
+	w.downloadFailed.Store(false)
 
 	if !w.grype.HasDB() {
 		return goErr
 	}
 
 	return errors.Join(goErr, rematchStale(ctx, w.grype, w.db, w.log, job.Args.Batch))
+}
+
+func (w *scanDBWorker) recordDownloadFailure(job *river.Job[ScanDBArgs]) {
+	if job.Attempt >= job.MaxAttempts {
+		w.downloadFailed.Store(true)
+	}
 }
 
 func rematchStale(ctx context.Context, grype scan.Grype, db *database.DB, log *slog.Logger, batch int) error {
@@ -404,14 +449,26 @@ func (w *rematchWorker) Work(ctx context.Context, job *river.Job[RematchArgs]) e
 // Timeout implements river.Worker.
 func (w *rematchWorker) Timeout(*river.Job[RematchArgs]) time.Duration { return 30 * time.Minute }
 
+type graphScanner interface {
+	RunGraph(ctx context.Context, id uuid.UUID, lastAttempt bool) error
+	FailGraph(ctx context.Context, id uuid.UUID, failure error) error
+}
+
 type graphScanWorker struct {
 	river.WorkerDefaults[GraphScanArgs]
-	scans *scan.Service
-	hasDB func() bool
+	scans                 graphScanner
+	vulnerabilityDatabase databaseAvailability
+	log                   *slog.Logger
 }
 
 func (w *graphScanWorker) Work(ctx context.Context, job *river.Job[GraphScanArgs]) error {
-	if err := waitForDB(w.hasDB); err != nil {
+	if failure := w.vulnerabilityDatabase.missingDatabase(); failure != nil {
+		w.log.WarnContext(ctx, "graph scan failed", "error", failure)
+
+		return w.scans.FailGraph(ctx, job.Args.ID, failure)
+	}
+
+	if err := waitForDB(w.vulnerabilityDatabase.hasDB); err != nil {
 		return err
 	}
 
@@ -442,19 +499,28 @@ type Scanning struct {
 }
 
 func addScanWorkers(workers *river.Workers, db *database.DB, sc *Scanning, log *slog.Logger) {
+	downloadFailed := &atomic.Bool{}
+	vulnerabilityDatabase := databaseAvailability{
+		hasDB:          sc.Grype.HasDB,
+		downloadsOff:   sc.Grype.Offline,
+		downloadFailed: downloadFailed,
+	}
+
 	river.AddWorker(workers, &scanTickWorker{
 		scans: sc.Service,
 		db:    db,
 	})
 	river.AddWorker(workers, &scanArtifactWorker{
-		scans: sc.Service,
-		hasDB: sc.Grype.HasDB,
+		scans:                 sc.Service,
+		vulnerabilityDatabase: vulnerabilityDatabase,
+		log:                   log,
 	})
 	river.AddWorker(workers, &scanDBWorker{
-		grype: sc.Grype,
-		goDB:  sc.GoVulnerabilities,
-		db:    db,
-		log:   log,
+		grype:          sc.Grype,
+		goDB:           sc.GoVulnerabilities,
+		db:             db,
+		downloadFailed: downloadFailed,
+		log:            log,
 	})
 	river.AddWorker(workers, &scanDBImportWorker{
 		grype:   sc.Grype,
@@ -467,8 +533,9 @@ func addScanWorkers(workers *river.Workers, db *database.DB, sc *Scanning, log *
 		hasDB: sc.Grype.HasDB,
 	})
 	river.AddWorker(workers, &graphScanWorker{
-		scans: sc.Service,
-		hasDB: sc.Grype.HasDB,
+		scans:                 sc.Service,
+		vulnerabilityDatabase: vulnerabilityDatabase,
+		log:                   log,
 	})
 
 	if sc.CVEs != nil {

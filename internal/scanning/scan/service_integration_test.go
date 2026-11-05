@@ -222,6 +222,20 @@ func TestScanPipeline(t *testing.T) {
 		t.Errorf("findings of the replaced SBOM kept: %d", len(cleared))
 	}
 
+	if err := svc.FailArtifact(ctx, c.Sha256, errors.New("match: no vulnerability database")); err != nil {
+		t.Fatal(err)
+	}
+
+	if a, err := db.GetScanArtifact(ctx, c.Sha256); err != nil || a.Sbom == nil || a.Status != scan.StatusQueued ||
+		a.Reason != "SBOM imported, not matched yet" {
+		t.Fatalf(
+			"failing the scan of an imported SBOM left status %s (%s), %v; want the SBOM kept",
+			a.Status,
+			a.Reason,
+			err,
+		)
+	}
+
 	built := time.Now()
 	if stale, err := db.ListStaleScans(ctx, database.ListStaleScansParams{
 		DbBuilt: &built,

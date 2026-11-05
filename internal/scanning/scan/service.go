@@ -341,8 +341,9 @@ func (s *Service) ScanArtifact(ctx context.Context, sha256Hex, fileName string) 
 }
 
 // FailArtifact records a queued scan whose job gave up as failed, with failure as the reason.
+// An imported SBOM waiting to be matched stays queued, because failing it would delete the SBOM.
 func (s *Service) FailArtifact(ctx context.Context, sha256Hex string, failure error) error {
-	a, err := s.db.GetScanStatus(ctx, sha256Hex)
+	a, err := s.db.GetScanArtifact(ctx, sha256Hex)
 	if errors.Is(database.NotFound(err), database.ErrNotFound) {
 		return nil
 	}
@@ -351,7 +352,7 @@ func (s *Service) FailArtifact(ctx context.Context, sha256Hex string, failure er
 		return fmt.Errorf("load scan %s: %w", sha256Hex, err)
 	}
 
-	if a.Status != StatusQueued {
+	if a.Status != StatusQueued || a.Sbom != nil {
 		return nil
 	}
 
