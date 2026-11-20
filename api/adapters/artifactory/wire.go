@@ -10,6 +10,7 @@ import (
 
 	"relic/api/packages"
 	"relic/internal/artifacts/repository"
+	"relic/internal/platform/httpserver"
 )
 
 const timeFormat = "2006-01-02T15:04:05.000Z07:00"
@@ -23,12 +24,7 @@ func formatTime(t time.Time) string {
 }
 
 func baseURL(r *http.Request) string {
-	scheme := "http"
-	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-		scheme = "https"
-	}
-
-	return scheme + "://" + r.Host + "/artifactory"
+	return httpserver.Origin(r) + "/artifactory"
 }
 
 func escapePath(p string) string {

@@ -13,6 +13,7 @@ import (
 	"relic/api/adapters/artifactory/xray/xraymap"
 	"relic/internal/access/auth"
 	"relic/internal/delivery/buildinfo"
+	"relic/internal/platform/httpserver"
 	"relic/internal/scanning/scan"
 )
 
@@ -292,12 +293,7 @@ func (h *Handler) buildScanResult(w http.ResponseWriter, r *http.Request) {
 }
 
 func baseURL(r *http.Request) string {
-	scheme := "http"
-	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-		scheme = "https"
-	}
-
-	return scheme + "://" + r.Host
+	return httpserver.Origin(r)
 }
 
 func (g *graphRequest) addComponent(id, parent string) {

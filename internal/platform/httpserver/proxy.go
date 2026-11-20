@@ -108,10 +108,15 @@ func TrustProxies(trusted []netip.Prefix, next http.Handler) http.Handler {
 	})
 }
 
-// Secure reports whether the client reached Relic over HTTPS, directly or
-// through a trusted TLS-terminating proxy.
+// Secure reports whether the client reached Relic over HTTPS: the protocol a
+// trusted proxy forwarded, or else Relic's own connection.
 func Secure(r *http.Request) bool {
-	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	forwardedProto, _, _ := strings.Cut(r.Header.Get("X-Forwarded-Proto"), ",")
+	if forwardedProto = strings.TrimSpace(forwardedProto); forwardedProto != "" {
+		return strings.EqualFold(forwardedProto, "https")
+	}
+
+	return r.TLS != nil
 }
 
 // Origin is the scheme and host the client used to reach Relic.

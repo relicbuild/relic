@@ -142,12 +142,7 @@ func (m Mount) fileHeaders(h http.Header, item repository.Item) {
 }
 
 func origin(r *http.Request) string {
-	scheme := "http"
-	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-		scheme = "https"
-	}
-
-	return scheme + "://" + r.Host
+	return httpserver.Origin(r)
 }
 
 func (m Mount) base(r *http.Request) string {
