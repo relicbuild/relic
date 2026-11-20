@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -193,6 +194,7 @@ func TestOrigin(t *testing.T) {
 
 	tests := []struct {
 		name           string
+		isTLS          bool
 		forwardedProto string
 		want           string
 	}{
@@ -205,6 +207,23 @@ func TestOrigin(t *testing.T) {
 			forwardedProto: "HTTPS",
 			want:           "https://relic.example.com",
 		},
+		{
+			name:  "https served by Relic",
+			isTLS: true,
+			want:  "https://relic.example.com",
+		},
+		{
+			name:           "a proxy serving http in front of Relic's https",
+			isTLS:          true,
+			forwardedProto: "http",
+			want:           "http://relic.example.com",
+		},
+		{
+			name:           "the protocol of the first proxy",
+			isTLS:          true,
+			forwardedProto: "http, https",
+			want:           "http://relic.example.com",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -216,6 +235,10 @@ func TestOrigin(t *testing.T) {
 				"http://relic.example.com/scim/v2/Users",
 				nil,
 			)
+			if tt.isTLS {
+				r.TLS = &tls.ConnectionState{}
+			}
+
 			if tt.forwardedProto != "" {
 				r.Header.Set("X-Forwarded-Proto", tt.forwardedProto)
 			}

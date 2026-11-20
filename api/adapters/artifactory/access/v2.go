@@ -94,12 +94,7 @@ func decodeV2(w http.ResponseWriter, r *http.Request, v any) bool {
 }
 
 func baseURL(r *http.Request) string {
-	scheme := "http"
-	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
-		scheme = "https"
-	}
-
-	return scheme + "://" + r.Host
+	return httpserver.Origin(r)
 }
 
 func limit[T any](r *http.Request, list []T) []T {

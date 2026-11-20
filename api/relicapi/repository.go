@@ -15,6 +15,7 @@ import (
 	relicv1 "relic/api/gen/relic/v1"
 	"relic/internal/access/auth"
 	"relic/internal/artifacts/repository"
+	"relic/internal/platform/httpserver"
 )
 
 type repositoryServer struct {
@@ -402,12 +403,7 @@ func requestOrigin(r *http.Request) string {
 		return ""
 	}
 
-	scheme := "http"
-	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-		scheme = "https"
-	}
-
-	return scheme + "://" + r.Host
+	return httpserver.Origin(r)
 }
 
 func (s *repositoryServer) CreateRepository(
