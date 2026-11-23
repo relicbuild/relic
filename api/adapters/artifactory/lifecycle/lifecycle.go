@@ -823,10 +823,5 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 func artifactoryURL(r *http.Request) string {
-	scheme := "http"
-	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-		scheme = "https"
-	}
-
-	return scheme + "://" + r.Host + "/artifactory"
+	return httpserver.Origin(r) + "/artifactory"
 }

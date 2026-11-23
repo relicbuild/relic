@@ -167,7 +167,7 @@ func (s *sessionServer) ChangePassword(
 }
 
 func sessionCookie(r *http.Request, value string, maxAge int) *http.Cookie {
-	secure := r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	secure := httpserver.Secure(r)
 
 	return &http.Cookie{ //nolint:gosec // G124: Secure is off only for plain-HTTP development
 		Name:     auth.SessionCookie,
